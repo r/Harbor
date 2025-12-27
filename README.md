@@ -2,6 +2,26 @@
 
 A Firefox extension with a native Python bridge for MCP (Model Context Protocol) server communication.
 
+## How It Works
+
+Harbor uses Firefox's [Native Messaging](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging) to communicate with a local Python process:
+
+```
+┌──────────────────┐                              ┌──────────────────┐
+│ Firefox Extension│  ◄── stdin/stdout JSON ──►  │  Python Bridge   │
+│   (sidebar UI)   │                              │  (auto-started)  │
+└──────────────────┘                              └──────────────────┘
+```
+
+**Key point: You don't manually start the bridge.** Firefox automatically launches it when the extension connects. Here's what happens:
+
+1. You install a "native messaging manifest" that tells Firefox where the bridge launcher script is
+2. When the extension loads, it calls `browser.runtime.connectNative("com.harbor.bridge")`
+3. Firefox reads the manifest, finds the launcher script, and spawns the Python process
+4. The extension and bridge communicate via JSON messages over stdin/stdout
+
+So setup is: build extension → sync Python deps → install manifest → load extension in Firefox. That's it!
+
 ## Prerequisites
 
 - **Node.js** 18+ and npm
@@ -55,6 +75,8 @@ npm run dev
 
 ### 2. Set Up the Python Bridge
 
+The bridge is automatically started by Firefox — you just need to install dependencies:
+
 ```bash
 cd bridge
 
@@ -62,7 +84,7 @@ cd bridge
 uv sync
 ```
 
-#### Run Tests, Linting, and Type Checking
+#### Run Tests, Linting, and Type Checking (optional)
 
 ```bash
 # Format and lint
@@ -81,7 +103,12 @@ uv run ruff format . && uv run ruff check --fix . && uv run mypy . && uv run pyt
 
 ### 3. Install Native Messaging Host Manifest
 
-The native messaging manifest tells Firefox where to find the bridge executable.
+The native messaging manifest is a JSON file that tells Firefox:
+- The name of the native app (`com.harbor.bridge`)
+- The path to the launcher script
+- Which extension IDs are allowed to connect
+
+**This is the critical step** — without it, Firefox won't know how to start the bridge.
 
 #### macOS
 
@@ -139,7 +166,9 @@ If you see "Disconnected":
 
 ### 6. Test with Demo MCP Server (Optional)
 
-Start the demo server to test server connectivity:
+The demo server is a simple HTTP server for testing the "Add Server" / "Connect" flow without needing a real MCP server.
+
+In one terminal, start the demo server:
 
 ```bash
 cd bridge
@@ -152,6 +181,8 @@ Then in the Harbor sidebar:
 3. Click **"Add Server"**
 4. Click **"Connect"** on the server card
 5. Should show "Connected" status
+
+> **Note:** This demo server is just for testing connectivity. It doesn't implement the full MCP protocol yet.
 
 ## Protocol Reference
 
