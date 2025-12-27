@@ -20,6 +20,33 @@ interface ConnectionState {
   error: string | null;
 }
 
+// Theme handling
+function initTheme(): void {
+  const savedTheme = localStorage.getItem('harbor-theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+  updateThemeIcon(theme);
+}
+
+function toggleTheme(): void {
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('harbor-theme', next);
+  updateThemeIcon(next);
+}
+
+function updateThemeIcon(theme: string): void {
+  const icon = document.getElementById('theme-icon');
+  if (icon) {
+    icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+  }
+}
+
+// Initialize theme immediately
+initTheme();
+
 // DOM Elements
 const statusIndicator = document.getElementById('status-indicator') as HTMLDivElement;
 const statusText = document.getElementById('status-text') as HTMLSpanElement;
@@ -36,6 +63,7 @@ const responseContent = document.getElementById('response-content') as HTMLDivEl
 const toolsCard = document.getElementById('tools-card') as HTMLDivElement;
 const toolsResponse = document.getElementById('tools-response') as HTMLPreElement;
 const openDirectoryBtn = document.getElementById('open-directory') as HTMLButtonElement;
+const themeToggleBtn = document.getElementById('theme-toggle') as HTMLButtonElement;
 
 let servers: MCPServer[] = [];
 let selectedServerId: string | null = null;
@@ -342,5 +370,8 @@ openDirectoryBtn.addEventListener('click', () => {
   const directoryUrl = browser.runtime.getURL('directory.html');
   browser.tabs.create({ url: directoryUrl });
 });
+
+// Theme toggle
+themeToggleBtn.addEventListener('click', toggleTheme);
 
 init();

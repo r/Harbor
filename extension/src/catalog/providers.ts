@@ -8,7 +8,6 @@ import {
   CACHE_KEYS,
   CACHE_TTL_MS,
   generateServerId,
-  findKnownRemoteEndpoint,
   dedupeServers,
 } from './types';
 import browser from 'webextension-polyfill';
@@ -121,15 +120,6 @@ export class OfficialRegistryProvider implements CatalogProvider {
       }
     }
 
-    // Check known remote endpoints
-    if (!endpointUrl) {
-      const known = findKnownRemoteEndpoint(server.name);
-      if (known) {
-        endpointUrl = known.url;
-        if (known.tags) tags.push(...known.tags);
-      }
-    }
-
     const installableOnly = !endpointUrl;
     if (installableOnly) {
       tags.push('installable_only');
@@ -225,16 +215,10 @@ export class GitHubAwesomeProvider implements CatalogProvider {
         if (name.toLowerCase().includes('contributing')) continue;
         if (!href.startsWith('http')) continue;
 
-        // Check known remote endpoints
-        const known = findKnownRemoteEndpoint(name);
-        const endpointUrl = known?.url || '';
-        const tags: string[] = known?.tags || [];
-        
-        if (!endpointUrl) {
-          tags.push('installable_only');
-        } else {
-          tags.push('remote');
-        }
+        // Try to extract remote URL from description if present
+        const urlMatch = description.match(/https?:\/\/[^\s<>\[\]()]+mcp[^\s<>\[\]()]*/i);
+        const endpointUrl = urlMatch ? urlMatch[0].replace(/[.,;:!?]$/, '') : '';
+        const tags: string[] = endpointUrl ? ['remote'] : ['installable_only'];
 
         servers.push({
           id: generateServerId(this.id, endpointUrl, href, name.trim()),
@@ -254,166 +238,6 @@ export class GitHubAwesomeProvider implements CatalogProvider {
   }
 }
 
-/**
- * Featured/Curated Provider
- * Curated list of popular servers from mcpservers.org and mcp.so
- * These are servers known to have remote endpoints or be particularly popular
- */
-export class FeaturedCuratedProvider implements CatalogProvider {
-  id: CatalogSourceId = 'featured_curated';
-  name = 'Featured & Popular';
-
-  // Curated list from mcpservers.org featured section and mcp.so
-  private readonly featuredServers: Array<{
-    name: string;
-    description: string;
-    endpointUrl?: string;
-    homepageUrl: string;
-    tags: string[];
-  }> = [
-    // Remote servers with known endpoints
-    {
-      name: '1mcpserver',
-      description: 'MCP of MCPs - Automatic discovery and configure MCP servers. Fully remote.',
-      endpointUrl: 'https://mcp.1mcpserver.com/mcp/',
-      homepageUrl: 'https://github.com/particlefuture/1mcpserver',
-      tags: ['featured', 'remote', 'meta', 'discovery'],
-    },
-    {
-      name: 'Alpha Vantage',
-      description: 'Financial market data: realtime & historical stock, ETF, options, forex, crypto, commodities, fundamentals, technical indicators.',
-      endpointUrl: 'https://mcp.alphavantage.co/',
-      homepageUrl: 'https://mcp.alphavantage.co/',
-      tags: ['featured', 'remote', 'finance', 'stocks', 'crypto'],
-    },
-    {
-      name: 'Audioscrape',
-      description: 'Search 1M+ hours of podcasts, interviews, talks with speaker identification and timestamps.',
-      endpointUrl: 'https://mcp.audioscrape.com',
-      homepageUrl: 'https://www.audioscrape.com/docs/mcp',
-      tags: ['featured', 'remote', 'audio', 'podcasts', 'search'],
-    },
-    {
-      name: 'Mercado Libre',
-      description: 'Official Mercado Libre MCP server - interact with the marketplace, search products.',
-      endpointUrl: 'https://mcp.mercadolibre.com/',
-      homepageUrl: 'https://mcp.mercadolibre.com/',
-      tags: ['featured', 'remote', 'ecommerce', 'marketplace'],
-    },
-    {
-      name: 'Mercado Pago',
-      description: 'Official Mercado Pago MCP server - payments API integration.',
-      endpointUrl: 'https://mcp.mercadopago.com/',
-      homepageUrl: 'https://mcp.mercadopago.com/',
-      tags: ['featured', 'remote', 'payments', 'fintech'],
-    },
-    {
-      name: 'Pearl',
-      description: 'Connect your AI Agents with 12,000+ certified experts instantly.',
-      endpointUrl: 'https://mcp.pearl.com',
-      homepageUrl: 'https://mcp.pearl.com',
-      tags: ['featured', 'remote', 'experts', 'consulting'],
-    },
-    {
-      name: 'DeepWiki by Devin',
-      description: 'Remote, no-auth MCP server providing AI-powered codebase context and answers.',
-      endpointUrl: 'https://mcp.deepwiki.com',
-      homepageUrl: 'https://docs.devin.ai/work-with-devin/deepwiki-mcp',
-      tags: ['featured', 'remote', 'docs', 'code', 'ai'],
-    },
-    {
-      name: 'Context7',
-      description: 'Up-to-date documentation for any Cursor prompt.',
-      endpointUrl: 'https://mcp.context7.com',
-      homepageUrl: 'https://context7.com',
-      tags: ['featured', 'remote', 'docs', 'cursor'],
-    },
-    // Popular servers from mcpservers.org (may not have remote endpoints)
-    {
-      name: 'Bright Data',
-      description: 'Discover, extract, and interact with the web - one interface powering automated access across the public internet.',
-      homepageUrl: 'https://github.com/brightdata/brightdata-mcp',
-      tags: ['featured', 'sponsor', 'web', 'scraping', 'data'],
-    },
-    {
-      name: 'Browserbase',
-      description: 'Automate browser interactions in the cloud (web navigation, data extraction, form filling).',
-      homepageUrl: 'https://github.com/browserbase/mcp-server-browserbase',
-      tags: ['featured', 'official', 'browser', 'automation', 'cloud'],
-    },
-    {
-      name: 'Cloudflare',
-      description: 'Deploy, configure & interrogate your resources on the Cloudflare developer platform (Workers/KV/R2/D1).',
-      homepageUrl: 'https://github.com/cloudflare/mcp-server-cloudflare',
-      tags: ['featured', 'official', 'cloud', 'serverless', 'workers'],
-    },
-    {
-      name: 'E2B',
-      description: 'Run code in secure sandboxes hosted by E2B.',
-      homepageUrl: 'https://github.com/e2b-dev/mcp-server',
-      tags: ['featured', 'official', 'code', 'sandbox', 'execution'],
-    },
-    {
-      name: 'Exa',
-      description: 'Search Engine made for AIs by Exa.',
-      homepageUrl: 'https://github.com/exa-labs/exa-mcp-server',
-      tags: ['featured', 'official', 'search', 'ai'],
-    },
-    {
-      name: 'Firecrawl',
-      description: 'Powerful web scraping and search capabilities for LLM clients like Cursor and Claude.',
-      homepageUrl: 'https://github.com/mendableai/firecrawl-mcp-server',
-      tags: ['featured', 'official', 'scraping', 'search', 'web'],
-    },
-    {
-      name: 'Playwright',
-      description: 'Playwright MCP server for browser automation and testing.',
-      homepageUrl: 'https://github.com/executeautomation/mcp-playwright',
-      tags: ['featured', 'official', 'browser', 'testing', 'automation'],
-    },
-    {
-      name: 'Supabase',
-      description: 'Connect to Supabase platform for database, auth, edge functions and more.',
-      homepageUrl: 'https://github.com/supabase/mcp-server-supabase',
-      tags: ['featured', 'official', 'database', 'auth', 'backend'],
-    },
-    {
-      name: 'Google MCP Servers',
-      description: 'Collection of Google\'s official MCP servers.',
-      homepageUrl: 'https://github.com/GoogleCloudPlatform/mcp-servers',
-      tags: ['featured', 'official', 'google', 'cloud'],
-    },
-    {
-      name: 'Kaggle MCP',
-      description: 'Access Kaggle\'s datasets, models, competitions, notebooks and benchmarks.',
-      homepageUrl: 'https://github.com/Kaggle/kaggle-mcp',
-      tags: ['featured', 'official', 'data', 'ml', 'datasets'],
-    },
-    {
-      name: 'Chrome DevTools MCP',
-      description: 'Let your coding agent control and inspect a live Chrome browser.',
-      homepageUrl: 'https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-chrome-devtools',
-      tags: ['featured', 'official', 'browser', 'devtools', 'debugging'],
-    },
-  ];
-
-  async fetch(): Promise<CatalogServer[]> {
-    const now = Date.now();
-    console.log(`[${this.name}] Returning ${this.featuredServers.length} curated servers`);
-    
-    return this.featuredServers.map(server => ({
-      id: generateServerId(this.id, server.endpointUrl || '', server.homepageUrl, server.name),
-      name: server.name,
-      endpointUrl: server.endpointUrl || '',
-      installableOnly: !server.endpointUrl,
-      description: server.description,
-      homepageUrl: server.homepageUrl,
-      tags: server.tags,
-      source: this.id,
-      fetchedAt: now,
-    }));
-  }
-}
 
 /**
  * Catalog Manager - coordinates all providers
@@ -425,7 +249,6 @@ export class CatalogManager {
     this.providers = [
       new OfficialRegistryProvider(),
       new GitHubAwesomeProvider(),
-      new FeaturedCuratedProvider(),
     ];
   }
 

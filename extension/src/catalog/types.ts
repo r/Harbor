@@ -2,8 +2,7 @@
 
 export type CatalogSourceId = 
   | 'official_registry' 
-  | 'github_awesome' 
-  | 'featured_curated';
+  | 'github_awesome';
 
 export interface CatalogServer {
   id: string;                    // stable hash of (source + canonicalUrl or homepageUrl + name)
@@ -40,7 +39,6 @@ export interface CacheEntry {
 export const CACHE_KEYS: Record<CatalogSourceId, string> = {
   official_registry: 'catalog.cache.official_registry.v1',
   github_awesome: 'catalog.cache.github_awesome.v1',
-  featured_curated: 'catalog.cache.featured_curated.v1',
 };
 
 // Cache TTL: 10 minutes
@@ -139,30 +137,4 @@ export function dedupeServers(servers: CatalogServer[]): CatalogServer[] {
   return Array.from(seen.values());
 }
 
-// Known remote MCP endpoints - enrichment data
-export const KNOWN_REMOTE_ENDPOINTS: Record<string, { url: string; tags?: string[] }> = {
-  '1mcpserver': { url: 'https://mcp.1mcpserver.com/mcp/', tags: ['remote', 'meta'] },
-  'alpha vantage': { url: 'https://mcp.alphavantage.co/', tags: ['remote', 'finance'] },
-  'alphavantage': { url: 'https://mcp.alphavantage.co/', tags: ['remote', 'finance'] },
-  'audioscrape': { url: 'https://mcp.audioscrape.com', tags: ['remote', 'audio'] },
-  'mercado libre': { url: 'https://mcp.mercadolibre.com/', tags: ['remote', 'ecommerce'] },
-  'mercadolibre': { url: 'https://mcp.mercadolibre.com/', tags: ['remote', 'ecommerce'] },
-  'mercado pago': { url: 'https://mcp.mercadopago.com/', tags: ['remote', 'payments'] },
-  'mercadopago': { url: 'https://mcp.mercadopago.com/', tags: ['remote', 'payments'] },
-  'pearl': { url: 'https://mcp.pearl.com', tags: ['remote', 'experts'] },
-};
-
-/**
- * Check if a server name matches a known remote endpoint
- */
-export function findKnownRemoteEndpoint(name: string): { url: string; tags?: string[] } | null {
-  const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  for (const [key, value] of Object.entries(KNOWN_REMOTE_ENDPOINTS)) {
-    const keyNormalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (normalized.includes(keyNormalized) || keyNormalized.includes(normalized)) {
-      return value;
-    }
-  }
-  return null;
-}
 

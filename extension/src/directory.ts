@@ -2,19 +2,45 @@
 import browser from 'webextension-polyfill';
 import type { CatalogServer, ProviderStatus, CatalogResponse } from './catalog/types';
 
+// Theme handling
+function initTheme(): void {
+  const savedTheme = localStorage.getItem('harbor-theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+  updateThemeIcon(theme);
+}
+
+function toggleTheme(): void {
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('harbor-theme', next);
+  updateThemeIcon(next);
+}
+
+function updateThemeIcon(theme: string): void {
+  const icon = document.getElementById('theme-icon');
+  if (icon) {
+    icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+  }
+}
+
+// Initialize theme immediately
+initTheme();
+
 // DOM Elements
 const searchInput = document.getElementById('search-input') as HTMLInputElement;
-const remoteOnlyCheckbox = document.getElementById('remote-only-checkbox') as HTMLInputElement;
-const remoteOnlyToggle = document.getElementById('remote-only-toggle') as HTMLLabelElement;
-const refreshBtn = document.getElementById('refresh-btn') as HTMLButtonElement;
+const filterPillsContainer = document.getElementById('filter-pills') as HTMLDivElement;
 const providerStatusEl = document.getElementById('provider-status') as HTMLDivElement;
 const mainContent = document.getElementById('main-content') as HTMLElement;
+const themeToggleBtn = document.getElementById('theme-toggle') as HTMLButtonElement;
 
 // State
 let allServers: CatalogServer[] = [];
 let providerStatus: ProviderStatus[] = [];
 let isLoading = false;
-let remoteOnlyFilter = false;
+let activeFilter = 'all';
 
 // Utility functions
 function escapeHtml(text: string): string {
@@ -50,7 +76,6 @@ function renderProviderStatus(): void {
   const providerNames: Record<string, string> = {
     official_registry: 'Official Registry',
     github_awesome: 'GitHub Awesome',
-    featured_curated: 'Featured & Popular',
   };
 
   providerStatusEl.innerHTML = providerStatus
@@ -74,6 +99,40 @@ function renderProviderStatus(): void {
     .join('');
 }
 
+// Apply filters
+function applyFilters(servers: CatalogServer[]): CatalogServer[] {
+  const query = searchInput.value.toLowerCase().trim();
+  let filtered = servers;
+
+  // Apply category filter
+  if (activeFilter !== 'all') {
+    switch (activeFilter) {
+      case 'remote':
+        filtered = filtered.filter(s => !s.installableOnly);
+        break;
+      case 'official':
+        filtered = filtered.filter(s => s.source === 'official_registry');
+        break;
+      default:
+        // Filter by tag
+        filtered = filtered.filter(s =>
+          s.tags.some(t => t.toLowerCase().includes(activeFilter))
+        );
+    }
+  }
+
+  // Apply search query
+  if (query) {
+    filtered = filtered.filter(s =>
+      s.name.toLowerCase().includes(query) ||
+      (s.description?.toLowerCase().includes(query)) ||
+      s.tags.some(t => t.toLowerCase().includes(query))
+    );
+  }
+
+  return filtered;
+}
+
 // Main content rendering
 function renderServers(): void {
   if (isLoading) {
@@ -86,28 +145,15 @@ function renderServers(): void {
     return;
   }
 
-  // Filter servers
+  const filtered = applyFilters(allServers);
   const query = searchInput.value.toLowerCase().trim();
-  let filtered = allServers;
-
-  if (remoteOnlyFilter) {
-    filtered = filtered.filter(s => !s.installableOnly);
-  }
-
-  if (query) {
-    filtered = filtered.filter(s =>
-      s.name.toLowerCase().includes(query) ||
-      (s.description?.toLowerCase().includes(query)) ||
-      s.tags.some(t => t.toLowerCase().includes(query))
-    );
-  }
 
   if (filtered.length === 0) {
     mainContent.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">📭</div>
         <p class="empty-title">${query ? 'No servers match your search' : 'No servers found'}</p>
-        <p>Try adjusting your filters or refreshing the catalog.</p>
+        <p class="empty-description">Try adjusting your filters or refreshing the catalog.</p>
       </div>
     `;
     return;
@@ -123,8 +169,10 @@ function renderServers(): void {
   if (remoteServers.length > 0) {
     html += `
       <div class="section-header">
-        <span class="section-title">🌐 Remote / Connectable</span>
-        <span class="section-count">${remoteServers.length}</span>
+        <div class="section-title-group">
+          <span class="section-title">Remote Servers</span>
+          <span class="section-count">${remoteServers.length}</span>
+        </div>
       </div>
       <div class="server-grid">
         ${remoteServers.map(renderServerCard).join('')}
@@ -132,12 +180,14 @@ function renderServers(): void {
     `;
   }
 
-  // Installable-only section (if not filtered out)
-  if (!remoteOnlyFilter && installableServers.length > 0) {
+  // Installable-only section
+  if (installableServers.length > 0 && activeFilter !== 'remote') {
     html += `
       <div class="section-header">
-        <span class="section-title">📦 Installable Only</span>
-        <span class="section-count">${installableServers.length}</span>
+        <div class="section-title-group">
+          <span class="section-title">Installable Only</span>
+          <span class="section-count">${installableServers.length}</span>
+        </div>
       </div>
       <div class="server-grid">
         ${installableServers.map(renderServerCard).join('')}
@@ -149,7 +199,8 @@ function renderServers(): void {
 
   // Attach event listeners
   mainContent.querySelectorAll('.btn-add').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const el = btn as HTMLButtonElement;
       const name = el.dataset.name!;
       const url = el.dataset.url!;
@@ -158,7 +209,8 @@ function renderServers(): void {
   });
 
   mainContent.querySelectorAll('.btn-copy').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const el = btn as HTMLButtonElement;
       copyToClipboard(el.dataset.url!);
     });
@@ -166,14 +218,19 @@ function renderServers(): void {
 }
 
 function renderServerCard(server: CatalogServer): string {
-  const cardClass = server.installableOnly ? 'installable' : 'remote';
-  const sourceClass = server.source;
-  const sourceLabels: Record<string, string> = {
-    official_registry: 'Registry',
-    github_awesome: 'Awesome',
-    featured_curated: 'Featured',
-  };
-  const sourceLabel = sourceLabels[server.source] || server.source;
+  const badges: string[] = [];
+  
+  // Source badge
+  if (server.source === 'official_registry') {
+    badges.push(`<span class="badge badge-registry">registry</span>`);
+  } else {
+    badges.push(`<span class="badge badge-awesome">awesome</span>`);
+  }
+  
+  // Remote badge
+  if (!server.installableOnly) {
+    badges.push(`<span class="badge badge-remote">remote</span>`);
+  }
   
   const tagsHtml = server.tags
     .filter(t => !['remote', 'installable_only'].includes(t))
@@ -185,37 +242,37 @@ function renderServerCard(server: CatalogServer): string {
     ? `
       <div class="server-endpoint">
         <span class="server-endpoint-url">${escapeHtml(server.endpointUrl)}</span>
-        <button class="btn btn-small btn-copy" data-url="${escapeHtml(server.endpointUrl)}" title="Copy URL">📋</button>
+        <button class="btn btn-copy" data-url="${escapeHtml(server.endpointUrl)}" title="Copy URL">📋</button>
       </div>
     `
-    : `<p class="server-no-endpoint">No remote endpoint published</p>`;
+    : `<p class="server-no-endpoint">No remote endpoint available</p>`;
 
   const actionsHtml = server.endpointUrl
     ? `
-      <button class="btn btn-small btn-add" data-name="${escapeHtml(server.name)}" data-url="${escapeHtml(server.endpointUrl)}">
-        Add to Harbor
+      <button class="btn btn-small btn-success btn-add" data-name="${escapeHtml(server.name)}" data-url="${escapeHtml(server.endpointUrl)}">
+        + Add to Harbor
       </button>
     `
     : '';
 
   const linkHtml = server.homepageUrl
-    ? `<a href="${escapeHtml(server.homepageUrl)}" target="_blank" class="server-link">
-        ${server.homepageUrl.includes('github.com') ? 'GitHub' : 'Homepage'} ↗
+    ? `<a href="${escapeHtml(server.homepageUrl)}" target="_blank" class="server-link" onclick="event.stopPropagation()">
+        ${server.homepageUrl.includes('github.com') ? 'GitHub ↗' : 'Homepage ↗'}
       </a>`
     : '';
 
   return `
-    <div class="server-card ${cardClass}">
-      <div class="server-header">
+    <div class="server-card">
+      <div class="server-card-header">
         <span class="server-name">${escapeHtml(server.name)}</span>
-        <span class="server-source ${sourceClass}">${sourceLabel}</span>
+        <div class="server-badges">${badges.join('')}</div>
       </div>
       ${server.description ? `<p class="server-description">${escapeHtml(server.description)}</p>` : ''}
       ${endpointHtml}
       ${tagsHtml ? `<div class="server-tags">${tagsHtml}</div>` : ''}
       <div class="server-actions">
-        ${actionsHtml}
         ${linkHtml}
+        ${actionsHtml}
       </div>
     </div>
   `;
@@ -224,7 +281,6 @@ function renderServerCard(server: CatalogServer): string {
 // Actions
 async function loadCatalog(force = false): Promise<void> {
   isLoading = true;
-  refreshBtn.classList.add('loading');
   renderServers();
 
   try {
@@ -242,7 +298,6 @@ async function loadCatalog(force = false): Promise<void> {
     showToast('Failed to load catalog', 'error');
   } finally {
     isLoading = false;
-    refreshBtn.classList.remove('loading');
     renderProviderStatus();
     renderServers();
   }
@@ -267,6 +322,14 @@ async function addToHarbor(name: string, url: string): Promise<void> {
   }
 }
 
+// Update filter pills UI
+function updateFilterPillsUI(): void {
+  filterPillsContainer.querySelectorAll('.filter-pill').forEach(pill => {
+    const filter = (pill as HTMLElement).dataset.filter;
+    pill.classList.toggle('active', filter === activeFilter);
+  });
+}
+
 // Event listeners
 let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
@@ -275,15 +338,19 @@ searchInput.addEventListener('input', () => {
   searchDebounce = setTimeout(renderServers, 200);
 });
 
-remoteOnlyCheckbox.addEventListener('change', () => {
-  remoteOnlyFilter = remoteOnlyCheckbox.checked;
-  remoteOnlyToggle.classList.toggle('active', remoteOnlyFilter);
-  renderServers();
+// Filter pills click handler
+filterPillsContainer.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  const pill = target.closest('.filter-pill') as HTMLElement;
+  if (pill && pill.dataset.filter) {
+    activeFilter = pill.dataset.filter;
+    updateFilterPillsUI();
+    renderServers();
+  }
 });
 
-refreshBtn.addEventListener('click', () => {
-  loadCatalog(true);
-});
+// Theme toggle
+themeToggleBtn.addEventListener('click', toggleTheme);
 
 // Initialize
 loadCatalog();
