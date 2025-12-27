@@ -8,6 +8,10 @@
     "storage",
     "tabs"
   ],
+  "host_permissions": [
+    "https://registry.modelcontextprotocol.io/*",
+    "https://raw.githubusercontent.com/*"
+  ],
   "background": {
     "scripts": ["background.js"],
     "type": "module"

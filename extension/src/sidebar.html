@@ -335,6 +335,238 @@
     .collapsible-content.collapsed {
       display: none;
     }
+
+    /* Directory styles */
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .directory-badge {
+      background: var(--accent-blue);
+      color: var(--bg-primary);
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .directory-search {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .directory-search input {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 11px;
+    }
+
+    .directory-search input:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+
+    .btn-icon {
+      padding: 6px 10px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.15s ease;
+    }
+
+    .btn-icon:hover {
+      background: var(--border);
+      color: var(--text-primary);
+    }
+
+    .btn-icon.loading {
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .directory-filters {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .filter-chip {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font-size: 10px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .filter-chip:has(input:checked) {
+      background: rgba(122, 162, 247, 0.15);
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+    }
+
+    .filter-chip input {
+      display: none;
+    }
+
+    .directory-list {
+      max-height: 400px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .directory-loading {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-muted);
+    }
+
+    .directory-item {
+      background: var(--bg-tertiary);
+      border-radius: 6px;
+      padding: 10px;
+      border-left: 3px solid transparent;
+    }
+
+    .directory-item.has-endpoint {
+      border-left-color: var(--accent-green);
+    }
+
+    .directory-item.no-endpoint {
+      border-left-color: var(--text-muted);
+    }
+
+    .directory-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .directory-item-name {
+      font-weight: 600;
+      font-size: 11px;
+      color: var(--text-primary);
+      word-break: break-word;
+    }
+
+    .directory-item-source {
+      font-size: 9px;
+      padding: 2px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+
+    .directory-item-source.registry {
+      background: rgba(122, 162, 247, 0.2);
+      color: var(--accent-blue);
+    }
+
+    .directory-item-source.github_awesome {
+      background: rgba(224, 175, 104, 0.2);
+      color: var(--accent-yellow);
+    }
+
+    .directory-item-source.manual_seed {
+      background: rgba(125, 207, 255, 0.2);
+      color: var(--accent-cyan);
+    }
+
+    .directory-item-description {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .directory-item-endpoint {
+      font-size: 9px;
+      color: var(--accent-green);
+      margin-bottom: 6px;
+      word-break: break-all;
+    }
+
+    .directory-item-no-endpoint {
+      font-size: 9px;
+      color: var(--text-muted);
+      font-style: italic;
+      margin-bottom: 6px;
+    }
+
+    .directory-item-tags {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+
+    .directory-tag {
+      font-size: 9px;
+      padding: 1px 5px;
+      background: rgba(86, 95, 137, 0.3);
+      color: var(--text-muted);
+      border-radius: 3px;
+    }
+
+    .directory-item-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .directory-item-links {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .directory-link {
+      font-size: 9px;
+      color: var(--accent-cyan);
+      text-decoration: none;
+    }
+
+    .directory-link:hover {
+      text-decoration: underline;
+    }
+
+    .directory-empty {
+      text-align: center;
+      padding: 30px 20px;
+      color: var(--text-muted);
+    }
+
+    .directory-empty-icon {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
   </style>
 </head>
 <body>
@@ -398,6 +630,41 @@
       <div class="section-title">Tools Response</div>
       <div class="message-content">
         <pre id="tools-response"></pre>
+      </div>
+    </div>
+
+    <!-- Directory Section -->
+    <div class="card">
+      <div class="section-title">
+        <span>Directory</span>
+        <span class="directory-badge" id="directory-count"></span>
+      </div>
+      
+      <!-- Search -->
+      <div class="directory-search">
+        <input type="text" id="directory-search" placeholder="Search servers...">
+        <button id="directory-refresh" class="btn-icon" title="Refresh">↻</button>
+      </div>
+      
+      <!-- Source Filters -->
+      <div class="directory-filters" id="directory-filters">
+        <label class="filter-chip">
+          <input type="checkbox" data-source="manual_seed" checked>
+          <span>Seed</span>
+        </label>
+        <label class="filter-chip">
+          <input type="checkbox" data-source="registry" checked>
+          <span>Registry</span>
+        </label>
+        <label class="filter-chip">
+          <input type="checkbox" data-source="github_awesome" checked>
+          <span>Awesome</span>
+        </label>
+      </div>
+
+      <!-- Directory List -->
+      <div id="directory-list" class="directory-list">
+        <div class="directory-loading">Loading directory...</div>
       </div>
     </div>
   </div>

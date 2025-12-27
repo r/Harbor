@@ -273,6 +273,51 @@ browser.runtime.onMessage.addListener(
       });
     }
 
+    // Proxy fetch requests from sidebar (for CORS)
+    if (msg.type === 'proxy_fetch') {
+      console.log('[proxy_fetch] Received request for:', msg.url);
+      return (async () => {
+        try {
+          console.log('[proxy_fetch] Starting fetch...');
+          const response = await fetch(msg.url as string, {
+            method: (msg.method as string) || 'GET',
+            headers: (msg.headers as Record<string, string>) || {},
+          });
+          
+          console.log('[proxy_fetch] Response status:', response.status);
+          
+          if (!response.ok) {
+            console.log('[proxy_fetch] Response not ok:', response.statusText);
+            return { 
+              ok: false, 
+              status: response.status, 
+              error: response.statusText 
+            };
+          }
+          
+          const contentType = response.headers.get('content-type') || '';
+          let data: string | object;
+          
+          if (contentType.includes('application/json')) {
+            data = await response.json();
+            console.log('[proxy_fetch] Parsed JSON, keys:', Object.keys(data as object));
+          } else {
+            data = await response.text();
+            console.log('[proxy_fetch] Got text, length:', (data as string).length);
+          }
+          
+          return { ok: true, status: response.status, data };
+        } catch (err) {
+          console.error('[proxy_fetch] Error:', err);
+          return { 
+            ok: false, 
+            status: 0, 
+            error: err instanceof Error ? err.message : 'Fetch failed' 
+          };
+        }
+      })();
+    }
+
     return Promise.resolve(undefined);
   }
 );

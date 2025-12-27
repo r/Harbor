@@ -1,4 +1,5 @@
 import browser from 'webextension-polyfill';
+import { directoryManager, CatalogServer } from './directory';
 
 interface MCPServer {
   server_id: string;
@@ -36,7 +37,17 @@ const responseContent = document.getElementById('response-content') as HTMLDivEl
 const toolsCard = document.getElementById('tools-card') as HTMLDivElement;
 const toolsResponse = document.getElementById('tools-response') as HTMLPreElement;
 
+// Directory elements
+const directorySearchInput = document.getElementById('directory-search') as HTMLInputElement;
+const directoryRefreshBtn = document.getElementById('directory-refresh') as HTMLButtonElement;
+const directoryFilters = document.getElementById('directory-filters') as HTMLDivElement;
+const directoryListEl = document.getElementById('directory-list') as HTMLDivElement;
+const directoryCountEl = document.getElementById('directory-count') as HTMLSpanElement;
+
 let servers: MCPServer[] = [];
+let catalogServers: CatalogServer[] = [];
+let directoryLoading = false;
+let activeSources: Set<string> = new Set(['manual_seed', 'registry', 'github_awesome']);
 let selectedServerId: string | null = null;
 
 function formatJson(obj: unknown): string {
@@ -290,6 +301,166 @@ browser.runtime.onMessage.addListener((message: unknown) => {
   // Each action (add/remove/connect/disconnect) explicitly calls loadServers() after completion.
 });
 
+// Directory functions
+function getSourceLabel(source: string): string {
+  switch (source) {
+    case 'registry':
+      return 'Registry';
+    case 'github_awesome':
+      return 'Awesome';
+    case 'manual_seed':
+      return 'Seed';
+    default:
+      return source;
+  }
+}
+
+function renderDirectoryList(): void {
+  if (directoryLoading) {
+    directoryListEl.innerHTML = '<div class="directory-loading">Loading directory...</div>';
+    return;
+  }
+
+  // Filter by active sources and search query
+  const searchQuery = directorySearchInput.value.toLowerCase().trim();
+  const filtered = catalogServers.filter((server) => {
+    // Source filter
+    if (!activeSources.has(server.source)) return false;
+    
+    // Search filter
+    if (searchQuery) {
+      return (
+        server.name.toLowerCase().includes(searchQuery) ||
+        server.description.toLowerCase().includes(searchQuery) ||
+        server.tags.some((t) => t.toLowerCase().includes(searchQuery))
+      );
+    }
+    return true;
+  });
+
+  // Update count badge
+  directoryCountEl.textContent = String(filtered.length);
+
+  if (filtered.length === 0) {
+    directoryListEl.innerHTML = `
+      <div class="directory-empty">
+        <div class="directory-empty-icon">📭</div>
+        <div>${searchQuery ? 'No servers match your search' : 'No servers in directory'}</div>
+      </div>
+    `;
+    return;
+  }
+
+  directoryListEl.innerHTML = filtered
+    .map((server) => {
+      const hasEndpoint = server.endpointUrl && server.endpointUrl.length > 0;
+      const tagsHtml = server.tags
+        .filter((t) => t !== 'installable_only')
+        .slice(0, 3)
+        .map((t) => `<span class="directory-tag">${escapeHtml(t)}</span>`)
+        .join('');
+
+      const linksHtml = [];
+      if (server.repository) {
+        linksHtml.push(`<a href="${escapeHtml(server.repository)}" target="_blank" class="directory-link">GitHub</a>`);
+      }
+      if (server.homepage) {
+        linksHtml.push(`<a href="${escapeHtml(server.homepage)}" target="_blank" class="directory-link">Homepage</a>`);
+      }
+
+      return `
+        <div class="directory-item ${hasEndpoint ? 'has-endpoint' : 'no-endpoint'}">
+          <div class="directory-item-header">
+            <span class="directory-item-name">${escapeHtml(server.name)}</span>
+            <span class="directory-item-source ${server.source}">${getSourceLabel(server.source)}</span>
+          </div>
+          ${server.description ? `<div class="directory-item-description">${escapeHtml(server.description)}</div>` : ''}
+          ${
+            hasEndpoint
+              ? `<div class="directory-item-endpoint">${escapeHtml(server.endpointUrl)}</div>`
+              : `<div class="directory-item-no-endpoint">No remote endpoint published</div>`
+          }
+          ${tagsHtml ? `<div class="directory-item-tags">${tagsHtml}</div>` : ''}
+          ${linksHtml.length > 0 ? `<div class="directory-item-links">${linksHtml.join('')}</div>` : ''}
+          <div class="directory-item-actions">
+            ${
+              hasEndpoint
+                ? `<button class="btn-small btn-success directory-add-btn" data-server-id="${escapeHtml(server.id)}" data-name="${escapeHtml(server.name)}" data-url="${escapeHtml(server.endpointUrl)}">Add to Harbor</button>`
+                : `<button class="btn-small btn-secondary directory-info-btn" data-server-id="${escapeHtml(server.id)}" data-repo="${escapeHtml(server.repository || server.homepage || '')}">Install/Info</button>`
+            }
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+
+  // Add event listeners
+  directoryListEl.querySelectorAll('.directory-add-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const el = btn as HTMLButtonElement;
+      const name = el.dataset.name!;
+      const url = el.dataset.url!;
+      await addServerFromDirectory(name, url);
+    });
+  });
+
+  directoryListEl.querySelectorAll('.directory-info-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const el = btn as HTMLButtonElement;
+      const repo = el.dataset.repo;
+      if (repo) {
+        window.open(repo, '_blank');
+      } else {
+        alert('No installation info available. Check the server documentation.');
+      }
+    });
+  });
+}
+
+async function loadDirectory(forceRefresh = false): Promise<void> {
+  directoryLoading = true;
+  renderDirectoryList();
+  directoryRefreshBtn.classList.add('loading');
+
+  try {
+    const query = directorySearchInput.value.trim();
+    if (query) {
+      catalogServers = await directoryManager.searchServers(query);
+    } else {
+      catalogServers = await directoryManager.getAllServers(forceRefresh);
+    }
+  } catch (err) {
+    console.error('Failed to load directory:', err);
+    catalogServers = [];
+  } finally {
+    directoryLoading = false;
+    directoryRefreshBtn.classList.remove('loading');
+    renderDirectoryList();
+  }
+}
+
+async function addServerFromDirectory(name: string, url: string): Promise<void> {
+  try {
+    const response = (await browser.runtime.sendMessage({
+      type: 'add_server',
+      label: name,
+      base_url: url,
+    })) as { type: string; server?: MCPServer };
+
+    if (response.type === 'add_server_result' && response.server) {
+      await loadServers();
+      // Scroll to top of server list
+      serverListEl.scrollIntoView({ behavior: 'smooth' });
+    } else if (response.type === 'error') {
+      const error = response as unknown as { error: { message: string } };
+      alert(`Failed to add server: ${error.error.message}`);
+    }
+  } catch (err) {
+    console.error('Failed to add server from directory:', err);
+    alert('Failed to add server');
+  }
+}
+
 // Initialize
 async function init(): Promise<void> {
   try {
@@ -304,6 +475,9 @@ async function init(): Promise<void> {
   }
 
   await loadServers();
+  
+  // Load directory in background
+  loadDirectory();
 }
 
 // Button handlers
@@ -337,6 +511,37 @@ responseHeader.addEventListener('click', () => {
   responseContent.classList.toggle('collapsed');
   const icon = responseHeader.querySelector('.collapse-icon') as HTMLSpanElement;
   icon.textContent = responseContent.classList.contains('collapsed') ? '▶' : '▼';
+});
+
+// Directory event handlers
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+directorySearchInput.addEventListener('input', () => {
+  // Debounce search
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
+  searchDebounceTimer = setTimeout(() => {
+    loadDirectory();
+  }, 300);
+});
+
+directoryRefreshBtn.addEventListener('click', () => {
+  loadDirectory(true);
+});
+
+// Filter checkboxes
+directoryFilters.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+  checkbox.addEventListener('change', (e) => {
+    const input = e.target as HTMLInputElement;
+    const source = input.dataset.source!;
+    if (input.checked) {
+      activeSources.add(source);
+    } else {
+      activeSources.delete(source);
+    }
+    renderDirectoryList();
+  });
 });
 
 init();
