@@ -289,12 +289,59 @@ Error codes:
                                                  └─────────────────────┘
 ```
 
+## Directory (Catalog) Dev Notes
+
+The Harbor Directory provides a browsable catalog of MCP servers from multiple sources.
+
+### Data Sources
+
+1. **Official Registry** (`official_registry`) - Primary source of truth
+   - API: `https://registry.modelcontextprotocol.io/v0/servers`
+   - Supports pagination and search
+
+2. **GitHub Awesome List** (`github_awesome`) - Community curated
+   - Source: `https://raw.githubusercontent.com/wong2/awesome-mcp-servers/main/README.md`
+   - Best-effort markdown parsing
+
+3. **mcpservers.org** - Not implemented (no stable API)
+
+### Caching
+
+- **TTL**: 10 minutes
+- **Storage keys**:
+  - `catalog.cache.official_registry.v1`
+  - `catalog.cache.github_awesome.v1`
+- **Force refresh**: Click the ↻ button or use `catalog_refresh` message
+
+### Background Messages
+
+```typescript
+// Get catalog (uses cache if fresh)
+{ type: 'catalog_get', force?: boolean }
+
+// Force refresh all providers
+{ type: 'catalog_refresh' }
+
+// Search with query
+{ type: 'catalog_search', query: string, force?: boolean }
+```
+
+### Quick Smoke Test
+
+1. Load the extension
+2. Click "Open Directory" in the sidebar
+3. Verify provider status shows counts (e.g., "Registry: 55")
+4. Toggle "Remote Only" to filter connectable servers
+5. Click "Add to Harbor" on a remote server
+6. Verify it appears in the sidebar server list
+
 ## Roadmap
 
 - [x] v0: Native messaging hello/pong
 - [x] v0.1: Server management (add/remove/connect/disconnect)
-- [ ] v0.2: Full MCP protocol implementation
-- [ ] v0.3: Tool invocation UI
+- [x] v0.2: Directory with catalog providers
+- [ ] v0.3: Full MCP protocol implementation
+- [ ] v0.4: Tool invocation UI
 - [ ] v1.0: Production-ready release
 
 ## License

@@ -16,6 +16,7 @@ export default defineConfig({
       input: {
         background: resolve(__dirname, 'src/background.ts'),
         sidebar: resolve(__dirname, 'src/sidebar.ts'),
+        directory: resolve(__dirname, 'src/directory.ts'),
       },
       output: {
         entryFileNames: '[name].js',
@@ -34,6 +35,13 @@ export default defineConfig({
           'utf-8'
         );
         writeFileSync(resolve(__dirname, 'dist/sidebar.html'), sidebarHtml);
+
+        // Copy directory.html
+        const directoryHtml = readFileSync(
+          resolve(__dirname, 'src/directory.html'),
+          'utf-8'
+        );
+        writeFileSync(resolve(__dirname, 'dist/directory.html'), directoryHtml);
 
         // Copy manifest.json
         const manifest = readFileSync(

@@ -1,458 +1,284 @@
+// Harbor Directory Page
 import browser from 'webextension-polyfill';
+import type { CatalogServer, ProviderStatus, CatalogResponse } from './catalog/types';
 
-// Types
-export interface CatalogServer {
-  id: string;
-  name: string;
-  description: string;
-  endpointUrl: string;
-  homepage?: string;
-  repository?: string;
-  tags: string[];
-  source: 'registry' | 'github_awesome' | 'manual_seed';
+// DOM Elements
+const searchInput = document.getElementById('search-input') as HTMLInputElement;
+const remoteOnlyCheckbox = document.getElementById('remote-only-checkbox') as HTMLInputElement;
+const remoteOnlyToggle = document.getElementById('remote-only-toggle') as HTMLLabelElement;
+const refreshBtn = document.getElementById('refresh-btn') as HTMLButtonElement;
+const providerStatusEl = document.getElementById('provider-status') as HTMLDivElement;
+const mainContent = document.getElementById('main-content') as HTMLElement;
+
+// State
+let allServers: CatalogServer[] = [];
+let providerStatus: ProviderStatus[] = [];
+let isLoading = false;
+let remoteOnlyFilter = false;
+
+// Utility functions
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
+function showToast(message: string, type: 'success' | 'error' = 'success'): void {
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
 }
 
-interface RegistryServerEntry {
-  server: {
-    name: string;
-    description?: string;
-    repository?: string;
-    homepage?: string;
-    packages?: Array<{
-      transport?: string[];
-      registry_config?: {
-        url?: string;
-      };
-    }>;
-    [key: string]: unknown;
+async function copyToClipboard(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Copied to clipboard!');
+  } catch {
+    showToast('Failed to copy', 'error');
+  }
+}
+
+// Provider status rendering
+function renderProviderStatus(): void {
+  if (providerStatus.length === 0) {
+    providerStatusEl.innerHTML = '';
+    return;
+  }
+
+  const providerNames: Record<string, string> = {
+    official_registry: 'Official Registry',
+    github_awesome: 'GitHub Awesome',
+    mcpservers_org: 'mcpservers.org',
   };
-  _meta?: unknown;
-}
 
-interface RegistryResponse {
-  servers: RegistryServerEntry[];
-  cursor?: string;
-}
-
-// Cache configuration
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const CACHE_KEYS = {
-  registry: 'catalog.cache.registry.v1',
-  githubAwesome: 'catalog.cache.githubawesome.v1',
-  manualSeed: 'catalog.cache.manualseed.v1',
-} as const;
-
-// Proxy fetch through background script to avoid CORS issues
-interface ProxyFetchResponse {
-  ok: boolean;
-  status: number;
-  data?: string | object;
-  error?: string;
-}
-
-async function proxyFetch(url: string): Promise<ProxyFetchResponse> {
-  return browser.runtime.sendMessage({
-    type: 'proxy_fetch',
-    url,
-    method: 'GET',
-  }) as Promise<ProxyFetchResponse>;
-}
-
-// Provider base class
-abstract class CatalogProvider {
-  abstract name: string;
-  abstract cacheKey: string;
-  abstract fetchServers(query?: string): Promise<CatalogServer[]>;
-
-  async getCachedOrFetch(query?: string): Promise<CatalogServer[]> {
-    const cacheKey = query ? `${this.cacheKey}:${query}` : this.cacheKey;
-    
-    try {
-      const cached = await browser.storage.local.get(cacheKey);
-      const entry = cached[cacheKey] as CacheEntry<CatalogServer[]> | undefined;
+  providerStatusEl.innerHTML = providerStatus
+    .map(status => {
+      const name = providerNames[status.id] || status.id;
+      const statusClass = status.ok ? 'ok' : 'error';
       
-      if (entry && Date.now() - entry.timestamp < CACHE_TTL_MS) {
-        console.log(`[${this.name}] Using cached data`);
-        return entry.data;
-      }
-    } catch (e) {
-      console.warn(`[${this.name}] Cache read error:`, e);
-    }
-
-    console.log(`[${this.name}] Fetching fresh data...`);
-    const servers = await this.fetchServers(query);
-    
-    try {
-      await browser.storage.local.set({
-        [cacheKey]: {
-          data: servers,
-          timestamp: Date.now(),
-        } as CacheEntry<CatalogServer[]>,
-      });
-    } catch (e) {
-      console.warn(`[${this.name}] Cache write error:`, e);
-    }
-
-    return servers;
-  }
-
-  async clearCache(): Promise<void> {
-    try {
-      const allStorage = await browser.storage.local.get(null);
-      const keysToRemove = Object.keys(allStorage).filter(k => k.startsWith(this.cacheKey));
-      if (keysToRemove.length > 0) {
-        await browser.storage.local.remove(keysToRemove);
-      }
-    } catch (e) {
-      console.warn(`[${this.name}] Cache clear error:`, e);
-    }
-  }
+      return `
+        <div class="provider-badge ${statusClass}" title="${status.error || ''}">
+          <span class="provider-dot"></span>
+          <span class="provider-name">${escapeHtml(name)}</span>
+          ${status.ok && status.count !== undefined 
+            ? `<span class="provider-count">${status.count}</span>` 
+            : ''}
+          ${status.error 
+            ? `<span class="provider-error">${escapeHtml(status.error)}</span>` 
+            : ''}
+        </div>
+      `;
+    })
+    .join('');
 }
 
-// Provider 1: Official Registry (REAL API)
-export class OfficialRegistryProvider extends CatalogProvider {
-  name = 'Official Registry';
-  cacheKey = CACHE_KEYS.registry;
-  
-  private baseUrl = 'https://registry.modelcontextprotocol.io';
-
-  async fetchServers(query?: string): Promise<CatalogServer[]> {
-    const servers: CatalogServer[] = [];
-    let cursor: string | undefined;
-    const limit = 100;
-
-    try {
-      do {
-        const params = new URLSearchParams({ limit: String(limit) });
-        if (query) {
-          params.set('search', query);
-        }
-        if (cursor) {
-          params.set('cursor', cursor);
-        }
-
-        const url = `${this.baseUrl}/v0/servers?${params}`;
-        console.log(`[${this.name}] Fetching: ${url}`);
-        
-        const response = await proxyFetch(url);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.error || 'Unknown error'}`);
-        }
-
-        const data = response.data as RegistryResponse;
-        
-        for (const entry of data.servers || []) {
-          const server = this.parseRegistryEntry(entry);
-          if (server) {
-            servers.push(server);
-          }
-        }
-
-        cursor = data.cursor;
-      } while (cursor && servers.length < 500); // Safety limit
-
-    } catch (error) {
-      console.error(`[${this.name}] Fetch error:`, error);
-      // Return empty on error - other providers may still work
-    }
-
-    return servers;
+// Main content rendering
+function renderServers(): void {
+  if (isLoading) {
+    mainContent.innerHTML = `
+      <div class="loading-state">
+        <div class="loading-spinner">⏳</div>
+        <p>Loading directory...</p>
+      </div>
+    `;
+    return;
   }
 
-  private parseRegistryEntry(entry: RegistryServerEntry): CatalogServer | null {
-    const { server } = entry;
-    if (!server?.name) return null;
+  // Filter servers
+  const query = searchInput.value.toLowerCase().trim();
+  let filtered = allServers;
 
-    // Try to find a remote endpoint URL
-    let endpointUrl = '';
-    const tags: string[] = [];
-    let hasRemoteTransport = false;
-
-    if (server.packages && Array.isArray(server.packages)) {
-      for (const pkg of server.packages) {
-        // Check for remote transports (SSE, HTTP, streamable-http)
-        // transport can be an array or a single string
-        const transports = Array.isArray(pkg.transport) 
-          ? pkg.transport 
-          : (typeof pkg.transport === 'string' ? [pkg.transport] : []);
-        
-        const remoteTransports = transports.filter(
-          (t: string) => t === 'sse' || t === 'http' || t === 'streamable-http'
-        );
-        
-        if (remoteTransports.length > 0) {
-          hasRemoteTransport = true;
-          // Check if there's a URL in registry_config
-          if (pkg.registry_config?.url) {
-            endpointUrl = pkg.registry_config.url;
-            break;
-          }
-        }
-      }
-    }
-
-    // Tag entries appropriately
-    if (!endpointUrl) {
-      tags.push('installable_only');
-      if (!hasRemoteTransport) {
-        tags.push('local_only');
-      }
-    }
-
-    return {
-      id: `registry:${server.name}`,
-      name: server.name,
-      description: server.description || '',
-      endpointUrl,
-      homepage: server.homepage,
-      repository: server.repository,
-      tags,
-      source: 'registry',
-    };
-  }
-}
-
-// Provider 2: GitHub Awesome list (BEST EFFORT)
-export class GitHubAwesomeProvider extends CatalogProvider {
-  name = 'GitHub Awesome MCP';
-  cacheKey = CACHE_KEYS.githubAwesome;
-  
-  private rawUrl = 'https://raw.githubusercontent.com/wong2/awesome-mcp-servers/main/README.md';
-
-  async fetchServers(_query?: string): Promise<CatalogServer[]> {
-    const servers: CatalogServer[] = [];
-
-    try {
-      console.log(`[${this.name}] Fetching: ${this.rawUrl}`);
-      const response = await proxyFetch(this.rawUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.error || 'Unknown error'}`);
-      }
-
-      const markdown = response.data as string;
-      servers.push(...this.parseMarkdown(markdown));
-
-    } catch (error) {
-      console.error(`[${this.name}] Fetch error:`, error);
-    }
-
-    return servers;
+  if (remoteOnlyFilter) {
+    filtered = filtered.filter(s => !s.installableOnly);
   }
 
-  private parseMarkdown(markdown: string): CatalogServer[] {
-    const servers: CatalogServer[] = [];
-    const lines = markdown.split('\n');
-    
-    let inRelevantSection = false;
-    let currentSection = '';
-
-    // Match markdown links: [text](url) or **[text](url)** - description
-    const linkPattern = /^\s*[-*]\s*\*{0,2}\[([^\]]+)\]\(([^)]+)\)\*{0,2}\s*[-–—:]?\s*(.*)/;
-    
-    for (const line of lines) {
-      // Track section headers
-      if (line.startsWith('#')) {
-        const headerMatch = line.match(/^#+\s+(.+)/);
-        if (headerMatch) {
-          currentSection = headerMatch[1].toLowerCase();
-          // Focus on server sections
-          inRelevantSection = 
-            currentSection.includes('server') ||
-            currentSection.includes('official') ||
-            currentSection.includes('tool') ||
-            currentSection.includes('resource');
-        }
-        continue;
-      }
-
-      // Skip if not in a relevant section
-      if (!inRelevantSection) continue;
-
-      // Parse list items with links
-      const match = line.match(linkPattern);
-      if (match) {
-        const [, name, href, rest] = match;
-        
-        // Clean up description - remove badges, extra links, etc.
-        let description = rest
-          .replace(/!\[.*?\]\([^)]*\)/g, '') // Remove image badges
-          .replace(/\[.*?\]\([^)]*\)/g, '') // Remove additional links
-          .replace(/<[^>]*>/g, '') // Remove HTML tags
-          .replace(/\s+/g, ' ')
-          .trim();
-
-        // Skip entries that are just navigation or categories
-        if (name.toLowerCase().includes('table of contents')) continue;
-        if (name.toLowerCase().includes('contributing')) continue;
-        if (!href.startsWith('http')) continue;
-
-        servers.push({
-          id: `github:${this.slugify(name)}`,
-          name: name.trim(),
-          description,
-          endpointUrl: '', // No remote endpoint from markdown
-          homepage: href.includes('github.com') ? undefined : href,
-          repository: href.includes('github.com') ? href : undefined,
-          tags: ['installable_only'],
-          source: 'github_awesome',
-        });
-      }
-    }
-
-    return servers;
-  }
-
-  private slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-  }
-}
-
-// Provider 3: Manual Seed (FOR TESTING)
-export class ManualSeedProvider extends CatalogProvider {
-  name = 'Manual Seed';
-  cacheKey = CACHE_KEYS.manualSeed;
-
-  async fetchServers(_query?: string): Promise<CatalogServer[]> {
-    // These are hardcoded test entries
-    return [
-      {
-        id: 'seed:demo-server',
-        name: 'Harbor Demo Server',
-        description: 'Local demo MCP server for testing Harbor functionality',
-        endpointUrl: 'http://localhost:8765',
-        tags: ['demo', 'local'],
-        source: 'manual_seed',
-      },
-      {
-        id: 'seed:example-server-1',
-        name: 'Example SSE Server',
-        description: 'Placeholder for a remote SSE-based MCP server endpoint',
-        endpointUrl: 'https://mcp.example.com/sse',
-        tags: ['placeholder', 'sse'],
-        source: 'manual_seed',
-      },
-      {
-        id: 'seed:example-server-2',
-        name: 'Example HTTP Server',
-        description: 'Placeholder for a remote HTTP-based MCP server endpoint',
-        endpointUrl: 'https://api.example.com/mcp',
-        tags: ['placeholder', 'http'],
-        source: 'manual_seed',
-      },
-    ];
-  }
-}
-
-// Directory Manager - aggregates all providers
-export class DirectoryManager {
-  private providers: CatalogProvider[];
-
-  constructor() {
-    this.providers = [
-      new ManualSeedProvider(), // Fast, always works
-      new OfficialRegistryProvider(), // Real API
-      new GitHubAwesomeProvider(), // Best effort markdown parsing
-    ];
-  }
-
-  async getAllServers(forceRefresh = false): Promise<CatalogServer[]> {
-    if (forceRefresh) {
-      await Promise.all(this.providers.map(p => p.clearCache()));
-    }
-
-    const results = await Promise.allSettled(
-      this.providers.map(p => p.getCachedOrFetch())
+  if (query) {
+    filtered = filtered.filter(s =>
+      s.name.toLowerCase().includes(query) ||
+      (s.description?.toLowerCase().includes(query)) ||
+      s.tags.some(t => t.toLowerCase().includes(query))
     );
-
-    const allServers: CatalogServer[] = [];
-    const seenIds = new Set<string>();
-
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        for (const server of result.value) {
-          // Deduplicate by id
-          if (!seenIds.has(server.id)) {
-            seenIds.add(server.id);
-            allServers.push(server);
-          }
-        }
-      }
-    }
-
-    // Sort: entries with endpoints first, then by name
-    allServers.sort((a, b) => {
-      if (a.endpointUrl && !b.endpointUrl) return -1;
-      if (!a.endpointUrl && b.endpointUrl) return 1;
-      return a.name.localeCompare(b.name);
-    });
-
-    return allServers;
   }
 
-  async searchServers(query: string): Promise<CatalogServer[]> {
-    const queryLower = query.toLowerCase().trim();
-    if (!queryLower) {
-      return this.getAllServers();
-    }
-
-    // For registry, use the search endpoint
-    const registryProvider = this.providers.find(
-      p => p instanceof OfficialRegistryProvider
-    ) as OfficialRegistryProvider | undefined;
-
-    const results = await Promise.allSettled([
-      // Registry search via API
-      registryProvider?.getCachedOrFetch(query) || Promise.resolve([]),
-      // Other providers: fetch all then filter client-side
-      ...this.providers
-        .filter(p => !(p instanceof OfficialRegistryProvider))
-        .map(async p => {
-          const servers = await p.getCachedOrFetch();
-          return servers.filter(
-            s =>
-              s.name.toLowerCase().includes(queryLower) ||
-              s.description.toLowerCase().includes(queryLower) ||
-              s.tags.some(t => t.toLowerCase().includes(queryLower))
-          );
-        }),
-    ]);
-
-    const allServers: CatalogServer[] = [];
-    const seenIds = new Set<string>();
-
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        for (const server of result.value) {
-          if (!seenIds.has(server.id)) {
-            seenIds.add(server.id);
-            allServers.push(server);
-          }
-        }
-      }
-    }
-
-    allServers.sort((a, b) => {
-      if (a.endpointUrl && !b.endpointUrl) return -1;
-      if (!a.endpointUrl && b.endpointUrl) return 1;
-      return a.name.localeCompare(b.name);
-    });
-
-    return allServers;
+  if (filtered.length === 0) {
+    mainContent.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <p class="empty-title">${query ? 'No servers match your search' : 'No servers found'}</p>
+        <p>Try adjusting your filters or refreshing the catalog.</p>
+      </div>
+    `;
+    return;
   }
 
-  async clearAllCaches(): Promise<void> {
-    await Promise.all(this.providers.map(p => p.clearCache()));
+  // Split into remote and installable-only
+  const remoteServers = filtered.filter(s => !s.installableOnly);
+  const installableServers = filtered.filter(s => s.installableOnly);
+
+  let html = '';
+
+  // Remote / Connectable section
+  if (remoteServers.length > 0) {
+    html += `
+      <div class="section-header">
+        <span class="section-title">🌐 Remote / Connectable</span>
+        <span class="section-count">${remoteServers.length}</span>
+      </div>
+      <div class="server-grid">
+        ${remoteServers.map(renderServerCard).join('')}
+      </div>
+    `;
+  }
+
+  // Installable-only section (if not filtered out)
+  if (!remoteOnlyFilter && installableServers.length > 0) {
+    html += `
+      <div class="section-header">
+        <span class="section-title">📦 Installable Only</span>
+        <span class="section-count">${installableServers.length}</span>
+      </div>
+      <div class="server-grid">
+        ${installableServers.map(renderServerCard).join('')}
+      </div>
+    `;
+  }
+
+  mainContent.innerHTML = html;
+
+  // Attach event listeners
+  mainContent.querySelectorAll('.btn-add').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const el = btn as HTMLButtonElement;
+      const name = el.dataset.name!;
+      const url = el.dataset.url!;
+      addToHarbor(name, url);
+    });
+  });
+
+  mainContent.querySelectorAll('.btn-copy').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const el = btn as HTMLButtonElement;
+      copyToClipboard(el.dataset.url!);
+    });
+  });
+}
+
+function renderServerCard(server: CatalogServer): string {
+  const cardClass = server.installableOnly ? 'installable' : 'remote';
+  const sourceClass = server.source;
+  const sourceLabel = server.source === 'official_registry' ? 'Registry' : 'Awesome';
+  
+  const tagsHtml = server.tags
+    .filter(t => !['remote', 'installable_only'].includes(t))
+    .slice(0, 4)
+    .map(t => `<span class="server-tag">${escapeHtml(t)}</span>`)
+    .join('');
+
+  const endpointHtml = server.endpointUrl
+    ? `
+      <div class="server-endpoint">
+        <span class="server-endpoint-url">${escapeHtml(server.endpointUrl)}</span>
+        <button class="btn btn-small btn-copy" data-url="${escapeHtml(server.endpointUrl)}" title="Copy URL">📋</button>
+      </div>
+    `
+    : `<p class="server-no-endpoint">No remote endpoint published</p>`;
+
+  const actionsHtml = server.endpointUrl
+    ? `
+      <button class="btn btn-small btn-add" data-name="${escapeHtml(server.name)}" data-url="${escapeHtml(server.endpointUrl)}">
+        Add to Harbor
+      </button>
+    `
+    : '';
+
+  const linkHtml = server.homepageUrl
+    ? `<a href="${escapeHtml(server.homepageUrl)}" target="_blank" class="server-link">
+        ${server.homepageUrl.includes('github.com') ? 'GitHub' : 'Homepage'} ↗
+      </a>`
+    : '';
+
+  return `
+    <div class="server-card ${cardClass}">
+      <div class="server-header">
+        <span class="server-name">${escapeHtml(server.name)}</span>
+        <span class="server-source ${sourceClass}">${sourceLabel}</span>
+      </div>
+      ${server.description ? `<p class="server-description">${escapeHtml(server.description)}</p>` : ''}
+      ${endpointHtml}
+      ${tagsHtml ? `<div class="server-tags">${tagsHtml}</div>` : ''}
+      <div class="server-actions">
+        ${actionsHtml}
+        ${linkHtml}
+      </div>
+    </div>
+  `;
+}
+
+// Actions
+async function loadCatalog(force = false): Promise<void> {
+  isLoading = true;
+  refreshBtn.classList.add('loading');
+  renderServers();
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: force ? 'catalog_refresh' : 'catalog_get',
+      force,
+    }) as CatalogResponse;
+
+    allServers = response.servers || [];
+    providerStatus = response.providerStatus || [];
+    
+    console.log(`[Directory] Loaded ${allServers.length} servers from ${providerStatus.length} providers`);
+  } catch (error) {
+    console.error('[Directory] Failed to load catalog:', error);
+    showToast('Failed to load catalog', 'error');
+  } finally {
+    isLoading = false;
+    refreshBtn.classList.remove('loading');
+    renderProviderStatus();
+    renderServers();
   }
 }
 
-// Singleton instance
-export const directoryManager = new DirectoryManager();
+async function addToHarbor(name: string, url: string): Promise<void> {
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'add_server',
+      label: name,
+      base_url: url,
+    }) as { type: string; server?: unknown; error?: { message: string } };
 
+    if (response.type === 'add_server_result' && response.server) {
+      showToast(`Added "${name}" to Harbor!`);
+    } else if (response.type === 'error' && response.error) {
+      showToast(`Failed: ${response.error.message}`, 'error');
+    }
+  } catch (error) {
+    console.error('[Directory] Failed to add server:', error);
+    showToast('Failed to add server', 'error');
+  }
+}
+
+// Event listeners
+let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+searchInput.addEventListener('input', () => {
+  if (searchDebounce) clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(renderServers, 200);
+});
+
+remoteOnlyCheckbox.addEventListener('change', () => {
+  remoteOnlyFilter = remoteOnlyCheckbox.checked;
+  remoteOnlyToggle.classList.toggle('active', remoteOnlyFilter);
+  renderServers();
+});
+
+refreshBtn.addEventListener('click', () => {
+  loadCatalog(true);
+});
+
+// Initialize
+loadCatalog();

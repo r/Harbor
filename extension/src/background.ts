@@ -1,4 +1,5 @@
 import browser from 'webextension-polyfill';
+import { catalogManager } from './catalog/providers';
 
 const NATIVE_HOST_NAME = 'com.harbor.bridge';
 
@@ -271,6 +272,25 @@ browser.runtime.onMessage.addListener(
         request_id: generateRequestId(),
         server_id: msg.server_id as string,
       });
+    }
+
+    // Catalog messages
+    if (msg.type === 'catalog_get') {
+      const force = msg.force === true;
+      console.log('[catalog] Getting catalog, force:', force);
+      return catalogManager.getAll(force);
+    }
+
+    if (msg.type === 'catalog_refresh') {
+      console.log('[catalog] Forcing refresh');
+      return catalogManager.getAll(true);
+    }
+
+    if (msg.type === 'catalog_search') {
+      const query = (msg.query as string) || '';
+      const force = msg.force === true;
+      console.log('[catalog] Searching:', query, 'force:', force);
+      return catalogManager.search(query, force);
     }
 
     // Proxy fetch requests from sidebar (for CORS)
