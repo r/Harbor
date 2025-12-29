@@ -14,11 +14,13 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0"
+    "better-sqlite3": "^11.7.0",
+    "drizzle-orm": "^0.45.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.2",
+    "drizzle-kit": "^0.31.8",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
@@ -26,4 +28,3 @@
     "node": ">=18.0.0"
   }
 }
-

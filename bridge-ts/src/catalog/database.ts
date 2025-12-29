@@ -1,13 +1,17 @@
 /**
- * SQLite database for persistent catalog storage.
+ * SQLite database for persistent catalog storage using Drizzle ORM.
  */
 
 import Database from 'better-sqlite3';
+import { drizzle, BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import { eq, like, or, desc, asc, and, ne, sql, notInArray } from 'drizzle-orm';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { CatalogServer } from '../types.js';
 import { log } from '../native-messaging.js';
+import * as schema from './schema.js';
+import { servers, providerStatus, Server } from './schema.js';
 
 const DB_DIR = join(homedir(), '.harbor');
 const DB_PATH = join(DB_DIR, 'catalog.db');
@@ -22,7 +26,7 @@ const SCORE_HAS_DESCRIPTION = 50;
 const SCORE_HAS_REPO = 25;
 const SCORE_RECENT_UPDATE = 100;
 
-// Staleness thresholds
+// Staleness threshold
 const STALE_THRESHOLD_HOURS = 1;
 
 export interface ServerChange {
@@ -43,29 +47,24 @@ function computePriorityScore(
 ): number {
   let score = 0;
 
-  // Remote endpoint is most important
   if (endpointUrl) {
     score += SCORE_REMOTE_ENDPOINT;
   } else if (tags.includes('remote_capable')) {
     score += SCORE_REMOTE_CAPABLE;
   }
 
-  // Featured servers
   if (isFeatured || tags.includes('featured')) {
     score += SCORE_FEATURED;
   }
 
-  // Official tag
   if (tags.includes('official')) {
     score += SCORE_OFFICIAL_TAG;
   }
 
-  // Official registry gets priority
   if (source === 'official_registry') {
     score += SCORE_OFFICIAL_SOURCE;
   }
 
-  // Has useful metadata
   if (description) {
     score += SCORE_HAS_DESCRIPTION;
   }
@@ -73,10 +72,8 @@ function computePriorityScore(
     score += SCORE_HAS_REPO;
   }
 
-  // Popularity (cap at 500)
   score += Math.min(popularityScore, 500);
 
-  // Recent updates
   if (lastUpdatedAt) {
     const daysAgo = (Date.now() - lastUpdatedAt) / 86400000;
     if (daysAgo < 7) {
@@ -88,17 +85,20 @@ function computePriorityScore(
 }
 
 export class CatalogDatabase {
-  private db: Database.Database;
+  private sqlite: Database.Database;
+  private db: BetterSQLite3Database<typeof schema>;
 
   constructor() {
     mkdirSync(DB_DIR, { recursive: true });
-    this.db = new Database(DB_PATH);
+    this.sqlite = new Database(DB_PATH);
+    this.db = drizzle(this.sqlite, { schema });
     this.initDatabase();
-    log('[CatalogDatabase] Initialized');
+    log('[CatalogDatabase] Initialized with Drizzle ORM');
   }
 
   private initDatabase(): void {
-    this.db.exec(`
+    // Create tables if they don't exist
+    this.sqlite.exec(`
       CREATE TABLE IF NOT EXISTS servers (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -110,14 +110,11 @@ export class CatalogDatabase {
         repository_url TEXT DEFAULT '',
         tags TEXT DEFAULT '[]',
         packages TEXT DEFAULT '[]',
-        
         first_seen_at REAL NOT NULL,
         last_seen_at REAL NOT NULL,
         last_updated_at REAL,
-        
         is_removed INTEGER DEFAULT 0,
         removed_at REAL,
-        
         is_featured INTEGER DEFAULT 0,
         popularity_score INTEGER DEFAULT 0,
         priority_score INTEGER DEFAULT 0
@@ -150,89 +147,68 @@ export class CatalogDatabase {
     source?: string;
     limit?: number;
   } = {}): CatalogServer[] {
-    let query = 'SELECT * FROM servers WHERE 1=1';
-    const params: unknown[] = [];
-
+    const conditions = [];
+    
     if (!options.includeRemoved) {
-      query += ' AND is_removed = 0';
+      conditions.push(eq(servers.isRemoved, false));
     }
-
+    
     if (options.remoteOnly) {
-      query += " AND endpoint_url != ''";
+      conditions.push(ne(servers.endpointUrl, ''));
     }
-
+    
     if (options.source) {
-      query += ' AND source = ?';
-      params.push(options.source);
+      conditions.push(eq(servers.source, options.source));
     }
 
-    query += ' ORDER BY priority_score DESC, name ASC';
+    let query = this.db
+      .select()
+      .from(servers)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(servers.priorityScore), asc(servers.name));
 
     if (options.limit) {
-      query += ' LIMIT ?';
-      params.push(options.limit);
+      query = query.limit(options.limit) as typeof query;
     }
 
-    const stmt = this.db.prepare(query);
-    const rows = stmt.all(...params) as Record<string, unknown>[];
-
+    const rows = query.all();
     return rows.map(row => this.rowToServer(row));
   }
 
   searchServers(query: string, limit: number = 100): CatalogServer[] {
     const searchTerm = `%${query}%`;
-    const stmt = this.db.prepare(`
-      SELECT * FROM servers 
-      WHERE is_removed = 0 
-        AND (name LIKE ? OR description LIKE ?)
-      ORDER BY priority_score DESC
-      LIMIT ?
-    `);
+    
+    const rows = this.db
+      .select()
+      .from(servers)
+      .where(
+        and(
+          eq(servers.isRemoved, false),
+          or(
+            like(servers.name, searchTerm),
+            like(servers.description, searchTerm)
+          )
+        )
+      )
+      .orderBy(desc(servers.priorityScore))
+      .limit(limit)
+      .all();
 
-    const rows = stmt.all(searchTerm, searchTerm, limit) as Record<string, unknown>[];
     return rows.map(row => this.rowToServer(row));
   }
 
-  upsertServers(servers: CatalogServer[], source: string): ServerChange[] {
+  upsertServers(catalogServers: CatalogServer[], source: string): ServerChange[] {
     const changes: ServerChange[] = [];
     const now = Date.now();
 
-    const selectStmt = this.db.prepare('SELECT * FROM servers WHERE id = ?');
-    const insertStmt = this.db.prepare(`
-      INSERT INTO servers (
-        id, name, source, endpoint_url, installable_only,
-        description, homepage_url, repository_url, tags, packages,
-        first_seen_at, last_seen_at, last_updated_at,
-        is_featured, popularity_score, priority_score
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    const updateStmt = this.db.prepare(`
-      UPDATE servers SET
-        name = ?,
-        endpoint_url = ?,
-        installable_only = ?,
-        description = ?,
-        homepage_url = ?,
-        repository_url = ?,
-        tags = ?,
-        packages = ?,
-        last_seen_at = ?,
-        last_updated_at = ?,
-        is_removed = 0,
-        removed_at = NULL,
-        is_featured = ?,
-        popularity_score = ?,
-        priority_score = ?
-      WHERE id = ?
-    `);
+    for (const server of catalogServers) {
+      const existing = this.db
+        .select()
+        .from(servers)
+        .where(eq(servers.id, server.id))
+        .get();
 
-    for (const server of servers) {
-      const existing = selectStmt.get(server.id) as Record<string, unknown> | undefined;
-      
       const tags = server.tags;
-      const tagsJson = JSON.stringify(tags);
-      const packagesJson = JSON.stringify(server.packages);
-      
       const priority = computePriorityScore(
         server.endpointUrl,
         source,
@@ -245,33 +221,36 @@ export class CatalogDatabase {
       );
 
       if (!existing) {
-        // New server
-        insertStmt.run(
-          server.id,
-          server.name,
+        // New server - insert
+        this.db.insert(servers).values({
+          id: server.id,
+          name: server.name,
           source,
-          server.endpointUrl,
-          server.installableOnly ? 1 : 0,
-          server.description,
-          server.homepageUrl,
-          server.repositoryUrl,
-          tagsJson,
-          packagesJson,
-          now, now, now,
-          server.isFeatured ? 1 : 0,
-          0,
-          priority
-        );
+          endpointUrl: server.endpointUrl,
+          installableOnly: server.installableOnly,
+          description: server.description,
+          homepageUrl: server.homepageUrl,
+          repositoryUrl: server.repositoryUrl,
+          tags,
+          packages: server.packages,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          lastUpdatedAt: now,
+          isFeatured: server.isFeatured || false,
+          popularityScore: 0,
+          priorityScore: priority,
+        }).run();
+
         changes.push({ serverId: server.id, changeType: 'added' });
       } else {
-        // Existing server - check for changes
-        const wasRemoved = existing.is_removed as number;
+        // Existing server - check for changes and update
+        const wasRemoved = existing.isRemoved;
         const fieldChanges: Record<string, unknown> = {};
 
         if (existing.name !== server.name) {
           fieldChanges.name = server.name;
         }
-        if (existing.endpoint_url !== server.endpointUrl) {
+        if (existing.endpointUrl !== server.endpointUrl) {
           fieldChanges.endpointUrl = server.endpointUrl;
         }
         if (existing.description !== server.description) {
@@ -280,22 +259,26 @@ export class CatalogDatabase {
 
         const hasChanges = Object.keys(fieldChanges).length > 0;
 
-        updateStmt.run(
-          server.name,
-          server.endpointUrl,
-          server.installableOnly ? 1 : 0,
-          server.description,
-          server.homepageUrl,
-          server.repositoryUrl,
-          tagsJson,
-          packagesJson,
-          now,
-          hasChanges ? now : existing.last_updated_at,
-          server.isFeatured ? 1 : 0,
-          0,
-          priority,
-          server.id
-        );
+        this.db.update(servers)
+          .set({
+            name: server.name,
+            endpointUrl: server.endpointUrl,
+            installableOnly: server.installableOnly,
+            description: server.description,
+            homepageUrl: server.homepageUrl,
+            repositoryUrl: server.repositoryUrl,
+            tags,
+            packages: server.packages,
+            lastSeenAt: now,
+            lastUpdatedAt: hasChanges ? now : existing.lastUpdatedAt,
+            isRemoved: false,
+            removedAt: null,
+            isFeatured: server.isFeatured || false,
+            popularityScore: 0,
+            priorityScore: priority,
+          })
+          .where(eq(servers.id, server.id))
+          .run();
 
         if (wasRemoved) {
           changes.push({ serverId: server.id, changeType: 'restored' });
@@ -313,24 +296,40 @@ export class CatalogDatabase {
     const now = Date.now();
 
     // Find servers from this source that weren't seen
-    const placeholders = seenIds.size > 0 
-      ? Array(seenIds.size).fill('?').join(',')
-      : "''";
+    const seenArray = Array.from(seenIds);
     
-    const selectStmt = this.db.prepare(`
-      SELECT id FROM servers 
-      WHERE source = ? AND is_removed = 0 AND id NOT IN (${placeholders})
-    `);
+    let toRemove: { id: string }[];
+    if (seenArray.length > 0) {
+      toRemove = this.db
+        .select({ id: servers.id })
+        .from(servers)
+        .where(
+          and(
+            eq(servers.source, source),
+            eq(servers.isRemoved, false),
+            notInArray(servers.id, seenArray)
+          )
+        )
+        .all();
+    } else {
+      toRemove = this.db
+        .select({ id: servers.id })
+        .from(servers)
+        .where(
+          and(
+            eq(servers.source, source),
+            eq(servers.isRemoved, false)
+          )
+        )
+        .all();
+    }
 
-    const updateStmt = this.db.prepare(`
-      UPDATE servers SET is_removed = 1, removed_at = ?
-      WHERE id = ?
-    `);
-
-    const rows = selectStmt.all(source, ...seenIds) as Array<{ id: string }>;
-
-    for (const row of rows) {
-      updateStmt.run(now, row.id);
+    for (const row of toRemove) {
+      this.db.update(servers)
+        .set({ isRemoved: true, removedAt: now })
+        .where(eq(servers.id, row.id))
+        .run();
+      
       changes.push({ serverId: row.id, changeType: 'removed' });
     }
 
@@ -346,104 +345,96 @@ export class CatalogDatabase {
   ): void {
     const now = Date.now();
 
-    const stmt = this.db.prepare(`
-      INSERT INTO provider_status (provider_id, provider_name, last_fetch_at, last_success_at, last_error, server_count)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(provider_id) DO UPDATE SET
-        last_fetch_at = ?,
-        last_success_at = CASE WHEN ? THEN ? ELSE last_success_at END,
-        last_error = ?,
-        server_count = CASE WHEN ? THEN ? ELSE server_count END
-    `);
-
-    stmt.run(
-      providerId, providerName, now,
-      success ? now : null,
-      error, serverCount,
-      now,
-      success ? 1 : 0, now,
-      error,
-      success ? 1 : 0, serverCount
-    );
+    // Upsert using INSERT OR REPLACE
+    this.db.insert(providerStatus)
+      .values({
+        providerId,
+        providerName,
+        lastFetchAt: now,
+        lastSuccessAt: success ? now : null,
+        lastError: error,
+        serverCount: success ? serverCount : 0,
+      })
+      .onConflictDoUpdate({
+        target: providerStatus.providerId,
+        set: {
+          lastFetchAt: now,
+          lastSuccessAt: success ? now : sql`last_success_at`,
+          lastError: error,
+          serverCount: success ? serverCount : sql`server_count`,
+        },
+      })
+      .run();
   }
 
   getProviderStatus(): Array<Record<string, unknown>> {
-    const stmt = this.db.prepare('SELECT * FROM provider_status');
-    return stmt.all() as Array<Record<string, unknown>>;
+    return this.db.select().from(providerStatus).all();
   }
 
   isCacheStale(): boolean {
     const threshold = Date.now() - (STALE_THRESHOLD_HOURS * 3600 * 1000);
 
-    const stmt = this.db.prepare(`
-      SELECT COUNT(*) as cnt FROM provider_status
-      WHERE last_success_at IS NULL OR last_success_at < ?
-    `);
+    const result = this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(providerStatus)
+      .where(
+        or(
+          sql`${providerStatus.lastSuccessAt} IS NULL`,
+          sql`${providerStatus.lastSuccessAt} < ${threshold}`
+        )
+      )
+      .get();
 
-    const row = stmt.get(threshold) as { cnt: number } | undefined;
-    return row ? row.cnt > 0 : true;
+    return result ? result.count > 0 : true;
   }
 
   getStats(): { total: number; remote: number; removed: number; featured: number } {
-    const stmt = this.db.prepare(`
-      SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN endpoint_url != '' THEN 1 ELSE 0 END) as remote,
-        SUM(CASE WHEN is_removed = 1 THEN 1 ELSE 0 END) as removed,
-        SUM(CASE WHEN is_featured = 1 THEN 1 ELSE 0 END) as featured
-      FROM servers
-    `);
-    
-    const row = stmt.get() as Record<string, number> | undefined;
+    const result = this.db
+      .select({
+        total: sql<number>`count(*)`,
+        remote: sql<number>`sum(case when ${servers.endpointUrl} != '' then 1 else 0 end)`,
+        removed: sql<number>`sum(case when ${servers.isRemoved} = 1 then 1 else 0 end)`,
+        featured: sql<number>`sum(case when ${servers.isFeatured} = 1 then 1 else 0 end)`,
+      })
+      .from(servers)
+      .get();
+
     return {
-      total: row?.total || 0,
-      remote: row?.remote || 0,
-      removed: row?.removed || 0,
-      featured: row?.featured || 0,
+      total: result?.total || 0,
+      remote: result?.remote || 0,
+      removed: result?.removed || 0,
+      featured: result?.featured || 0,
     };
   }
 
-  private rowToServer(row: Record<string, unknown>): CatalogServer {
-    let packages: CatalogServer['packages'] = [];
-    try {
-      const packagesStr = row.packages as string;
-      if (packagesStr) {
-        packages = JSON.parse(packagesStr);
-      }
-    } catch {
-      // Ignore parse errors
-    }
-
-    let tags: string[] = [];
-    try {
-      const tagsStr = row.tags as string;
-      if (tagsStr) {
-        tags = JSON.parse(tagsStr);
-      }
-    } catch {
-      // Ignore parse errors
-    }
+  private rowToServer(row: Server): CatalogServer {
+    // Map packages to the correct type
+    const packages = (row.packages || []).map(p => ({
+      registryType: p.registryType as 'npm' | 'pypi' | 'oci',
+      identifier: p.identifier,
+      environmentVariables: p.environmentVariables,
+    }));
 
     return {
-      id: row.id as string,
-      name: row.name as string,
-      source: row.source as string,
-      endpointUrl: row.endpoint_url as string,
-      installableOnly: Boolean(row.installable_only),
+      id: row.id,
+      name: row.name,
+      source: row.source,
+      endpointUrl: row.endpointUrl || '',
+      installableOnly: row.installableOnly ?? true,
       packages,
-      description: row.description as string,
-      homepageUrl: row.homepage_url as string,
-      repositoryUrl: row.repository_url as string,
-      tags,
-      fetchedAt: (row.last_seen_at as number) || Date.now(),
-      isRemoved: Boolean(row.is_removed),
-      isFeatured: Boolean(row.is_featured),
-      priorityScore: row.priority_score as number || 0,
+      description: row.description || '',
+      homepageUrl: row.homepageUrl || '',
+      repositoryUrl: row.repositoryUrl || '',
+      tags: row.tags || [],
+      fetchedAt: row.lastSeenAt || Date.now(),
+      isRemoved: row.isRemoved ?? false,
+      isFeatured: row.isFeatured ?? false,
+      priorityScore: row.priorityScore || 0,
     };
   }
 
   close(): void {
-    this.db.close();
+    this.sqlite.close();
   }
 }
 
@@ -456,4 +447,3 @@ export function getCatalogDb(): CatalogDatabase {
   }
   return _db;
 }
-
