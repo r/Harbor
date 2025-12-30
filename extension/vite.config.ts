@@ -17,6 +17,7 @@ export default defineConfig({
         background: resolve(__dirname, 'src/background.ts'),
         sidebar: resolve(__dirname, 'src/sidebar.ts'),
         directory: resolve(__dirname, 'src/directory.ts'),
+        chat: resolve(__dirname, 'src/chat.ts'),
       },
       output: {
         entryFileNames: '[name].js',
@@ -42,6 +43,13 @@ export default defineConfig({
           'utf-8'
         );
         writeFileSync(resolve(__dirname, 'dist/directory.html'), directoryHtml);
+
+        // Copy chat.html
+        const chatHtml = readFileSync(
+          resolve(__dirname, 'src/chat.html'),
+          'utf-8'
+        );
+        writeFileSync(resolve(__dirname, 'dist/chat.html'), chatHtml);
 
         // Copy manifest.json
         const manifest = readFileSync(

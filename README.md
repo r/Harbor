@@ -184,6 +184,71 @@ All messages use JSON with a `type` field and `request_id` for correlation.
 - `set_server_secrets` - Set API keys for a server
 - `get_server_status` - Get server status
 
+#### MCP Stdio (Local Servers)
+
+Connect to installed MCP servers via stdio (spawns child process):
+
+- `mcp_connect` - Connect to an installed server via stdio
+- `mcp_disconnect` - Disconnect from a server
+- `mcp_list_connections` - List all active connections
+- `mcp_list_tools` - List tools from connected server
+- `mcp_list_resources` - List resources from connected server
+- `mcp_list_prompts` - List prompts from connected server
+- `mcp_call_tool` - Call a tool with arguments
+- `mcp_read_resource` - Read a resource by URI
+- `mcp_get_prompt` - Get a prompt with arguments
+- `mcp_get_logs` - Get stderr logs from server process
+
+#### Credentials
+
+Manage API keys and authentication for MCP servers:
+
+- `set_credential` - Set a credential (API key, password, etc.)
+- `get_credential_status` - Get status of all credentials for a server
+- `validate_credentials` - Validate credentials against requirements
+- `delete_credential` - Delete a credential
+- `list_credentials` - List credentials (metadata only, no values)
+
+Credential types:
+- `api_key` - Single token/key value (e.g., OPENAI_API_KEY)
+- `password` - Username + password pair
+- `oauth` - OAuth 2.0 tokens (future)
+- `header` - Custom header values
+
+#### LLM Integration
+
+Interact with local LLMs (llamafile, etc.):
+
+- `llm_detect` - Detect available LLM providers
+- `llm_list_providers` - List all providers and status
+- `llm_set_active` - Set the active provider
+- `llm_list_models` - List models from active provider
+- `llm_chat` - Send a chat completion request
+- `llm_get_active` - Get active provider status
+
+Supported providers:
+- `llamafile` - Mozilla llamafile (localhost:8080)
+- Future: `ollama`, `openai`, `anthropic`
+
+#### Chat Orchestration
+
+Full agent loop that connects LLM to MCP tools:
+
+- `chat_create_session` - Create a new chat session with enabled servers
+- `chat_send_message` - Send a message and run the orchestration loop
+- `chat_get_session` - Get a chat session by ID
+- `chat_list_sessions` - List all chat sessions
+- `chat_delete_session` - Delete a chat session
+- `chat_update_session` - Update session settings
+- `chat_clear_messages` - Clear messages from a session
+
+The orchestration loop:
+1. Collects tools from enabled MCP servers
+2. Sends user message to LLM with tool definitions
+3. If LLM requests tool calls, executes them via MCP
+4. Feeds tool results back to LLM
+5. Repeats until LLM produces a final response
+
 ### Error Responses
 
 All errors follow this format:
@@ -235,6 +300,7 @@ All data is stored in `~/.harbor/`:
 - `catalog.db` - Catalog cache (SQLite)
 - `installed_servers.json` - Installed server configs
 - `secrets/credentials.json` - API keys (restricted permissions)
+- `sessions/*.json` - Chat session history
 
 ## Directory (Catalog) Dev Notes
 
@@ -272,7 +338,11 @@ The bridge can install and run local MCP servers:
 - [x] v0.2: Directory with catalog providers
 - [x] v0.3: TypeScript bridge with SQLite caching
 - [x] v0.4: App Store for local MCP servers
-- [ ] v0.5: Full MCP protocol implementation
+- [x] v0.5: MCP stdio client with SDK integration
+- [x] v0.6: Credential management (API keys, passwords)
+- [x] v0.7: LLM integration (llamafile provider)
+- [x] v0.8: Chat orchestration (agent loop)
+- [ ] v0.9: Extension UI for chat and installed servers
 - [ ] v1.0: Production-ready release
 
 ## License

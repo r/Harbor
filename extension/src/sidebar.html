@@ -516,6 +516,243 @@
       background: var(--bg-hover);
       transform: rotate(30deg);
     }
+
+    /* Installed server items */
+    .installed-server-item {
+      background: var(--bg-badge);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      border: 1px solid var(--border-light);
+      margin-bottom: 10px;
+    }
+
+    .installed-server-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .server-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .server-status-badge.running {
+      background: var(--accent-success-bg);
+      color: var(--accent-success);
+    }
+
+    .server-status-badge.stopped {
+      background: var(--bg-hover);
+      color: var(--text-muted);
+    }
+
+    .server-status-badge.needs-auth {
+      background: var(--accent-warning-bg);
+      color: var(--accent-warning);
+    }
+
+    .server-status-badge.error {
+      background: var(--accent-danger-bg);
+      color: var(--accent-danger);
+    }
+
+    .server-package-info {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: 'SF Mono', Monaco, monospace;
+      margin: 8px 0;
+    }
+
+    /* Modal styles */
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-backdrop {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-content {
+      position: relative;
+      background: var(--bg-card);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      width: 90%;
+      max-width: 400px;
+      max-height: 80vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .modal-close {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-sm);
+    }
+
+    .modal-close:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .modal-body {
+      padding: 16px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-footer {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      padding: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Credential form */
+    .credential-field {
+      margin-bottom: 14px;
+    }
+
+    .credential-field:last-child {
+      margin-bottom: 0;
+    }
+
+    .credential-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .credential-label-text {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .credential-required {
+      color: var(--accent-danger);
+      font-size: 11px;
+    }
+
+    .credential-description {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .credential-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-input);
+      color: var(--text-primary);
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 12px;
+    }
+
+    .credential-input:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
+    }
+
+    .credential-input.is-set {
+      border-color: var(--accent-success);
+      background: var(--accent-success-bg);
+    }
+
+    .credential-status {
+      font-size: 10px;
+      margin-top: 4px;
+    }
+
+    .credential-status.set {
+      color: var(--accent-success);
+    }
+
+    .credential-status.missing {
+      color: var(--accent-warning);
+    }
+
+    /* Password field with toggle */
+    .password-input-wrapper {
+      position: relative;
+    }
+
+    .password-toggle {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px;
+    }
+
+    .password-toggle:hover {
+      opacity: 0.8;
+    }
+
+    /* Help link */
+    .credential-help {
+      font-size: 11px;
+      color: var(--accent-primary);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .credential-help:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -544,6 +781,56 @@
       </div>
     </div>
 
+    <!-- LLM Status Section -->
+    <div class="card" id="llm-card">
+      <div class="section-title">LLM Status</div>
+      <div id="llm-status-container">
+        <div class="status-row">
+          <div id="llm-status-indicator" class="status-indicator disconnected"></div>
+          <span id="llm-status-text" class="status-text disconnected">Checking...</span>
+        </div>
+        <div id="llm-details" style="margin-top: 10px; font-size: 12px; color: var(--text-secondary);"></div>
+      </div>
+      
+      <!-- Download section (shown when no LLM available) -->
+      <div id="llm-download-section" style="display: none; margin-top: 14px;">
+        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+          No LLM detected. Download a local model to use AI features:
+        </p>
+        <div id="llm-model-select" class="form-group">
+          <label>Select Model</label>
+          <select id="llm-model-dropdown" style="width: 100%; padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-input); color: var(--text-primary); font-size: 12px;">
+            <option value="mistral-7b-instruct">⭐ Mistral 7B (4.1 GB) - Recommended</option>
+            <option value="llama-3.2-3b">Llama 3.2 3B (2.0 GB)</option>
+            <option value="phi-2">Phi-2 (1.7 GB) - Faster</option>
+            <option value="tinyllama-1.1b">TinyLlama (670 MB) - Fastest</option>
+          </select>
+        </div>
+        <button id="llm-download-btn" class="btn-primary" style="width: 100%;">
+          ⬇️ Download Model
+        </button>
+      </div>
+      
+      <!-- Progress section (shown during download) -->
+      <div id="llm-progress-section" style="display: none; margin-top: 14px;">
+        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+          Downloading <span id="llm-download-model-name"></span>...
+        </div>
+        <div style="background: var(--bg-badge); border-radius: var(--radius-sm); height: 8px; overflow: hidden;">
+          <div id="llm-progress-bar" style="background: var(--accent-primary); height: 100%; width: 0%; transition: width 0.3s;"></div>
+        </div>
+        <div id="llm-progress-text" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">0%</div>
+      </div>
+      
+      <!-- Start/Stop section (shown when model is downloaded) -->
+      <div id="llm-control-section" style="display: none; margin-top: 14px;">
+        <div class="actions">
+          <button id="llm-start-btn" class="btn-success" style="flex: 1;">▶️ Start</button>
+          <button id="llm-stop-btn" class="btn-danger" style="flex: 1; display: none;">⏹️ Stop</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Servers Section -->
     <div class="card">
       <div class="section-title">MCP Servers</div>
@@ -567,11 +854,40 @@
       </div>
     </div>
 
+    <!-- Installed Servers Section -->
+    <div class="card" id="installed-servers-card">
+      <div class="section-title">Installed Servers</div>
+      <div id="installed-server-list" class="server-list">
+        <div class="empty-state">No servers installed</div>
+      </div>
+    </div>
+
+    <!-- Credential Modal -->
+    <div id="credential-modal" class="modal" style="display: none;">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="credential-modal-title">Configure Credentials</h3>
+          <button class="modal-close" id="credential-modal-close">×</button>
+        </div>
+        <div class="modal-body" id="credential-modal-body">
+          <!-- Credential forms will be inserted here -->
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" id="credential-modal-cancel">Cancel</button>
+          <button class="btn-primary" id="credential-modal-save">Save Credentials</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Last Response -->
     <div class="card">
       <div class="collapsible-header" id="response-header">
         <div class="section-title" style="margin-bottom: 0;">Last Response</div>
-        <span class="collapse-icon">▼</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button class="btn-small" id="copy-response-btn" style="padding: 4px 8px; font-size: 11px;">📋 Copy</button>
+          <span class="collapse-icon">▼</span>
+        </div>
       </div>
       <div id="response-content" class="collapsible-content">
         <div class="message-content">
@@ -586,6 +902,34 @@
       <div class="message-content">
         <pre id="tools-response"></pre>
       </div>
+    </div>
+
+    <!-- Chat Link -->
+    <div class="card" style="background: linear-gradient(135deg, #8b5cf6, #ec4899); color: white; border: none;">
+      <div class="section-title" style="color: rgba(255,255,255,0.8);">Chat</div>
+      <p style="font-size: 12px; color: rgba(255,255,255,0.9); margin-bottom: 12px;">Chat with your AI assistant using connected MCP servers as tools.</p>
+      
+      <!-- Compare Mode Toggle -->
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 8px 12px; background: rgba(255,255,255,0.15); border-radius: 8px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+          <input type="checkbox" id="compare-mode-toggle" style="width: 16px; height: 16px; cursor: pointer;">
+          <span style="margin-left: 8px; font-size: 13px; font-weight: 500;">Compare Mode</span>
+        </label>
+        <span style="font-size: 11px; opacity: 0.8;">(Stock vs MCP)</span>
+      </div>
+      
+      <!-- Tool Router Toggle -->
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 8px 12px; background: rgba(255,255,255,0.15); border-radius: 8px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+          <input type="checkbox" id="tool-router-toggle" checked style="width: 16px; height: 16px; cursor: pointer;">
+          <span style="margin-left: 8px; font-size: 13px; font-weight: 500;">Smart Router</span>
+        </label>
+        <span style="font-size: 11px; opacity: 0.8;">(Auto-select servers)</span>
+      </div>
+      
+      <button id="open-chat" class="btn-primary" style="width: 100%; background: white; color: #8b5cf6;">
+        💬 Open Chat
+      </button>
     </div>
 
     <!-- Directory Link -->

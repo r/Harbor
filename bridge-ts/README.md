@@ -96,3 +96,6 @@ All data is stored in `~/.harbor/`:
 - `secrets/credentials.json` - API keys (restricted permissions)
 
 
+
+
+

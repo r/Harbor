@@ -87,10 +87,23 @@ let connectionState: ConnectionState = {
 };
 
 const pendingRequests = new Map<string, PendingRequest>();
-const REQUEST_TIMEOUT_MS = 30000;
+const REQUEST_TIMEOUT_MS = 30000; // Default timeout for most requests
+const CHAT_TIMEOUT_MS = 180000; // 3 minutes for chat (LLM + tools can be slow)
 
 function generateRequestId(): string {
   return crypto.randomUUID();
+}
+
+/**
+ * Broadcast a message to all extension pages (sidebar, chat, directory).
+ * Uses runtime.sendMessage which reaches all extension contexts.
+ */
+function broadcastToExtension(message: Record<string, unknown>): void {
+  browser.runtime
+    .sendMessage(message)
+    .catch(() => {
+      // Ignore errors - no listeners is fine
+    });
 }
 
 function updateState(updates: Partial<ConnectionState>): void {
@@ -169,16 +182,18 @@ function connectToNative(): boolean {
   }
 }
 
-async function sendToBridge(message: HarborMessage): Promise<BridgeResponse> {
+async function sendToBridge(message: HarborMessage, timeoutMs?: number): Promise<BridgeResponse> {
   if (!port && !connectToNative()) {
     throw new Error('Not connected to native bridge');
   }
 
+  const effectiveTimeout = timeoutMs || REQUEST_TIMEOUT_MS;
+
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       pendingRequests.delete(message.request_id);
-      reject(new Error('Request timed out'));
-    }, REQUEST_TIMEOUT_MS);
+      reject(new Error(`Request timed out after ${effectiveTimeout / 1000}s`));
+    }, effectiveTimeout);
 
     pendingRequests.set(message.request_id, { resolve, reject, timeout });
 
@@ -380,6 +395,203 @@ browser.runtime.onMessage.addListener(
         type: 'get_server_status',
         request_id: generateRequestId(),
         server_id: msg.server_id,
+      });
+    }
+
+    // MCP stdio messages (for locally installed servers)
+    if (msg.type === 'mcp_connect') {
+      console.log('[Background] mcp_connect request for:', msg.server_id);
+      return sendToBridge({
+        type: 'mcp_connect',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
+      }).then(result => {
+        console.log('[Background] mcp_connect result:', result);
+        // Broadcast to all extension pages that a server connected
+        if (result && result.type === 'mcp_connect_result' && result.connected) {
+          broadcastToExtension({
+            type: 'mcp_server_connected',
+            server_id: msg.server_id,
+            tools: result.tools,
+          });
+        }
+        return result;
+      });
+    }
+
+    if (msg.type === 'mcp_disconnect') {
+      return sendToBridge({
+        type: 'mcp_disconnect',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
+      }).then(result => {
+        // Broadcast to all extension pages that a server disconnected
+        broadcastToExtension({
+          type: 'mcp_server_disconnected',
+          server_id: msg.server_id,
+        });
+        return result;
+      });
+    }
+
+    if (msg.type === 'mcp_list_tools') {
+      return sendToBridge({
+        type: 'mcp_list_tools',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
+      });
+    }
+
+    // Credential messages
+    if (msg.type === 'set_credential') {
+      return sendToBridge({
+        type: 'set_credential',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
+        key: msg.key,
+        value: msg.value,
+        credential_type: msg.credential_type || 'api_key',
+      });
+    }
+
+    if (msg.type === 'list_credentials') {
+      return sendToBridge({
+        type: 'list_credentials',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
+      });
+    }
+
+    // LLM messages
+    if (msg.type === 'llm_detect') {
+      return sendToBridge({
+        type: 'llm_detect',
+        request_id: generateRequestId(),
+      });
+    }
+
+    if (msg.type === 'llm_setup_status') {
+      return sendToBridge({
+        type: 'llm_setup_status',
+        request_id: generateRequestId(),
+      });
+    }
+
+    if (msg.type === 'llm_download_model') {
+      return sendToBridge({
+        type: 'llm_download_model',
+        request_id: generateRequestId(),
+        model_id: msg.model_id,
+      });
+    }
+
+    if (msg.type === 'llm_delete_model') {
+      return sendToBridge({
+        type: 'llm_delete_model',
+        request_id: generateRequestId(),
+        model_id: msg.model_id,
+      });
+    }
+
+    if (msg.type === 'llm_start_local') {
+      return sendToBridge({
+        type: 'llm_start_local',
+        request_id: generateRequestId(),
+        model_id: msg.model_id,
+        port: msg.port,
+      });
+    }
+
+    if (msg.type === 'llm_stop_local') {
+      return sendToBridge({
+        type: 'llm_stop_local',
+        request_id: generateRequestId(),
+      });
+    }
+
+    if (msg.type === 'llm_chat') {
+      // Use longer timeout for LLM chat
+      return sendToBridge({
+        type: 'llm_chat',
+        request_id: generateRequestId(),
+        messages: msg.messages,
+        tools: msg.tools,
+        model: msg.model,
+        max_tokens: msg.max_tokens,
+        temperature: msg.temperature,
+        system_prompt: msg.system_prompt,
+      }, CHAT_TIMEOUT_MS);
+    }
+
+    // MCP connections list
+    if (msg.type === 'mcp_list_connections') {
+      return sendToBridge({
+        type: 'mcp_list_connections',
+        request_id: generateRequestId(),
+      });
+    }
+
+    // Chat session messages
+    if (msg.type === 'chat_create_session') {
+      return sendToBridge({
+        type: 'chat_create_session',
+        request_id: generateRequestId(),
+        enabled_servers: msg.enabled_servers,
+        name: msg.name,
+        system_prompt: msg.system_prompt,
+        max_iterations: msg.max_iterations,
+      });
+    }
+
+    if (msg.type === 'chat_send_message') {
+      // Use longer timeout for chat (LLM + tools can be slow)
+      return sendToBridge({
+        type: 'chat_send_message',
+        request_id: generateRequestId(),
+        session_id: msg.session_id,
+        message: msg.message,
+        use_tool_router: msg.use_tool_router,
+      }, CHAT_TIMEOUT_MS);
+    }
+
+    if (msg.type === 'chat_get_session') {
+      return sendToBridge({
+        type: 'chat_get_session',
+        request_id: generateRequestId(),
+        session_id: msg.session_id,
+      });
+    }
+
+    if (msg.type === 'chat_list_sessions') {
+      return sendToBridge({
+        type: 'chat_list_sessions',
+        request_id: generateRequestId(),
+        limit: msg.limit,
+      });
+    }
+
+    if (msg.type === 'chat_delete_session') {
+      return sendToBridge({
+        type: 'chat_delete_session',
+        request_id: generateRequestId(),
+        session_id: msg.session_id,
+      });
+    }
+
+    if (msg.type === 'chat_update_session') {
+      return sendToBridge({
+        type: 'chat_update_session',
+        request_id: generateRequestId(),
+        session_id: msg.session_id,
+        updates: msg.updates,
+      });
+    }
+
+    if (msg.type === 'chat_clear_messages') {
+      return sendToBridge({
+        type: 'chat_clear_messages',
+        request_id: generateRequestId(),
+        session_id: msg.session_id,
       });
     }
 

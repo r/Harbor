@@ -142,6 +142,123 @@ export interface InstalledServer {
 }
 
 // =============================================================================
+// Credential Types
+// =============================================================================
+
+/**
+ * Type of credential required by an MCP server.
+ */
+export enum CredentialType {
+  /** Single API key or token (e.g., OPENAI_API_KEY) */
+  API_KEY = 'api_key',
+  /** Username and password pair */
+  PASSWORD = 'password',
+  /** OAuth 2.0 token (future) */
+  OAUTH = 'oauth',
+  /** Custom header value */
+  HEADER = 'header',
+}
+
+/**
+ * Describes a credential that an MCP server requires.
+ * This comes from the catalog/package metadata.
+ */
+export interface CredentialRequirement {
+  /** Unique key for this credential (used for storage) */
+  key: string;
+  
+  /** Human-readable label for the UI */
+  label: string;
+  
+  /** Description/help text for the user */
+  description?: string;
+  
+  /** Type of credential */
+  type: CredentialType;
+  
+  /** Environment variable name to inject (for API_KEY type) */
+  envVar?: string;
+  
+  /** Environment variable for username (for PASSWORD type) */
+  usernameEnvVar?: string;
+  
+  /** Environment variable for password (for PASSWORD type) */
+  passwordEnvVar?: string;
+  
+  /** Whether this credential is required or optional */
+  required: boolean;
+  
+  /** Validation pattern (regex) */
+  pattern?: string;
+  
+  /** Placeholder text for the input field */
+  placeholder?: string;
+  
+  /** URL to documentation for obtaining this credential */
+  helpUrl?: string;
+}
+
+/**
+ * A credential stored in the secret store.
+ */
+export interface StoredCredential {
+  /** The credential key (matches CredentialRequirement.key) */
+  key: string;
+  
+  /** The credential value (encrypted at rest) */
+  value: string;
+  
+  /** Type of credential */
+  type: CredentialType;
+  
+  /** Username for PASSWORD type credentials */
+  username?: string;
+  
+  /** When this credential was set */
+  setAt: number;
+  
+  /** When this credential expires (for OAuth tokens) */
+  expiresAt?: number;
+  
+  /** OAuth refresh token (for OAuth type) */
+  refreshToken?: string;
+}
+
+/**
+ * Status of credentials for a server.
+ */
+export interface CredentialStatus {
+  /** Server ID */
+  serverId: string;
+  
+  /** Whether all required credentials are set */
+  isComplete: boolean;
+  
+  /** List of credentials that are set */
+  configured: Array<{
+    key: string;
+    type: CredentialType;
+    setAt: number;
+    isExpired?: boolean;
+  }>;
+  
+  /** List of required credentials that are missing */
+  missing: Array<{
+    key: string;
+    label: string;
+    type: CredentialType;
+    required: boolean;
+  }>;
+  
+  /** List of credentials that have expired (OAuth) */
+  expired: Array<{
+    key: string;
+    type: CredentialType;
+    expiresAt: number;
+  }>;
+}
+
+// =============================================================================
 // MCP Types
 // =============================================================================
 
@@ -209,5 +326,7 @@ export interface ResultResponse {
   request_id: string;
   [key: string]: unknown;
 }
+
+
 
 

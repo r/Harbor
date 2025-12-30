@@ -54,3 +54,6 @@ echo "The extension should now be able to communicate with the bridge."
 echo "Restart Firefox if it's already running."
 
 
+
+
+
