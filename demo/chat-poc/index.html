@@ -3,9 +3,69 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Harbor Chat (API POC)</title>
-  <link rel="stylesheet" href="design-tokens.css">
+  <title>Harbor Chat Demo (API Example)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    :root {
+      /* Zinc palette - dark mode default */
+      --color-bg-base: #09090b;
+      --color-bg-subtle: #18181b;
+      --color-surface-primary: #27272a;
+      --color-surface-secondary: #3f3f46;
+      --color-text-primary: #fafafa;
+      --color-text-secondary: #a1a1aa;
+      --color-text-muted: #71717a;
+      --color-border-default: #3f3f46;
+      --color-border-strong: #52525b;
+      --color-accent-primary: #3b82f6;
+      --color-accent-hover: #60a5fa;
+      --color-success: #22c55e;
+      --color-warning: #f59e0b;
+      --color-error: #ef4444;
+      --color-info: #0ea5e9;
+      
+      --font-sans: 'Geist', system-ui, -apple-system, sans-serif;
+      --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+      
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 24px;
+      
+      --text-xs: 12px;
+      --text-sm: 14px;
+      --text-base: 16px;
+      --text-lg: 18px;
+      --text-xl: 20px;
+      
+      --weight-normal: 400;
+      --weight-medium: 500;
+      --weight-semibold: 600;
+      --weight-bold: 700;
+      
+      --transition-fast: 150ms ease;
+    }
+
+    [data-theme="light"] {
+      --color-bg-base: #ffffff;
+      --color-bg-subtle: #f4f4f5;
+      --color-surface-primary: #ffffff;
+      --color-surface-secondary: #f4f4f5;
+      --color-text-primary: #18181b;
+      --color-text-secondary: #52525b;
+      --color-text-muted: #a1a1aa;
+      --color-border-default: #e4e4e7;
+      --color-border-strong: #d4d4d8;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -24,7 +84,7 @@
       flex-direction: column;
     }
 
-    /* Header - matches chat.html */
+    /* Header */
     .header {
       display: flex;
       align-items: center;
@@ -72,6 +132,8 @@
       color: white;
       border-radius: var(--radius-sm);
       font-weight: var(--weight-semibold);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
     .header-right {
@@ -151,13 +213,9 @@
       background: var(--color-text-muted);
     }
 
-    .status-dot.success {
-      background: var(--color-success);
-    }
-
-    .status-dot.warning {
-      background: var(--color-warning);
-    }
+    .status-dot.success { background: var(--color-success); }
+    .status-dot.warning { background: var(--color-warning); }
+    .status-dot.error { background: var(--color-error); }
 
     /* Chat area */
     .chat-container {
@@ -171,7 +229,7 @@
       margin: 0 auto;
     }
 
-    /* Empty state - matches extension style */
+    /* Empty state */
     .empty-state {
       display: flex;
       flex-direction: column;
@@ -185,8 +243,8 @@
     .empty-state-icon {
       width: 64px;
       height: 64px;
-      background: var(--color-accent-primary);
-      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, var(--color-accent-primary), var(--color-info));
+      border-radius: var(--radius-lg);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -203,15 +261,33 @@
 
     .empty-state p {
       color: var(--color-text-secondary);
-      max-width: 400px;
+      max-width: 420px;
       line-height: 1.6;
       margin-bottom: var(--space-4);
     }
+
+    .empty-state-code {
+      background: var(--color-surface-secondary);
+      border: 1px solid var(--color-border-default);
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      text-align: left;
+      color: var(--color-text-secondary);
+      max-width: 400px;
+      overflow-x: auto;
+    }
+
+    .empty-state-code .keyword { color: #c678dd; }
+    .empty-state-code .string { color: #98c379; }
+    .empty-state-code .comment { color: var(--color-text-muted); }
 
     .empty-state-hint {
       display: flex;
       align-items: center;
       gap: var(--space-2);
+      margin-top: var(--space-4);
       padding: var(--space-3) var(--space-4);
       background: var(--color-surface-secondary);
       border: 1px solid var(--color-border-default);
@@ -342,17 +418,9 @@
       margin-left: auto;
     }
 
-    .tool-call-status.pending {
-      color: var(--color-warning);
-    }
-
-    .tool-call-status.success {
-      color: var(--color-success);
-    }
-
-    .tool-call-status.error {
-      color: var(--color-error);
-    }
+    .tool-call-status.pending { color: var(--color-warning); }
+    .tool-call-status.success { color: var(--color-success); }
+    .tool-call-status.error { color: var(--color-error); }
 
     .tool-call-content {
       padding: var(--space-3);
@@ -484,6 +552,102 @@
     ::-webkit-scrollbar-thumb:hover {
       background: var(--color-border-strong);
     }
+    
+    /* Documentation Panel */
+    .docs-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 480px;
+      max-width: 100%;
+      height: 100%;
+      background: var(--color-surface-primary);
+      border-left: 1px solid var(--color-border-default);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      animation: slideIn 0.2s ease;
+    }
+    
+    @keyframes slideIn {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+    
+    .docs-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-3) var(--space-4);
+      border-bottom: 1px solid var(--color-border-default);
+    }
+    
+    .docs-header h3 {
+      font-size: var(--text-base);
+      font-weight: var(--weight-semibold);
+      color: var(--color-text-primary);
+    }
+    
+    .docs-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--space-4);
+    }
+    
+    .docs-section {
+      margin-bottom: var(--space-5);
+    }
+    
+    .docs-section h4 {
+      font-size: var(--text-sm);
+      font-weight: var(--weight-semibold);
+      color: var(--color-text-primary);
+      margin-bottom: var(--space-2);
+    }
+    
+    .docs-code {
+      background: var(--color-bg-base);
+      border: 1px solid var(--color-border-default);
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--color-text-secondary);
+      overflow-x: auto;
+      white-space: pre;
+      line-height: 1.6;
+    }
+    
+    .docs-code .keyword { color: #c678dd; }
+    .docs-code .string { color: #98c379; }
+    .docs-code .comment { color: var(--color-text-muted); }
+    
+    .docs-links {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+      padding-top: var(--space-3);
+      border-top: 1px solid var(--color-border-default);
+    }
+    
+    .docs-link {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-2) var(--space-3);
+      background: var(--color-surface-secondary);
+      border: 1px solid var(--color-border-default);
+      border-radius: var(--radius-md);
+      color: var(--color-accent-primary);
+      text-decoration: none;
+      font-size: var(--text-sm);
+      transition: all var(--transition-fast);
+    }
+    
+    .docs-link:hover {
+      background: var(--color-bg-subtle);
+      border-color: var(--color-accent-primary);
+    }
   </style>
 </head>
 <body>
@@ -492,10 +656,13 @@
       <div class="header-brand">
         <div class="header-logo">H</div>
         <span class="header-title">Harbor Chat</span>
-        <span class="header-badge">API POC</span>
+        <span class="header-badge">Demo</span>
       </div>
     </div>
     <div class="header-right">
+      <button class="toggle-btn" id="docs-toggle">
+        📚 API Docs
+      </button>
       <button class="toggle-btn active" id="tools-toggle">
         🔧 Tools
       </button>
@@ -506,11 +673,75 @@
       <button class="icon-btn" id="theme-toggle" title="Toggle theme">○</button>
     </div>
   </header>
+  
+  <!-- API Documentation Panel -->
+  <div class="docs-panel" id="docs-panel" style="display: none;">
+    <div class="docs-header">
+      <h3>Harbor JavaScript API</h3>
+      <button class="icon-btn" id="docs-close">×</button>
+    </div>
+    <div class="docs-content">
+      <div class="docs-section">
+        <h4>🤖 window.ai — Text Generation</h4>
+        <pre class="docs-code"><span class="comment">// Create a text session</span>
+<span class="keyword">const</span> session = <span class="keyword">await</span> window.ai.createTextSession();
+
+<span class="comment">// Generate text</span>
+<span class="keyword">const</span> response = <span class="keyword">await</span> session.prompt(<span class="string">"What is the capital of France?"</span>);
+console.log(response); <span class="comment">// "Paris is the capital of France..."</span>
+
+<span class="comment">// Streaming response</span>
+<span class="keyword">for await</span> (<span class="keyword">const</span> chunk <span class="keyword">of</span> session.promptStreaming(<span class="string">"Tell me a story"</span>)) {
+  process.stdout.write(chunk);
+}</pre>
+      </div>
+      
+      <div class="docs-section">
+        <h4>🔧 window.tools — MCP Tools</h4>
+        <pre class="docs-code"><span class="comment">// List available MCP tools</span>
+<span class="keyword">const</span> tools = <span class="keyword">await</span> window.tools.list();
+console.log(tools); <span class="comment">// [{name: "memory/add", ...}, ...]</span>
+
+<span class="comment">// Call a tool directly</span>
+<span class="keyword">const</span> result = <span class="keyword">await</span> window.tools.call({
+  tool: <span class="string">"memory/add"</span>,
+  args: { key: <span class="string">"name"</span>, value: <span class="string">"Alice"</span> }
+});</pre>
+      </div>
+      
+      <div class="docs-section">
+        <h4>🤖 window.agent — Agent with Tools</h4>
+        <pre class="docs-code"><span class="comment">// Run an agent that can use tools</span>
+<span class="keyword">for await</span> (<span class="keyword">const</span> event <span class="keyword">of</span> window.agent.run({
+  task: <span class="string">"Save my name as Alice and then retrieve it"</span>,
+  tools: [<span class="string">"memory/add"</span>, <span class="string">"memory/get"</span>],
+  maxSteps: 5
+})) {
+  <span class="keyword">switch</span> (event.type) {
+    <span class="keyword">case</span> <span class="string">"status"</span>: console.log(<span class="string">"Status:"</span>, event.message); <span class="keyword">break</span>;
+    <span class="keyword">case</span> <span class="string">"tool_call"</span>: console.log(<span class="string">"Calling:"</span>, event.tool); <span class="keyword">break</span>;
+    <span class="keyword">case</span> <span class="string">"tool_result"</span>: console.log(<span class="string">"Result:"</span>, event.result); <span class="keyword">break</span>;
+    <span class="keyword">case</span> <span class="string">"final"</span>: console.log(<span class="string">"Done:"</span>, event.output); <span class="keyword">break</span>;
+  }
+}</pre>
+      </div>
+      
+      <div class="docs-links">
+        <a href="../JS_AI_PROVIDER_API.md" target="_blank" class="docs-link">📖 Full API Reference</a>
+        <a href="../JS_AI_PROVIDER_API_COMPACT.md" target="_blank" class="docs-link">📄 Compact Reference</a>
+        <a href="https://github.com/anthropics/mcp" target="_blank" class="docs-link">🔗 MCP Spec</a>
+      </div>
+    </div>
+  </div>
 
   <div class="status-bar">
     <div class="status-item">
+      <span class="status-dot" id="extension-status"></span>
+      <span id="extension-status-text">Checking extension...</span>
+    </div>
+    <div class="status-item">
       <span class="status-dot" id="llm-status"></span>
-      <span id="llm-status-text">Checking LLM...</span>
+      <span id="llm-status-text">LLM: —</span>
     </div>
     <div class="status-item">
       <span class="status-dot" id="tools-status"></span>
@@ -525,11 +756,21 @@
     <div class="messages" id="messages">
       <div class="empty-state" id="empty-state">
         <div class="empty-state-icon">💬</div>
-        <h2>Start a conversation</h2>
+        <h2>Harbor Chat Demo</h2>
         <p>
-          This chat uses the same APIs that any website can use when Harbor is installed. 
-          Toggle <strong>Tools</strong> to let the AI use MCP tools, or <strong>Tab Context</strong> to include the current tab's content.
+          This demo uses the <strong>window.ai</strong> and <strong>window.agent</strong> APIs 
+          that Harbor provides to any website. Toggle <strong>Tools</strong> to use MCP tools 
+          or <strong>Tab Context</strong> to include the current tab's content.
         </p>
+        <div class="empty-state-code">
+          <span class="comment">// Example: Create a text session</span><br>
+          <span class="keyword">const</span> session = <span class="keyword">await</span> window.ai.createTextSession();<br>
+          <span class="keyword">const</span> response = <span class="keyword">await</span> session.prompt(<span class="string">"Hello!"</span>);<br><br>
+          <span class="comment">// Example: Run an agent with tools</span><br>
+          <span class="keyword">for await</span> (<span class="keyword">const</span> event <span class="keyword">of</span> window.agent.run({ task })) {<br>
+          &nbsp;&nbsp;console.log(event);<br>
+          }
+        </div>
         <div class="empty-state-hint">
           Type a message below and press <kbd>Enter</kbd> to send
         </div>
@@ -552,6 +793,7 @@
     </div>
   </div>
 
-  <script type="module" src="chat-poc.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
+

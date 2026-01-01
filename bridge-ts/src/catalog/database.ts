@@ -158,6 +158,9 @@ export class CatalogDatabase {
       { column: 'npm_downloads', definition: 'INTEGER' },
       { column: 'last_commit_at', definition: 'REAL' },
       { column: 'enriched_at', definition: 'REAL' },
+      { column: 'resolved_package_type', definition: 'TEXT' },  // 'npm' | 'pypi' | null
+      { column: 'resolved_package_id', definition: 'TEXT' },     // The package identifier
+      { column: 'resolved_at', definition: 'REAL' },
     ];
     
     for (const { column, definition } of migrations) {
@@ -512,6 +515,44 @@ export class CatalogDatabase {
     for (const update of updates) {
       this.updateEnrichment(update.serverId, update);
     }
+  }
+
+  /**
+   * Update resolved package info for a server.
+   * Called after we fetch package.json/pyproject.toml from GitHub.
+   */
+  updateResolvedPackage(
+    serverId: string,
+    packageType: 'npm' | 'pypi' | 'binary' | null,
+    packageId: string | null
+  ): void {
+    const now = Date.now();
+    
+    this.sqlite.prepare(`
+      UPDATE servers 
+      SET resolved_package_type = ?, resolved_package_id = ?, resolved_at = ?
+      WHERE id = ?
+    `).run(packageType, packageId, now, serverId);
+    
+    log(`[CatalogDatabase] Updated resolved package for ${serverId}: ${packageType}:${packageId}`);
+  }
+
+  /**
+   * Get resolved package info for a server.
+   */
+  getResolvedPackage(serverId: string): { packageType: string | null; packageId: string | null; resolvedAt: number | null } | null {
+    const result = this.sqlite.prepare(`
+      SELECT resolved_package_type, resolved_package_id, resolved_at
+      FROM servers WHERE id = ?
+    `).get(serverId) as { resolved_package_type: string | null; resolved_package_id: string | null; resolved_at: number | null } | undefined;
+    
+    if (!result) return null;
+    
+    return {
+      packageType: result.resolved_package_type,
+      packageId: result.resolved_package_id,
+      resolvedAt: result.resolved_at,
+    };
   }
 
   private rowToServer(row: Server): CatalogServer {

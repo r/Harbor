@@ -89,6 +89,7 @@ let connectionState: ConnectionState = {
 
 const pendingRequests = new Map<string, PendingRequest>();
 const REQUEST_TIMEOUT_MS = 30000; // Default timeout for most requests
+const DOCKER_TIMEOUT_MS = 300000; // 5 minutes for Docker (building images can be slow)
 const CHAT_TIMEOUT_MS = 180000; // 3 minutes for chat (LLM + tools can be slow)
 
 // Message log for debugging
@@ -151,6 +152,14 @@ function getMessageSummary(direction: 'send' | 'recv', type: string, data: unkno
       return `${arrow} Installing ${name}...`;
     case 'install_server_result':
       return `${arrow} Installation complete`;
+    case 'add_remote_server':
+      return `${arrow} Adding remote server: ${d.name}...`;
+    case 'add_remote_server_result':
+      return `${arrow} Remote server added`;
+    case 'import_config':
+      return `${arrow} Importing MCP configuration...`;
+    case 'import_config_result':
+      return `${arrow} Imported ${d.imported?.length || 0} servers`;
     case 'mcp_connect':
       return `${arrow} Connecting to ${d.server_id}...`;
     case 'mcp_connect_result':
@@ -222,6 +231,21 @@ function handleNativeMessage(message: unknown): void {
       .catch(() => {});
     return;
   }
+  
+  // Handle server progress updates (Docker startup, etc.)
+  if (response.type === 'server_progress') {
+    console.log('[Background] Server progress:', response);
+    // Broadcast progress to all extension pages
+    browser.runtime
+      .sendMessage({ 
+        type: 'server_progress', 
+        server_id: (response as { server_id?: string }).server_id,
+        message: (response as { message?: string }).message,
+        timestamp: (response as { timestamp?: number }).timestamp,
+      })
+      .catch(() => {});
+    return;
+  }
 
   // Resolve pending request if this is a response
   const requestId = response.request_id;
@@ -236,6 +260,15 @@ function handleNativeMessage(message: unknown): void {
   browser.runtime
     .sendMessage({ type: 'bridge_response', response })
     .catch(() => {});
+  
+  // Broadcast specific events for UI updates
+  if (response.type === 'install_server_result' || 
+      response.type === 'uninstall_server_result') {
+    // Notify sidebar to refresh installed servers list
+    browser.runtime
+      .sendMessage({ type: 'installed_servers_changed' })
+      .catch(() => {});
+  }
 }
 
 function handleNativeDisconnect(): void {
@@ -481,10 +514,161 @@ browser.runtime.onMessage.addListener(
       });
     }
 
+    if (msg.type === 'add_remote_server') {
+      return sendToBridge({
+        type: 'add_remote_server',
+        request_id: generateRequestId(),
+        name: msg.name,
+        url: msg.url,
+        transport_type: msg.transport_type || 'http',
+        headers: msg.headers,
+      }).then(result => {
+        // Notify sidebar to refresh installed servers list
+        browser.runtime
+          .sendMessage({ type: 'installed_servers_changed' })
+          .catch(() => {});
+        return result;
+      });
+    }
+
+    if (msg.type === 'import_config') {
+      return sendToBridge({
+        type: 'import_config',
+        request_id: generateRequestId(),
+        config_json: msg.config_json,
+        install_url: msg.install_url,
+      }).then(result => {
+        // Notify sidebar to refresh installed servers list
+        browser.runtime
+          .sendMessage({ type: 'installed_servers_changed' })
+          .catch(() => {});
+        return result;
+      });
+    }
+
     if (msg.type === 'list_installed') {
       return sendToBridge({
         type: 'list_installed',
         request_id: generateRequestId(),
+      });
+    }
+
+    // Curated servers messages
+    if (msg.type === 'get_curated_servers') {
+      return sendToBridge({
+        type: 'get_curated_servers',
+        request_id: generateRequestId(),
+      });
+    }
+
+    if (msg.type === 'install_curated_server') {
+      return sendToBridge({
+        type: 'install_curated_server',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
+      }).then(result => {
+        // Notify sidebar to refresh installed servers list
+        if (result && result.type === 'install_curated_server_result' && result.success) {
+          browser.runtime
+            .sendMessage({ type: 'installed_servers_changed' })
+            .catch(() => {});
+        }
+        return result;
+      });
+    }
+
+    if (msg.type === 'install_github_repo') {
+      return sendToBridge({
+        type: 'install_github_repo',
+        request_id: generateRequestId(),
+        github_url: msg.github_url,
+      }).then(result => {
+        // Notify sidebar to refresh installed servers list
+        if (result && result.type === 'install_github_repo_result' && result.success) {
+          browser.runtime
+            .sendMessage({ type: 'installed_servers_changed' })
+            .catch(() => {});
+        }
+        return result;
+      });
+    }
+
+    // Install from VS Code button (detected on web pages)
+    if (msg.type === 'install_from_vscode_button') {
+      const params = msg.params as { 
+        name: string; 
+        command?: string;
+        args?: string[];
+        env?: Record<string, string>;
+        npmPackage?: string;
+        pypiPackage?: string;
+      };
+      
+      // Determine what to install
+      let installType = 'install_server';
+      let installPayload: Record<string, unknown> = {
+        request_id: generateRequestId(),
+      };
+      
+      if (params.npmPackage) {
+        // Install npm package
+        installPayload.type = 'install_server';
+        installPayload.catalog_entry = {
+          id: `vscode-${params.name}-${Date.now()}`,
+          name: params.name,
+          description: `Installed from VS Code button on ${msg.pageUrl}`,
+          endpointUrl: '',
+          installableOnly: true,
+          tags: ['vscode'],
+          source: 'vscode-button',
+          fetchedAt: Date.now(),
+          homepageUrl: msg.pageUrl,
+          repositoryUrl: '',
+          packages: [{
+            registryType: 'npm',
+            identifier: params.npmPackage,
+            environmentVariables: [],
+          }],
+        };
+      } else if (params.pypiPackage) {
+        // Install pypi package
+        installPayload.type = 'install_server';
+        installPayload.catalog_entry = {
+          id: `vscode-${params.name}-${Date.now()}`,
+          name: params.name,
+          description: `Installed from VS Code button on ${msg.pageUrl}`,
+          endpointUrl: '',
+          installableOnly: true,
+          tags: ['vscode'],
+          source: 'vscode-button',
+          fetchedAt: Date.now(),
+          homepageUrl: msg.pageUrl,
+          repositoryUrl: '',
+          packages: [{
+            registryType: 'pypi',
+            identifier: params.pypiPackage,
+            environmentVariables: [],
+          }],
+        };
+      } else {
+        // Unknown install type - return error
+        return Promise.resolve({
+          success: false,
+          error: { message: 'Unknown install type. Expected npm or pypi package.' },
+        });
+      }
+      
+      return sendToBridge(installPayload as HarborMessage).then(result => {
+        if (result && result.type === 'install_server_result') {
+          browser.runtime
+            .sendMessage({ type: 'installed_servers_changed' })
+            .catch(() => {});
+          return { success: true, server: result.server };
+        }
+        return {
+          success: false,
+          error: result?.error || { message: 'Installation failed' },
+        };
       });
     }
 
@@ -523,12 +707,19 @@ browser.runtime.onMessage.addListener(
 
     // MCP stdio messages (for locally installed servers)
     if (msg.type === 'mcp_connect') {
-      console.log('[Background] mcp_connect request for:', msg.server_id);
+      const useDocker = msg.use_docker || false;
+      console.log('[Background] mcp_connect request for:', msg.server_id, 'skip_security_check:', msg.skip_security_check, 'use_docker:', useDocker);
+      
+      // Use longer timeout for Docker (building images takes time)
+      const timeout = useDocker ? DOCKER_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+      
       return sendToBridge({
         type: 'mcp_connect',
         request_id: generateRequestId(),
         server_id: msg.server_id,
-      }).then(result => {
+        skip_security_check: msg.skip_security_check || false,
+        use_docker: useDocker,
+      }, timeout).then(result => {
         console.log('[Background] mcp_connect result:', result);
         // Broadcast to all extension pages that a server connected
         if (result && result.type === 'mcp_connect_result' && result.connected) {
@@ -536,9 +727,44 @@ browser.runtime.onMessage.addListener(
             type: 'mcp_server_connected',
             server_id: msg.server_id,
             tools: result.tools,
+            running_in_docker: result.running_in_docker,
           });
         }
         return result;
+      });
+    }
+    
+    // Docker-related messages
+    if (msg.type === 'check_docker') {
+      return sendToBridge({
+        type: 'check_docker',
+        request_id: generateRequestId(),
+      });
+    }
+    
+    if (msg.type === 'build_docker_images') {
+      return sendToBridge({
+        type: 'build_docker_images',
+        request_id: generateRequestId(),
+        image_type: msg.image_type,
+      });
+    }
+    
+    if (msg.type === 'set_docker_mode') {
+      return sendToBridge({
+        type: 'set_docker_mode',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
+        use_docker: msg.use_docker,
+        volumes: msg.volumes,
+      });
+    }
+    
+    if (msg.type === 'should_prefer_docker') {
+      return sendToBridge({
+        type: 'should_prefer_docker',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
       });
     }
 
@@ -582,6 +808,75 @@ browser.runtime.onMessage.addListener(
         type: 'list_credentials',
         request_id: generateRequestId(),
         server_id: msg.server_id,
+      });
+    }
+
+    if (msg.type === 'delete_credential') {
+      return sendToBridge({
+        type: 'delete_credential',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
+        key: msg.key,
+      });
+    }
+
+    // OAuth messages
+    if (msg.type === 'oauth_start') {
+      return sendToBridge({
+        type: 'oauth_start',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
+        credential_key: msg.credential_key,
+        provider_id: msg.provider_id,
+      }).then(async (result) => {
+        if (result?.type === 'oauth_start_result' && result.auth_url) {
+          // Open the OAuth URL in a new window
+          try {
+            await browser.windows.create({
+              url: result.auth_url as string,
+              type: 'popup',
+              width: 600,
+              height: 700,
+            });
+          } catch (err) {
+            // Fallback to opening in a tab if popup fails
+            await browser.tabs.create({ url: result.auth_url as string });
+          }
+        }
+        return result;
+      });
+    }
+
+    if (msg.type === 'oauth_cancel') {
+      return sendToBridge({
+        type: 'oauth_cancel',
+        request_id: generateRequestId(),
+        state: msg.state,
+      });
+    }
+
+    if (msg.type === 'oauth_revoke') {
+      return sendToBridge({
+        type: 'oauth_revoke',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
+        credential_key: msg.credential_key,
+      });
+    }
+
+    if (msg.type === 'oauth_status') {
+      return sendToBridge({
+        type: 'oauth_status',
+        request_id: generateRequestId(),
+        server_id: msg.server_id,
+        credential_key: msg.credential_key,
+      });
+    }
+
+    if (msg.type === 'list_oauth_providers') {
+      return sendToBridge({
+        type: 'list_oauth_providers',
+        request_id: generateRequestId(),
       });
     }
 

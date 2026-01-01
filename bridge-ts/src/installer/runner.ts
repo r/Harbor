@@ -1,11 +1,13 @@
 /**
- * Package runner - executes MCP servers from npm, pypi, or docker.
+ * Package runner - executes MCP servers from npm, pypi, docker, or binaries.
  */
 
 import { spawn, ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { log } from '../native-messaging.js';
 import { ProcessState, ServerProcess, RuntimeType } from '../types.js';
 import { getRuntimeManager, RuntimeManager } from './runtime.js';
+import { getBinaryPath } from './binary-downloader.js';
 
 interface RunningProcess {
   serverId: string;
@@ -261,6 +263,18 @@ export class PackageRunner {
         return null;
       }
       const cmd = ['docker', 'run', '-i', '--rm', packageId];
+      if (args) cmd.push(...args);
+      return cmd;
+    }
+
+    if (packageType === 'binary') {
+      // packageId should be the serverId for binaries
+      const binaryPath = getBinaryPath(packageId);
+      if (!existsSync(binaryPath)) {
+        log(`[PackageRunner] Binary not found: ${binaryPath}`);
+        return null;
+      }
+      const cmd = [binaryPath];
       if (args) cmd.push(...args);
       return cmd;
     }

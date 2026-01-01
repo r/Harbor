@@ -6,11 +6,11 @@
  * - Worker process: Uses CatalogClient to talk to worker
  */
 
-import { log, pushStatus } from './native-messaging.js';
+import { log, pushStatus, sendProgressUpdate } from './native-messaging.js';
 import { getServerStore, ServerStore } from './server-store.js';
 import { getMcpClient, McpClient } from './mcp-client.js';
 import { getCatalogManager, CatalogManager, CatalogClient } from './catalog/index.js';
-import { getInstalledServerManager, InstalledServerManager, resolveGitHubPackage } from './installer/index.js';
+import { getInstalledServerManager, InstalledServerManager, resolveGitHubPackage, needsSecurityApproval, parseMcpConfig, parseVSCodeInstallUrl, ParsedServer } from './installer/index.js';
 import { getSecretStore } from './installer/secrets.js';
 import { getMcpClientManager, McpClientManager } from './mcp/index.js';
 import { 
@@ -32,6 +32,29 @@ import {
   OrchestrationResult,
   OrchestrationStep,
 } from './chat/index.js';
+import { CURATED_SERVERS, getCuratedServer, type CuratedServerFull } from './directory/curated-servers.js';
+import { getDockerExec } from './installer/docker-exec.js';
+import type { CuratedServer } from './types.js';
+import {
+  startOAuthFlow,
+  cancelOAuthFlow,
+  revokeOAuthAccess,
+  getOAuthStatus,
+  isProviderConfigured,
+  getConfiguredProviders,
+} from './auth/index.js';
+import {
+  getMcpHost,
+  GrantType,
+  PermissionScope,
+  grantPermission,
+  revokePermission,
+  checkPermission,
+  getPermissions,
+  expireTabGrants,
+  ErrorCode,
+  createError,
+} from './host/index.js';
 
 const VERSION = '0.1.0';
 
@@ -475,20 +498,40 @@ const handleInstallServer: MessageHandler = async (message, _store, _client, _ca
       const resolved = await resolveGitHubPackage(catalogEntry.homepageUrl);
       
       if (resolved && resolved.name) {
+        // Determine registry type and create package info
+        let registryType: 'npm' | 'pypi' | 'oci' | 'binary';
+        if (resolved.type === 'python') {
+          registryType = 'pypi';
+        } else if (resolved.type === 'binary') {
+          registryType = 'binary';
+        } else {
+          registryType = 'npm';
+        }
+        
         // Create a copy with resolved package info
+        log(`[handleInstallServer] Creating package entry: registryType=${registryType}, identifier=${resolved.name}, binaryUrl=${resolved.binaryUrl || 'none'}`);
         entryWithPackage = {
           ...catalogEntry,
           packages: [{
-            registryType: resolved.type === 'python' ? 'pypi' : 'npm',
+            registryType,
             identifier: resolved.name,
             environmentVariables: [],
+            // Include binary URL if it's a binary package
+            binaryUrl: resolved.binaryUrl,
           }],
         };
-        log(`[handleInstallServer] Resolved: ${resolved.name} (${resolved.type})`);
+        log(`[handleInstallServer] Resolved: ${resolved.name} (${resolved.type})${resolved.binaryUrl ? ` from ${resolved.binaryUrl}` : ''}`);
       } else {
-        return makeError(requestId, 'resolve_error', 
-          'Could not find package.json or pyproject.toml in the GitHub repository. ' +
-          'This server may need manual installation.');
+        // Could not resolve package info
+        const url = catalogEntry.homepageUrl || '';
+        return makeError(requestId, 'unsupported_server', 
+          'Could not find a way to install this server.\n\n' +
+          'Harbor supports servers that are:\n' +
+          '• Published to npm (JavaScript/TypeScript)\n' +
+          '• Published to PyPI (Python)\n' +
+          '• Have pre-built binaries in GitHub Releases\n\n' +
+          'This server may require manual compilation or installation.\n\n' +
+          `Visit ${url} for installation instructions.`);
       }
     }
 
@@ -497,6 +540,117 @@ const handleInstallServer: MessageHandler = async (message, _store, _client, _ca
   } catch (e) {
     log(`Failed to install server: ${e}`);
     return makeError(requestId, 'install_error', String(e));
+  }
+};
+
+// Add a remote HTTP/SSE MCP server
+const handleAddRemoteServer: MessageHandler = async (message, _store, _client, _catalog, installer) => {
+  const requestId = message.request_id || '';
+  const name = message.name as string || '';
+  const url = message.url as string || '';
+  const type = (message.transport_type as 'http' | 'sse') || 'http';
+  const headers = message.headers as Record<string, string> | undefined;
+
+  if (!name) {
+    return makeError(requestId, 'invalid_request', 'Missing server name');
+  }
+  if (!url) {
+    return makeError(requestId, 'invalid_request', 'Missing server URL');
+  }
+
+  try {
+    // Validate URL
+    new URL(url);
+  } catch {
+    return makeError(requestId, 'invalid_request', 'Invalid server URL');
+  }
+
+  try {
+    const server = installer.addRemoteServer(name, url, type, headers);
+    return makeResult('add_remote_server', requestId, { server });
+  } catch (e) {
+    log(`Failed to add remote server: ${e}`);
+    return makeError(requestId, 'add_error', String(e));
+  }
+};
+
+// Import MCP configuration (Claude Desktop or VS Code format)
+const handleImportConfig: MessageHandler = async (message, _store, _client, _catalog, installer) => {
+  const requestId = message.request_id || '';
+  const configJson = message.config_json as string || '';
+  const installUrl = message.install_url as string || '';
+
+  try {
+    let servers: ParsedServer[] = [];
+    let format = 'unknown';
+
+    if (installUrl) {
+      // Parse VS Code install URL
+      const server = parseVSCodeInstallUrl(installUrl);
+      if (server) {
+        servers = [server];
+        format = 'vscode_url';
+      } else {
+        return makeError(requestId, 'parse_error', 'Invalid VS Code install URL');
+      }
+    } else if (configJson) {
+      // Parse JSON config
+      const parsed = parseMcpConfig(configJson);
+      servers = parsed.servers;
+      format = parsed.format;
+    } else {
+      return makeError(requestId, 'invalid_request', 'Missing config_json or install_url');
+    }
+
+    // Import each server
+    const imported = [];
+    const errors = [];
+
+    for (const server of servers) {
+      try {
+        let installedServer;
+
+        if (server.type === 'http' || server.type === 'sse') {
+          // Remote server
+          installedServer = installer.addRemoteServer(
+            server.name,
+            server.url!,
+            server.type,
+            server.headers
+          );
+        } else {
+          // Stdio server - create a minimal catalog entry to install
+          // This is a simplified approach; full support would need package resolution
+          log(`[handleImportConfig] Stdio server import not fully supported yet: ${server.name}`);
+          errors.push({
+            name: server.name,
+            error: 'Stdio server import from config requires package resolution. Please install from the directory instead.',
+          });
+          continue;
+        }
+
+        // Record required inputs for the UI to prompt for
+        imported.push({
+          server: installedServer,
+          requiredInputs: server.requiredInputs,
+        });
+      } catch (e) {
+        errors.push({
+          name: server.name,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    return makeResult('import_config', requestId, {
+      format,
+      imported,
+      errors,
+      totalParsed: servers.length,
+    });
+  } catch (e) {
+    log(`Failed to import config: ${e}`);
+    return makeError(requestId, 'import_error', e instanceof Error ? e.message : String(e));
   }
 };
 
@@ -522,6 +676,93 @@ const handleResolveGitHub: MessageHandler = async (message) => {
     });
   } catch (e) {
     log(`Failed to resolve GitHub package: ${e}`);
+    return makeError(requestId, 'resolve_error', String(e));
+  }
+};
+
+// Resolve package info for a server by ID and cache it in the database
+const handleResolveServerPackage: MessageHandler = async (message, _store, _client, catalog) => {
+  const requestId = message.request_id || '';
+  const serverId = message.server_id as string || '';
+
+  if (!serverId) {
+    return makeError(requestId, 'invalid_request', 'Missing server_id');
+  }
+
+  const db = catalog.getDatabase();
+  
+  // Check if we already have resolved info
+  const cached = db.getResolvedPackage(serverId);
+  if (cached && cached.resolvedAt) {
+    log(`[handleResolveServerPackage] Using cached package info for ${serverId}`);
+    return makeResult('resolve_server_package', requestId, {
+      serverId,
+      packageType: cached.packageType,
+      packageId: cached.packageId,
+      cached: true,
+    });
+  }
+
+  // Get the server from catalog
+  const servers = db.getAllServers({ includeRemoved: false });
+  const server = servers.find((s: CatalogServer) => s.id === serverId);
+  
+  if (!server) {
+    return makeError(requestId, 'not_found', 'Server not found');
+  }
+
+  // If server already has package info from registry, use that
+  if (server.packages && server.packages.length > 0 && server.packages[0].identifier) {
+    const pkg = server.packages[0];
+    // We support npm, pypi, and binary - skip oci for now
+    const pkgType = pkg.registryType === 'oci' ? null : pkg.registryType;
+    db.updateResolvedPackage(serverId, pkgType, pkg.identifier);
+    return makeResult('resolve_server_package', requestId, {
+      serverId,
+      packageType: pkgType,
+      packageId: pkg.identifier,
+      cached: false,
+    });
+  }
+
+  // Try to resolve from GitHub
+  const githubUrl = server.homepageUrl || server.repositoryUrl;
+  if (!githubUrl || !githubUrl.includes('github.com')) {
+    // Can't resolve - no GitHub URL
+    db.updateResolvedPackage(serverId, null, null);
+    return makeResult('resolve_server_package', requestId, {
+      serverId,
+      packageType: null,
+      packageId: null,
+      cached: false,
+    });
+  }
+
+  try {
+    log(`[handleResolveServerPackage] Resolving from GitHub: ${githubUrl}`);
+    const resolved = await resolveGitHubPackage(githubUrl);
+    
+    if (resolved && resolved.name) {
+      const packageType = resolved.type === 'python' ? 'pypi' : 'npm';
+      db.updateResolvedPackage(serverId, packageType as 'npm' | 'pypi', resolved.name);
+      return makeResult('resolve_server_package', requestId, {
+        serverId,
+        packageType,
+        packageId: resolved.name,
+        cached: false,
+      });
+    }
+    
+    // Could not resolve
+    db.updateResolvedPackage(serverId, null, null);
+    return makeResult('resolve_server_package', requestId, {
+      serverId,
+      packageType: null,
+      packageId: null,
+      cached: false,
+    });
+  } catch (e) {
+    log(`[handleResolveServerPackage] Failed to resolve: ${e}`);
     return makeError(requestId, 'resolve_error', String(e));
   }
 };
@@ -573,17 +814,47 @@ const handleListInstalled: MessageHandler = async (message, _store, _client, _ca
 const handleStartInstalled: MessageHandler = async (message, _store, _client, _catalog, installer) => {
   const requestId = message.request_id || '';
   const serverId = message.server_id as string || '';
+  const useDocker = message.use_docker as boolean || false;
 
   if (!serverId) {
     return makeError(requestId, 'invalid_request', 'Missing server_id');
   }
 
   try {
-    const proc = await installer.start(serverId);
+    const proc = await installer.start(serverId, { useDocker });
     return makeResult('start_installed', requestId, { process: proc });
   } catch (e) {
-    log(`Failed to start server: ${e}`);
-    return makeError(requestId, 'start_error', String(e));
+    const errorMsg = String(e);
+    log(`Failed to start server: ${errorMsg}`);
+    
+    // Check if this is a macOS Gatekeeper/security issue for a binary server
+    const server = installer.getServer(serverId);
+    const isBinary = server?.packageType === 'binary';
+    const isSecurityError = errorMsg.includes('permission denied') || 
+                           errorMsg.includes('not permitted') ||
+                           errorMsg.includes('cannot be opened') ||
+                           errorMsg.includes('quarantine') ||
+                           errorMsg.includes('EPERM') ||
+                           errorMsg.includes('spawn') ||
+                           errorMsg.includes('EACCES');
+    const isMacOS = process.platform === 'darwin';
+    
+    if (isBinary && isMacOS && isSecurityError && !useDocker) {
+      // Check if Docker is available as an alternative
+      const dockerInfo = await installer.checkDockerAvailable();
+      if (dockerInfo.available) {
+        log(`[handleStartInstalled] Binary server failed with security error, Docker available as alternative`);
+        return makeResult('start_installed', requestId, {
+          process: null,
+          error: errorMsg,
+          docker_available: true,
+          docker_recommended: true,
+          suggestion: 'This binary was blocked by macOS security. Would you like to run it in Docker instead?'
+        });
+      }
+    }
+    
+    return makeError(requestId, 'start_error', errorMsg);
   }
 };
 
@@ -647,10 +918,14 @@ const handleGetServerStatus: MessageHandler = async (message, _store, _client, _
 /**
  * Connect to an installed MCP server via stdio.
  * This spawns the server process and establishes the MCP connection.
+ * 
+ * Supports Docker mode for running servers in containers, which bypasses
+ * macOS Gatekeeper security restrictions for downloaded binaries.
  */
 const handleMcpConnect: MessageHandler = async (message, _store, _client, _catalog, installer, mcpManager) => {
   const requestId = message.request_id || '';
   const serverId = message.server_id as string || '';
+  const useDockerOverride = message.use_docker as boolean | undefined;
 
   if (!serverId) {
     return makeError(requestId, 'invalid_request', 'Missing server_id');
@@ -662,13 +937,77 @@ const handleMcpConnect: MessageHandler = async (message, _store, _client, _catal
     return makeError(requestId, 'not_found', `Server not installed: ${serverId}`);
   }
 
-  // Check if npm package (only supported for now)
-  if (server.packageType !== 'npm') {
+  // Check if supported package type
+  const supportedTypes = ['npm', 'pypi', 'binary', 'http', 'sse'];
+  if (!supportedTypes.includes(server.packageType)) {
     return makeError(
       requestId, 
       'unsupported_package_type', 
-      `Only npm packages are supported. Got: ${server.packageType}`
+      `Unsupported package type: ${server.packageType}. Supported: ${supportedTypes.join(', ')}`
     );
+  }
+
+  // Determine if we should use Docker
+  let useDocker = useDockerOverride ?? server.useDocker ?? false;
+  
+  // For binary packages on macOS, ALWAYS offer Docker option on first run
+  // (Don't rely on quarantine attribute as it's unreliable after first spawn attempt)
+  if (server.packageType === 'binary' && !useDocker && !message.skip_security_check) {
+    const dockerPreference = await installer.shouldPreferDocker(serverId);
+    const binaryPath = server.binaryPath || `~/.harbor/bin/${serverId}`;
+    
+    // If Docker is available, always offer it as the recommended option for binaries
+    if (dockerPreference.dockerAvailable) {
+      log(`[handleMcpConnect] Binary server on macOS with Docker available - showing options`);
+      return makeResult('mcp_connect', requestId, {
+        connected: false,
+        needs_security_approval: true,
+        docker_available: true,
+        docker_recommended: true,
+        security_instructions: `Binary Server - Choose How to Run
+
+This is a compiled binary. On macOS, you have two options:
+
+🐳 OPTION 1: Run in Docker (Recommended)
+Click "Run in Docker" to run the binary in a container.
+This bypasses all macOS security restrictions.
+
+💻 OPTION 2: Run Natively
+Click "I've Allowed It - Start Now" to run directly.
+If macOS blocks it:
+1. Open System Settings → Privacy & Security
+2. Find "${server.name}" and click "Allow Anyway"
+3. Try starting again
+
+Or remove quarantine in Terminal:
+  sudo xattr -rd com.apple.quarantine "${binaryPath}"`,
+      });
+    }
+    
+    // No Docker available, show security warning with native instructions only
+    const needsApproval = await needsSecurityApproval(serverId);
+    if (needsApproval) {
+      log(`[handleMcpConnect] Binary server needs security approval, Docker not available`);
+      return makeResult('mcp_connect', requestId, {
+        connected: false,
+        needs_security_approval: true,
+        docker_available: false,
+        security_instructions: `macOS Security Approval May Be Required
+
+This binary may be blocked by macOS Gatekeeper.
+
+If macOS shows a security warning:
+1. DON'T click "Move to Trash"
+2. Open System Settings → Privacy & Security
+3. Find "${server.name}" and click "Allow Anyway"
+4. Try starting again
+
+Or remove quarantine in Terminal:
+  sudo xattr -rd com.apple.quarantine "${binaryPath}"
+
+TIP: Install Docker Desktop to bypass this in the future.`,
+      });
+    }
   }
 
   // Get secrets for this server from the SecretStore
@@ -687,8 +1026,15 @@ const handleMcpConnect: MessageHandler = async (message, _store, _client, _catal
   // Get all secrets as env vars
   const envVars = secretStore.getAll(serverId);
 
+  // Progress callback - sends updates to extension
+  const onProgress = (progressMessage: string) => {
+    log(`[handleMcpConnect] Progress: ${progressMessage}`);
+    // Send progress update via native messaging (will be broadcast to extension)
+    sendProgressUpdate(serverId, progressMessage);
+  };
+
   try {
-    const result = await mcpManager.connect(server, envVars);
+    const result = await mcpManager.connect(server, envVars, { useDocker, onProgress });
     
     if (result.success) {
       return makeResult('mcp_connect', requestId, {
@@ -697,12 +1043,64 @@ const handleMcpConnect: MessageHandler = async (message, _store, _client, _catal
         tools: result.tools,
         resources: result.resources,
         prompts: result.prompts,
+        running_in_docker: useDocker,
       });
     } else {
+      // Connection failed - check if we should offer Docker as a fallback
+      // This helps when packages have native dependencies that fail to load
+      if (!useDocker && server.packageType !== 'http' && server.packageType !== 'sse') {
+        const errorLower = (result.error || '').toLowerCase();
+        const isRecoverableError = 
+          errorLower.includes('module') ||
+          errorLower.includes('modulenotfounderror') ||
+          errorLower.includes('no module named') ||
+          errorLower.includes('enoent') ||
+          errorLower.includes('not found') ||
+          errorLower.includes('spawn') ||
+          errorLower.includes('permission') ||
+          errorLower.includes('blocked') ||
+          errorLower.includes('gatekeeper') ||
+          errorLower.includes('security') ||
+          errorLower.includes('sigkill') ||
+          errorLower.includes('code signature');
+        
+        if (isRecoverableError) {
+          // Check if Docker is available as a fallback
+          const dockerCheck = await installer.checkDockerAvailable();
+          if (dockerCheck.available) {
+            log(`[handleMcpConnect] Native connection failed but Docker available - offering fallback`);
+            return makeResult('mcp_connect', requestId, {
+              connected: false,
+              error: result.error,
+              docker_fallback_available: true,
+              docker_fallback_message: `This server couldn't start because of a missing dependency or permission issue.
+
+Docker can run this server in an isolated container with all dependencies included - no additional setup needed.`,
+            });
+          }
+        }
+      }
+      
       return makeError(requestId, 'connection_failed', result.error || 'Connection failed');
     }
   } catch (e) {
     log(`Failed to connect to MCP server: ${e}`);
+    
+    // Also check for Docker fallback on exceptions
+    if (!useDocker && server.packageType !== 'http' && server.packageType !== 'sse') {
+      const dockerCheck = await installer.checkDockerAvailable();
+      if (dockerCheck.available) {
+        return makeResult('mcp_connect', requestId, {
+          connected: false,
+          error: String(e),
+          docker_fallback_available: true,
+          docker_fallback_message: `This server couldn't start due to a system issue.
+
+Docker can run this server in an isolated container - no additional setup needed.`,
+        });
+      }
+    }
+    
     return makeError(requestId, 'connection_error', String(e));
   }
 };
@@ -1127,6 +1525,351 @@ const handleListCredentials: MessageHandler = async (message, _store, _client, _
   } catch (e) {
     log(`Failed to list credentials: ${e}`);
     return makeError(requestId, 'credential_error', String(e));
+  }
+};
+
+// =============================================================================
+// OAuth Handlers
+// =============================================================================
+
+/**
+ * Start an OAuth flow for a server credential.
+ */
+const handleOAuthStart: MessageHandler = async (message, _store, _client, _catalog, _installer) => {
+  const requestId = message.request_id || '';
+  const serverId = message.server_id as string || '';
+  const credentialKey = message.credential_key as string || '';
+  const providerId = message.provider_id as string || '';
+
+  if (!serverId) {
+    return makeError(requestId, 'invalid_request', 'Missing server_id');
+  }
+  if (!credentialKey) {
+    return makeError(requestId, 'invalid_request', 'Missing credential_key');
+  }
+  if (!providerId) {
+    return makeError(requestId, 'invalid_request', 'Missing provider_id');
+  }
+
+  // Check if provider is configured
+  if (!isProviderConfigured(providerId)) {
+    return makeError(requestId, 'provider_not_configured', 
+      `OAuth provider "${providerId}" is not configured. ` +
+      `Please set the HARBOR_${providerId.toUpperCase()}_CLIENT_ID environment variable.`
+    );
+  }
+
+  try {
+    const { authUrl, state } = await startOAuthFlow(
+      serverId,
+      credentialKey,
+      providerId
+    );
+
+    return makeResult('oauth_start', requestId, {
+      auth_url: authUrl,
+      state,
+      provider_id: providerId,
+    });
+  } catch (e) {
+    log(`Failed to start OAuth flow: ${e}`);
+    return makeError(requestId, 'oauth_error', String(e));
+  }
+};
+
+/**
+ * Cancel an active OAuth flow.
+ */
+const handleOAuthCancel: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  const state = message.state as string || '';
+
+  if (!state) {
+    return makeError(requestId, 'invalid_request', 'Missing state');
+  }
+
+  try {
+    cancelOAuthFlow(state);
+    return makeResult('oauth_cancel', requestId, { cancelled: true });
+  } catch (e) {
+    log(`Failed to cancel OAuth flow: ${e}`);
+    return makeError(requestId, 'oauth_error', String(e));
+  }
+};
+
+/**
+ * Revoke OAuth access for a server credential.
+ */
+const handleOAuthRevoke: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  const serverId = message.server_id as string || '';
+  const credentialKey = message.credential_key as string || '';
+
+  if (!serverId) {
+    return makeError(requestId, 'invalid_request', 'Missing server_id');
+  }
+  if (!credentialKey) {
+    return makeError(requestId, 'invalid_request', 'Missing credential_key');
+  }
+
+  try {
+    await revokeOAuthAccess(serverId, credentialKey);
+    return makeResult('oauth_revoke', requestId, { revoked: true });
+  } catch (e) {
+    log(`Failed to revoke OAuth access: ${e}`);
+    return makeError(requestId, 'oauth_error', String(e));
+  }
+};
+
+/**
+ * Get OAuth status for a server credential.
+ */
+const handleOAuthStatus: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  const serverId = message.server_id as string || '';
+  const credentialKey = message.credential_key as string || '';
+
+  if (!serverId) {
+    return makeError(requestId, 'invalid_request', 'Missing server_id');
+  }
+  if (!credentialKey) {
+    return makeError(requestId, 'invalid_request', 'Missing credential_key');
+  }
+
+  try {
+    const status = getOAuthStatus(serverId, credentialKey);
+    return makeResult('oauth_status', requestId, { status });
+  } catch (e) {
+    log(`Failed to get OAuth status: ${e}`);
+    return makeError(requestId, 'oauth_error', String(e));
+  }
+};
+
+/**
+ * Get list of configured OAuth providers.
+ */
+const handleListOAuthProviders: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+
+  try {
+    const providers = getConfiguredProviders();
+    return makeResult('list_oauth_providers', requestId, { providers });
+  } catch (e) {
+    log(`Failed to list OAuth providers: ${e}`);
+    return makeError(requestId, 'oauth_error', String(e));
+  }
+};
+
+// =============================================================================
+// Host API Handlers
+// =============================================================================
+
+/**
+ * Grant a permission to an origin.
+ */
+const handleHostGrantPermission: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  const origin = message.origin as string || '';
+  const scope = message.scope as PermissionScope;
+  const grantType = (message.grant_type as GrantType) || GrantType.ALLOW_ONCE;
+
+  if (!origin) {
+    return makeError(requestId, 'invalid_request', 'Missing origin');
+  }
+  if (!scope) {
+    return makeError(requestId, 'invalid_request', 'Missing scope');
+  }
+
+  try {
+    await grantPermission(origin, 'default', scope, grantType, {
+      tabId: message.tab_id as number | undefined,
+      allowedTools: message.allowed_tools as string[] | undefined,
+    });
+    return makeResult('host_grant_permission', requestId, { granted: true });
+  } catch (e) {
+    log(`Failed to grant permission: ${e}`);
+    return makeError(requestId, 'permission_error', String(e));
+  }
+};
+
+/**
+ * Revoke a permission from an origin.
+ */
+const handleHostRevokePermission: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  const origin = message.origin as string || '';
+  const scope = message.scope as PermissionScope;
+
+  if (!origin) {
+    return makeError(requestId, 'invalid_request', 'Missing origin');
+  }
+  if (!scope) {
+    return makeError(requestId, 'invalid_request', 'Missing scope');
+  }
+
+  try {
+    await revokePermission(origin, 'default', scope);
+    return makeResult('host_revoke_permission', requestId, { revoked: true });
+  } catch (e) {
+    log(`Failed to revoke permission: ${e}`);
+    return makeError(requestId, 'permission_error', String(e));
+  }
+};
+
+/**
+ * Check if an origin has a permission.
+ */
+const handleHostCheckPermission: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  const origin = message.origin as string || '';
+  const scope = message.scope as PermissionScope;
+
+  if (!origin) {
+    return makeError(requestId, 'invalid_request', 'Missing origin');
+  }
+  if (!scope) {
+    return makeError(requestId, 'invalid_request', 'Missing scope');
+  }
+
+  try {
+    const result = checkPermission(origin, 'default', scope);
+    return makeResult('host_check_permission', requestId, {
+      granted: result.granted,
+      grant: result.grant,
+      error: result.error,
+    });
+  } catch (e) {
+    log(`Failed to check permission: ${e}`);
+    return makeError(requestId, 'permission_error', String(e));
+  }
+};
+
+/**
+ * Get all permissions for an origin.
+ */
+const handleHostGetPermissions: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  const origin = message.origin as string || '';
+
+  if (!origin) {
+    return makeError(requestId, 'invalid_request', 'Missing origin');
+  }
+
+  try {
+    const grants = getPermissions(origin, 'default');
+    return makeResult('host_get_permissions', requestId, { grants });
+  } catch (e) {
+    log(`Failed to get permissions: ${e}`);
+    return makeError(requestId, 'permission_error', String(e));
+  }
+};
+
+/**
+ * Expire tab-scoped permissions when a tab closes.
+ */
+const handleHostExpireTabGrants: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  const tabId = message.tab_id as number;
+
+  if (tabId === undefined) {
+    return makeError(requestId, 'invalid_request', 'Missing tab_id');
+  }
+
+  try {
+    const expired = expireTabGrants(tabId);
+    return makeResult('host_expire_tab_grants', requestId, { expired });
+  } catch (e) {
+    log(`Failed to expire tab grants: ${e}`);
+    return makeError(requestId, 'permission_error', String(e));
+  }
+};
+
+/**
+ * List tools (with permission enforcement).
+ */
+const handleHostListTools: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  const origin = message.origin as string || '';
+
+  if (!origin) {
+    return makeError(requestId, 'invalid_request', 'Missing origin');
+  }
+
+  try {
+    const host = getMcpHost();
+    const result = host.listTools(origin, {
+      serverIds: message.server_ids as string[] | undefined,
+    });
+
+    if (result.error) {
+      return {
+        type: 'error',
+        request_id: requestId,
+        error: result.error,
+      };
+    }
+
+    return makeResult('host_list_tools', requestId, { tools: result.tools });
+  } catch (e) {
+    log(`Failed to list tools: ${e}`);
+    return makeError(requestId, 'host_error', String(e));
+  }
+};
+
+/**
+ * Call a tool (with permission and rate limit enforcement).
+ */
+const handleHostCallTool: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  const origin = message.origin as string || '';
+  const toolName = message.tool_name as string || '';
+  const args = (message.args || {}) as Record<string, unknown>;
+
+  if (!origin) {
+    return makeError(requestId, 'invalid_request', 'Missing origin');
+  }
+  if (!toolName) {
+    return makeError(requestId, 'invalid_request', 'Missing tool_name');
+  }
+
+  try {
+    const host = getMcpHost();
+    const result = await host.callTool(origin, toolName, args, {
+      timeoutMs: message.timeout_ms as number | undefined,
+      runId: message.run_id as string | undefined,
+    });
+
+    if (!result.ok) {
+      return {
+        type: 'error',
+        request_id: requestId,
+        error: result.error,
+      };
+    }
+
+    return makeResult('host_call_tool', requestId, {
+      result: result.result,
+      provenance: result.provenance,
+    });
+  } catch (e) {
+    log(`Failed to call tool: ${e}`);
+    return makeError(requestId, 'host_error', String(e));
+  }
+};
+
+/**
+ * Get Host statistics.
+ */
+const handleHostGetStats: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+
+  try {
+    const host = getMcpHost();
+    const stats = host.getStats();
+    return makeResult('host_get_stats', requestId, { stats });
+  } catch (e) {
+    log(`Failed to get host stats: ${e}`);
+    return makeError(requestId, 'host_error', String(e));
   }
 };
 
@@ -1674,6 +2417,517 @@ const handleChatClearMessages: MessageHandler = async (message, _store, _client,
 };
 
 // =============================================================================
+// Curated Directory Handlers
+// =============================================================================
+
+/**
+ * Get the curated list of MCP servers (simple version for sidebar).
+ * Returns just the basic info needed for the UI.
+ */
+const handleGetCuratedServers: MessageHandler = async (message, _store, _client, _catalog, _installer) => {
+  const requestId = message.request_id || '';
+  
+  try {
+    return makeResult('get_curated_servers', requestId, { servers: CURATED_SERVERS });
+  } catch (e) {
+    log(`Failed to get curated servers: ${e}`);
+    return makeError(requestId, 'curated_error', String(e));
+  }
+};
+
+/**
+ * Get the curated list of MCP servers with installation status.
+ * This is a static, handpicked list that we know works well.
+ */
+const handleGetCuratedList: MessageHandler = async (message, _store, _client, _catalog, installer) => {
+  const requestId = message.request_id || '';
+  
+  try {
+    // Get installed server IDs to mark which ones are already installed
+    const installedStatuses = installer.getAllStatus();
+    const installedIds = new Set(
+      installedStatuses
+        .filter(s => s.installed && s.server)
+        .map(s => s.server!.id)
+    );
+    
+    // Return curated servers with installation status
+    const servers = CURATED_SERVERS.map(server => ({
+      ...server,
+      isInstalled: installedIds.has(server.id),
+    }));
+    
+    return makeResult('get_curated_list', requestId, { servers });
+  } catch (e) {
+    log(`Failed to get curated list: ${e}`);
+    return makeError(requestId, 'curated_error', String(e));
+  }
+};
+
+/**
+ * Install a server from the curated list (simple version for sidebar).
+ * Uses server_id from the request.
+ */
+const handleInstallCuratedServer: MessageHandler = async (message, _store, _client, _catalog, installer) => {
+  const requestId = message.request_id || '';
+  const serverId = message.server_id as string || '';
+  
+  if (!serverId) {
+    return makeError(requestId, 'invalid_request', 'Missing server_id');
+  }
+  
+  const curated = getCuratedServer(serverId);
+  if (!curated) {
+    return makeError(requestId, 'not_found', `Curated server not found: ${serverId}`);
+  }
+  
+  try {
+    log(`[handleInstallCuratedServer] Installing ${curated.name} (${curated.id})`);
+    
+    // Build a catalog entry from the curated server
+    const catalogEntry: CatalogServer = {
+      id: curated.id,
+      name: curated.name,
+      description: curated.description,
+      endpointUrl: '',
+      installableOnly: true,
+      tags: curated.tags || [],
+      source: 'curated',
+      fetchedAt: Date.now(),
+      homepageUrl: curated.homepage || curated.homepageUrl || '',
+      repositoryUrl: curated.repository || '',
+      packages: [],
+    };
+    
+    // Determine package info based on install method
+    const install = curated.install;
+    let packages: Array<{ registryType: string; identifier: string; binaryUrl?: string }> = [];
+    
+    switch (install.type) {
+      case 'npm':
+        packages = [{ registryType: 'npm', identifier: install.package }];
+        break;
+      case 'pypi':
+        packages = [{ registryType: 'pypi', identifier: install.package }];
+        break;
+      case 'binary':
+        // For binary, we need to resolve from GitHub
+        const resolved = await resolveGitHubPackage(`https://github.com/${install.github}`);
+        if (resolved && resolved.binaryUrl) {
+          packages = [{ 
+            registryType: 'binary', 
+            identifier: install.binaryName,
+            binaryUrl: resolved.binaryUrl,
+          }];
+        } else {
+          return makeError(requestId, 'resolve_error', 
+            `Could not find binary release for ${install.github}`);
+        }
+        break;
+      case 'docker':
+        packages = [{ registryType: 'oci', identifier: install.image }];
+        break;
+    }
+    
+    // Add packages and env vars to catalog entry
+    (catalogEntry as any).packages = packages.map(p => ({
+      registryType: p.registryType,
+      identifier: p.identifier,
+      binaryUrl: p.binaryUrl,
+      environmentVariables: curated.envVars?.map(e => ({
+        name: e.name,
+        description: e.description,
+        isSecret: e.isSecret,
+      })) || [],
+    }));
+    
+    // Install the server
+    const server = await installer.install(catalogEntry, 0);
+    
+    return makeResult('install_curated_server', requestId, { 
+      success: true,
+      server,
+    });
+  } catch (e) {
+    log(`Failed to install curated server: ${e}`);
+    return makeError(requestId, 'install_error', String(e));
+  }
+};
+
+/**
+ * Install a server from the curated list (with more options).
+ */
+const handleInstallCurated: MessageHandler = async (message, _store, _client, _catalog, installer) => {
+  const requestId = message.request_id || '';
+  const curatedId = message.curated_id as string || '';
+  const useDocker = message.use_docker as boolean || false;
+  
+  if (!curatedId) {
+    return makeError(requestId, 'invalid_request', 'Missing curated_id');
+  }
+  
+  const curated = getCuratedServer(curatedId);
+  if (!curated) {
+    return makeError(requestId, 'not_found', `Curated server not found: ${curatedId}`);
+  }
+  
+  try {
+    log(`[handleInstallCurated] Installing ${curated.name} (${curated.id})`);
+    
+    // Build a catalog entry from the curated server
+    const catalogEntry: CatalogServer = {
+      id: curated.id,
+      name: curated.name,
+      description: curated.description,
+      endpointUrl: '',
+      installableOnly: true,
+      tags: curated.tags || [],
+      source: 'curated',
+      fetchedAt: Date.now(),
+      homepageUrl: curated.homepage || curated.homepageUrl || '',
+      repositoryUrl: curated.repository || '',
+      packages: [],
+    };
+    
+    // Determine package info based on install method
+    const install = curated.install;
+    let packages: Array<{ registryType: string; identifier: string; binaryUrl?: string }> = [];
+    
+    // Check if user wants Docker and server has Docker alternative
+    if (useDocker && curated.dockerAlternative) {
+      packages = [{
+        registryType: 'oci',
+        identifier: curated.dockerAlternative.image,
+      }];
+    } else {
+      switch (install.type) {
+        case 'npm':
+          packages = [{ registryType: 'npm', identifier: install.package }];
+          break;
+        case 'pypi':
+          packages = [{ registryType: 'pypi', identifier: install.package }];
+          break;
+        case 'binary':
+          // For binary, we need to resolve from GitHub
+          const resolved = await resolveGitHubPackage(`https://github.com/${install.github}`);
+          if (resolved && resolved.binaryUrl) {
+            packages = [{ 
+              registryType: 'binary', 
+              identifier: install.binaryName,
+              binaryUrl: resolved.binaryUrl,
+            }];
+          } else {
+            return makeError(requestId, 'resolve_error', 
+              `Could not find binary release for ${install.github}`);
+          }
+          break;
+        case 'docker':
+          packages = [{ registryType: 'oci', identifier: install.image }];
+          break;
+      }
+    }
+    
+    // Add packages and env vars to catalog entry
+    (catalogEntry as any).packages = packages.map(p => ({
+      registryType: p.registryType,
+      identifier: p.identifier,
+      binaryUrl: p.binaryUrl,
+      environmentVariables: curated.envVars?.map(e => ({
+        name: e.name,
+        description: e.description,
+        isSecret: e.isSecret,
+      })) || [],
+    }));
+    
+    // Install the server
+    const server = await installer.install(catalogEntry, 0);
+    
+    // Check if server needs configuration
+    const needsConfig = curated.envVars?.some(e => e.required && e.isSecret) || false;
+    
+    return makeResult('install_curated', requestId, { 
+      server,
+      needsConfig,
+      requiredEnvVars: curated.envVars || [],
+    });
+  } catch (e) {
+    log(`Failed to install curated server: ${e}`);
+    return makeError(requestId, 'install_error', String(e));
+  }
+};
+
+/**
+ * Install a server from a GitHub URL (from sidebar).
+ */
+const handleInstallGithubRepo: MessageHandler = async (message, _store, _client, _catalog, installer) => {
+  const requestId = message.request_id || '';
+  let githubUrl = message.github_url as string || '';
+  
+  if (!githubUrl) {
+    return makeError(requestId, 'invalid_request', 'Missing github_url');
+  }
+  
+  // Normalize: support owner/repo format
+  if (!githubUrl.includes('github.com') && githubUrl.match(/^[\w-]+\/[\w.-]+$/)) {
+    githubUrl = `https://github.com/${githubUrl}`;
+  }
+  
+  // Validate it's a GitHub URL
+  if (!githubUrl.includes('github.com')) {
+    return makeError(requestId, 'invalid_request', 'Not a valid GitHub URL');
+  }
+  
+  try {
+    log(`[handleInstallGithubRepo] Resolving: ${githubUrl}`);
+    
+    // Resolve package info from GitHub
+    const resolved = await resolveGitHubPackage(githubUrl);
+    
+    if (!resolved || !resolved.name) {
+      return makeError(requestId, 'resolve_error', 
+        'Could not determine how to install this repository.\n\n' +
+        'Supported formats:\n' +
+        '• npm packages (package.json)\n' +
+        '• Python packages (pyproject.toml)\n' +
+        '• Go binaries (GitHub releases)\n\n' +
+        'Check the repository for manual installation instructions.');
+    }
+    
+    // Build catalog entry
+    const repoName = githubUrl.match(/github\.com\/[^/]+\/([^/]+)/)?.[1] || resolved.name;
+    
+    // Determine package type
+    let registryType: string;
+    if (resolved.type === 'python') {
+      registryType = 'pypi';
+    } else if (resolved.type === 'binary') {
+      registryType = 'binary';
+    } else {
+      registryType = 'npm';
+    }
+    
+    const catalogEntry: CatalogServer = {
+      id: `github-${repoName}-${Date.now()}`,
+      name: resolved.name,
+      description: `Installed from ${githubUrl}`,
+      endpointUrl: '',
+      installableOnly: true,
+      tags: ['custom', 'github'],
+      source: 'github',
+      fetchedAt: Date.now(),
+      homepageUrl: githubUrl,
+      repositoryUrl: githubUrl,
+      packages: [{
+        registryType: registryType as 'npm' | 'pypi' | 'oci' | 'binary',
+        identifier: resolved.name,
+        binaryUrl: resolved.binaryUrl,
+        environmentVariables: [],
+      }],
+    };
+    
+    // Install
+    const server = await installer.install(catalogEntry, 0);
+    
+    return makeResult('install_github_repo', requestId, {
+      success: true,
+      server_id: server.id,
+      package_type: registryType,
+      needs_config: false, // TODO: detect if server needs config
+    });
+  } catch (e) {
+    log(`Failed to install from GitHub: ${e}`);
+    return makeError(requestId, 'install_error', String(e));
+  }
+};
+
+/**
+ * Install a server from a GitHub URL (with more options).
+ */
+const handleInstallFromGitHub: MessageHandler = async (message, _store, _client, _catalog, installer) => {
+  const requestId = message.request_id || '';
+  const githubUrl = message.github_url as string || '';
+  const useDocker = message.use_docker as boolean || false;
+  
+  if (!githubUrl) {
+    return makeError(requestId, 'invalid_request', 'Missing github_url');
+  }
+  
+  // Validate it's a GitHub URL
+  if (!githubUrl.includes('github.com')) {
+    return makeError(requestId, 'invalid_request', 'Not a valid GitHub URL');
+  }
+  
+  try {
+    log(`[handleInstallFromGitHub] Resolving: ${githubUrl}`);
+    
+    // Resolve package info from GitHub
+    const resolved = await resolveGitHubPackage(githubUrl);
+    
+    if (!resolved || !resolved.name) {
+      return makeError(requestId, 'resolve_error', 
+        'Could not determine how to install this repository.\n\n' +
+        'Supported formats:\n' +
+        '• npm packages (package.json)\n' +
+        '• Python packages (pyproject.toml)\n' +
+        '• Go binaries (GitHub releases)\n\n' +
+        'Check the repository for manual installation instructions.');
+    }
+    
+    // Build catalog entry
+    const repoName = githubUrl.match(/github\.com\/[^/]+\/([^/]+)/)?.[1] || resolved.name;
+    
+    // Determine package type
+    let registryType: string;
+    if (resolved.type === 'python') {
+      registryType = 'pypi';
+    } else if (resolved.type === 'binary') {
+      registryType = 'binary';
+    } else {
+      registryType = 'npm';
+    }
+    
+    const catalogEntry: CatalogServer = {
+      id: `github-${repoName}-${Date.now()}`,
+      name: resolved.name,
+      description: `Installed from ${githubUrl}`,
+      endpointUrl: '',
+      installableOnly: true,
+      tags: ['custom', 'github'],
+      source: 'github',
+      fetchedAt: Date.now(),
+      homepageUrl: githubUrl,
+      repositoryUrl: githubUrl,
+      packages: [{
+        registryType: registryType as 'npm' | 'pypi' | 'oci' | 'binary',
+        identifier: resolved.name,
+        binaryUrl: resolved.binaryUrl,
+        environmentVariables: [],
+      }],
+    };
+    
+    // Install
+    const server = await installer.install(catalogEntry, 0);
+    
+    return makeResult('install_from_github', requestId, {
+      server,
+      resolved: {
+        name: resolved.name,
+        type: resolved.type,
+        version: resolved.version,
+      },
+    });
+  } catch (e) {
+    log(`Failed to install from GitHub: ${e}`);
+    return makeError(requestId, 'install_error', String(e));
+  }
+};
+
+/**
+ * Check if Docker is available and get image status.
+ */
+const handleCheckDocker: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  
+  try {
+    const dockerExec = getDockerExec();
+    const info = await dockerExec.checkDocker();
+    
+    // Also get image status if Docker is available
+    let images: Record<string, { exists: boolean; size?: string }> = {};
+    if (info.available) {
+      const { getDockerImageManager } = await import('./installer/docker-images.js');
+      const imageManager = getDockerImageManager();
+      images = await imageManager.getImagesStatus();
+    }
+    
+    return makeResult('check_docker', requestId, {
+      ...info,
+      images,
+    });
+  } catch (e) {
+    log(`Failed to check Docker: ${e}`);
+    return makeError(requestId, 'docker_error', String(e));
+  }
+};
+
+/**
+ * Build Docker images for MCP server execution.
+ */
+const handleBuildDockerImages: MessageHandler = async (message) => {
+  const requestId = message.request_id || '';
+  const imageType = message.image_type as string | undefined;
+  
+  try {
+    const { getDockerImageManager } = await import('./installer/docker-images.js');
+    const imageManager = getDockerImageManager();
+    
+    if (imageType) {
+      // Build specific image
+      await imageManager.buildImage(imageType as 'node' | 'python' | 'binary' | 'multi');
+      return makeResult('build_docker_images', requestId, {
+        built: [imageType],
+      });
+    } else {
+      // Build all images
+      await imageManager.rebuildAllImages();
+      return makeResult('build_docker_images', requestId, {
+        built: ['node', 'python', 'binary', 'multi'],
+      });
+    }
+  } catch (e) {
+    log(`Failed to build Docker images: ${e}`);
+    return makeError(requestId, 'docker_build_error', String(e));
+  }
+};
+
+/**
+ * Set Docker mode for a server.
+ */
+const handleSetDockerMode: MessageHandler = async (message, _store, _client, _catalog, installer) => {
+  const requestId = message.request_id || '';
+  const serverId = message.server_id as string || '';
+  const useDocker = message.use_docker as boolean ?? true;
+  const volumes = message.volumes as string[] | undefined;
+  
+  if (!serverId) {
+    return makeError(requestId, 'invalid_request', 'Missing server_id');
+  }
+  
+  try {
+    installer.setDockerMode(serverId, useDocker, volumes);
+    
+    return makeResult('set_docker_mode', requestId, {
+      server_id: serverId,
+      use_docker: useDocker,
+      volumes,
+    });
+  } catch (e) {
+    log(`Failed to set Docker mode: ${e}`);
+    return makeError(requestId, 'docker_mode_error', String(e));
+  }
+};
+
+/**
+ * Check if Docker should be preferred for a server.
+ */
+const handleShouldPreferDocker: MessageHandler = async (message, _store, _client, _catalog, installer) => {
+  const requestId = message.request_id || '';
+  const serverId = message.server_id as string || '';
+  
+  if (!serverId) {
+    return makeError(requestId, 'invalid_request', 'Missing server_id');
+  }
+  
+  try {
+    const result = await installer.shouldPreferDocker(serverId);
+    return makeResult('should_prefer_docker', requestId, result);
+  } catch (e) {
+    log(`Failed to check Docker preference: ${e}`);
+    return makeError(requestId, 'docker_check_error', String(e));
+  }
+};
+
+// =============================================================================
 // Handler Registry
 // =============================================================================
 
@@ -1694,10 +2948,25 @@ const HANDLERS: Record<string, MessageHandler> = {
   catalog_refresh: handleCatalogRefresh,
   catalog_search: handleCatalogSearch,
   catalog_enrich: handleCatalogEnrich,
+  // Curated directory handlers
+  get_curated_servers: handleGetCuratedServers,
+  get_curated_list: handleGetCuratedList,
+  install_curated_server: handleInstallCuratedServer,
+  install_curated: handleInstallCurated,
+  install_github_repo: handleInstallGithubRepo,
+  install_from_github: handleInstallFromGitHub,
+  // Docker handlers
+  check_docker: handleCheckDocker,
+  build_docker_images: handleBuildDockerImages,
+  set_docker_mode: handleSetDockerMode,
+  should_prefer_docker: handleShouldPreferDocker,
   // Installer handlers
   check_runtimes: handleCheckRuntimes,
   install_server: handleInstallServer,
+  add_remote_server: handleAddRemoteServer,
+  import_config: handleImportConfig,
   resolve_github: handleResolveGitHub,
+  resolve_server_package: handleResolveServerPackage,
   uninstall_server: handleUninstallServer,
   list_installed: handleListInstalled,
   start_installed: handleStartInstalled,
@@ -1721,6 +2990,21 @@ const HANDLERS: Record<string, MessageHandler> = {
   validate_credentials: handleValidateCredentials,
   delete_credential: handleDeleteCredential,
   list_credentials: handleListCredentials,
+  // OAuth handlers
+  oauth_start: handleOAuthStart,
+  oauth_cancel: handleOAuthCancel,
+  oauth_revoke: handleOAuthRevoke,
+  oauth_status: handleOAuthStatus,
+  list_oauth_providers: handleListOAuthProviders,
+  // Host API handlers
+  host_grant_permission: handleHostGrantPermission,
+  host_revoke_permission: handleHostRevokePermission,
+  host_check_permission: handleHostCheckPermission,
+  host_get_permissions: handleHostGetPermissions,
+  host_expire_tab_grants: handleHostExpireTabGrants,
+  host_list_tools: handleHostListTools,
+  host_call_tool: handleHostCallTool,
+  host_get_stats: handleHostGetStats,
   // LLM handlers
   llm_detect: handleLlmDetect,
   llm_list_providers: handleLlmListProviders,

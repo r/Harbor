@@ -2,6 +2,67 @@
 import browser from 'webextension-polyfill';
 import type { CatalogServer, ProviderStatus, CatalogResponse } from './catalog/types';
 
+// ============================================================================
+// RECOMMENDED SERVERS - Hardcoded quick start servers for new users
+// ============================================================================
+interface RecommendedServer {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  packageType: 'npm' | 'pypi' | 'binary';
+  packageId: string;
+  tags: string[];
+  requiresNative: boolean;
+  requiresConfig?: boolean;
+  configHint?: string;
+  homepageUrl: string;
+}
+
+const RECOMMENDED_SERVERS: RecommendedServer[] = [
+  {
+    id: 'recommended-filesystem',
+    name: 'Filesystem',
+    description: 'Read, write, and manage files on your local system. Perfect for working with documents, code, and data.',
+    icon: '📁',
+    packageType: 'npm',
+    packageId: '@modelcontextprotocol/server-filesystem',
+    tags: ['files', 'local', 'essential'],
+    requiresNative: true,
+    requiresConfig: true,
+    configHint: 'Choose which folders to allow access to',
+    homepageUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem',
+  },
+  {
+    id: 'recommended-github',
+    name: 'GitHub',
+    description: 'Access repositories, issues, pull requests, and more. Great for developers and project management.',
+    icon: '🐙',
+    // Package info will be resolved from GitHub URL - it's a Go binary
+    packageType: 'npm', // Placeholder - will be resolved from homepageUrl
+    packageId: '', // Empty - triggers GitHub resolution
+    tags: ['development', 'git', 'collaboration'],
+    requiresNative: true,
+    requiresConfig: true,
+    configHint: 'Requires a GitHub Personal Access Token',
+    homepageUrl: 'https://github.com/github/github-mcp-server',
+  },
+  {
+    id: 'recommended-time',
+    name: 'Time',
+    description: 'Get current time, convert timezones, and work with dates. Simple but useful for scheduling tasks.',
+    icon: '🕐',
+    packageType: 'pypi',
+    packageId: 'mcp-server-time',
+    tags: ['utility', 'datetime'],
+    requiresNative: true,
+    requiresConfig: false,
+    homepageUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/time',
+  },
+];
+
+// ============================================================================
+
 // Featured server IDs (manually curated list of popular/recommended servers)
 // Focus on locally installable servers for now
 const FEATURED_SERVER_PATTERNS = [
@@ -24,21 +85,55 @@ const FEATURED_SERVER_PATTERNS = [
 const FOCUS_ON_INSTALLABLE = true;
 
 // Theme handling
-function initTheme(): void {
-  const savedTheme = localStorage.getItem('harbor-theme');
+// Theme handling - synced across all extension pages via browser.storage
+async function initTheme(): Promise<void> {
+  // Try to get from browser.storage first (synced across pages)
+  try {
+    const result = await browser.storage.local.get('harbor-theme');
+    const savedTheme = result['harbor-theme'] as string | undefined;
+    if (savedTheme) {
+      document.documentElement.setAttribute('data-theme', savedTheme);
+      updateThemeIcon(savedTheme);
+      return;
+    }
+  } catch (e) {
+    // Fall back to localStorage
+  }
+  
+  // Fall back to localStorage or system preference
+  const localTheme = localStorage.getItem('harbor-theme');
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+  const theme = localTheme || (prefersDark ? 'dark' : 'light');
   document.documentElement.setAttribute('data-theme', theme);
   updateThemeIcon(theme);
+  
+  // Save to browser.storage for sync
+  try {
+    await browser.storage.local.set({ 'harbor-theme': theme });
+  } catch (e) {}
 }
 
-function toggleTheme(): void {
+async function toggleTheme(): Promise<void> {
   const current = document.documentElement.getAttribute('data-theme');
   const next = current === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   localStorage.setItem('harbor-theme', next);
   updateThemeIcon(next);
+  
+  // Sync to browser.storage so other pages pick it up
+  try {
+    await browser.storage.local.set({ 'harbor-theme': next });
+  } catch (e) {}
 }
+
+// Listen for theme changes from other pages
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes['harbor-theme']) {
+    const newTheme = changes['harbor-theme'].newValue as string;
+    document.documentElement.setAttribute('data-theme', newTheme);
+    updateThemeIcon(newTheme);
+  }
+});
 
 function updateThemeIcon(theme: string): void {
   const icon = document.getElementById('theme-icon');
@@ -57,6 +152,15 @@ const providerStatusEl = document.getElementById('provider-status') as HTMLDivEl
 const mainContent = document.getElementById('main-content') as HTMLElement;
 const themeToggleBtn = document.getElementById('theme-toggle') as HTMLButtonElement;
 const customUrlBtn = document.getElementById('custom-url-btn') as HTMLButtonElement;
+const heroSection = document.querySelector('.hero') as HTMLDivElement;
+const filterBar = document.querySelector('.filter-bar') as HTMLDivElement;
+
+// Navigation links
+const navQuickstart = document.getElementById('nav-quickstart') as HTMLAnchorElement;
+const navBrowse = document.getElementById('nav-browse') as HTMLAnchorElement;
+
+// Current view: 'quickstart' | 'browse'
+let currentView: 'quickstart' | 'browse' = 'quickstart';
 
 // Modals
 const detailModal = document.getElementById('detail-modal') as HTMLDivElement;
@@ -85,13 +189,36 @@ const installModalConfigure = document.getElementById('install-modal-configure')
 let allServers: CatalogServer[] = [];
 let installedServerIds: Set<string> = new Set();
 let providerStatus: ProviderStatus[] = [];
+// Cache for resolved package types (server id -> { packageType, packageId })
+const resolvedPackageCache: Map<string, { packageType: string | null; packageId: string | null }> = new Map();
 let isLoading = false;
 let loadingStatus = 'Connecting to bridge...';
 let activeFilter = 'all';
 let selectedServer: CatalogServer | null = null;
 let lastInstalledServerId: string | null = null;
 
-// Listen for catalog status updates
+// Update UI based on current view
+function updateViewUI(): void {
+  // Update nav links
+  navQuickstart?.classList.toggle('active', currentView === 'quickstart');
+  navBrowse?.classList.toggle('active', currentView === 'browse');
+  
+  // Show/hide hero section (search) and filter bar based on view
+  if (heroSection) {
+    heroSection.style.display = currentView === 'browse' ? 'block' : 'none';
+  }
+  if (filterBar) {
+    filterBar.style.display = currentView === 'browse' ? 'block' : 'none';
+  }
+}
+
+function switchView(view: 'quickstart' | 'browse'): void {
+  currentView = view;
+  updateViewUI();
+  renderServers();
+}
+
+// Listen for catalog status updates and installed server changes
 function initCatalogStatusListener(): void {
   browser.runtime.onMessage.addListener((message) => {
     // Handle real-time catalog status updates
@@ -105,7 +232,30 @@ function initCatalogStatusListener(): void {
         loadCatalog(false);
       }
     }
+    
+    // Handle installed servers changes (install/uninstall from sidebar)
+    if (message.type === 'installed_servers_changed') {
+      // Refresh installed server IDs and re-render
+      refreshInstalledServerIds();
+    }
   });
+}
+
+// Refresh the installed server IDs from the bridge
+async function refreshInstalledServerIds(): Promise<void> {
+  try {
+    const response = await browser.runtime.sendMessage({ type: 'list_installed' }) as {
+      type: string;
+      servers?: Array<{ id: string }>;
+    };
+    
+    if (response.type === 'list_installed_result' && response.servers) {
+      installedServerIds = new Set(response.servers.map(s => s.id));
+      renderServers();
+    }
+  } catch (e) {
+    console.error('Failed to refresh installed servers:', e);
+  }
 }
 
 // Utility functions
@@ -119,8 +269,13 @@ function showToast(message: string, type: 'success' | 'error' = 'success'): void
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
+  toast.style.maxWidth = '400px';
+  toast.style.whiteSpace = 'pre-wrap';
+  toast.style.wordBreak = 'break-word';
   document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
+  // Errors stay longer so user can read them
+  const duration = type === 'error' ? 8000 : 3000;
+  setTimeout(() => toast.remove(), duration);
 }
 
 // Check if a server matches featured patterns
@@ -362,7 +517,7 @@ function setLoadingStatus(status: string): void {
 
 // Main content rendering
 function renderServers(): void {
-  if (isLoading) {
+  if (isLoading && currentView === 'browse') {
     mainContent.innerHTML = `
       <div class="loading-state">
         <div class="loading-spinner">↻</div>
@@ -373,12 +528,21 @@ function renderServers(): void {
     return;
   }
 
+  // Quick Start view - show only the curated servers
+  if (currentView === 'quickstart') {
+    mainContent.innerHTML = renderQuickStartSection();
+    attachQuickStartListeners();
+    return;
+  }
+
+  // Browse view - show all servers with search/filter
   const filtered = applyFilters(allServers);
   const query = searchInput.value.toLowerCase().trim();
   const featured = getFeaturedServers();
-  const showFeatured = activeFilter === 'all' && !query && featured.length > 0;
+  // Show featured section on "All" tab when no search query
+  const showFeaturedSection = activeFilter === 'all' && !query && featured.length > 0;
 
-  if (filtered.length === 0 && !showFeatured) {
+  if (filtered.length === 0 && !showFeaturedSection) {
     mainContent.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">—</div>
@@ -391,8 +555,8 @@ function renderServers(): void {
 
   let html = '';
 
-  // Featured section
-  if (showFeatured) {
+  // Featured section (only on "All" tab)
+  if (showFeaturedSection) {
     html += `
       <section class="featured-section">
         <div class="section-header">
@@ -408,15 +572,23 @@ function renderServers(): void {
     `;
   }
 
-  // All servers section (filtered is already installable-only when FOCUS_ON_INSTALLABLE is true)
-  const serversToShow = activeFilter === 'featured' ? [] : filtered;
+  // Servers to show in the grid
+  // On "Popular" tab, show filtered (which are the featured/popular servers)
+  // On other tabs, show filtered results
+  const serversToShow = filtered;
   
   if (serversToShow.length > 0) {
+    // Determine section title based on active filter
+    const sectionTitle = activeFilter === 'featured' ? '⭐ Popular Servers' :
+                         activeFilter === 'official' ? 'Official Servers' :
+                         activeFilter === 'all' ? 'All Servers' :
+                         `${activeFilter.charAt(0).toUpperCase() + activeFilter.slice(1)} Servers`;
+    
     html += `
       <section>
         <div class="section-header">
           <div class="section-title-group">
-            <span class="section-title">All Servers</span>
+            <span class="section-title">${sectionTitle}</span>
             <span class="section-count">${serversToShow.length}</span>
           </div>
         </div>
@@ -447,15 +619,57 @@ function renderServers(): void {
 
   // Attach install button listeners
   mainContent.querySelectorAll('.btn-install').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const el = btn as HTMLButtonElement;
+      const serverId = el.dataset.serverId;
+      if (!serverId) {
+        console.error('No server ID on install button');
+        showToast('Failed to install: missing server ID', 'error');
+        return;
+      }
+      const server = allServers.find(s => s.id === serverId);
+      if (!server) {
+        console.error('Server not found:', serverId);
+        showToast('Failed to install: server not found', 'error');
+        return;
+      }
       try {
-        const server = JSON.parse(el.dataset.server!) as CatalogServer;
-        installServer(server);
+        await installServer(server);
       } catch (err) {
-        console.error('Failed to parse server data:', err);
-        showToast('Failed to install server', 'error');
+        console.error('Failed to install server:', err);
+        showToast(`Failed to install: ${err}`, 'error');
+      }
+    });
+  });
+
+  // Attach Quick Start install button listeners
+  attachQuickStartListeners();
+}
+
+// Attach Quick Start install button event listeners
+function attachQuickStartListeners(): void {
+  mainContent.querySelectorAll('.btn-quickstart-install').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const el = btn as HTMLButtonElement;
+      const recommendedId = el.dataset.recommendedId;
+      if (!recommendedId) {
+        console.error('No recommended ID on install button');
+        showToast('Failed to install: missing server ID', 'error');
+        return;
+      }
+      const recommended = RECOMMENDED_SERVERS.find(s => s.id === recommendedId);
+      if (!recommended) {
+        console.error('Recommended server not found:', recommendedId);
+        showToast('Failed to install: server not found', 'error');
+        return;
+      }
+      try {
+        await installRecommendedServer(recommended);
+      } catch (err) {
+        console.error('Failed to install recommended server:', err);
+        showToast(`Failed to install: ${err}`, 'error');
       }
     });
   });
@@ -465,6 +679,33 @@ function renderServers(): void {
 function hasPackageInfo(server: CatalogServer): boolean {
   const packages = (server as any).packages;
   return packages && packages.length > 0 && packages[0].identifier;
+}
+
+// Get language badge info from package type (only JS/TS and Python supported)
+function getLanguageBadge(packageType: string | undefined): { label: string; class: string; icon: string } | null {
+  if (!packageType) return null;
+  switch (packageType.toLowerCase()) {
+    case 'npm':
+      return { label: 'JS/TS', class: 'lang-js', icon: '🟨' };
+    case 'pypi':
+      return { label: 'Python', class: 'lang-python', icon: '🐍' };
+    case 'binary':
+      return { label: 'Go/Binary', class: 'lang-go', icon: '🔷' };
+    default:
+      return null;
+  }
+}
+
+// Get package type from server (checks cache first, then packages array)
+function getPackageType(server: CatalogServer): string | undefined {
+  // Check resolved cache first
+  const cached = resolvedPackageCache.get(server.id);
+  if (cached?.packageType) {
+    return cached.packageType;
+  }
+  // Fall back to packages array (from official registry)
+  const packages = (server as any).packages;
+  return packages?.[0]?.registryType;
 }
 
 // Check if server can potentially be installed (has package info OR has GitHub URL)
@@ -480,6 +721,11 @@ function renderFeaturedCard(server: CatalogServer): string {
   const isInstalled = installedServerIds.has(server.id);
   const installable = canInstall(server);
   const hasDirectPackage = hasPackageInfo(server);
+  
+  // Language badge
+  const packageType = getPackageType(server);
+  const langBadge = getLanguageBadge(packageType);
+  
   const tagsHtml = server.tags
     .filter(t => !['remote', 'installable_only', 'official'].includes(t))
     .slice(0, 2)
@@ -491,17 +737,18 @@ function renderFeaturedCard(server: CatalogServer): string {
   const downloads = formatDownloads(server.npmDownloads);
   const statsHtml = (stars || downloads) 
     ? `<div class="server-stats">
+        ${langBadge ? `<span class="lang-badge ${langBadge.class}" title="${langBadge.label}">${langBadge.icon}</span>` : ''}
         ${stars ? `<span class="stat" title="GitHub stars">⭐ ${stars}</span>` : ''}
         ${downloads ? `<span class="stat" title="Weekly npm downloads">📦 ${downloads}</span>` : ''}
        </div>`
-    : '';
+    : (langBadge ? `<div class="server-stats"><span class="lang-badge ${langBadge.class}" title="${langBadge.label}">${langBadge.icon}</span></div>` : '');
 
   let actionHtml = '';
   if (isInstalled) {
     actionHtml = `<span class="badge badge-installed">Installed</span>`;
   } else if (installable) {
     const label = hasDirectPackage ? 'Install' : 'Install from GitHub';
-    actionHtml = `<button class="btn btn-sm btn-primary btn-install" data-server='${JSON.stringify(server).replace(/'/g, "\\'")}' title="${hasDirectPackage ? '' : 'Will resolve package from GitHub'}">${label}</button>`;
+    actionHtml = `<button class="btn btn-sm btn-primary btn-install" data-server-id="${escapeHtml(server.id)}" title="${hasDirectPackage ? '' : 'Will resolve package from GitHub'}">${label}</button>`;
   } else if (server.homepageUrl) {
     actionHtml = `<a href="${escapeHtml(server.homepageUrl)}" target="_blank" class="btn btn-sm btn-secondary" onclick="event.stopPropagation()">View</a>`;
   }
@@ -521,11 +768,94 @@ function renderFeaturedCard(server: CatalogServer): string {
   `;
 }
 
+// Render Quick Start / Recommended section
+function renderQuickStartSection(): string {
+  // Check which recommended servers are already installed
+  const recommendedWithStatus = RECOMMENDED_SERVERS.map(server => ({
+    ...server,
+    isInstalled: installedServerIds.has(server.id) || 
+      // Also check if installed by package ID matching
+      [...installedServerIds].some(id => {
+        if (!id || typeof id !== 'string') return false;
+        const pkgPart = server.packageId.split('/').pop();
+        return pkgPart ? id.toLowerCase().includes(pkgPart.toLowerCase()) : false;
+      }),
+  }));
+
+  const allInstalled = recommendedWithStatus.every(s => s.isInstalled);
+  
+  // If all are installed, don't show the section
+  if (allInstalled) return '';
+
+  const cardsHtml = recommendedWithStatus.map(server => {
+    const requirementBadge = server.requiresNative 
+      ? `<span class="quickstart-badge badge-native" title="Requires Harbor Bridge for local execution">⚡ Local Server</span>`
+      : '';
+    
+    const configNote = server.requiresConfig && server.configHint
+      ? `<div class="quickstart-config-hint">${escapeHtml(server.configHint)}</div>`
+      : '';
+
+    let actionHtml = '';
+    if (server.isInstalled) {
+      actionHtml = `<span class="badge badge-installed">✓ Installed</span>`;
+    } else {
+      actionHtml = `<button class="btn btn-primary btn-quickstart-install" data-recommended-id="${escapeHtml(server.id)}">
+        Install
+      </button>`;
+    }
+
+    return `
+      <div class="quickstart-card ${server.isInstalled ? 'installed' : ''}" data-recommended-id="${escapeHtml(server.id)}">
+        <div class="quickstart-card-icon">${server.icon}</div>
+        <div class="quickstart-card-content">
+          <div class="quickstart-card-header">
+            <span class="quickstart-card-name">${escapeHtml(server.name)}</span>
+            ${requirementBadge}
+          </div>
+          <p class="quickstart-card-description">${escapeHtml(server.description)}</p>
+          ${configNote}
+          <div class="quickstart-card-tags">
+            ${server.tags.map(t => `<span class="server-tag">${escapeHtml(t)}</span>`).join('')}
+          </div>
+        </div>
+        <div class="quickstart-card-action">
+          ${actionHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <section class="quickstart-section">
+      <div class="quickstart-header">
+        <div class="quickstart-title-group">
+          <span class="quickstart-icon">🚀</span>
+          <div>
+            <h2 class="quickstart-title">Quick Start</h2>
+            <p class="quickstart-subtitle">Get started with these essential MCP servers</p>
+          </div>
+        </div>
+      </div>
+      <div class="quickstart-grid">
+        ${cardsHtml}
+      </div>
+    </section>
+  `;
+}
+
 function renderServerCard(server: CatalogServer): string {
   const badges: string[] = [];
   const isInstalled = installedServerIds.has(server.id);
   const installable = canInstall(server);
   const hasDirectPackage = hasPackageInfo(server);
+  
+  // Language badge
+  const packageType = getPackageType(server);
+  const langBadge = getLanguageBadge(packageType);
+  if (langBadge) {
+    badges.push(`<span class="badge lang-badge ${langBadge.class}">${langBadge.icon} ${langBadge.label}</span>`);
+  }
   
   // Source badge
   if (server.source === 'official_registry') {
@@ -553,7 +883,7 @@ function renderServerCard(server: CatalogServer): string {
     const label = hasDirectPackage ? 'Install' : 'Install';
     const title = hasDirectPackage ? '' : 'Will resolve package info from GitHub';
     actionsHtml += `
-      <button class="btn btn-sm btn-primary btn-install" data-server='${JSON.stringify(server).replace(/'/g, "\\'")}' title="${title}">
+      <button class="btn btn-sm btn-primary btn-install" data-server-id="${escapeHtml(server.id)}" title="${title}">
         ${label}
       </button>
     `;
@@ -589,7 +919,7 @@ function renderServerCard(server: CatalogServer): string {
 }
 
 // Modal functions
-function openDetailModal(server: CatalogServer): void {
+async function openDetailModal(server: CatalogServer): Promise<void> {
   selectedServer = server;
   const isInstalled = installedServerIds.has(server.id);
   const installable = canInstall(server);
@@ -606,24 +936,77 @@ function openDetailModal(server: CatalogServer): void {
     .map(t => `<span class="server-tag">${escapeHtml(t)}</span>`)
     .join('');
 
-  // Get package info for display
-  const packageInfo = (server as any).packages?.[0];
-  const packageDisplay = packageInfo 
+  // Get package info for display (may already be resolved or from packages array)
+  let packageInfo = (server as any).packages?.[0];
+  let packageDisplay = packageInfo 
     ? `${packageInfo.registryType || 'npm'}: ${packageInfo.identifier}`
     : null;
+  
+  // Check cache
+  const cachedPkg = resolvedPackageCache.get(server.id);
+  if (cachedPkg?.packageType && cachedPkg?.packageId) {
+    packageDisplay = `${cachedPkg.packageType}: ${cachedPkg.packageId}`;
+  }
+  
+  // If no package info and has GitHub URL, resolve it lazily
+  if (!packageDisplay && (server.homepageUrl?.includes('github.com') || server.repositoryUrl?.includes('github.com'))) {
+    // Show loading indicator
+    const packageSection = document.getElementById('package-info-section');
+    if (packageSection) {
+      packageSection.innerHTML = `<div class="detail-label">Package</div><div class="detail-value" style="color: var(--color-text-muted);">Resolving from GitHub...</div>`;
+    }
+    
+    // Resolve in background
+    try {
+      const response = await browser.runtime.sendMessage({
+        type: 'resolve_server_package',
+        server_id: server.id,
+      }) as { type: string; packageType?: string; packageId?: string };
+      
+      if (response.packageType && response.packageId) {
+        resolvedPackageCache.set(server.id, { 
+          packageType: response.packageType, 
+          packageId: response.packageId 
+        });
+        packageDisplay = `${response.packageType}: ${response.packageId}`;
+        
+        // Update the modal if still showing this server
+        if (selectedServer?.id === server.id) {
+          const section = document.getElementById('package-info-section');
+          if (section) {
+            const langBadge = getLanguageBadge(response.packageType);
+            const badgeHtml = langBadge ? `<span class="lang-badge ${langBadge.class}" style="margin-right: 8px;">${langBadge.icon} ${langBadge.label}</span>` : '';
+            section.innerHTML = `<div class="detail-label">Package</div><div class="detail-url">${badgeHtml}${escapeHtml(response.packageId!)}</div>`;
+          }
+        }
+        
+        // Re-render server list to show badge
+        renderServers();
+      }
+    } catch (e) {
+      console.error('Failed to resolve package:', e);
+    }
+  }
 
   let installInfoHtml = '';
-  if (hasDirectPackage) {
+  
+  // Get language badge for package display
+  const pkgType = packageDisplay ? packageDisplay.split(':')[0] : null;
+  const langBadge = pkgType ? getLanguageBadge(pkgType) : null;
+  const badgeHtml = langBadge ? `<span class="lang-badge ${langBadge.class}" style="margin-right: 8px;">${langBadge.icon} ${langBadge.label}</span>` : '';
+  
+  if (hasDirectPackage || packageDisplay) {
+    const pkgId = packageDisplay ? packageDisplay.split(': ')[1] : '';
     installInfoHtml = `
-      <div class="detail-section">
+      <div class="detail-section" id="package-info-section">
         <div class="detail-label">Package</div>
-        <div class="detail-url">${escapeHtml(packageDisplay!)}</div>
+        <div class="detail-url">${badgeHtml}${escapeHtml(pkgId)}</div>
       </div>
       
       <div class="detail-section">
         <div class="detail-label">What happens when you install</div>
         <div class="detail-value" style="font-size: var(--text-xs); color: var(--color-text-muted);">
-          1. Downloads the npm package to ~/.harbor/servers/<br>
+          1. Downloads the package<br>
           2. Installs dependencies<br>
           3. Server is ready to start from the sidebar
         </div>
@@ -631,12 +1014,10 @@ function openDetailModal(server: CatalogServer): void {
     `;
   } else if (isGitHubInstall) {
     installInfoHtml = `
-      <div class="detail-section" style="background: var(--color-bg-subtle); padding: var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--color-border);">
+      <div class="detail-section" id="package-info-section" style="background: var(--color-bg-subtle); padding: var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--color-border);">
         <div class="detail-label" style="color: var(--color-accent-primary);">GitHub Installation</div>
         <div class="detail-value" style="font-size: var(--text-xs); color: var(--color-text-secondary);">
-          1. Fetches package.json from the GitHub repository<br>
-          2. Determines the npm package name<br>
-          3. Installs and configures automatically
+          Resolving package info from repository...
         </div>
       </div>
     `;
@@ -782,26 +1163,29 @@ function updateInstallStep(stepName: string, status: 'active' | 'complete' | 'er
 function showInstallSuccess(serverName: string, needsConfig: boolean): void {
   installModalSubtitle.textContent = 'Installation complete!';
   
+  const configMessage = needsConfig 
+    ? 'Open the <strong>sidebar</strong> to configure credentials and start the server.'
+    : 'Open the <strong>sidebar</strong> to start the server.';
+  
   installModalBody.innerHTML = `
     <div class="install-success-message">
       <div class="install-success-icon">✅</div>
       <div class="install-success-title">${escapeHtml(serverName)} installed!</div>
-      <div class="install-success-detail">
-        ${needsConfig 
-          ? 'This server requires configuration. Click Configure to set up credentials.'
-          : 'The server is ready to use. You can start it from the sidebar.'}
-      </div>
+      <div class="install-success-detail">${configMessage}</div>
     </div>
   `;
 
   installModalFooter.style.display = 'flex';
-  installModalConfigure.style.display = needsConfig ? 'block' : 'none';
+  installModalConfigure.style.display = 'none'; // Never show - just use Close button
 }
 
 function showInstallError(error: string): void {
   installModalSubtitle.textContent = 'Installation failed';
   installModalFooter.style.display = 'flex';
   installModalConfigure.style.display = 'none';
+  // Show the actual error message as a toast so the user knows what went wrong
+  showToast(`Install failed: ${error}`, 'error');
+  console.error('[Directory] Install error:', error);
 }
 
 function closeInstallModal(): void {
@@ -866,8 +1250,8 @@ async function loadInstalledServers(): Promise<void> {
     if (response.type === 'list_installed_result' && response.servers) {
       installedServerIds = new Set(
         response.servers
-          .filter(s => s.server?.id)
-          .map(s => s.server!.id)
+          .map(s => (s as any).server?.id || s.id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
       );
     }
   } catch (error) {
@@ -924,15 +1308,20 @@ async function installServer(server: CatalogServer): Promise<void> {
     updateInstallStep('download', 'complete', 'Package downloaded');
     updateInstallStep('install', 'active', 'Installing dependencies...');
 
+    console.log('[Directory] Sending install_server request for:', server.name, server.id);
     const installResponse = await browser.runtime.sendMessage({
       type: 'install_server',
       catalog_entry: server,
       package_index: 0,
     }) as { type: string; server?: { id: string; requiredEnvVars?: Array<{ isSecret?: boolean }> }; error?: { message: string } };
 
+    console.log('[Directory] install_server response:', installResponse);
+    
     if (installResponse.type === 'error') {
-      updateInstallStep('install', 'error', installResponse.error?.message || 'Installation failed');
-      showInstallError(installResponse.error?.message || 'Installation failed');
+      const errorMsg = installResponse.error?.message || 'Installation failed';
+      console.error('[Directory] Install error from bridge:', errorMsg);
+      updateInstallStep('install', 'error', errorMsg);
+      showInstallError(errorMsg);
       return;
     }
 
@@ -959,6 +1348,108 @@ async function installServer(server: CatalogServer): Promise<void> {
 
   } catch (error) {
     console.error('[Directory] Failed to install server:', error);
+    updateInstallStep('install', 'error', String(error));
+    showInstallError(String(error));
+  }
+}
+
+// Install a recommended server (hardcoded Quick Start servers)
+async function installRecommendedServer(recommended: RecommendedServer): Promise<void> {
+  openInstallModal(recommended.name);
+  
+  try {
+    // Step 1: Check runtimes
+    updateInstallStep('check', 'active', 'Checking Node.js availability...');
+    
+    const runtimesResponse = await browser.runtime.sendMessage({
+      type: 'check_runtimes',
+    }) as { type: string; runtimes?: unknown[]; canInstall?: Record<string, boolean>; error?: { message: string } };
+
+    if (runtimesResponse.type === 'error') {
+      updateInstallStep('check', 'error', runtimesResponse.error?.message || 'Failed to check runtimes');
+      showInstallError(runtimesResponse.error?.message || 'Failed to check runtimes');
+      return;
+    }
+
+    updateInstallStep('check', 'complete', 'Runtime available');
+    
+    // Step 2: Download
+    updateInstallStep('download', 'active', 'Downloading package...');
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Step 3: Install
+    updateInstallStep('download', 'complete', 'Package downloaded');
+    updateInstallStep('install', 'active', 'Installing dependencies...');
+
+    // Create a synthetic catalog entry for the recommended server
+    const syntheticCatalogEntry: CatalogServer = {
+      id: recommended.id,
+      name: recommended.name,
+      description: recommended.description,
+      endpointUrl: '',
+      installableOnly: true,
+      tags: recommended.tags,
+      source: 'official_registry',
+      fetchedAt: Date.now(),
+      homepageUrl: recommended.homepageUrl,
+    };
+
+    console.log('[Directory] Installing recommended server:', recommended.name, recommended.packageId);
+    
+    // Build packages array - only include if packageId is specified
+    // If packageId is empty, let the backend resolve from homepageUrl
+    const packages = recommended.packageId 
+      ? [{
+          registryType: recommended.packageType,
+          identifier: recommended.packageId,
+        }]
+      : undefined;
+    
+    const installResponse = await browser.runtime.sendMessage({
+      type: 'install_server',
+      catalog_entry: {
+        ...syntheticCatalogEntry,
+        packages,
+      },
+      package_index: 0,
+    }) as { type: string; server?: { id: string; requiredEnvVars?: Array<{ isSecret?: boolean }> }; error?: { message: string } };
+
+    console.log('[Directory] install_server response:', installResponse);
+    
+    if (installResponse.type === 'error') {
+      const errorMsg = installResponse.error?.message || 'Installation failed';
+      console.error('[Directory] Install error from bridge:', errorMsg);
+      updateInstallStep('install', 'error', errorMsg);
+      showInstallError(errorMsg);
+      return;
+    }
+
+    updateInstallStep('install', 'complete', 'Dependencies installed');
+    
+    // Step 4: Configure
+    updateInstallStep('configure', 'active', 'Configuring server...');
+    await new Promise(resolve => setTimeout(resolve, 300));
+    updateInstallStep('configure', 'complete', 'Configuration complete');
+
+    // Check if needs credentials
+    const needsConfig = recommended.requiresConfig || 
+      installResponse.server?.requiredEnvVars?.some(v => v.isSecret) || false;
+    lastInstalledServerId = installResponse.server?.id || null;
+    
+    // Update installed servers set
+    if (lastInstalledServerId) {
+      installedServerIds.add(lastInstalledServerId);
+    }
+    // Also mark recommended as installed
+    installedServerIds.add(recommended.id);
+    
+    showInstallSuccess(recommended.name, needsConfig);
+    
+    // Re-render to update installed status
+    renderServers();
+
+  } catch (error) {
+    console.error('[Directory] Failed to install recommended server:', error);
     updateInstallStep('install', 'error', String(error));
     showInstallError(String(error));
   }
@@ -1080,6 +1571,17 @@ filterPillsContainer.addEventListener('click', (e) => {
 // Theme toggle
 themeToggleBtn.addEventListener('click', toggleTheme);
 
+// Navigation links
+navQuickstart?.addEventListener('click', (e) => {
+  e.preventDefault();
+  switchView('quickstart');
+});
+
+navBrowse?.addEventListener('click', (e) => {
+  e.preventDefault();
+  switchView('browse');
+});
+
 // Custom URL button
 customUrlBtn.addEventListener('click', openCustomUrlModal);
 
@@ -1145,4 +1647,5 @@ document.getElementById('nav-installed')?.addEventListener('click', (e) => {
 
 // Initialize
 initCatalogStatusListener();
+updateViewUI(); // Set initial view state
 loadCatalog();

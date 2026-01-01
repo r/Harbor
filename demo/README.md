@@ -1,6 +1,13 @@
-# Harbor Demo
+# Harbor Demos
 
-This demo shows how web pages can use the Harbor JS AI Provider to interact with AI models and MCP tools.
+Example code showing how web pages can use the Harbor JS AI Provider to interact with AI models and MCP tools.
+
+## Available Demos
+
+| Demo | Description | Path |
+|------|-------------|------|
+| **Main Demo** | Full-featured chat with permissions flow | `/demo/index.html` |
+| **Chat POC** | Minimal example code for developers | `/demo/chat-poc/` |
 
 ## Quick Start
 
@@ -12,9 +19,9 @@ This demo shows how web pages can use the Harbor JS AI Provider to interact with
    python3 -m http.server 8000
    ```
 
-3. **Open the demo in Firefox**:
-   - Navigate to `http://localhost:8000`
-   - The page will detect if the Harbor extension is installed
+3. **Open a demo in your browser**:
+   - Main demo: `http://localhost:8000`
+   - Chat POC: `http://localhost:8000/chat-poc/`
 
 4. **Connect to Harbor**:
    - Click "Connect to Harbor" 
@@ -25,6 +32,11 @@ This demo shows how web pages can use the Harbor JS AI Provider to interact with
    - Type a message and hit Enter
    - Enable "Tools" to let the AI use MCP tools
    - Enable "Active Tab" to give context from the current tab
+
+## Launching from Extension
+
+You can also launch the demos directly from the Harbor extension sidebar:
+- Click **"API Demo"** to open the chat-poc demo
 
 ## Features Demonstrated
 

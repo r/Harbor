@@ -58,6 +58,8 @@ export interface StdioMcpClientOptions {
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  /** Callback when the server process exits unexpectedly */
+  onExit?: (code: number | null, signal: string | null) => void;
 }
 
 /**
@@ -113,6 +115,25 @@ export class StdioMcpClient {
         }
       });
     }
+
+    // Listen for transport close events for crash detection
+    this.transport.onclose = () => {
+      if (this.connected) {
+        log(`[StdioMcpClient] Transport closed unexpectedly for ${options.command}`);
+        this.connected = false;
+        if (options.onExit) {
+          options.onExit(null, null);
+        }
+      }
+    };
+
+    this.transport.onerror = (error: Error) => {
+      log(`[StdioMcpClient] Transport error: ${error.message}`);
+      if (this.connected && options.onExit) {
+        this.connected = false;
+        options.onExit(1, null);
+      }
+    };
   }
 
   /**

@@ -416,11 +416,16 @@ export class ChatOrchestrator {
       serverInfo += `\n${serverId}:\n${toolList}\n`;
     }
     
-    return `You are a helpful assistant with access to tools.
+    return `You are a helpful assistant with access to tools. When the user asks you to do something that requires using a tool, you MUST call the appropriate tool - do not describe how to use tools or ask the user to call them.
 
 AVAILABLE TOOLS BY SERVER:
 ${serverInfo}
-IMPORTANT: When a tool returns an error, read the error message carefully and adjust your approach. Use discovery tools (like list_allowed_directories) to learn about the environment before making assumptions.`;
+INSTRUCTIONS:
+- When the user's request can be fulfilled by calling a tool, CALL the tool directly.
+- Do NOT describe how to use tools or write out tool calls as text.
+- Do NOT ask the user to call tools themselves.
+- If a tool returns an error, read the error message carefully and adjust your approach.
+- Use discovery tools (like list_allowed_directories) to learn about the environment before making assumptions.`;
   }
 
   /**

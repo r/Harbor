@@ -1,16 +1,30 @@
 /**
- * Harbor Chat POC - Plain JavaScript
+ * Harbor Chat Demo - Example Code
  * 
- * This demonstrates using the window.ai and window.agent APIs.
- * Any website can use these same APIs when the Harbor extension is installed.
+ * This demonstrates using the window.ai and window.agent APIs that Harbor
+ * provides to any website when the extension is installed.
  * 
- * Since this runs as an extension page (moz-extension://), we use the internal
- * API bridge, but the API surface is identical to what websites see.
+ * DEVELOPER REFERENCE:
+ * 
+ * window.ai - Text generation API
+ *   .createTextSession(options?) → TextSession
+ *     options: { systemPrompt?: string, temperature?: number }
+ *   
+ *   TextSession:
+ *     .prompt(text) → Promise<string>  (non-streaming)
+ *     .promptStreaming(text) → AsyncIterable<StreamToken>
+ *     .destroy() → Promise<void>
+ * 
+ * window.agent - Agent API with tools
+ *   .requestPermissions({ scopes, reason? }) → Promise<PermissionResult>
+ *   .permissions.list() → Promise<PermissionStatus>
+ *   .tools.list() → Promise<ToolDescriptor[]>
+ *   .tools.call({ tool, args }) → Promise<unknown>
+ *   .browser.activeTab.readability() → Promise<TabContent>
+ *   .run({ task, tools?, maxToolCalls? }) → AsyncIterable<RunEvent>
+ * 
+ * See README.md for more details.
  */
-
-// Import the internal API (provides window.ai and window.agent equivalents for extension pages)
-// Note: This imports from TypeScript source; Vite handles the compilation
-import { ai, agent } from './provider/internal-api';
 
 // =============================================================================
 // State
@@ -35,7 +49,12 @@ const toolsToggle = document.getElementById('tools-toggle');
 const tabToggle = document.getElementById('tab-toggle');
 const clearBtn = document.getElementById('clear-btn');
 const themeToggle = document.getElementById('theme-toggle');
+const docsToggle = document.getElementById('docs-toggle');
+const docsPanel = document.getElementById('docs-panel');
+const docsClose = document.getElementById('docs-close');
 
+const extensionStatus = document.getElementById('extension-status');
+const extensionStatusText = document.getElementById('extension-status-text');
 const llmStatus = document.getElementById('llm-status');
 const llmStatusText = document.getElementById('llm-status-text');
 const toolsStatus = document.getElementById('tools-status');
@@ -43,11 +62,11 @@ const toolsStatusText = document.getElementById('tools-status-text');
 const sessionText = document.getElementById('session-text');
 
 // =============================================================================
-// Theme
+// Theme Management
 // =============================================================================
 
 function initTheme() {
-  const saved = localStorage.getItem('harbor-theme');
+  const saved = localStorage.getItem('harbor-chat-theme');
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const theme = saved || (prefersDark ? 'dark' : 'light');
   document.documentElement.setAttribute('data-theme', theme);
@@ -58,41 +77,67 @@ function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme');
   const next = current === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('harbor-theme', next);
+  localStorage.setItem('harbor-chat-theme', next);
   themeToggle.textContent = next === 'dark' ? '○' : '●';
 }
 
 // =============================================================================
-// Status
+// Status Checking
 // =============================================================================
 
-async function checkStatus() {
-  // Check LLM (verify API is accessible by creating a test session)
+/**
+ * Check if the Harbor extension is installed and APIs are available
+ */
+function checkExtension() {
+  if (typeof window.ai !== 'undefined' && typeof window.agent !== 'undefined') {
+    extensionStatus.classList.add('success');
+    extensionStatusText.textContent = 'Harbor installed';
+    return true;
+  }
+  
+  extensionStatus.classList.add('error');
+  extensionStatusText.textContent = 'Extension not found';
+  return false;
+}
+
+/**
+ * Check LLM availability by creating a test session
+ */
+async function checkLLM() {
   try {
-    const testSession = await ai.createTextSession();
+    const testSession = await window.ai.createTextSession();
     await testSession.destroy();
     
     llmStatus.classList.add('success');
     llmStatusText.textContent = 'LLM Ready';
+    return true;
   } catch (err) {
     llmStatus.classList.add('warning');
     llmStatusText.textContent = 'LLM Error';
-    console.error('LLM check failed:', err);
+    console.error('[Demo] LLM check failed:', err);
+    return false;
   }
-  
-  // Check available tools
+}
+
+/**
+ * Check available MCP tools
+ */
+async function checkTools() {
   try {
-    const tools = await agent.tools.list();
+    const tools = await window.agent.tools.list();
     if (tools.length > 0) {
       toolsStatus.classList.add('success');
       toolsStatusText.textContent = `Tools: ${tools.length}`;
+      return tools;
     } else {
       toolsStatus.classList.add('warning');
       toolsStatusText.textContent = 'No tools';
+      return [];
     }
   } catch (err) {
     toolsStatusText.textContent = 'Tools: Error';
-    console.error('Tools check failed:', err);
+    console.error('[Demo] Tools check failed:', err);
+    return [];
   }
 }
 
@@ -118,10 +163,9 @@ function showMessages() {
   emptyState.style.display = 'none';
 }
 
-function addMessageUI(role, content, toolCalls) {
+function addMessageUI(role, content) {
   showMessages();
-  
-  messages.push({ role, content, toolCalls });
+  messages.push({ role, content });
   
   const messageEl = document.createElement('div');
   messageEl.className = `message ${role}`;
@@ -240,6 +284,12 @@ async function sendMessage() {
   const content = messageInput.value.trim();
   if (!content || isProcessing) return;
   
+  // Check if extension is available
+  if (!window.ai || !window.agent) {
+    addMessageUI('system', 'Harbor extension not detected. Please install the extension and reload.');
+    return;
+  }
+  
   isProcessing = true;
   sendBtn.disabled = true;
   messageInput.value = '';
@@ -251,7 +301,8 @@ async function sendMessage() {
   // Create a text session if we don't have one
   if (!session) {
     try {
-      session = await ai.createTextSession({
+      // EXAMPLE: Creating a text session with window.ai
+      session = await window.ai.createTextSession({
         systemPrompt: 'You are a helpful assistant.',
       });
       updateSessionInfo();
@@ -276,6 +327,8 @@ async function sendMessage() {
 
 /**
  * Simple prompt without tools - uses window.ai text session
+ * 
+ * EXAMPLE: Basic text generation
  */
 async function runSimple(content) {
   addThinkingUI();
@@ -286,16 +339,17 @@ async function runSimple(content) {
     if (useTabContext) {
       try {
         updateThinkingText('Reading active tab...');
-        const tab = await agent.browser.activeTab.readability();
+        // EXAMPLE: Reading the active tab's content
+        const tab = await window.agent.browser.activeTab.readability();
         fullContent = `Context from active tab (${tab.title}):\n${tab.text.slice(0, 2000)}\n\n---\n\nUser question: ${content}`;
       } catch (err) {
-        console.warn('Could not read tab:', err);
+        console.warn('[Demo] Could not read tab:', err);
       }
     }
     
     updateThinkingText('Generating response...');
     
-    // Use streaming for a better UX
+    // EXAMPLE: Streaming tokens from the LLM
     let responseText = '';
     let messageEl = null;
     
@@ -329,6 +383,8 @@ async function runSimple(content) {
 
 /**
  * Agent run with tools - uses window.agent.run()
+ * 
+ * EXAMPLE: Running an agent with MCP tools
  */
 async function runWithTools(content) {
   addThinkingUI();
@@ -339,10 +395,10 @@ async function runWithTools(content) {
     if (useTabContext) {
       try {
         updateThinkingText('Reading active tab...');
-        const tab = await agent.browser.activeTab.readability();
+        const tab = await window.agent.browser.activeTab.readability();
         task = `Context from active tab (${tab.title}):\n${tab.text.slice(0, 2000)}\n\n---\n\nUser request: ${content}`;
       } catch (err) {
-        console.warn('Could not read tab:', err);
+        console.warn('[Demo] Could not read tab:', err);
       }
     }
     
@@ -350,14 +406,15 @@ async function runWithTools(content) {
     let messageEl = null;
     const toolElements = new Map();
     
-    // Stream events from the agent
-    for await (const event of agent.run({ task, maxToolCalls: 5 })) {
+    // EXAMPLE: Streaming events from window.agent.run()
+    for await (const event of window.agent.run({ task, maxToolCalls: 5 })) {
       switch (event.type) {
         case 'status':
           updateThinkingText(event.message);
           break;
           
         case 'tool_call':
+          // Tool is being called
           removeThinking();
           const toolEl = addToolCallUI(event.tool, event.args, 'pending');
           toolElements.set(event.tool, toolEl);
@@ -366,6 +423,7 @@ async function runWithTools(content) {
           break;
           
         case 'tool_result':
+          // Tool returned a result
           const el = toolElements.get(event.tool);
           if (el) {
             updateToolCallUI(el, event.error ? 'error' : 'success', event.result);
@@ -373,6 +431,7 @@ async function runWithTools(content) {
           break;
           
         case 'token':
+          // Streaming text token
           if (event.token) {
             responseText += event.token;
             
@@ -390,11 +449,13 @@ async function runWithTools(content) {
           break;
           
         case 'final':
+          // Agent completed
           removeThinking();
           if (!messageEl && event.output) {
             addMessageUI('assistant', event.output);
           }
           
+          // Show citations if present
           if (event.citations && event.citations.length > 0) {
             const citationText = event.citations.map(c => `• ${c.source}: ${c.ref}`).join('\n');
             addMessageUI('system', `Sources:\n${citationText}`);
@@ -453,25 +514,53 @@ clearBtn.addEventListener('click', clearChat);
 
 themeToggle.addEventListener('click', toggleTheme);
 
+// Docs panel toggle
+docsToggle.addEventListener('click', () => {
+  const isOpen = docsPanel.style.display !== 'none';
+  docsPanel.style.display = isOpen ? 'none' : 'flex';
+  docsToggle.classList.toggle('active', !isOpen);
+});
+
+docsClose.addEventListener('click', () => {
+  docsPanel.style.display = 'none';
+  docsToggle.classList.remove('active');
+});
+
 // =============================================================================
 // Initialize
 // =============================================================================
 
 async function init() {
   initTheme();
-  await checkStatus();
+  
+  // Check if extension is installed
+  const hasExtension = checkExtension();
+  
+  if (hasExtension) {
+    await checkLLM();
+    await checkTools();
+  }
   
   // Log API availability for developers
-  console.log('[Harbor Chat POC] Using internal API:', { ai, agent });
-  console.log('[Harbor Chat POC] Available methods:');
-  console.log('  ai.createTextSession() - Create a text generation session');
-  console.log('  session.prompt(text) - Generate text (non-streaming)');
-  console.log('  session.promptStreaming(text) - Generate text (streaming)');
-  console.log('  agent.tools.list() - List available MCP tools');
-  console.log('  agent.tools.call({tool, args}) - Call an MCP tool');
-  console.log('  agent.browser.activeTab.readability() - Read current tab content');
-  console.log('  agent.run({task}) - Run an agent with tools');
+  console.log('[Harbor Chat Demo]');
+  console.log('  window.ai:', typeof window.ai !== 'undefined' ? '✓' : '✕');
+  console.log('  window.agent:', typeof window.agent !== 'undefined' ? '✓' : '✕');
+  console.log('');
+  console.log('Available APIs:');
+  console.log('  window.ai.createTextSession() - Create a text generation session');
+  console.log('  window.agent.tools.list() - List available MCP tools');
+  console.log('  window.agent.tools.call({tool, args}) - Call an MCP tool');
+  console.log('  window.agent.browser.activeTab.readability() - Read current tab');
+  console.log('  window.agent.run({task}) - Run an agent with tools');
 }
 
-init();
+// Wait for DOM and potential extension injection
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    // Give extension time to inject APIs
+    setTimeout(init, 100);
+  });
+} else {
+  setTimeout(init, 100);
+}
 

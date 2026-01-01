@@ -7,6 +7,9 @@
  * - Track connection state
  */
 
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { log } from '../native-messaging.js';
 import { InstalledServer } from '../types.js';
 import { 
@@ -17,18 +20,73 @@ import {
   McpPrompt,
   McpToolCallResult 
 } from './stdio-client.js';
+import { HttpMcpClient } from './http-client.js';
 import { resolveExecutable, getEnhancedPath } from '../utils/resolve-executable.js';
+import { getBinaryPath } from '../installer/binary-downloader.js';
+
+// Union type for both client types
+type McpClient = StdioMcpClient | HttpMcpClient;
+
+// Track servers that have successfully connected at least once
+const CONNECTED_HISTORY_FILE = join(homedir(), '.harbor', 'connected_servers.json');
+
+function loadConnectedHistory(): Set<string> {
+  try {
+    if (existsSync(CONNECTED_HISTORY_FILE)) {
+      const data = JSON.parse(readFileSync(CONNECTED_HISTORY_FILE, 'utf-8'));
+      return new Set(data.servers || []);
+    }
+  } catch (e) {
+    log(`[McpClientManager] Failed to load connection history: ${e}`);
+  }
+  return new Set();
+}
+
+function saveConnectedHistory(servers: Set<string>): void {
+  try {
+    mkdirSync(join(homedir(), '.harbor'), { recursive: true });
+    writeFileSync(CONNECTED_HISTORY_FILE, JSON.stringify({ servers: Array.from(servers) }, null, 2));
+  } catch (e) {
+    log(`[McpClientManager] Failed to save connection history: ${e}`);
+  }
+}
 
 export interface ConnectedServer {
   serverId: string;
-  client: StdioMcpClient;
+  client: McpClient;
   connectionInfo: McpConnectionInfo;
   installedServer: InstalledServer;
   connectedAt: number;
   tools: McpTool[];
   resources: McpResource[];
   prompts: McpPrompt[];
+  runningInDocker?: boolean;
 }
+
+export interface McpConnectOptions {
+  useDocker?: boolean;
+  onProgress?: (message: string) => void;
+}
+
+/**
+ * Server crash tracking for automatic restart.
+ */
+interface CrashTracker {
+  serverId: string;
+  restartCount: number;
+  lastCrashAt: number;
+  isRestarting: boolean;
+}
+
+/**
+ * Max restart attempts before giving up.
+ */
+const MAX_RESTART_ATTEMPTS = 3;
+
+/**
+ * Restart delay multiplier (2s * attempt number).
+ */
+const RESTART_DELAY_MS = 2000;
 
 export interface ConnectionResult {
   success: boolean;
@@ -51,19 +109,66 @@ export interface ConnectionResult {
  */
 export class McpClientManager {
   private connections: Map<string, ConnectedServer> = new Map();
+  private connectedHistory: Set<string> = loadConnectedHistory();
+  private crashTrackers: Map<string, CrashTracker> = new Map();
+  private onServerCrash?: (serverId: string, restartAttempt: number, maxAttempts: number) => void;
+  private onServerRestarted?: (serverId: string) => void;
+  private onServerFailed?: (serverId: string, error: string) => void;
+
+  /**
+   * Set callback for when a server crashes.
+   */
+  setOnServerCrash(cb: (serverId: string, restartAttempt: number, maxAttempts: number) => void): void {
+    this.onServerCrash = cb;
+  }
+
+  /**
+   * Set callback for when a server restarts successfully.
+   */
+  setOnServerRestarted(cb: (serverId: string) => void): void {
+    this.onServerRestarted = cb;
+  }
+
+  /**
+   * Set callback for when a server fails all restart attempts.
+   */
+  setOnServerFailed(cb: (serverId: string, error: string) => void): void {
+    this.onServerFailed = cb;
+  }
+
+  /**
+   * Check if a server has ever successfully connected.
+   * Used to detect first-time Python packages on macOS.
+   */
+  hasConnectedBefore(serverId: string): boolean {
+    return this.connectedHistory.has(serverId);
+  }
+
+  /**
+   * Mark a server as having successfully connected.
+   */
+  private markConnectedSuccess(serverId: string): void {
+    if (!this.connectedHistory.has(serverId)) {
+      this.connectedHistory.add(serverId);
+      saveConnectedHistory(this.connectedHistory);
+      log(`[McpClientManager] Marked ${serverId} as successfully connected`);
+    }
+  }
 
   /**
    * Connect to an installed MCP server.
    * 
    * @param server The installed server configuration
    * @param secrets Environment variables to inject (including secrets)
+   * @param options Connection options including Docker mode
    * @returns Connection result with server info and capabilities
    */
   async connect(
     server: InstalledServer,
-    secrets: Record<string, string> = {}
+    secrets: Record<string, string> = {},
+    options: McpConnectOptions = {}
   ): Promise<ConnectionResult> {
-    const { id: serverId } = server;
+    const { id: serverId, packageType } = server;
 
     // Check if already connected
     const existing = this.connections.get(serverId);
@@ -79,22 +184,313 @@ export class McpClientManager {
       };
     }
 
-    try {
-      // Build the command based on package type
-      const { command, args } = this.buildCommand(server);
-      
-      log(`[McpClientManager] Connecting to ${serverId}: ${command} ${args.join(' ')}`);
+    // Handle HTTP/SSE remote servers differently
+    if (packageType === 'http' || packageType === 'sse') {
+      return this.connectHttp(server, secrets);
+    }
 
-      // Create the client with enhanced PATH for finding executables
+    // Handle local stdio servers (npm, pypi, binary)
+    // Use Docker mode if requested
+    if (options.useDocker) {
+      return this.connectDocker(server, secrets, options);
+    }
+
+    return this.connectStdio(server, secrets);
+  }
+
+  /**
+   * Connect to a remote HTTP/SSE MCP server.
+   */
+  private async connectHttp(
+    server: InstalledServer,
+    secrets: Record<string, string>
+  ): Promise<ConnectionResult> {
+    const { id: serverId, remoteUrl, remoteHeaders } = server;
+
+    if (!remoteUrl) {
+      return {
+        success: false,
+        serverId,
+        error: 'Remote server URL is not configured.',
+      };
+    }
+
+    log(`[McpClientManager] Connecting to HTTP server ${serverId}: ${remoteUrl}`);
+
+    // Build headers, including any from secrets (e.g., Authorization tokens)
+    const headers: Record<string, string> = {
+      ...remoteHeaders,
+    };
+    
+    // Check for common auth env vars and add as headers
+    if (secrets['AUTHORIZATION']) {
+      headers['Authorization'] = secrets['AUTHORIZATION'];
+    }
+    if (secrets['API_KEY']) {
+      headers['Authorization'] = `Bearer ${secrets['API_KEY']}`;
+    }
+
+    const client = new HttpMcpClient({
+      url: remoteUrl,
+      headers,
+    });
+
+    try {
+      const connectionInfo = await client.connect();
+
+      const [tools, resources, prompts] = await Promise.all([
+        connectionInfo.capabilities.tools ? client.listTools() : Promise.resolve([]),
+        connectionInfo.capabilities.resources ? client.listResources() : Promise.resolve([]),
+        connectionInfo.capabilities.prompts ? client.listPrompts() : Promise.resolve([]),
+      ]);
+
+      const connectedServer: ConnectedServer = {
+        serverId,
+        client,
+        connectionInfo,
+        installedServer: server,
+        connectedAt: Date.now(),
+        tools,
+        resources,
+        prompts,
+      };
+
+      this.connections.set(serverId, connectedServer);
+      this.markConnectedSuccess(serverId);
+
+      log(`[McpClientManager] Connected to HTTP server ${serverId}: ${tools.length} tools, ${resources.length} resources`);
+
+      return {
+        success: true,
+        serverId,
+        connectionInfo,
+        tools,
+        resources,
+        prompts,
+      };
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`[McpClientManager] Failed to connect to HTTP server ${serverId}: ${message}`);
+
+      try {
+        await client.disconnect();
+      } catch {
+        // Ignore
+      }
+
+      this.connections.delete(serverId);
+
+      return {
+        success: false,
+        serverId,
+        error: `Failed to connect to remote server: ${message}`,
+      };
+    }
+  }
+
+  /**
+   * Connect to a local MCP server running in Docker.
+   * 
+   * This bypasses macOS Gatekeeper issues by running the server
+   * inside a container.
+   */
+  private async connectDocker(
+    server: InstalledServer,
+    secrets: Record<string, string>,
+    options: McpConnectOptions
+  ): Promise<ConnectionResult> {
+    const { id: serverId, packageType, packageId } = server;
+    const progress = options.onProgress || ((msg: string) => log(`[Docker Progress] ${msg}`));
+
+    log(`[McpClientManager] Connecting to ${serverId} via Docker`);
+    progress(`🐳 Starting Docker setup for ${server.name}...`);
+
+    try {
+      // Import Docker modules dynamically to avoid loading if not used
+      progress('Checking Docker image...');
+      const { getDockerImageManager } = await import('../installer/docker-images.js');
+      const imageManager = getDockerImageManager();
+      
+      // Ensure the appropriate Docker image is built
+      const imageType = imageManager.getImageTypeForPackage(packageType);
+      progress(`Checking for ${imageType} runtime image...`);
+      
+      // Check if image exists
+      const imageExists = await imageManager.imageExists(imageType);
+      if (!imageExists) {
+        progress(`Building ${imageType} Docker image (first time only)...`);
+        progress('This may take 1-2 minutes to download and build...');
+      }
+      
+      const imageName = await imageManager.ensureImage(imageType, progress);
+      progress(`✓ Docker image ready: ${imageName}`);
+      
+      // Build docker run command
+      progress('Preparing container configuration...');
+      const containerName = `harbor-mcp-${serverId.replace(/[^a-zA-Z0-9-]/g, '-')}`;
+      const dockerArgs: string[] = [
+        'run',
+        '--rm',
+        '-i',
+        '--name', containerName,
+      ];
+      
+      // Add environment variables
+      for (const [key, value] of Object.entries(secrets)) {
+        dockerArgs.push('-e', `${key}=${value}`);
+      }
+      
+      // Add volume mounts if configured
+      if (server.dockerVolumes) {
+        for (const vol of server.dockerVolumes) {
+          dockerArgs.push('-v', vol);
+        }
+      }
+      
+      // For binary packages, mount the binary
+      if (packageType === 'binary') {
+        const binaryPath = server.binaryPath || getBinaryPath(packageId);
+        if (existsSync(binaryPath)) {
+          dockerArgs.push('-v', `${binaryPath}:/app/server:ro`);
+        }
+      }
+      
+      // Add the image
+      dockerArgs.push(imageName);
+      
+      // Add the package to run
+      if (packageType === 'npm') {
+        dockerArgs.push(packageId);
+      } else if (packageType === 'pypi') {
+        dockerArgs.push(packageId);
+      }
+      // For binary, the entrypoint handles /app/server
+      
+      // Add server arguments
+      if (server.args && server.args.length > 0) {
+        dockerArgs.push(...server.args);
+      } else if (packageType === 'binary') {
+        // Most Go MCP servers need 'stdio' subcommand
+        dockerArgs.push('stdio');
+      }
+      
+      log(`[McpClientManager] Docker command: docker ${dockerArgs.join(' ')}`);
+      progress(`Starting container with ${packageId}...`);
+      
+      // Resolve docker executable path
+      const dockerPath = resolveExecutable('docker');
+      
+      // Create the client
       const client = new StdioMcpClient({
-        command,
-        args,
+        command: dockerPath,
+        args: dockerArgs,
         env: {
-          ...secrets,
           PATH: getEnhancedPath(),
+        },
+        onExit: (_code, _signal) => {
+          log(`[McpClientManager] Docker container for ${serverId} exited`);
+          this.handleServerCrash(serverId, server, secrets);
         },
       });
 
+      // Connect via the MCP protocol
+      progress('Container starting, waiting for MCP handshake...');
+      const connectionInfo = await client.connect();
+      progress('✓ MCP connection established!');
+
+      // Fetch capabilities
+      const [tools, resources, prompts] = await Promise.all([
+        connectionInfo.capabilities.tools ? client.listTools() : Promise.resolve([]),
+        connectionInfo.capabilities.resources ? client.listResources() : Promise.resolve([]),
+        connectionInfo.capabilities.prompts ? client.listPrompts() : Promise.resolve([]),
+      ]);
+
+      // Store the connection
+      const connectedServer: ConnectedServer = {
+        serverId,
+        client,
+        connectionInfo,
+        installedServer: server,
+        connectedAt: Date.now(),
+        tools,
+        resources,
+        prompts,
+        runningInDocker: true,
+      };
+
+      this.connections.set(serverId, connectedServer);
+      this.markConnectedSuccess(serverId);
+
+      log(`[McpClientManager] Connected to ${serverId} via Docker: ${tools.length} tools, ${resources.length} resources`);
+
+      return {
+        success: true,
+        serverId,
+        connectionInfo,
+        tools,
+        resources,
+        prompts,
+      };
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`[McpClientManager] Failed to connect to ${serverId} via Docker: ${message}`);
+
+      return {
+        success: false,
+        serverId,
+        error: `Docker connection failed: ${message}`,
+      };
+    }
+  }
+
+  /**
+   * Connect to a local stdio-based MCP server.
+   */
+  private async connectStdio(
+    server: InstalledServer,
+    secrets: Record<string, string>
+  ): Promise<ConnectionResult> {
+    const { id: serverId } = server;
+
+    let command: string;
+    let args: string[];
+    
+    try {
+      // Build the command based on package type
+      const cmdResult = this.buildCommand(server);
+      command = cmdResult.command;
+      args = cmdResult.args;
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      log(`[McpClientManager] Failed to build command for ${serverId}: ${errorMsg}`);
+      return {
+        success: false,
+        serverId,
+        error: errorMsg,
+      };
+    }
+    
+    log(`[McpClientManager] Connecting to ${serverId}: ${command} ${args.join(' ')}`);
+
+    // Create the client with enhanced PATH for finding executables
+    const client = new StdioMcpClient({
+      command,
+      args,
+      env: {
+        ...secrets,
+        PATH: getEnhancedPath(),
+      },
+      // Handle unexpected process exit
+      onExit: (_code, _signal) => {
+        log(`[McpClientManager] Server ${serverId} exited unexpectedly`);
+        // Trigger crash handler
+        this.handleServerCrash(serverId, server, secrets);
+      },
+    });
+
+    try {
       // Connect
       const connectionInfo = await client.connect();
 
@@ -118,6 +514,9 @@ export class McpClientManager {
       };
 
       this.connections.set(serverId, connectedServer);
+      
+      // Mark this server as having successfully connected (for first-run detection)
+      this.markConnectedSuccess(serverId);
 
       log(`[McpClientManager] Connected to ${serverId}: ${tools.length} tools, ${resources.length} resources, ${prompts.length} prompts`);
 
@@ -134,13 +533,100 @@ export class McpClientManager {
       const message = error instanceof Error ? error.message : String(error);
       log(`[McpClientManager] Failed to connect to ${serverId}: ${message}`);
       
+      // Try to get stderr logs for better error reporting
+      const stderrLogs = client.getStderrLog();
+      if (stderrLogs.length > 0) {
+        log(`[McpClientManager] Server stderr output:`);
+        for (const line of stderrLogs.slice(-10)) {
+          log(`  ${line}`);
+        }
+      }
+      
+      // Clean up the client
+      try {
+        await client.disconnect();
+      } catch {
+        // Ignore disconnect errors
+      }
+      
       // Clean up any partial connection
       this.connections.delete(serverId);
+
+      // Build the command string for user instructions
+      const cmdParts = [command, ...args];
+      const commandStr = cmdParts.join(' ');
+
+      // Check for specific error patterns and provide helpful messages
+      let errorMessage = message;
+      const stderrText = stderrLogs.join('\n');
+      
+      // macOS code signing / Gatekeeper blocking - detect various patterns
+      const isMacOSSecurityBlock = 
+        stderrText.includes('library load disallowed by system policy') ||
+        stderrText.includes('not valid for use in process') ||
+        stderrText.includes('code signature') ||
+        stderrText.includes('killed') ||
+        stderrText.includes('cannot be opened') ||
+        (stderrText.includes('dlopen') && stderrText.includes('.so')) ||
+        // SIGKILL with no stderr often means macOS killed it
+        (message.includes('SIGKILL') && stderrLogs.length === 0);
+      
+      if (isMacOSSecurityBlock) {
+        // For binary packages, provide detailed Gatekeeper bypass instructions
+        if (server.packageType === 'binary') {
+          const binaryPath = server.binaryPath || command;
+          errorMessage = `macOS Security Approval Required
+
+macOS Gatekeeper blocked this binary because it wasn't downloaded from the App Store.
+
+To allow it, follow these steps:
+
+1. Open System Settings → Privacy & Security
+
+2. Scroll down to the "Security" section
+
+3. Look for a message about "${server.name}" being blocked
+
+4. Click "Allow Anyway"
+
+5. Come back here and click Start again
+
+6. If macOS shows another prompt, click "Open"
+
+Alternatively, run this command in Terminal:
+  sudo xattr -rd com.apple.quarantine "${binaryPath}"`;
+        } else {
+          errorMessage = `macOS Blocked This Package
+
+macOS security (Gatekeeper) is blocking this package because it contains native code that isn't signed by Apple.
+
+This is a macOS restriction that Harbor cannot bypass for npm/Python packages with native extensions.
+
+Please try a different MCP server, or check the package's GitHub page for manual installation instructions.`;
+        }
+      }
+      // Python module not found
+      else if (stderrText.includes('ModuleNotFoundError') || stderrText.includes('No module named')) {
+        errorMessage = `Python dependency issue: A required module could not be loaded. This often happens when the package has dependencies that aren't installed.`;
+      }
+      // Command not found (uvx/npx not available)
+      else if (message.includes('ENOENT') || message.includes('not found') || message.includes('spawn')) {
+        if (server.packageType === 'pypi') {
+          errorMessage = `Python runtime not available: The Python package runner (uvx) is not installed on this system.`;
+        } else {
+          errorMessage = `Node.js runtime not available: The Node.js package runner (npx) is not installed on this system.`;
+        }
+      }
+      // Generic error with stderr
+      else if (stderrLogs.length > 0) {
+        const lastLines = stderrLogs.slice(-8).join('\n');
+        errorMessage = `${message}\n\nServer output:\n${lastLines}`;
+      }
 
       return {
         success: false,
         serverId,
-        error: message,
+        error: errorMessage,
       };
     }
   }
@@ -175,6 +661,102 @@ export class McpClientManager {
   async disconnectAll(): Promise<void> {
     const serverIds = Array.from(this.connections.keys());
     await Promise.all(serverIds.map(id => this.disconnect(id)));
+  }
+
+  /**
+   * Handle server crash and attempt restart.
+   */
+  private async handleServerCrash(serverId: string, server: InstalledServer, secrets: Record<string, string>): Promise<void> {
+    // Get or create crash tracker
+    let tracker = this.crashTrackers.get(serverId);
+    if (!tracker) {
+      tracker = {
+        serverId,
+        restartCount: 0,
+        lastCrashAt: Date.now(),
+        isRestarting: false,
+      };
+      this.crashTrackers.set(serverId, tracker);
+    }
+
+    // Check if already restarting
+    if (tracker.isRestarting) {
+      log(`[McpClientManager] Already restarting ${serverId}, ignoring duplicate crash event`);
+      return;
+    }
+
+    // Clean up the crashed connection
+    this.connections.delete(serverId);
+
+    // Check if we've exceeded restart attempts
+    if (tracker.restartCount >= MAX_RESTART_ATTEMPTS) {
+      log(`[McpClientManager] Server ${serverId} exceeded max restart attempts (${MAX_RESTART_ATTEMPTS})`);
+      this.onServerFailed?.(serverId, `Server crashed ${MAX_RESTART_ATTEMPTS} times`);
+      return;
+    }
+
+    // Increment restart count and set restarting flag
+    tracker.restartCount++;
+    tracker.lastCrashAt = Date.now();
+    tracker.isRestarting = true;
+
+    log(`[McpClientManager] Server ${serverId} crashed, attempting restart ${tracker.restartCount}/${MAX_RESTART_ATTEMPTS}`);
+    this.onServerCrash?.(serverId, tracker.restartCount, MAX_RESTART_ATTEMPTS);
+
+    // Wait before restarting (exponential backoff)
+    const delay = RESTART_DELAY_MS * tracker.restartCount;
+    await new Promise(resolve => setTimeout(resolve, delay));
+
+    try {
+      // Attempt to reconnect
+      const result = await this.connect(server, secrets);
+
+      if (result.success) {
+        log(`[McpClientManager] Successfully restarted ${serverId}`);
+        tracker.isRestarting = false;
+        // Reset restart count on successful restart
+        tracker.restartCount = 0;
+        this.onServerRestarted?.(serverId);
+      } else {
+        log(`[McpClientManager] Failed to restart ${serverId}: ${result.error}`);
+        tracker.isRestarting = false;
+        // Try again if we haven't exceeded max attempts
+        if (tracker.restartCount < MAX_RESTART_ATTEMPTS) {
+          this.handleServerCrash(serverId, server, secrets);
+        } else {
+          this.onServerFailed?.(serverId, result.error || 'Restart failed');
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log(`[McpClientManager] Error restarting ${serverId}: ${message}`);
+      tracker.isRestarting = false;
+      if (tracker.restartCount < MAX_RESTART_ATTEMPTS) {
+        this.handleServerCrash(serverId, server, secrets);
+      } else {
+        this.onServerFailed?.(serverId, message);
+      }
+    }
+  }
+
+  /**
+   * Reset crash tracker for a server.
+   * Call this when a server is intentionally stopped.
+   */
+  resetCrashTracker(serverId: string): void {
+    this.crashTrackers.delete(serverId);
+  }
+
+  /**
+   * Get crash status for a server.
+   */
+  getCrashStatus(serverId: string): { restartCount: number; lastCrashAt: number | null; isRestarting: boolean } {
+    const tracker = this.crashTrackers.get(serverId);
+    return {
+      restartCount: tracker?.restartCount ?? 0,
+      lastCrashAt: tracker?.lastCrashAt ?? null,
+      isRestarting: tracker?.isRestarting ?? false,
+    };
   }
 
   /**
@@ -302,21 +884,32 @@ export class McpClientManager {
 
   /**
    * Get stderr logs from a connected server.
+   * Only available for stdio-based servers.
    */
   getStderrLog(serverId: string): string[] {
     const connection = this.connections.get(serverId);
     if (!connection) {
       return [];
     }
-    return connection.client.getStderrLog();
+    // HTTP clients don't have stderr
+    if ('getStderrLog' in connection.client) {
+      return (connection.client as StdioMcpClient).getStderrLog();
+    }
+    return [];
   }
 
   /**
    * Get the PID of a connected server's process.
+   * Only available for stdio-based servers; HTTP servers return null.
    */
   getPid(serverId: string): number | null {
     const connection = this.connections.get(serverId);
-    return connection?.client.getPid() ?? null;
+    if (!connection) return null;
+    // HTTP clients don't have a PID
+    if ('getPid' in connection.client) {
+      return (connection.client as StdioMcpClient).getPid();
+    }
+    return null;
   }
 
   /**
@@ -325,8 +918,7 @@ export class McpClientManager {
    * Resolves full paths to executables (npx, uvx, docker) to handle
    * cases where the bridge is started with a minimal PATH.
    * 
-   * Currently only supports npm packages (JS/TS servers).
-   * Future: Add support for Python (uvx), Docker, etc.
+   * Supports npm (JS/TS) and pypi (Python) packages.
    */
   private buildCommand(server: InstalledServer): { command: string; args: string[] } {
     const { packageType, packageId, args: serverArgs } = server;
@@ -342,14 +934,35 @@ export class McpClientManager {
       };
     }
 
-    // Future: Python support
-    // if (packageType === 'pypi') {
-    //   const uvxPath = resolveExecutable('uvx');
-    //   return {
-    //     command: uvxPath,
-    //     args: [packageId, ...(serverArgs || [])],
-    //   };
-    // }
+    if (packageType === 'pypi') {
+      // Use uvx to run Python packages (from uv)
+      // uvx runs packages in isolated environments automatically
+      const uvxPath = resolveExecutable('uvx');
+      return {
+        command: uvxPath,
+        args: [packageId, ...(serverArgs || [])],
+      };
+    }
+
+    if (packageType === 'binary') {
+      // For binary packages, packageId is the serverId
+      // The binary is stored in ~/.harbor/bin/
+      const binaryPath = server.binaryPath || getBinaryPath(packageId);
+      if (!existsSync(binaryPath)) {
+        throw new Error(`Binary not found: ${binaryPath}. Try reinstalling the server.`);
+      }
+      
+      // Most Go MCP servers use 'stdio' subcommand to start the server
+      // Add it if no args are provided (user can override if needed)
+      const binaryArgs = serverArgs && serverArgs.length > 0 
+        ? serverArgs 
+        : ['stdio'];
+        
+      return {
+        command: binaryPath,
+        args: binaryArgs,
+      };
+    }
 
     // Future: Docker support
     // if (packageType === 'oci') {
@@ -360,7 +973,7 @@ export class McpClientManager {
     //   };
     // }
 
-    throw new Error(`Unsupported package type: ${packageType}. Currently only npm packages are supported.`);
+    throw new Error(`Unsupported package type: ${packageType}. Supported: npm, pypi, binary`);
   }
 }
 

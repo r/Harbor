@@ -81,6 +81,20 @@ export function pushStatus(category: string, status: string, details?: Record<st
 }
 
 /**
+ * Send a progress update for a server operation (like Docker startup).
+ * The extension can display this to the user.
+ */
+export function sendProgressUpdate(serverId: string, message: string): void {
+  writeMessage({
+    type: 'server_progress',
+    request_id: '',
+    server_id: serverId,
+    message,
+    timestamp: Date.now(),
+  });
+}
+
+/**
  * Read messages from stdin asynchronously.
  * Yields decoded message objects.
  */

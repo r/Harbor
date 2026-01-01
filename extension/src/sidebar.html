@@ -52,6 +52,25 @@
       letter-spacing: var(--tracking-tight);
     }
 
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      margin-left: var(--space-2);
+      padding-left: var(--space-2);
+      border-left: 1px solid var(--color-border-subtle);
+    }
+
+    .header-status .status-indicator {
+      width: 6px;
+      height: 6px;
+    }
+
+    .header-status .status-text {
+      font-size: var(--text-xs);
+      font-weight: var(--weight-medium);
+    }
+
     .theme-toggle {
       width: var(--height-btn-sm);
       height: var(--height-btn-sm);
@@ -85,6 +104,25 @@
       justify-content: space-between;
       padding: var(--space-2) var(--space-3);
       border-bottom: 1px solid var(--color-border-subtle);
+      cursor: pointer;
+      user-select: none;
+      transition: background var(--transition-fast);
+    }
+
+    .panel-header:hover {
+      background: var(--color-bg-subtle);
+    }
+
+    .panel-header-left {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .panel-header-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
     }
 
     .panel-title {
@@ -95,8 +133,38 @@
       letter-spacing: var(--tracking-wide);
     }
 
+    .panel-collapse-icon {
+      color: var(--color-text-muted);
+      font-size: 10px;
+      transition: transform var(--transition-fast);
+    }
+
+    .panel.collapsed .panel-collapse-icon {
+      transform: rotate(-90deg);
+    }
+
+    .panel-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .panel-status-dot.green { background: var(--color-success); }
+    .panel-status-dot.yellow { background: var(--color-warning); }
+    .panel-status-dot.red { background: var(--color-error); }
+    .panel-status-dot.gray { background: var(--color-text-muted); }
+
     .panel-body {
       padding: var(--space-3);
+    }
+
+    .panel.collapsed .panel-body {
+      display: none;
+    }
+
+    .panel.collapsed .panel-header {
+      border-bottom: none;
     }
 
     /* Connection Status */
@@ -334,6 +402,57 @@
       color: var(--color-text-muted);
       font-family: var(--font-mono);
       margin: var(--space-2) 0;
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .lang-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: var(--radius-sm);
+      font-size: 10px;
+      font-weight: 600;
+      font-family: var(--font-sans);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .lang-badge.lang-js {
+      background: rgba(247, 223, 30, 0.15);
+      color: #f7df1e;
+      border: 1px solid rgba(247, 223, 30, 0.3);
+    }
+
+    .lang-badge.lang-python {
+      background: rgba(55, 118, 171, 0.15);
+      color: #3776ab;
+      border: 1px solid rgba(55, 118, 171, 0.3);
+    }
+
+    [data-theme="dark"] .lang-badge.lang-python {
+      color: #4b8bbe;
+    }
+
+    .lang-badge.lang-go {
+      background: rgba(0, 173, 216, 0.15);
+      color: #00add8;
+      border: 1px solid rgba(0, 173, 216, 0.3);
+    }
+
+    .lang-badge.lang-http {
+      background: rgba(138, 43, 226, 0.15);
+      color: #9b59b6;
+      border: 1px solid rgba(138, 43, 226, 0.3);
+    }
+
+    .package-name {
+      color: var(--color-text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     /* Response section */
@@ -637,6 +756,68 @@
 
     .credential-status.missing {
       color: var(--color-warning);
+    }
+    
+    /* Add credential section */
+    .add-credential-section {
+      margin-top: var(--space-4);
+      padding-top: var(--space-3);
+    }
+    
+    .section-divider {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      margin-bottom: var(--space-3);
+      color: var(--color-text-muted);
+      font-size: var(--text-2xs);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .section-divider::before,
+    .section-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--color-border-subtle);
+    }
+    
+    .add-credential-form {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+    
+    .add-credential-form .credential-input {
+      font-family: var(--font-mono);
+    }
+    
+    .credential-hint {
+      font-size: var(--text-2xs);
+      color: var(--color-text-muted);
+      margin-top: var(--space-2);
+    }
+    
+    .credential-hint a {
+      color: var(--color-accent-primary);
+      text-decoration: none;
+    }
+    
+    .credential-hint a:hover {
+      text-decoration: underline;
+    }
+    
+    .credential-label .delete-credential-btn {
+      margin-left: auto;
+      padding: 2px 6px;
+      font-size: 10px;
+      opacity: 0.6;
+    }
+    
+    .credential-label .delete-credential-btn:hover {
+      opacity: 1;
+      color: var(--color-error);
     }
 
     .password-input-wrapper {
@@ -997,47 +1178,50 @@
 </head>
 <body>
   <div class="container">
-    <!-- Header -->
+    <!-- Header with Bridge Status -->
     <header class="header">
       <div class="header-brand">
         <div class="header-logo">H</div>
         <span class="header-title">Harbor</span>
+        <div class="header-status">
+          <div id="status-indicator" class="status-indicator disconnected"></div>
+          <span id="status-text" class="status-text disconnected">Disconnected</span>
+        </div>
       </div>
       <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
         <span id="theme-icon">◐</span>
       </button>
     </header>
+    
+    <!-- Bridge Error (shown only on error) -->
+    <div id="error-container" class="error-message" style="display: none;"></div>
 
-    <!-- Bridge Connection Status -->
-    <div class="panel">
+    <!-- Runtime Status Section -->
+    <div class="panel collapsed" id="llm-card" data-panel="runtime">
       <div class="panel-header">
-        <span class="panel-title">Bridge</span>
-      </div>
-      <div class="panel-body">
-        <div class="status-row">
-          <div id="status-indicator" class="status-indicator disconnected"></div>
-          <span id="status-text" class="status-text disconnected">Disconnected</span>
-        </div>
-        <div id="error-container" class="error-message" style="display: none;"></div>
-        <div class="actions">
-          <button id="send-hello" class="btn btn-primary flex-1">Send Hello</button>
-          <button id="reconnect" class="btn btn-secondary">Reconnect</button>
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon">▼</span>
+          <span class="panel-title">Runtime Status</span>
+          <span class="panel-status-dot green" id="runtime-status-dot" title="All systems operational"></span>
         </div>
       </div>
-    </div>
-
-    <!-- LLM Status Section -->
-    <div class="panel" id="llm-card">
-      <div class="panel-header">
-        <span class="panel-title">LLM Status</span>
-      </div>
       <div class="panel-body">
-        <div id="llm-status-container">
+        <!-- LLM Status -->
+        <div id="llm-status-container" class="status-section">
           <div class="status-row">
             <div id="llm-status-indicator" class="status-indicator disconnected"></div>
-            <span id="llm-status-text" class="status-text disconnected">Checking...</span>
+            <span id="llm-status-text" class="status-text disconnected">Checking LLM...</span>
           </div>
           <div id="llm-details" class="llm-details"></div>
+        </div>
+        
+        <!-- Docker Status -->
+        <div id="docker-status-container" class="status-section" style="margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border-subtle);">
+          <div class="status-row">
+            <div id="docker-status-indicator" class="status-indicator disconnected"></div>
+            <span id="docker-status-text" class="status-text disconnected">Checking Docker...</span>
+          </div>
+          <div id="docker-details" class="llm-details"></div>
         </div>
         
         <!-- Download section (shown when no LLM available) -->
@@ -1080,44 +1264,147 @@
       </div>
     </div>
 
-    <!-- Servers Section -->
-    <div class="panel">
+    <!-- Add Server Section -->
+    <div class="panel" id="add-server-card" data-panel="add-server">
       <div class="panel-header">
-        <span class="panel-title">MCP Servers</span>
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon">▼</span>
+          <span class="panel-title">➕ Add Server</span>
+        </div>
       </div>
       <div class="panel-body">
-        <!-- Add Server Form -->
-        <div class="form-divider">
-          <div class="form-group">
-            <label class="form-label" for="server-label">Label</label>
-            <input type="text" id="server-label" class="input" placeholder="My MCP Server">
+        <!-- GitHub URL Input -->
+        <div class="form-group mb-3">
+          <label class="form-label">Install from GitHub</label>
+          <div style="display: flex; gap: var(--space-2);">
+            <input type="text" id="github-url-input" class="input" placeholder="github.com/user/repo" style="flex: 1;">
+            <button id="install-github-btn" class="btn btn-primary">Install</button>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="server-url">Base URL</label>
-            <input type="text" id="server-url" class="input" placeholder="http://localhost:8765">
-          </div>
-          <button id="add-server" class="btn btn-primary w-full mt-2">Add Server</button>
+          <div class="credential-hint mt-1">Paste any GitHub MCP server repository URL</div>
         </div>
-
-        <!-- Server List -->
-        <div id="server-list" class="server-list">
-          <div class="empty-state">No servers configured</div>
+        
+        <!-- Quick actions -->
+        <div style="display: flex; gap: var(--space-2); flex-wrap: wrap;">
+          <button class="btn btn-sm btn-secondary" id="import-config-btn">📄 Import JSON</button>
+          <button class="btn btn-sm btn-secondary" id="add-remote-server-btn">🌐 Add Remote</button>
         </div>
       </div>
     </div>
 
-    <!-- Installed Servers Section - Now Primary -->
-    <div class="panel" id="installed-servers-card">
+    <!-- Installed Servers Section -->
+    <div class="panel" id="installed-servers-card" data-panel="my-servers">
       <div class="panel-header">
-        <span class="panel-title">My Servers</span>
-        <button class="btn btn-sm btn-ghost" id="refresh-installed" title="Refresh">↻</button>
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon">▼</span>
+          <span class="panel-title">📦 My Servers</span>
+          <span class="panel-status-dot gray" id="servers-status-dot" title="No servers running"></span>
+        </div>
+        <div class="panel-header-actions" onclick="event.stopPropagation();">
+          <button class="btn btn-sm btn-ghost" id="refresh-installed" title="Refresh">↻</button>
+        </div>
       </div>
       <div class="panel-body">
         <div id="installed-server-list" class="server-list">
           <div class="empty-state">
             No servers installed. 
-            <a href="#" id="go-to-directory-link" style="color: var(--color-accent-primary);">Browse directory</a>
+            <a href="#" id="go-to-directory-link" style="color: var(--color-accent-primary);">Browse the directory</a> or install from GitHub above.
           </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Add Remote Server Modal -->
+    <div id="add-remote-modal" class="modal" style="display: none;">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Add Remote MCP Server</h3>
+          <button class="modal-close" id="add-remote-modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-sm text-muted mb-3">Connect to a remote MCP server via HTTP.</p>
+          
+          <div class="credential-field">
+            <div class="credential-label">
+              <span class="credential-label-text">Server Name</span>
+              <span class="credential-required">*</span>
+            </div>
+            <input type="text" id="remote-server-name" class="credential-input" placeholder="e.g. GitHub Copilot MCP">
+          </div>
+          
+          <div class="credential-field">
+            <div class="credential-label">
+              <span class="credential-label-text">Server URL</span>
+              <span class="credential-required">*</span>
+            </div>
+            <input type="url" id="remote-server-url" class="credential-input" placeholder="https://api.example.com/mcp/">
+          </div>
+          
+          <div class="credential-field">
+            <div class="credential-label">
+              <span class="credential-label-text">Transport Type</span>
+            </div>
+            <select id="remote-server-type" class="credential-input">
+              <option value="http">HTTP (Streamable)</option>
+              <option value="sse">SSE (Legacy)</option>
+            </select>
+          </div>
+          
+          <div class="credential-hint">
+            Remote servers are cloud-hosted MCP endpoints. You can add authentication tokens after adding the server.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="add-remote-modal-cancel">Cancel</button>
+          <button class="btn btn-primary" id="add-remote-modal-add">Add Server</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Import Config Modal -->
+    <div id="import-config-modal" class="modal" style="display: none;">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+          <h3>Import MCP Configuration</h3>
+          <button class="modal-close" id="import-config-modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-sm text-muted mb-3">
+            Paste a configuration from Claude Desktop or VS Code. Supports both stdio and HTTP servers.
+          </p>
+          
+          <div class="credential-field">
+            <div class="credential-label">
+              <span class="credential-label-text">JSON Configuration</span>
+            </div>
+            <textarea 
+              id="import-config-json" 
+              class="credential-input" 
+              style="height: 200px; font-family: var(--font-mono); font-size: 11px; resize: vertical;"
+              placeholder='{
+  "servers": {
+    "github": {
+      "type": "http",
+      "url": "https://api.example.com/mcp/"
+    }
+  }
+}'></textarea>
+          </div>
+          
+          <details class="credential-hint" style="margin-top: 12px;">
+            <summary style="cursor: pointer; user-select: none;">Supported formats</summary>
+            <div style="margin-top: 8px; padding: 8px; background: var(--color-surface-secondary); border-radius: 4px; font-size: 10px;">
+              <strong>VS Code format:</strong><br>
+              <code>{"servers": {"name": {"type": "http", "url": "..."}}}</code><br><br>
+              <strong>Claude Desktop format:</strong><br>
+              <code>{"mcpServers": {"name": {"command": "npx", "args": [...]}}}</code>
+            </div>
+          </details>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="import-config-modal-cancel">Cancel</button>
+          <button class="btn btn-primary" id="import-config-modal-import">Import</button>
         </div>
       </div>
     </div>
@@ -1140,44 +1427,14 @@
       </div>
     </div>
 
-    <!-- Catalog Status -->
-    <div class="panel" id="catalog-status-panel">
-      <div class="panel-header">
-        <span class="panel-title">Server Directory</span>
-        <div class="catalog-controls">
-          <span class="live-indicator" id="live-indicator" title="Listening for updates">
-            <span class="live-dot"></span>
-            <span>Live</span>
-          </span>
-          <button class="btn btn-sm btn-ghost" id="ping-bridge-btn" title="Test bridge connection">⚡</button>
-          <button class="btn btn-sm btn-ghost" id="refresh-catalog-btn" title="Refresh catalog">↻</button>
-        </div>
-      </div>
-      <div class="panel-body catalog-status-body">
-        <div class="catalog-status" id="catalog-status">
-          <div class="catalog-status-row">
-            <span class="catalog-status-label">Status</span>
-            <span class="catalog-status-value" id="catalog-status-text">Loading...</span>
-          </div>
-          <div class="catalog-status-row">
-            <span class="catalog-status-label">Servers</span>
-            <span class="catalog-status-value" id="catalog-server-count">—</span>
-          </div>
-          <div class="catalog-status-row">
-            <span class="catalog-status-label">Last Updated</span>
-            <span class="catalog-status-value" id="catalog-last-updated">—</span>
-          </div>
-        </div>
-        <div class="catalog-activity" id="catalog-activity">
-          <!-- Activity messages will appear here -->
-        </div>
-      </div>
-    </div>
 
     <!-- Tools Response (shown when listing tools) -->
-    <div class="panel" id="tools-card" style="display: none;">
+    <div class="panel" id="tools-card" style="display: none;" data-panel="tools">
       <div class="panel-header">
-        <span class="panel-title">Tools Response</span>
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon">▼</span>
+          <span class="panel-title">Tools Response</span>
+        </div>
       </div>
       <div class="panel-body">
         <div class="message-content">
@@ -1187,71 +1444,47 @@
     </div>
 
     <!-- Quick Links -->
-    <div class="panel">
+    <div class="panel" data-panel="actions">
       <div class="panel-header">
-        <span class="panel-title">Actions</span>
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon">▼</span>
+          <span class="panel-title">Actions</span>
+        </div>
       </div>
       <div class="panel-body">
-        <!-- Toggles -->
-        <div class="toggle-row">
-          <label class="toggle-label">
-            <span class="toggle-label-text">Auto-Sync Catalog</span>
-            <span class="toggle-label-hint">Refresh server list hourly</span>
-          </label>
-          <label class="toggle-switch">
-            <input type="checkbox" id="auto-sync-toggle" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <label class="toggle-label">
-            <span class="toggle-label-text">Compare Mode</span>
-            <span class="toggle-label-hint">Stock vs MCP side-by-side</span>
-          </label>
-          <label class="toggle-switch">
-            <input type="checkbox" id="compare-mode-toggle">
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <label class="toggle-label">
-            <span class="toggle-label-text">Smart Router</span>
-            <span class="toggle-label-hint">Auto-select servers</span>
-          </label>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tool-router-toggle" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        
-        <!-- Quick links -->
-        <div class="quick-links mt-3">
+        <div class="quick-links">
           <button id="open-chat" class="quick-link">
             <span class="quick-link-icon">💬</span>
             <span>Chat</span>
-          </button>
-          <button id="open-chat-poc" class="quick-link">
-            <span class="quick-link-icon">🧪</span>
-            <span>API POC</span>
           </button>
           <button id="open-directory" class="quick-link">
             <span class="quick-link-icon">📂</span>
             <span>Directory</span>
           </button>
+          <button id="open-chat-poc" class="quick-link">
+            <span class="quick-link-icon">🧪</span>
+            <span>API Demo</span>
+          </button>
+        </div>
+        
+        <!-- Bridge Controls -->
+        <div style="display: flex; gap: var(--space-2); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border-subtle);">
+          <button id="send-hello" class="btn btn-sm btn-secondary flex-1">Send Hello</button>
+          <button id="reconnect" class="btn btn-sm btn-secondary flex-1">Reconnect</button>
         </div>
       </div>
     </div>
 
     <!-- Bridge Activity Panel (collapsible) -->
-    <div class="panel" id="bridge-activity-panel">
-      <div class="panel-header collapsible-header" id="bridge-activity-header">
-        <div class="panel-title-with-indicator">
+    <div class="panel collapsed" id="bridge-activity-panel" data-panel="bridge-activity">
+      <div class="panel-header" id="bridge-activity-header">
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon">▼</span>
           <span class="panel-title">Bridge Activity</span>
           <span class="bridge-indicator" id="bridge-indicator">●</span>
         </div>
-        <span class="collapse-icon" id="bridge-activity-collapse-icon">▼</span>
       </div>
-      <div id="bridge-activity-content" class="collapsible-content panel-body" style="padding: 0;">
+      <div id="bridge-activity-content" class="panel-body" style="padding: 0;">
         <div class="bridge-activity-tabs">
           <button class="bridge-tab active" data-tab="activity">Activity</button>
           <button class="bridge-tab" data-tab="json">Raw JSON</button>

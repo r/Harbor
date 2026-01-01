@@ -29,6 +29,12 @@
       "js": ["content-bridge.js"],
       "run_at": "document_start",
       "all_frames": false
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["vscode-detector.js"],
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "web_accessible_resources": [

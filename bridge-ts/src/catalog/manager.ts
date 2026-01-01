@@ -62,6 +62,13 @@ export class CatalogManager {
     return this.enrichmentManager;
   }
 
+  /**
+   * Get the catalog database for direct access.
+   */
+  getDatabase(): CatalogDatabase {
+    return this.db;
+  }
+
   getProvider(providerId: string): CatalogProvider | undefined {
     return this.providerRegistry.get(providerId);
   }

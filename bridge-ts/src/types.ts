@@ -28,8 +28,10 @@ export interface ServerConfig {
 // =============================================================================
 
 export interface PackageInfo {
-  registryType: 'npm' | 'pypi' | 'oci';
+  registryType: 'npm' | 'pypi' | 'oci' | 'binary';
   identifier: string;
+  // For binary packages - URL to download
+  binaryUrl?: string;
   environmentVariables: Array<{
     name: string;
     description?: string;
@@ -114,23 +116,10 @@ export enum ProcessState {
   ERROR = 'error',
 }
 
-export interface ServerProcess {
-  serverId: string;
-  packageType: string;
-  packageId: string;
-  state: ProcessState;
-  pid: number | null;
-  startedAt: number | null;
-  stoppedAt: number | null;
-  exitCode: number | null;
-  errorMessage: string | null;
-  recentLogs: string[];
-}
-
 export interface InstalledServer {
   id: string;
   name: string;
-  packageType: string;
+  packageType: string; // 'npm' | 'pypi' | 'binary' | 'http' | 'sse'
   packageId: string;
   autoStart: boolean;
   args: string[];
@@ -143,6 +132,15 @@ export interface InstalledServer {
   catalogSource: string | null;
   homepageUrl: string | null;
   description: string | null;
+  // For binary packages
+  binaryUrl?: string;
+  binaryPath?: string;
+  // For remote HTTP/SSE servers
+  remoteUrl?: string;
+  remoteHeaders?: Record<string, string>;
+  // Docker execution settings
+  useDocker?: boolean;
+  dockerVolumes?: string[];
 }
 
 // =============================================================================
@@ -303,6 +301,92 @@ export interface McpToolResult {
   success: boolean;
   content?: unknown;
   error?: string;
+}
+
+// =============================================================================
+// Curated Server Types
+// =============================================================================
+
+/**
+ * A curated MCP server that we recommend and provide easy installation for.
+ */
+export interface CuratedServer {
+  /** Unique ID for this server (e.g., 'curated-filesystem') */
+  id: string;
+  
+  /** Display name */
+  name: string;
+  
+  /** Brief description of what the server does */
+  description: string;
+  
+  /** Emoji or icon for display */
+  icon?: string;
+  
+  /** Package type for installation */
+  packageType: 'npm' | 'pypi' | 'github' | 'binary' | 'oci';
+  
+  /** Package identifier (npm package, pypi package, owner/repo, etc.) */
+  packageId: string;
+  
+  /** Tags for categorization */
+  tags?: string[];
+  
+  /** URL to documentation or homepage */
+  homepageUrl?: string;
+  
+  /** Whether this server requires native messaging bridge */
+  requiresNative?: boolean;
+  
+  /** Whether the server requires configuration/credentials */
+  requiresConfig?: boolean;
+  
+  /** Hint about what configuration is needed */
+  configHint?: string;
+}
+
+// =============================================================================
+// Execution Provider Types
+// =============================================================================
+
+/**
+ * Represents a running server process.
+ */
+export interface ServerProcess {
+  serverId: string;
+  packageType: string;
+  packageId: string;
+  state: ProcessState;
+  pid: number | null;
+  startedAt: number | null;
+  stoppedAt: number | null;
+  exitCode: number | null;
+  errorMessage: string | null;
+  recentLogs: string[];
+}
+
+/**
+ * Interface for execution providers (native, Docker, etc.).
+ */
+export interface ExecutionProvider {
+  readonly id: string;
+  readonly name: string;
+  
+  /** Check if this provider is available on the system */
+  isAvailable(): Promise<boolean>;
+  
+  /** Start a server and return process info */
+  start(
+    serverId: string,
+    imageName: string,
+    command: string,
+    args: string[],
+    env: Record<string, string>,
+    onOutput?: (stream: 'stdout' | 'stderr', line: string) => void
+  ): Promise<ServerProcess>;
+  
+  /** Stop a running server */
+  stop(serverId: string): Promise<boolean>;
 }
 
 // =============================================================================

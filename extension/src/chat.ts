@@ -97,21 +97,59 @@ const messagesTools = document.getElementById('messages-tools') as HTMLDivElemen
 // Theme
 // =============================================================================
 
-function initTheme(): void {
-  const savedTheme = localStorage.getItem('harbor-theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const theme = savedTheme || (prefersDark ? 'dark' : 'light');
-  document.documentElement.setAttribute('data-theme', theme);
+// Theme handling - synced across all extension pages via browser.storage
+function updateThemeIcon(theme: string): void {
   themeToggle.textContent = theme === 'dark' ? '○' : '●';
 }
 
-function toggleTheme(): void {
+async function initTheme(): Promise<void> {
+  // Try to get from browser.storage first (synced across pages)
+  try {
+    const result = await browser.storage.local.get('harbor-theme');
+    const savedTheme = result['harbor-theme'] as string | undefined;
+    if (savedTheme) {
+      document.documentElement.setAttribute('data-theme', savedTheme);
+      updateThemeIcon(savedTheme);
+      return;
+    }
+  } catch (e) {
+    // Fall back to localStorage
+  }
+  
+  // Fall back to localStorage or system preference
+  const localTheme = localStorage.getItem('harbor-theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = localTheme || (prefersDark ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+  updateThemeIcon(theme);
+  
+  // Save to browser.storage for sync
+  try {
+    await browser.storage.local.set({ 'harbor-theme': theme });
+  } catch (e) {}
+}
+
+async function toggleTheme(): Promise<void> {
   const current = document.documentElement.getAttribute('data-theme');
   const next = current === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   localStorage.setItem('harbor-theme', next);
-  themeToggle.textContent = next === 'dark' ? '○' : '●';
+  updateThemeIcon(next);
+  
+  // Sync to browser.storage so other pages pick it up
+  try {
+    await browser.storage.local.set({ 'harbor-theme': next });
+  } catch (e) {}
 }
+
+// Listen for theme changes from other pages
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes['harbor-theme']) {
+    const newTheme = changes['harbor-theme'].newValue as string;
+    document.documentElement.setAttribute('data-theme', newTheme);
+    updateThemeIcon(newTheme);
+  }
+});
 
 // =============================================================================
 // LLM Status
