@@ -254,11 +254,51 @@ export class ChatOrchestrator {
         // LLM produced a final response
         const finalContent = response.message.content || '';
         
-        // Debug: Check if this looks like a tool call that should have been parsed
-        let debugInfo = '';
-        if (finalContent.includes('{"name"')) {
-          debugInfo = ` [DEBUG: Content contains {"name" but wasn't parsed as tool call. toolCalls=${JSON.stringify(response.message.toolCalls)}, finishReason=${response.finishReason}]`;
-          log(`[Orchestrator] WARNING: Final content looks like a tool call but wasn't parsed: ${finalContent.substring(0, 200)}`);
+        // Check if LLM is describing how to use a tool instead of calling it
+        const describePatterns = [
+          /you can use/i,
+          /you could use/i,
+          /try calling/i,
+          /try using/i,
+          /to find .+, use/i,
+          /to get .+, use/i,
+          /here'?s how/i,
+          /the .+ function/i,
+          /the .+ tool/i,
+          /use the following/i,
+        ];
+        
+        const isDescribingTool = describePatterns.some(p => p.test(finalContent));
+        const mentionsToolName = Object.keys(toolMapping).some(name => 
+          finalContent.toLowerCase().includes(name.toLowerCase())
+        );
+        
+        // If LLM is describing a tool instead of calling it, nudge it to actually call
+        if (isDescribingTool && mentionsToolName && iterations < session.config.maxIterations) {
+          log(`[Orchestrator] Detected tool description instead of call, nudging LLM...`);
+          
+          // Add the assistant's response to the conversation
+          addMessage(session, response.message);
+          
+          // Add a nudge message
+          const nudgeMsg: ChatMessage = {
+            role: 'user',
+            content: 'Please execute the tool call now - don\'t describe how to use it, just call it directly and show me the results.',
+          };
+          addMessage(session, nudgeMsg);
+          
+          // Record this as a step
+          const nudgeStep: OrchestrationStep = {
+            index: steps.length,
+            type: 'llm_response',
+            content: `[Agent tried to describe tool instead of calling it. Nudging to execute...]`,
+            timestamp: Date.now(),
+          };
+          steps.push(nudgeStep);
+          onStep?.(nudgeStep);
+          
+          // Continue the loop to get another response
+          continue;
         }
         
         // Add assistant message to session
@@ -268,7 +308,7 @@ export class ChatOrchestrator {
         const finalStep: OrchestrationStep = {
           index: steps.length,
           type: 'final',
-          content: finalContent + debugInfo,
+          content: finalContent,
           timestamp: Date.now(),
         };
         steps.push(finalStep);
@@ -323,26 +363,215 @@ export class ChatOrchestrator {
   /**
    * Parse a tool call from text when LLM writes it out instead of using proper format.
    * This is a fallback for models that don't support tool calling well.
+   * 
+   * Handles multiple formats:
+   * 1. {"name": "tool_name", "parameters": {...}} or {"name": "tool_name", "arguments": {...}}
+   * 2. "tool_name": {...args...}  (common LLM format)
+   * 3. tool_name({...args...}) (function call style)
    */
   private parseToolCallFromText(
     content: string, 
     toolMapping: ToolMapping
   ): ToolCall | null {
+    log(`[Orchestrator] parseToolCall: Attempting to parse: ${content.substring(0, 300)}`);
+    
+    const toolNames = Object.keys(toolMapping);
+    
+    // Format 1: {"name": "tool_name", ...}
+    const result1 = this.tryParseNameFormat(content, toolMapping);
+    if (result1) return result1;
+    
+    // Format 2: "tool_name": {...} or tool_name: {...}
+    const result2 = this.tryParseKeyValueFormat(content, toolNames, toolMapping);
+    if (result2) return result2;
+    
+    // Format 3: tool_name({...}) function call style
+    const result3 = this.tryParseFunctionCallFormat(content, toolNames, toolMapping);
+    if (result3) return result3;
+    
+    // Format 4: Check if LLM mentioned a tool name and we can extract params
+    const result4 = this.tryParseLooseFormat(content, toolNames, toolMapping);
+    if (result4) return result4;
+    
+    log('[Orchestrator] parseToolCall: No valid tool call format found');
+    return null;
+  }
+  
+  /**
+   * Try to parse {"name": "tool_name", "parameters": {...}} format.
+   */
+  private tryParseNameFormat(content: string, toolMapping: ToolMapping): ToolCall | null {
     try {
-      // Find the start of JSON (look for {"name")
       const startIdx = content.indexOf('{"name"');
-      log(`[Orchestrator] parseToolCall: startIdx=${startIdx}`);
-      if (startIdx === -1) {
-        log('[Orchestrator] parseToolCall: No {"name" found in content');
-        return null;
+      if (startIdx === -1) return null;
+      
+      const jsonStr = this.extractJsonObject(content, startIdx);
+      if (!jsonStr) return null;
+      
+      const parsed = JSON.parse(jsonStr);
+      if (parsed.name && toolMapping[parsed.name]) {
+        const args = (parsed.parameters || parsed.arguments || {}) as Record<string, unknown>;
+        log(`[Orchestrator] Parsed name format: ${parsed.name}`);
+        return {
+          id: `text_call_${Date.now()}`,
+          name: parsed.name,
+          arguments: args,
+        };
+      }
+    } catch (e) {
+      log(`[Orchestrator] tryParseNameFormat failed: ${e}`);
+    }
+    return null;
+  }
+  
+  /**
+   * Try to parse "tool_name": {...} or tool_name: {...} format.
+   */
+  private tryParseKeyValueFormat(
+    content: string, 
+    toolNames: string[], 
+    toolMapping: ToolMapping
+  ): ToolCall | null {
+    for (const toolName of toolNames) {
+      // Look for "tool_name": { or tool_name: {
+      const patterns = [
+        `"${toolName}":\\s*\\{`,
+        `${toolName}:\\s*\\{`,
+        `\`${toolName}\`:\\s*\\{`,
+      ];
+      
+      for (const pattern of patterns) {
+        const regex = new RegExp(pattern);
+        const match = content.match(regex);
+        if (match && match.index !== undefined) {
+          try {
+            // Find the { after the tool name
+            const braceStart = content.indexOf('{', match.index);
+            if (braceStart === -1) continue;
+            
+            const jsonStr = this.extractJsonObject(content, braceStart);
+            if (!jsonStr) continue;
+            
+            const args = JSON.parse(jsonStr);
+            log(`[Orchestrator] Parsed key-value format for: ${toolName}`);
+            return {
+              id: `text_call_${Date.now()}`,
+              name: toolName,
+              arguments: args as Record<string, unknown>,
+            };
+          } catch (e) {
+            log(`[Orchestrator] tryParseKeyValueFormat failed for ${toolName}: ${e}`);
+          }
+        }
+      }
+    }
+    return null;
+  }
+  
+  /**
+   * Try to parse tool_name({...}) function call format.
+   */
+  private tryParseFunctionCallFormat(
+    content: string, 
+    toolNames: string[], 
+    toolMapping: ToolMapping
+  ): ToolCall | null {
+    for (const toolName of toolNames) {
+      const pattern = new RegExp(`${toolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(\\s*\\{`);
+      const match = content.match(pattern);
+      if (match && match.index !== undefined) {
+        try {
+          const braceStart = content.indexOf('{', match.index);
+          if (braceStart === -1) continue;
+          
+          const jsonStr = this.extractJsonObject(content, braceStart);
+          if (!jsonStr) continue;
+          
+          const args = JSON.parse(jsonStr);
+          log(`[Orchestrator] Parsed function call format for: ${toolName}`);
+          return {
+            id: `text_call_${Date.now()}`,
+            name: toolName,
+            arguments: args as Record<string, unknown>,
+          };
+        } catch (e) {
+          log(`[Orchestrator] tryParseFunctionCallFormat failed for ${toolName}: ${e}`);
+        }
+      }
+    }
+    return null;
+  }
+  
+  /**
+   * Try to loosely match tool names and extract any JSON object as parameters.
+   */
+  private tryParseLooseFormat(
+    content: string, 
+    toolNames: string[], 
+    toolMapping: ToolMapping
+  ): ToolCall | null {
+    const contentLower = content.toLowerCase();
+    
+    for (const toolName of toolNames) {
+      // Check if tool name is mentioned (case insensitive, with or without underscores)
+      const normalizedTool = toolName.toLowerCase().replace(/__/g, '_');
+      if (contentLower.includes(normalizedTool) || contentLower.includes(toolName.toLowerCase())) {
+        // Find the first JSON object in the content
+        const braceStart = content.indexOf('{');
+        if (braceStart === -1) continue;
+        
+        try {
+          const jsonStr = this.extractJsonObject(content, braceStart);
+          if (!jsonStr) continue;
+          
+          const parsed = JSON.parse(jsonStr);
+          // Make sure it looks like arguments (not a meta-object)
+          if (parsed && typeof parsed === 'object' && !parsed.name && !parsed.tool) {
+            log(`[Orchestrator] Parsed loose format for: ${toolName}`);
+            return {
+              id: `text_call_${Date.now()}`,
+              name: toolName,
+              arguments: parsed as Record<string, unknown>,
+            };
+          }
+        } catch (e) {
+          log(`[Orchestrator] tryParseLooseFormat failed for ${toolName}: ${e}`);
+        }
+      }
+    }
+    return null;
+  }
+  
+  /**
+   * Extract a balanced JSON object starting at a given index.
+   */
+  private extractJsonObject(content: string, startIdx: number): string | null {
+    let braceCount = 0;
+    let endIdx = startIdx;
+    let inString = false;
+    let escapeNext = false;
+    
+    for (let i = startIdx; i < content.length; i++) {
+      const char = content[i];
+      
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
       }
       
-      // Extract from the start to the end, handling nested braces
-      let braceCount = 0;
-      let endIdx = startIdx;
-      for (let i = startIdx; i < content.length; i++) {
-        if (content[i] === '{') braceCount++;
-        else if (content[i] === '}') {
+      if (char === '\\' && inString) {
+        escapeNext = true;
+        continue;
+      }
+      
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+      
+      if (!inString) {
+        if (char === '{') braceCount++;
+        else if (char === '}') {
           braceCount--;
           if (braceCount === 0) {
             endIdx = i + 1;
@@ -350,41 +579,14 @@ export class ChatOrchestrator {
           }
         }
       }
-      
-      const jsonStr = content.slice(startIdx, endIdx);
-      log(`[Orchestrator] parseToolCall: Extracted JSON: ${jsonStr}`);
-      
-      const parsed = JSON.parse(jsonStr);
-      log(`[Orchestrator] parseToolCall: Parsed object: ${JSON.stringify(parsed)}`);
-      
-      if (parsed.name) {
-        const toolName = parsed.name as string;
-        // Accept parameters, arguments, or no args at all (empty object)
-        const args = (parsed.parameters || parsed.arguments || {}) as Record<string, unknown>;
-        
-        log(`[Orchestrator] parseToolCall: Looking for tool "${toolName}" in mapping`);
-        log(`[Orchestrator] parseToolCall: Available tools: ${Object.keys(toolMapping).join(', ')}`);
-        
-        // Verify this is a known tool
-        if (toolMapping[toolName]) {
-          log(`[Orchestrator] Successfully parsed text tool call: ${toolName} with args: ${JSON.stringify(args)}`);
-          return {
-            id: `text_call_${Date.now()}`,
-            name: toolName,
-            arguments: args,
-          };
-        } else {
-          log(`[Orchestrator] Tool not found in mapping: ${toolName}`);
-        }
-      } else {
-        log('[Orchestrator] parseToolCall: parsed.name is falsy');
-      }
-    } catch (e) {
-      // Not valid JSON or wrong format
-      log(`[Orchestrator] Failed to parse tool call from text: ${e}`);
     }
     
-    return null;
+    if (braceCount !== 0) {
+      log(`[Orchestrator] extractJsonObject: Unbalanced braces`);
+      return null;
+    }
+    
+    return content.slice(startIdx, endIdx);
   }
 
   /**
@@ -416,16 +618,21 @@ export class ChatOrchestrator {
       serverInfo += `\n${serverId}:\n${toolList}\n`;
     }
     
-    return `You are a helpful assistant with access to tools. When the user asks you to do something that requires using a tool, you MUST call the appropriate tool - do not describe how to use tools or ask the user to call them.
+    return `You are an AI assistant that helps users by calling tools. You have access to tools and MUST use them to complete tasks.
+
+CRITICAL: You are an AGENT. When the user asks something that requires a tool, you MUST execute the tool call - do NOT just describe it or explain how to use it.
 
 AVAILABLE TOOLS BY SERVER:
 ${serverInfo}
-INSTRUCTIONS:
-- When the user's request can be fulfilled by calling a tool, CALL the tool directly.
-- Do NOT describe how to use tools or write out tool calls as text.
-- Do NOT ask the user to call tools themselves.
-- If a tool returns an error, read the error message carefully and adjust your approach.
-- Use discovery tools (like list_allowed_directories) to learn about the environment before making assumptions.`;
+RULES:
+1. ALWAYS call tools directly when needed - never just describe how to use them.
+2. NEVER show the user JSON or ask them to call tools themselves.
+3. NEVER say things like "you can use..." or "try calling..." - just DO IT.
+4. If you need to call a tool, respond ONLY with the tool call, no extra text.
+5. After receiving tool results, summarize them naturally for the user.
+6. If a tool errors, try a different approach or explain what went wrong.
+
+For example, if the user asks "what repos do I have?", you should CALL the search_repositories tool immediately - don't explain how to use it.`;
   }
 
   /**

@@ -45,7 +45,7 @@ const SCOPE_INFO: Record<PermissionScope, { icon: string; iconClass: string; des
 // Parse URL Parameters
 // =============================================================================
 
-function parseParams(): { promptId: string; origin: string; scopes: PermissionScope[]; reason: string } {
+function parseParams(): { promptId: string; origin: string; scopes: PermissionScope[]; reason: string; tools: string[] } {
   const params = new URLSearchParams(window.location.search);
   
   const promptId = params.get('promptId') || '';
@@ -59,7 +59,17 @@ function parseParams(): { promptId: string; origin: string; scopes: PermissionSc
     console.error('Failed to parse scopes');
   }
   
-  return { promptId, origin, scopes, reason };
+  let tools: string[] = [];
+  try {
+    const toolsParam = params.get('tools');
+    if (toolsParam) {
+      tools = JSON.parse(toolsParam);
+    }
+  } catch {
+    console.error('Failed to parse tools');
+  }
+  
+  return { promptId, origin, scopes, reason, tools };
 }
 
 // =============================================================================
@@ -67,7 +77,7 @@ function parseParams(): { promptId: string; origin: string; scopes: PermissionSc
 // =============================================================================
 
 function renderUI(): void {
-  const { origin, scopes, reason } = parseParams();
+  const { origin, scopes, reason, tools } = parseParams();
   
   // Set origin
   const originEl = document.getElementById('origin');
@@ -104,6 +114,48 @@ function renderUI(): void {
       `;
     }).join('');
   }
+  
+  // Render tools section if mcp:tools.call is requested and tools are available
+  if (scopes.includes('mcp:tools.call') && tools.length > 0) {
+    renderToolsUI(tools);
+  }
+}
+
+function renderToolsUI(tools: string[]): void {
+  const section = document.getElementById('tools-section');
+  const list = document.getElementById('tools-list');
+  if (!section || !list) return;
+  
+  section.style.display = 'block';
+  
+  list.innerHTML = tools.map(tool => {
+    const slashIndex = tool.indexOf('/');
+    const serverId = slashIndex > -1 ? tool.slice(0, slashIndex) : 'unknown';
+    const toolName = slashIndex > -1 ? tool.slice(slashIndex + 1) : tool;
+    
+    return `
+      <label class="tool-item">
+        <input type="checkbox" class="tool-checkbox" value="${escapeHtml(tool)}" checked>
+        <div class="tool-info">
+          <div class="tool-name">${escapeHtml(toolName)}</div>
+          <div class="tool-server">${escapeHtml(serverId)}</div>
+        </div>
+      </label>
+    `;
+  }).join('');
+  
+  // Add select all / none handlers
+  document.getElementById('select-all')?.addEventListener('click', () => {
+    list.querySelectorAll<HTMLInputElement>('.tool-checkbox').forEach(cb => {
+      cb.checked = true;
+    });
+  });
+  
+  document.getElementById('select-none')?.addEventListener('click', () => {
+    list.querySelectorAll<HTMLInputElement>('.tool-checkbox').forEach(cb => {
+      cb.checked = false;
+    });
+  });
 }
 
 function escapeHtml(text: string): string {
@@ -116,8 +168,37 @@ function escapeHtml(text: string): string {
 // Decision Handling
 // =============================================================================
 
+function getSelectedTools(): string[] | undefined {
+  const { tools } = parseParams();
+  if (tools.length === 0) return undefined;
+  
+  const checkboxes = document.querySelectorAll<HTMLInputElement>('.tool-checkbox:checked');
+  const selected = Array.from(checkboxes).map(cb => cb.value);
+  
+  // If all tools are selected, return undefined (means all allowed)
+  if (selected.length === tools.length) {
+    return undefined;
+  }
+  
+  return selected;
+}
+
 async function sendDecision(decision: 'allow-once' | 'allow-always' | 'deny'): Promise<void> {
-  const { promptId } = parseParams();
+  const { promptId, tools } = parseParams();
+  
+  // Get selected tools (only relevant if not denying)
+  let allowedTools: string[] | undefined;
+  if (decision !== 'deny' && tools.length > 0) {
+    allowedTools = getSelectedTools();
+    
+    // If no tools selected but tools were available, show warning
+    const checkboxes = document.querySelectorAll<HTMLInputElement>('.tool-checkbox:checked');
+    if (checkboxes.length === 0) {
+      const proceed = confirm('No tools selected. The site will not be able to call any tools. Continue?');
+      if (!proceed) return;
+      allowedTools = []; // Empty array means no tools allowed
+    }
+  }
   
   try {
     // Send decision to background script
@@ -125,6 +206,7 @@ async function sendDecision(decision: 'allow-once' | 'allow-always' | 'deny'): P
       type: 'provider_permission_response',
       promptId,
       decision,
+      allowedTools,
     });
     
     // Close this popup window

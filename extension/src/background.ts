@@ -1050,8 +1050,48 @@ browser.runtime.onMessage.addListener(
 
     // Permission prompt response (from permission-prompt.html)
     if (msg.type === 'provider_permission_response') {
-      handlePermissionPromptResponse(msg.promptId, msg.decision);
+      handlePermissionPromptResponse(msg.promptId, msg.decision, msg.allowedTools);
       return Promise.resolve({ received: true });
+    }
+
+    // List all permissions (for sidebar management UI)
+    if (msg.type === 'list_all_permissions') {
+      return (async () => {
+        try {
+          const result = await browser.storage.local.get('provider_permissions');
+          const stored = result.provider_permissions as Record<string, { scopes: Record<string, string>; allowedTools?: string[] }> || {};
+          
+          const permissions = Object.entries(stored).map(([origin, data]) => ({
+            origin,
+            scopes: data.scopes,
+            allowedTools: data.allowedTools,
+          }));
+          
+          return { type: 'list_all_permissions_result', permissions };
+        } catch (err) {
+          console.error('Failed to list permissions:', err);
+          return { type: 'error', error: { message: 'Failed to list permissions' } };
+        }
+      })();
+    }
+
+    // Revoke all permissions for an origin
+    if (msg.type === 'revoke_origin_permissions') {
+      return (async () => {
+        try {
+          const result = await browser.storage.local.get('provider_permissions');
+          const stored = result.provider_permissions as Record<string, unknown> || {};
+          
+          delete stored[msg.origin as string];
+          
+          await browser.storage.local.set({ provider_permissions: stored });
+          
+          return { type: 'revoke_origin_permissions_result', success: true };
+        } catch (err) {
+          console.error('Failed to revoke permissions:', err);
+          return { type: 'error', error: { message: 'Failed to revoke permissions' } };
+        }
+      })();
     }
 
     // Proxy fetch requests from sidebar (for CORS)

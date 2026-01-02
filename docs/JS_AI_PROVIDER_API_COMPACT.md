@@ -2,6 +2,10 @@
 
 Use `window.ai` and `window.agent` when the Harbor browser extension is installed.
 
+> **Full Reference:** See [JS_AI_PROVIDER_API.md](./JS_AI_PROVIDER_API.md) for complete documentation with all options and examples.
+>
+> **For AI Agents:** See [LLMS.txt](./LLMS.txt) for a token-efficient version optimized for AI coding assistants.
+
 ## Quick Check
 
 ```javascript
@@ -70,12 +74,13 @@ const tab = await window.agent.browser.activeTab.readability();
 
 ## Agent Run (window.agent)
 
-Autonomous task execution with tools:
+Autonomous task execution with tools. **Tool router is built-in** — it automatically selects relevant tools based on keywords in your task (e.g., "GitHub" → GitHub tools only).
 
 ```javascript
 for await (const event of window.agent.run({
   task: 'Research AI news and summarize',
-  tools: ['search/web_search'],  // optional filter
+  tools: ['search/web_search'],  // optional filter (overrides router)
+  useAllTools: false,            // set true to disable router
   maxToolCalls: 5,               // default: 5
   requireCitations: true,        // optional
 })) {

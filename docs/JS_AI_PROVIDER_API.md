@@ -2,6 +2,10 @@
 
 This document describes the JavaScript APIs exposed by the Harbor browser extension to web pages. These APIs enable web applications to use AI models and MCP tools with user consent.
 
+> **For AI Agents:** See [LLMS.txt](./LLMS.txt) for a compact, token-efficient version of this documentation optimized for AI coding assistants.
+>
+> **Quick Reference:** See [JS_AI_PROVIDER_API_COMPACT.md](./JS_AI_PROVIDER_API_COMPACT.md) for a condensed cheat-sheet version.
+
 ## Overview
 
 When the Harbor extension is installed, two global objects are available on any web page:
@@ -259,6 +263,8 @@ const response = await session.prompt(
 
 Run an autonomous agent task with access to tools. Returns an async iterator of events.
 
+**Built-in Tool Router:** The agent automatically analyzes your task and selects only relevant tools based on keywords. For example, mentioning "GitHub" or "repo" will only present GitHub-related tools to the LLM. This dramatically improves performance with local models by reducing cognitive load.
+
 **Requires:** `model:tools` permission, plus `mcp:tools.list` and `mcp:tools.call` for tool access
 
 **Signature:**
@@ -266,6 +272,7 @@ Run an autonomous agent task with access to tools. Returns an async iterator of 
 agent.run(options: {
   task: string;
   tools?: string[];
+  useAllTools?: boolean;
   requireCitations?: boolean;
   maxToolCalls?: number;
   signal?: AbortSignal;
@@ -274,7 +281,8 @@ agent.run(options: {
 
 **Parameters:**
 - `task` - The task description / user request
-- `tools` - Optional array of allowed tool names (filters available tools)
+- `tools` - Optional array of allowed tool names (overrides the router)
+- `useAllTools` - If true, disable the tool router and use all available tools
 - `requireCitations` - If true, include source citations in final output
 - `maxToolCalls` - Maximum tool invocations (default: 5)
 - `signal` - AbortSignal to cancel the run
@@ -325,11 +333,23 @@ for await (const event of window.agent.run({ task: 'What is the weather in Paris
 
 **Example with tool filtering:**
 ```javascript
-// Only allow specific tools
+// Only allow specific tools (overrides the router)
 for await (const event of window.agent.run({
   task: 'Save a note about this meeting',
   tools: ['memory-server/save_memory', 'memory-server/search_memories'],
   maxToolCalls: 3,
+})) {
+  // handle events...
+}
+```
+
+**Example disabling the tool router:**
+```javascript
+// Use ALL available tools (bypass the intelligent routing)
+for await (const event of window.agent.run({
+  task: 'Help me with this complex task',
+  useAllTools: true,  // Disable router, present all tools to LLM
+  maxToolCalls: 10,
 })) {
   // handle events...
 }
@@ -802,6 +822,7 @@ interface StreamToken {
 interface AgentRunOptions {
   task: string;
   tools?: string[];
+  useAllTools?: boolean;      // Disable tool router, use all tools
   requireCitations?: boolean;
   maxToolCalls?: number;
   signal?: AbortSignal;

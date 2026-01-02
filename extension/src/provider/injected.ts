@@ -255,10 +255,14 @@ const aiApi = {
 const agentApi = {
   /**
    * Request permission scopes from the user.
+   * @param options.scopes - Permission scopes to request
+   * @param options.reason - Optional reason to show the user
+   * @param options.tools - Optional specific tools needed (for mcp:tools.call)
    */
   async requestPermissions(options: {
     scopes: PermissionScope[];
     reason?: string;
+    tools?: string[];
   }): Promise<PermissionGrantResult> {
     return sendRequest<PermissionGrantResult>('request_permissions', options, 120000); // 2 min for user interaction
   },

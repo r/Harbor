@@ -1,0 +1,229 @@
+# Harbor - AI Agent Reference
+
+Harbor is a Firefox extension + Node.js bridge enabling web pages to access AI models and MCP tools via window.ai and window.agent APIs.
+
+Human-readable docs: DEVELOPER_GUIDE.md, JS_AI_PROVIDER_API.md
+
+## Quick Start
+
+```js
+// Check availability
+if (window.agent) { /* Harbor installed */ }
+
+// Request permissions (required before any API use)
+await window.agent.requestPermissions({
+  scopes: ['model:prompt', 'model:tools', 'mcp:tools.list', 'mcp:tools.call'],
+  reason: 'Why your app needs AI'
+});
+```
+
+## Permissions
+
+SCOPES:
+- model:prompt     → Basic text generation
+- model:tools      → AI with tool calling
+- mcp:tools.list   → List available MCP tools
+- mcp:tools.call   → Execute MCP tools
+- browser:activeTab.read → Read active tab content
+
+GRANTS: granted-always | granted-once | denied | not-granted
+
+## window.ai - Text Generation
+
+```js
+// Create session
+const session = await window.ai.createTextSession({
+  systemPrompt: 'You are helpful.',  // optional
+  temperature: 0.7                    // optional, 0.0-2.0
+});
+
+// Simple prompt
+const response = await session.prompt('Hello');
+
+// Streaming
+for await (const e of session.promptStreaming('Tell me a story')) {
+  if (e.type === 'token') console.log(e.token);
+  if (e.type === 'done') break;
+  if (e.type === 'error') throw e.error;
+}
+
+// Cleanup
+await session.destroy();
+```
+
+## window.agent - Tools & Agent
+
+### List/Call Tools
+
+```js
+// List all tools (requires mcp:tools.list)
+const tools = await window.agent.tools.list();
+// Returns: [{ name: 'serverId/toolName', description, inputSchema }, ...]
+
+// Call a tool (requires mcp:tools.call)
+const result = await window.agent.tools.call({
+  tool: 'memory-server/save_memory',
+  args: { content: 'Remember this' }
+});
+```
+
+### Read Active Tab
+
+```js
+// Requires browser:activeTab.read
+const tab = await window.agent.browser.activeTab.readability();
+// Returns: { url, title, text }
+```
+
+### Agent Run (Autonomous Tasks)
+
+Built-in tool router auto-selects relevant tools based on keywords (e.g., "GitHub" → GitHub tools only).
+
+```js
+for await (const event of window.agent.run({
+  task: 'Research AI news and summarize',
+  tools: ['search/web_search'],  // optional filter (overrides router)
+  useAllTools: false,            // true = disable router
+  maxToolCalls: 5,               // default: 5
+  requireCitations: true         // optional
+})) {
+  switch (event.type) {
+    case 'status':      // { message: string }
+    case 'tool_call':   // { tool: string, args: any }
+    case 'tool_result': // { tool: string, result: any, error?: ApiError }
+    case 'token':       // { token: string }
+    case 'final':       // { output: string, citations?: [...] }
+    case 'error':       // { error: ApiError }
+  }
+}
+```
+
+## Error Codes
+
+ERR_NOT_INSTALLED       → Extension not installed
+ERR_PERMISSION_DENIED   → User denied
+ERR_SCOPE_REQUIRED      → Missing permission scope
+ERR_TOOL_NOT_ALLOWED    → Tool not in allowlist
+ERR_TOOL_NOT_FOUND      → Tool doesn't exist
+ERR_TOOL_FAILED         → Tool execution failed
+ERR_TOOL_TIMEOUT        → Tool call timed out
+ERR_MODEL_FAILED        → LLM error
+ERR_SESSION_NOT_FOUND   → Session destroyed
+ERR_TIMEOUT             → Request timed out
+ERR_RATE_LIMITED        → Rate limit exceeded
+ERR_SERVER_UNAVAILABLE  → MCP server unavailable
+ERR_INTERNAL            → Internal error
+
+## Bridge Message Types (for extension development)
+
+### Server Management
+add_server, remove_server, list_servers, connect_server, disconnect_server
+
+### MCP Operations
+mcp_connect, mcp_disconnect, mcp_list_connections, mcp_list_tools,
+mcp_list_resources, mcp_list_prompts, mcp_call_tool, mcp_read_resource
+
+### Catalog
+catalog_get, catalog_refresh, catalog_search
+
+### Installer
+check_runtimes, install_server, uninstall_server, list_installed,
+start_installed, stop_installed, set_server_secrets, get_server_status
+
+### LLM
+llm_detect, llm_list_providers, llm_set_active, llm_list_models, llm_chat
+
+### Chat Orchestration
+chat_create_session, chat_send_message, chat_get_session, chat_list_sessions,
+chat_delete_session, chat_update_session, chat_clear_messages
+
+## Architecture
+
+Web Page (window.ai/agent) ←postMessage→ Content Script ←runtime→ Background
+    ↓ native messaging (stdio JSON)
+Node.js Bridge (bridge-ts/)
+    ↓ MCP Protocol
+MCP Servers (stdio/HTTP/Docker)
+
+## Supported LLM Providers
+
+- llamafile: localhost:8080 (default)
+- Ollama: localhost:11434 (requires 0.3.0+ for tools)
+
+## Tool Router Keywords
+
+| Keywords | Servers Selected |
+|----------|------------------|
+| github, repo, commit, PR, issue | github |
+| file, folder, directory, read, write | filesystem |
+| remember, memory, recall, knowledge | memory |
+| slack, channel, message | slack |
+| database, SQL, query, postgres | database, postgres, mysql |
+| web, browser, scrape, url | web, browser |
+| search, find, google, brave | search, brave |
+
+## Data Storage (~/.harbor/)
+
+harbor.db              → Server configs (SQLite)
+catalog.db             → Catalog cache (SQLite)
+installed_servers.json → Installed servers
+secrets/credentials.json → API keys
+sessions/*.json        → Chat history
+
+## Types Reference
+
+```ts
+type PermissionScope = 'model:prompt' | 'model:tools' | 'mcp:tools.list' | 'mcp:tools.call' | 'browser:activeTab.read';
+type PermissionGrant = 'granted-once' | 'granted-always' | 'denied' | 'not-granted';
+
+interface ToolDescriptor { name: string; description?: string; inputSchema?: object; serverId?: string; }
+interface ActiveTabReadability { url: string; title: string; text: string; }
+interface StreamToken { type: 'token' | 'done' | 'error'; token?: string; error?: ApiError; }
+interface ApiError { code: string; message: string; details?: unknown; }
+
+type RunEvent =
+  | { type: 'status'; message: string }
+  | { type: 'tool_call'; tool: string; args: unknown }
+  | { type: 'tool_result'; tool: string; result: unknown; error?: ApiError }
+  | { type: 'token'; token: string }
+  | { type: 'final'; output: string; citations?: Citation[] }
+  | { type: 'error'; error: ApiError };
+
+interface Citation { source: 'tab' | 'tool'; ref: string; excerpt: string; }
+```
+
+## Complete Example
+
+```js
+async function main() {
+  // 1. Check availability
+  if (!window.agent) throw new Error('Harbor not installed');
+
+  // 2. Request permissions
+  const perm = await window.agent.requestPermissions({
+    scopes: ['model:prompt', 'model:tools', 'mcp:tools.list', 'mcp:tools.call'],
+    reason: 'AI assistant features'
+  });
+  if (!perm.granted) throw new Error('Permissions denied');
+
+  // 3. List available tools
+  const tools = await window.agent.tools.list();
+  console.log('Tools:', tools.map(t => t.name));
+
+  // 4. Run agent task
+  let output = '';
+  for await (const e of window.agent.run({ task: 'What tools are available?' })) {
+    if (e.type === 'token') output += e.token;
+    if (e.type === 'final') output = e.output;
+    if (e.type === 'error') throw new Error(e.error.message);
+  }
+  console.log('Result:', output);
+
+  // 5. Direct tool call
+  await window.agent.tools.call({
+    tool: 'memory-server/save_memory',
+    args: { content: output }
+  });
+}
+```
+

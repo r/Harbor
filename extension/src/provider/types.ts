@@ -48,11 +48,15 @@ export type PermissionGrant =
 export interface PermissionGrantResult {
   granted: boolean;
   scopes: Record<PermissionScope, PermissionGrant>;
+  /** Tools that are allowed for this origin (only if mcp:tools.call is granted) */
+  allowedTools?: string[];
 }
 
 export interface PermissionStatus {
   origin: string;
   scopes: Record<PermissionScope, PermissionGrant>;
+  /** Tools that are allowed for this origin (only if mcp:tools.call is granted) */
+  allowedTools?: string[];
 }
 
 // =============================================================================
@@ -121,7 +125,8 @@ export interface StreamToken {
 
 export interface AgentRunOptions {
   task: string;
-  tools?: string[];         // Allowed tool names (filter from available)
+  tools?: string[];         // Allowed tool names (overrides router)
+  useAllTools?: boolean;    // If true, disable tool router and use all tools
   requireCitations?: boolean;
   maxToolCalls?: number;    // Default: 5
   signal?: AbortSignal;
@@ -192,6 +197,8 @@ export type ProviderMessageType =
 export interface RequestPermissionsPayload {
   scopes: PermissionScope[];
   reason?: string;
+  /** Specific tools needed (for mcp:tools.call scope) */
+  tools?: string[];
 }
 
 export interface CreateTextSessionPayload {
@@ -272,6 +279,8 @@ export interface StoredPermissions {
   // Key: origin (e.g., "https://example.com")
   [origin: string]: {
     scopes: Record<PermissionScope, PermissionGrant>;
+    /** Per-origin tool allowlist (empty means all tools allowed) */
+    allowedTools?: string[];
     updatedAt: number;
   };
 }
@@ -279,6 +288,8 @@ export interface StoredPermissions {
 export interface TemporaryGrant {
   origin: string;
   scopes: PermissionScope[];
+  /** Per-origin tool allowlist (empty means all tools allowed) */
+  allowedTools?: string[];
   grantedAt: number;
   expiresAt: number;  // TTL for "once" grants
   tabId?: number;     // Associated tab, if any

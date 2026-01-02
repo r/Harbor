@@ -17,7 +17,6 @@ export default defineConfig({
         background: resolve(__dirname, 'src/background.ts'),
         sidebar: resolve(__dirname, 'src/sidebar.ts'),
         directory: resolve(__dirname, 'src/directory.ts'),
-        chat: resolve(__dirname, 'src/chat.ts'),
         'demo-bootstrap': resolve(__dirname, 'src/demo-bootstrap.ts'),
         // JS AI Provider files
         'content-bridge': resolve(__dirname, 'src/provider/content-bridge.ts'),
@@ -58,13 +57,6 @@ export default defineConfig({
         );
         writeFileSync(resolve(__dirname, 'dist/directory.html'), directoryHtml);
 
-        // Copy chat.html
-        const chatHtml = readFileSync(
-          resolve(__dirname, 'src/chat.html'),
-          'utf-8'
-        );
-        writeFileSync(resolve(__dirname, 'dist/chat.html'), chatHtml);
-
         // Copy permission-prompt.html
         const permissionPromptHtml = readFileSync(
           resolve(__dirname, 'src/permission-prompt.html'),
@@ -78,6 +70,17 @@ export default defineConfig({
           'utf-8'
         );
         writeFileSync(resolve(__dirname, 'dist/manifest.json'), manifest);
+
+        // Copy icons
+        const iconsDir = resolve(__dirname, 'dist/icons');
+        if (!existsSync(iconsDir)) {
+          mkdirSync(iconsDir, { recursive: true });
+        }
+        const harborIcon = readFileSync(
+          resolve(__dirname, 'src/icons/harbor-icon.svg'),
+          'utf-8'
+        );
+        writeFileSync(resolve(__dirname, 'dist/icons/harbor-icon.svg'), harborIcon);
 
         // Copy demo/chat-poc files (API demo/example code)
         const demoPocDir = resolve(__dirname, 'dist/demo');

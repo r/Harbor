@@ -22,6 +22,15 @@ Harbor uses Firefox's [Native Messaging](https://developer.mozilla.org/en-US/doc
 
 So setup is: build extension → build bridge → install manifest → load extension in Firefox. That's it!
 
+## Documentation
+
+| Document | Audience | Description |
+|----------|----------|-------------|
+| [Developer Guide](docs/DEVELOPER_GUIDE.md) | Developers | Comprehensive API reference and architecture guide |
+| [LLMS.txt](docs/LLMS.txt) | AI Agents | Compact, token-efficient reference for AI coding assistants |
+| [JS AI Provider API](docs/JS_AI_PROVIDER_API.md) | Web Developers | Full reference for `window.ai` and `window.agent` APIs |
+| [MCP Host](docs/MCP_HOST.md) | Contributors | MCP execution environment internals |
+
 ## Prerequisites
 
 - **Node.js** 18+ and npm

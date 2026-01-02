@@ -28,6 +28,8 @@ import {
   SCOPE_DESCRIPTIONS,
   GESTURE_REQUIRED_SCOPES,
   clearTabGrants,
+  isToolAllowed,
+  getAllowedTools,
 } from './permissions';
 
 const DEBUG = true;
@@ -52,6 +54,7 @@ const pendingPermissionRequests = new Map<string, {
   origin: string;
   scopes: PermissionScope[];
   reason?: string;
+  requestedTools?: string[];
 }>();
 
 // Active streaming requests
@@ -142,7 +145,8 @@ async function showPermissionPrompt(
   requestId: string,
   origin: string,
   scopes: PermissionScope[],
-  reason?: string
+  reason?: string,
+  requestedTools?: string[]
 ): Promise<void> {
   // Store the pending request
   const promptId = `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -152,6 +156,7 @@ async function showPermissionPrompt(
     origin,
     scopes,
     reason,
+    requestedTools,
   });
   
   // Build permission prompt URL with query params
@@ -163,13 +168,51 @@ async function showPermissionPrompt(
     reason: reason || '',
   });
   
-  // Open as a popup window
+  // If requesting mcp:tools.call, include the tools list
+  if (scopes.includes('mcp:tools.call')) {
+    // Get available tools to show in the prompt
+    let availableTools: string[] = [];
+    try {
+      const connectionsResponse = await browser.runtime.sendMessage({
+        type: 'mcp_list_connections',
+      }) as { type: string; connections?: Array<{ serverId: string; serverName: string; toolCount: number }> };
+      
+      if (connectionsResponse.connections) {
+        for (const conn of connectionsResponse.connections) {
+          const toolsResponse = await browser.runtime.sendMessage({
+            type: 'mcp_list_tools',
+            server_id: conn.serverId,
+          }) as { type: string; tools?: Array<{ name: string; description?: string }> };
+          
+          if (toolsResponse.tools) {
+            for (const tool of toolsResponse.tools) {
+              availableTools.push(`${conn.serverId}/${tool.name}`);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      log('Failed to fetch available tools for prompt:', err);
+    }
+    
+    // If specific tools were requested, filter to those
+    if (requestedTools && requestedTools.length > 0) {
+      availableTools = availableTools.filter(t => requestedTools.includes(t));
+    }
+    
+    if (availableTools.length > 0) {
+      params.set('tools', JSON.stringify(availableTools));
+    }
+  }
+  
+  // Open as a popup window - increase height to accommodate tools
+  const hasTools = params.has('tools');
   try {
     await browser.windows.create({
       url: `${promptUrl}?${params.toString()}`,
       type: 'popup',
       width: 420,
-      height: 500,
+      height: hasTools ? 600 : 500,
       focused: true,
     });
   } catch (err) {
@@ -182,7 +225,8 @@ async function showPermissionPrompt(
 // Handle permission prompt response (called from permission-prompt.ts)
 export function handlePermissionPromptResponse(
   promptId: string,
-  decision: 'allow-once' | 'allow-always' | 'deny'
+  decision: 'allow-once' | 'allow-always' | 'deny',
+  allowedTools?: string[]
 ): void {
   const pending = pendingPermissionRequests.get(promptId);
   if (!pending) {
@@ -201,7 +245,7 @@ export function handlePermissionPromptResponse(
       sendResponse(port, 'permissions_result', requestId, result);
     } else {
       const mode = decision === 'allow-once' ? 'once' : 'always';
-      await grantPermissions(origin, scopes, mode);
+      await grantPermissions(origin, scopes, mode, { allowedTools });
       const result = await buildGrantResult(origin, scopes);
       sendResponse(port, 'permissions_result', requestId, result);
     }
@@ -219,9 +263,9 @@ async function handleRequestPermissions(
   port: browser.Runtime.Port,
   requestId: string,
   origin: string,
-  payload: { scopes: PermissionScope[]; reason?: string }
+  payload: { scopes: PermissionScope[]; reason?: string; tools?: string[] }
 ): Promise<void> {
-  const { scopes, reason } = payload;
+  const { scopes, reason, tools } = payload;
   
   // Filter to valid scopes
   const validScopes = scopes.filter(s => SCOPE_DESCRIPTIONS[s] !== undefined);
@@ -261,8 +305,8 @@ async function handleRequestPermissions(
     return;
   }
   
-  // Show permission prompt for missing scopes
-  await showPermissionPrompt(port, requestId, origin, missing, reason);
+  // Show permission prompt for missing scopes (include requested tools)
+  await showPermissionPrompt(port, requestId, origin, missing, reason, tools);
 }
 
 async function handleListPermissions(
@@ -454,6 +498,18 @@ async function handleToolsCall(
     sendError(port, requestId, createError(
       'ERR_TOOL_NOT_ALLOWED',
       'Tool name must be in format "serverId/toolName"'
+    ));
+    return;
+  }
+  
+  // Check if this specific tool is allowed for this origin
+  const toolAllowed = await isToolAllowed(origin, tool);
+  if (!toolAllowed) {
+    const allowedTools = await getAllowedTools(origin);
+    sendError(port, requestId, createError(
+      'ERR_TOOL_NOT_ALLOWED',
+      `Tool "${tool}" is not in the allowlist for this origin. Request permission with this tool first.`,
+      { tool, allowedTools }
     ));
     return;
   }

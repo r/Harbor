@@ -6,12 +6,16 @@
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@types/webextension-polyfill": "^0.10.7",
     "typescript": "^5.3.3",
-    "vite": "^5.0.12"
+    "vite": "^5.0.12",
+    "vitest": "^2.1.9"
   },
   "dependencies": {
     "webextension-polyfill": "^0.10.0"

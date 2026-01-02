@@ -173,6 +173,103 @@
       color: var(--color-text-primary);
     }
 
+    /* Tools Section */
+    .tools-section {
+      margin-bottom: var(--space-4);
+      border: 1px solid var(--color-border-primary);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+
+    .tools-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--space-2) var(--space-3);
+      background: var(--color-bg-tertiary);
+      border-bottom: 1px solid var(--color-border-primary);
+    }
+
+    .tools-title {
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--color-text-primary);
+    }
+
+    .tools-actions {
+      display: flex;
+      gap: var(--space-2);
+    }
+
+    .btn-link {
+      background: none;
+      border: none;
+      padding: var(--space-1) var(--space-2);
+      font-size: var(--text-xs);
+      color: var(--color-accent-primary);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+    }
+
+    .btn-link:hover {
+      background: var(--color-bg-hover);
+    }
+
+    .tools-description {
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+      padding: var(--space-2) var(--space-3);
+      background: var(--color-bg-secondary);
+    }
+
+    .tools-list {
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
+    .tool-item {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-2) var(--space-3);
+      border-bottom: 1px solid var(--color-border-primary);
+      cursor: pointer;
+    }
+
+    .tool-item:last-child {
+      border-bottom: none;
+    }
+
+    .tool-item:hover {
+      background: var(--color-bg-hover);
+    }
+
+    .tool-checkbox {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .tool-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .tool-name {
+      font-size: var(--text-sm);
+      font-weight: 500;
+      color: var(--color-text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tool-server {
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+      font-family: var(--font-mono);
+    }
+
     .warning-box {
       background: rgba(var(--color-warning-rgb, 255, 193, 7), 0.1);
       border: 1px solid var(--color-warning);
@@ -272,6 +369,21 @@
     <div class="scopes-section">
       <div class="scopes-title">Requested Permissions</div>
       <div class="scope-list" id="scope-list"></div>
+    </div>
+
+    <!-- Tools section (shown only when mcp:tools.call is requested) -->
+    <div class="tools-section" id="tools-section" style="display: none;">
+      <div class="tools-header">
+        <div class="tools-title">Select Tools to Allow</div>
+        <div class="tools-actions">
+          <button class="btn-link" id="select-all">All</button>
+          <button class="btn-link" id="select-none">None</button>
+        </div>
+      </div>
+      <div class="tools-description">
+        Choose which tools this site can execute:
+      </div>
+      <div class="tools-list" id="tools-list"></div>
     </div>
 
     <div class="warning-box">

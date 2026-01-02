@@ -21,7 +21,8 @@
   },
   "sidebar_action": {
     "default_title": "Harbor",
-    "default_panel": "sidebar.html"
+    "default_panel": "sidebar.html",
+    "default_icon": "icons/harbor-icon.svg"
   },
   "content_scripts": [
     {

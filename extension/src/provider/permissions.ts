@@ -121,7 +121,15 @@ export async function getPermissionStatus(origin: string): Promise<PermissionSta
     }
   }
   
-  return { origin, scopes };
+  // Get allowed tools (merge temp and persistent)
+  let allowedTools: string[] | undefined;
+  if (tempGrant?.allowedTools && tempGrant.allowedTools.length > 0) {
+    allowedTools = tempGrant.allowedTools;
+  } else if (originPerms?.allowedTools && originPerms.allowedTools.length > 0) {
+    allowedTools = originPerms.allowedTools;
+  }
+  
+  return { origin, scopes, allowedTools };
 }
 
 /**
@@ -168,7 +176,8 @@ export async function getMissingPermissions(origin: string, scopes: PermissionSc
 export async function grantPermissions(
   origin: string,
   scopes: PermissionScope[],
-  mode: 'once' | 'always'
+  mode: 'once' | 'always',
+  options?: { allowedTools?: string[] }
 ): Promise<void> {
   if (mode === 'once') {
     // Store as temporary grant
@@ -176,9 +185,15 @@ export async function grantPermissions(
     const existingScopes = existing?.scopes || [];
     const mergedScopes = [...new Set([...existingScopes, ...scopes])];
     
+    // Merge allowed tools
+    const existingTools = existing?.allowedTools || [];
+    const newTools = options?.allowedTools || [];
+    const mergedTools = [...new Set([...existingTools, ...newTools])];
+    
     temporaryGrants.set(getTempKey(origin), {
       origin,
       scopes: mergedScopes,
+      allowedTools: mergedTools.length > 0 ? mergedTools : undefined,
       grantedAt: Date.now(),
       expiresAt: Date.now() + ONCE_GRANT_TTL_MS,
     });
@@ -186,14 +201,20 @@ export async function grantPermissions(
     // Store persistently
     const stored = await loadStoredPermissions();
     const existing = stored[origin]?.scopes || {};
+    const existingTools = stored[origin]?.allowedTools || [];
     
     const newScopes: Record<PermissionScope, PermissionGrant> = { ...existing };
     for (const scope of scopes) {
       newScopes[scope] = 'granted-always';
     }
     
+    // Merge allowed tools
+    const newTools = options?.allowedTools || [];
+    const mergedTools = [...new Set([...existingTools, ...newTools])];
+    
     stored[origin] = {
       scopes: newScopes,
+      allowedTools: mergedTools.length > 0 ? mergedTools : undefined,
       updatedAt: Date.now(),
     };
     
@@ -321,6 +342,75 @@ export async function buildGrantResult(
   return {
     granted,
     scopes: status.scopes,
+    allowedTools: status.allowedTools,
   };
+}
+
+/**
+ * Get allowed tools for an origin.
+ * Returns undefined if all tools are allowed.
+ */
+export async function getAllowedTools(origin: string): Promise<string[] | undefined> {
+  const status = await getPermissionStatus(origin);
+  return status.allowedTools;
+}
+
+/**
+ * Check if a specific tool is allowed for an origin.
+ */
+export async function isToolAllowed(origin: string, toolName: string): Promise<boolean> {
+  const status = await getPermissionStatus(origin);
+  
+  // First check if mcp:tools.call is granted
+  const callGrant = status.scopes['mcp:tools.call'];
+  if (callGrant !== 'granted-once' && callGrant !== 'granted-always') {
+    return false;
+  }
+  
+  // If no allowlist, all tools are allowed
+  if (!status.allowedTools || status.allowedTools.length === 0) {
+    return true;
+  }
+  
+  // Check against allowlist
+  return status.allowedTools.includes(toolName);
+}
+
+/**
+ * Update allowed tools for an origin (used by management UI).
+ */
+export async function updateAllowedTools(
+  origin: string,
+  allowedTools: string[]
+): Promise<void> {
+  const stored = await loadStoredPermissions();
+  
+  if (!stored[origin]) {
+    // No permissions stored for this origin yet
+    return;
+  }
+  
+  stored[origin].allowedTools = allowedTools.length > 0 ? allowedTools : undefined;
+  stored[origin].updatedAt = Date.now();
+  
+  await saveStoredPermissions(stored);
+  
+  // Also update temporary grants if present
+  const tempGrant = temporaryGrants.get(getTempKey(origin));
+  if (tempGrant) {
+    tempGrant.allowedTools = allowedTools.length > 0 ? allowedTools : undefined;
+  }
+}
+
+// =============================================================================
+// Testing Utilities
+// =============================================================================
+
+/**
+ * Clear all temporary grants. For testing only.
+ * @internal
+ */
+export function __clearAllTemporaryGrants(): void {
+  temporaryGrants.clear();
 }
 

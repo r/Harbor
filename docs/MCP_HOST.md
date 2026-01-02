@@ -2,6 +2,11 @@
 
 This document describes the MCP (Model Context Protocol) Execution Environment implementation in Harbor.
 
+> **See Also:**
+> - [Developer Guide](./DEVELOPER_GUIDE.md) - Comprehensive API reference
+> - [JS AI Provider API](./JS_AI_PROVIDER_API.md) - Web page APIs (`window.ai`, `window.agent`)
+> - [LLMS.txt](./LLMS.txt) - AI agent-optimized reference
+
 ## Overview
 
 The MCP Host is responsible for:

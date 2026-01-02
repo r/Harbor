@@ -21,7 +21,11 @@
  *   .tools.list() → Promise<ToolDescriptor[]>
  *   .tools.call({ tool, args }) → Promise<unknown>
  *   .browser.activeTab.readability() → Promise<TabContent>
- *   .run({ task, tools?, maxToolCalls? }) → AsyncIterable<RunEvent>
+ *   .run({ task, tools?, maxToolCalls?, useAllTools? }) → AsyncIterable<RunEvent>
+ * 
+ * Note: The tool router is built into agent.run() and automatically selects
+ * relevant tools based on your task. This helps local LLMs perform better
+ * by not overwhelming them with too many tool options.
  * 
  * See README.md for more details.
  */
@@ -385,6 +389,12 @@ async function runSimple(content) {
  * Agent run with tools - uses window.agent.run()
  * 
  * EXAMPLE: Running an agent with MCP tools
+ * 
+ * NOTE: The tool router is built-in and automatically selects relevant tools
+ * based on your task. For example, if you mention "GitHub", only GitHub-related
+ * tools will be presented to the LLM. This improves performance with local models.
+ * 
+ * To disable the router and use all tools, pass { useAllTools: true }
  */
 async function runWithTools(content) {
   addThinkingUI();
@@ -407,7 +417,13 @@ async function runWithTools(content) {
     const toolElements = new Map();
     
     // EXAMPLE: Streaming events from window.agent.run()
-    for await (const event of window.agent.run({ task, maxToolCalls: 5 })) {
+    // The tool router is built-in - it automatically selects relevant tools
+    // based on keywords in your task. You don't need to do anything special!
+    for await (const event of window.agent.run({ 
+      task, 
+      maxToolCalls: 5,
+      // useAllTools: true,  // Uncomment to disable tool router
+    })) {
       switch (event.type) {
         case 'status':
           updateThinkingText(event.message);
@@ -551,7 +567,7 @@ async function init() {
   console.log('  window.agent.tools.list() - List available MCP tools');
   console.log('  window.agent.tools.call({tool, args}) - Call an MCP tool');
   console.log('  window.agent.browser.activeTab.readability() - Read current tab');
-  console.log('  window.agent.run({task}) - Run an agent with tools');
+  console.log('  window.agent.run({task}) - Run an agent with tools (tool router built-in!)');
 }
 
 // Wait for DOM and potential extension injection

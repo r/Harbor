@@ -1919,6 +1919,9 @@ async function init(): Promise<void> {
   await checkLLMStatus();
   await checkDockerStatus();
   
+  // Load site permissions
+  await loadPermissions();
+  
   // Update status dots
   updateRuntimeStatusDot();
   updateServersStatusDot();
@@ -2016,18 +2019,11 @@ openDirectoryBtn.addEventListener('click', () => {
   browser.tabs.create({ url: directoryUrl });
 });
 
-// Open Chat button
+// Open Chat button (opens the API demo which serves as both reference implementation and usable chat)
 const openChatBtn = document.getElementById('open-chat') as HTMLButtonElement;
 openChatBtn?.addEventListener('click', () => {
-  const chatUrl = browser.runtime.getURL('chat.html');
-  browser.tabs.create({ url: chatUrl });
-});
-
-// Open Chat POC (API demo) button
-const openChatPocBtn = document.getElementById('open-chat-poc') as HTMLButtonElement;
-openChatPocBtn?.addEventListener('click', () => {
-  const chatPocUrl = browser.runtime.getURL('demo/index.html');
-  browser.tabs.create({ url: chatPocUrl });
+  const demoUrl = browser.runtime.getURL('demo/index.html');
+  browser.tabs.create({ url: demoUrl });
 });
 
 // Theme toggle
@@ -2264,6 +2260,138 @@ githubUrlInput?.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') {
     installFromGithubUrl();
   }
+});
+
+// =============================================================================
+// Permissions Management
+// =============================================================================
+
+interface PermissionStatus {
+  origin: string;
+  scopes: Record<string, string>;
+  allowedTools?: string[];
+}
+
+const permissionsListEl = document.getElementById('permissions-list') as HTMLDivElement;
+const refreshPermissionsBtn = document.getElementById('refresh-permissions') as HTMLButtonElement;
+
+async function loadPermissions(): Promise<void> {
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'list_all_permissions',
+    }) as { type: string; permissions?: PermissionStatus[] };
+
+    if (response.type === 'list_all_permissions_result' && response.permissions) {
+      renderPermissions(response.permissions);
+    }
+  } catch (err) {
+    console.error('Failed to load permissions:', err);
+    permissionsListEl.innerHTML = `
+      <div class="empty-state">
+        Failed to load permissions.
+      </div>
+    `;
+  }
+}
+
+function renderPermissions(permissions: PermissionStatus[]): void {
+  if (permissions.length === 0) {
+    permissionsListEl.innerHTML = `
+      <div class="empty-state">
+        No site permissions granted yet.
+      </div>
+    `;
+    return;
+  }
+
+  permissionsListEl.innerHTML = permissions.map(perm => {
+    const grantedScopes = Object.entries(perm.scopes)
+      .filter(([_, status]) => status === 'granted-always' || status === 'granted-once')
+      .map(([scope, status]) => ({ scope, status }));
+    
+    const deniedScopes = Object.entries(perm.scopes)
+      .filter(([_, status]) => status === 'denied')
+      .map(([scope]) => scope);
+
+    const scopeBadges = [
+      ...grantedScopes.map(({ scope, status }) => {
+        const label = scope.split(':')[1] || scope;
+        const once = status === 'granted-once' ? ' (once)' : '';
+        return `<span class="permission-scope-badge">${escapeHtml(label)}${once}</span>`;
+      }),
+      ...deniedScopes.map(scope => {
+        const label = scope.split(':')[1] || scope;
+        return `<span class="permission-scope-badge denied">${escapeHtml(label)} ✕</span>`;
+      }),
+    ].join('');
+
+    let toolsHtml = '';
+    if (perm.allowedTools && perm.allowedTools.length > 0) {
+      const toolBadges = perm.allowedTools.map(tool => {
+        const toolName = tool.split('/')[1] || tool;
+        return `<span class="permission-tool-badge">${escapeHtml(toolName)}</span>`;
+      }).join('');
+      
+      toolsHtml = `
+        <div class="permission-tools-section">
+          <div class="permission-tools-title">Allowed Tools</div>
+          <div class="permission-tools-list">${toolBadges}</div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="permission-origin-item" data-origin="${escapeHtml(perm.origin)}">
+        <div class="permission-origin-header">
+          <span class="permission-origin-name">${escapeHtml(perm.origin)}</span>
+        </div>
+        <div class="permission-scopes">
+          ${scopeBadges || '<span class="text-muted text-xs">No scopes</span>'}
+        </div>
+        ${toolsHtml}
+        <div class="permission-actions">
+          <button class="btn btn-sm btn-ghost edit-permissions-btn" data-origin="${escapeHtml(perm.origin)}">Edit</button>
+          <button class="btn btn-sm btn-danger revoke-permissions-btn" data-origin="${escapeHtml(perm.origin)}">Revoke All</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Add event listeners
+  permissionsListEl.querySelectorAll('.revoke-permissions-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const origin = (btn as HTMLElement).dataset.origin!;
+      if (!confirm(`Revoke all permissions for ${origin}?`)) return;
+      
+      try {
+        await browser.runtime.sendMessage({
+          type: 'revoke_origin_permissions',
+          origin,
+        });
+        await loadPermissions();
+      } catch (err) {
+        console.error('Failed to revoke permissions:', err);
+        alert('Failed to revoke permissions.');
+      }
+    });
+  });
+
+  permissionsListEl.querySelectorAll('.edit-permissions-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const origin = (btn as HTMLElement).dataset.origin!;
+      // TODO: Open a modal to edit permissions/tools for this origin
+      alert(`Edit permissions for ${origin}\n\nComing soon: This will allow you to modify allowed tools.`);
+    });
+  });
+}
+
+// Refresh permissions button
+refreshPermissionsBtn?.addEventListener('click', async () => {
+  refreshPermissionsBtn.classList.add('loading');
+  refreshPermissionsBtn.disabled = true;
+  await loadPermissions();
+  refreshPermissionsBtn.classList.remove('loading');
+  refreshPermissionsBtn.disabled = false;
 });
 
 init();
