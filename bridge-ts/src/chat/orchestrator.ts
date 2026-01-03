@@ -146,11 +146,8 @@ export class ChatOrchestrator {
     }
     
     // Collect tools from selected MCP servers
-    let { tools, toolMapping } = await this.collectTools(serversToUse);
+    const { tools, toolMapping } = await this.collectTools(serversToUse);
     log(`[Orchestrator] Collected ${tools.length} tools from ${serversToUse.length} servers`);
-    
-    // Prioritize tools based on user message patterns
-    tools = this.prioritizeTools(tools, userMessage);
     
     // Main agent loop
     while (iterations < session.config.maxIterations) {
@@ -749,70 +746,11 @@ ${serverInfo}
 HOW TO CALL A TOOL - output ONLY this JSON (nothing else):
 {"name": "tool_name", "parameters": {}}
 
-TOOL SELECTION TIPS:
-- For "my" / "me" questions: Use tools with "me" in the name, NOT search tools
-- For time/date questions: Look for tools with "time" or "date" in the name
-- For file questions: Look for tools with "file", "read", "write" in the name
-- Read tool descriptions to understand what each tool does
-
 RULES:
-1. If a question can be answered with a tool, CALL IT - don't say you can't help
-2. After receiving tool results, summarize in plain English
-3. Call tools directly - don't describe them or ask permission`;
-  }
-
-  /**
-   * Prioritize and filter tools based on user message patterns.
-   * This helps the LLM choose the right tool by putting relevant ones first.
-   */
-  private prioritizeTools(tools: ToolDefinition[], userMessage: string): ToolDefinition[] {
-    const messageLower = userMessage.toLowerCase();
-    
-    // Check if user is asking about themselves
-    const askingAboutSelf = /\b(my|myself|me)\b/.test(messageLower);
-    
-    if (!askingAboutSelf) {
-      return tools; // No prioritization needed
-    }
-    
-    log('[Orchestrator] Detected "my/me" pattern - prioritizing self-info tools');
-    
-    // Score tools based on relevance to self-info queries
-    const scored = tools.map(tool => {
-      const nameLower = tool.name.toLowerCase();
-      const descLower = (tool.description || '').toLowerCase();
-      
-      let score = 0;
-      
-      // Boost tools with "me", "self", "current", "authenticated" in name
-      if (nameLower.includes('_me') || nameLower.includes('me_') || nameLower.endsWith('me')) {
-        score += 100; // Strong boost
-      }
-      if (nameLower.includes('self') || nameLower.includes('current') || nameLower.includes('authenticated')) {
-        score += 50;
-      }
-      if (descLower.includes('authenticated user') || descLower.includes('current user') || descLower.includes('your ')) {
-        score += 30;
-      }
-      
-      // Penalize search tools when asking about self
-      if (nameLower.includes('search') || nameLower.includes('find') || nameLower.includes('query')) {
-        score -= 50; // Penalty
-      }
-      
-      return { tool, score };
-    });
-    
-    // Sort by score (highest first)
-    scored.sort((a, b) => b.score - a.score);
-    
-    const reordered = scored.map(s => s.tool);
-    
-    // Log what we did
-    const topTools = scored.slice(0, 3).map(s => `${s.tool.name}(${s.score})`);
-    log(`[Orchestrator] Reordered tools, top 3: ${topTools.join(', ')}`);
-    
-    return reordered;
+1. READ the tool descriptions carefully to choose the right tool
+2. If a question can be answered with a tool, CALL IT - don't say you can't help
+3. After receiving tool results, summarize in plain English
+4. Call tools directly - don't describe them or ask permission`;
   }
 
   /**

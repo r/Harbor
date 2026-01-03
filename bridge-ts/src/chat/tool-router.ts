@@ -38,8 +38,7 @@ export interface RoutingResult {
 
 /**
  * Common stop words to exclude from keyword extraction.
- * NOTE: "me" is intentionally NOT a stop word because tools like "get_me" need it!
- * NOTE: "get", "current", "time" etc are NOT stop words because they're meaningful for routing
+ * These are words that don't help distinguish between tools.
  */
 const STOP_WORDS = new Set([
   'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
@@ -51,17 +50,8 @@ const STOP_WORDS = new Set([
   'not', 'only', 'own', 'same', 'than', 'too', 'very', 'just',
   'that', 'this', 'these', 'those', 'what', 'which', 'who', 'whom',
   'it', 'its', 'he', 'she', 'they', 'them', 'his', 'her', 'their',
-  'i', 'we', 'us', 'our', 'you', 'your',  // NOTE: "me" and "my" removed - they're important!
+  'i', 'we', 'us', 'our', 'you', 'your',
 ]);
-
-/**
- * Word synonyms for better matching.
- * Maps user input words to tool keywords.
- */
-const WORD_SYNONYMS: Record<string, string[]> = {
-  'my': ['me', 'self', 'current', 'authenticated'],  // "my username" → look for "me", "self", etc.
-  'myself': ['me', 'self', 'current'],
-};
 
 /**
  * Tool Router class - dynamically indexes and routes based on tool metadata.
@@ -199,24 +189,13 @@ export class ToolRouter {
     
     // Tokenize user message
     const messageWords = this.tokenize(message);
-    
-    // Expand words with synonyms (e.g., "my" → ["my", "me", "self", "current"])
-    const expandedWords: string[] = [];
-    for (const word of messageWords) {
-      expandedWords.push(word);
-      if (WORD_SYNONYMS[word]) {
-        expandedWords.push(...WORD_SYNONYMS[word]);
-      }
-    }
-    
     log(`[ToolRouter] Message words: ${messageWords.join(', ')}`);
-    log(`[ToolRouter] Expanded words: ${expandedWords.join(', ')}`);
     
     // Find matching servers and keywords
     const serverScores = new Map<string, number>();
     const matchedKeywords: string[] = [];
     
-    for (const word of expandedWords) {
+    for (const word of messageWords) {
       // Direct keyword match
       if (this.keywordIndex.has(word)) {
         matchedKeywords.push(word);
@@ -234,22 +213,6 @@ export class ToolRouter {
             }
             for (const serverId of servers) {
               serverScores.set(serverId, (serverScores.get(serverId) || 0) + 0.5);
-            }
-          }
-        }
-      }
-    }
-    
-    // Boost score for servers with "me" tools when user says "my"
-    // This helps ensure "get_me" beats "search_users" for "my username" queries
-    if (messageWords.includes('my') || messageWords.includes('myself')) {
-      for (const [keyword, servers] of this.keywordIndex) {
-        if (keyword === 'me' || keyword === 'self' || keyword === 'current' || keyword === 'authenticated') {
-          for (const serverId of servers) {
-            const currentScore = serverScores.get(serverId) || 0;
-            serverScores.set(serverId, currentScore + 2); // Strong boost
-            if (!matchedKeywords.includes(keyword)) {
-              matchedKeywords.push(keyword);
             }
           }
         }
