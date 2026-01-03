@@ -38,45 +38,68 @@ export class DockerExec {
       return this.cachedInfo;
     }
 
-    try {
-      const versionOutput = execSync('docker --version', { 
-        encoding: 'utf-8',
-        timeout: 5000,
-      }).trim();
-      
-      // Parse version from output like "Docker version 24.0.7, build afdd53b"
-      const versionMatch = versionOutput.match(/Docker version ([0-9.]+)/);
-      const version = versionMatch ? versionMatch[1] : 'unknown';
-      
-      // Check if Docker daemon is running
+    // Try multiple possible Docker paths (native host may have limited PATH)
+    const dockerPaths = [
+      'docker',                           // System PATH
+      '/usr/local/bin/docker',            // macOS Intel
+      '/opt/homebrew/bin/docker',         // macOS Apple Silicon
+      '/usr/bin/docker',                  // Linux
+      '/Applications/Docker.app/Contents/Resources/bin/docker', // Docker Desktop macOS
+    ];
+    
+    let dockerCmd: string | null = null;
+    let versionOutput = '';
+    
+    for (const path of dockerPaths) {
       try {
-        execSync('docker info', { 
+        versionOutput = execSync(`${path} --version`, { 
           encoding: 'utf-8',
-          timeout: 10000,
+          timeout: 5000,
           stdio: ['pipe', 'pipe', 'pipe'],
-        });
+        }).trim();
+        dockerCmd = path;
+        log(`[Docker] Found Docker at: ${path}`);
+        break;
       } catch {
-        this.cachedInfo = {
-          available: false,
-          version,
-          error: 'Docker daemon is not running. Please start Docker Desktop.',
-        };
-        return this.cachedInfo;
+        // Try next path
       }
-      
-      this.cachedInfo = {
-        available: true,
-        version,
-      };
-      
-      return this.cachedInfo;
-    } catch (e) {
-      this.cachedInfo = {
-        available: false,
-        error: 'Docker is not installed. Please install Docker Desktop from https://docker.com',
-      };
-      return this.cachedInfo;
     }
+    
+    if (!dockerCmd) {
+      // Don't cache failure - Docker might be started later
+      return {
+        available: false,
+        error: 'Docker not found. Please install Docker Desktop from https://docker.com and ensure it is running.',
+      };
+    }
+      
+    // Parse version from output like "Docker version 24.0.7, build afdd53b"
+    const versionMatch = versionOutput.match(/Docker version ([0-9.]+)/);
+    const version = versionMatch ? versionMatch[1] : 'unknown';
+    
+    // Check if Docker daemon is running
+    try {
+      execSync(`${dockerCmd} info`, { 
+        encoding: 'utf-8',
+        timeout: 10000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch {
+      // Don't cache this - daemon might be started later
+      return {
+        available: false,
+        version,
+        error: 'Docker daemon is not running. Please start Docker Desktop.',
+      };
+    }
+    
+    this.cachedInfo = {
+      available: true,
+      version,
+    };
+    
+    log(`[Docker] Docker available: v${version}`);
+    return this.cachedInfo;
   }
 
   /**

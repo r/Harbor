@@ -28,120 +28,6 @@ import type {
 // =============================================================================
 // Tool Router - Built-in intelligent tool selection
 // =============================================================================
-
-/**
- * Routing rules for common MCP servers.
- * Maps keywords to server ID patterns.
- */
-const ROUTING_RULES: Array<{
-  keywords: string[];
-  serverPatterns: string[];
-  priority: number;
-}> = [
-  // GitHub
-  {
-    keywords: ['github', 'repo', 'repository', 'repositories', 'commit', 'commits', 'pull request', 'pr', 'issue', 'issues', 'branch', 'branches', 'fork', 'star', 'gist'],
-    serverPatterns: ['github'],
-    priority: 10,
-  },
-  // Filesystem
-  {
-    keywords: ['file', 'files', 'folder', 'folders', 'directory', 'directories', 'read', 'write', 'create', 'delete', 'move', 'copy', 'path', 'disk', 'storage', 'document', 'documents'],
-    serverPatterns: ['filesystem', 'fs'],
-    priority: 10,
-  },
-  // Memory/Knowledge
-  {
-    keywords: ['remember', 'memory', 'memories', 'recall', 'forget', 'knowledge', 'store', 'stored', 'save', 'saved', 'entity', 'entities', 'relation', 'relations', 'graph'],
-    serverPatterns: ['memory', 'knowledge'],
-    priority: 10,
-  },
-  // Slack
-  {
-    keywords: ['slack', 'channel', 'channels', 'message', 'messages', 'dm', 'workspace'],
-    serverPatterns: ['slack'],
-    priority: 10,
-  },
-  // Database
-  {
-    keywords: ['database', 'db', 'sql', 'query', 'table', 'tables', 'postgres', 'postgresql', 'mysql', 'sqlite', 'mongo', 'mongodb'],
-    serverPatterns: ['database', 'postgres', 'mysql', 'sqlite', 'mongo', 'db'],
-    priority: 10,
-  },
-  // Web/Browser
-  {
-    keywords: ['web', 'website', 'url', 'browse', 'browser', 'scrape', 'fetch', 'http', 'html', 'page', 'search online'],
-    serverPatterns: ['web', 'browser', 'puppeteer', 'playwright'],
-    priority: 10,
-  },
-  // Search
-  {
-    keywords: ['search', 'find', 'lookup', 'google', 'brave', 'bing'],
-    serverPatterns: ['search', 'brave', 'google'],
-    priority: 5,
-  },
-];
-
-/**
- * Analyze a message and determine which tools are relevant.
- * This reduces cognitive load on local LLMs by presenting only relevant tools.
- */
-function routeTools(message: string, tools: ToolDescriptor[]): {
-  filteredTools: ToolDescriptor[];
-  matchedKeywords: string[];
-  wasRouted: boolean;
-} {
-  const messageLower = message.toLowerCase();
-  const matchedKeywords: string[] = [];
-  const matchedPatterns = new Set<string>();
-  
-  // Check each rule for keyword matches
-  for (const rule of ROUTING_RULES.sort((a, b) => b.priority - a.priority)) {
-    for (const keyword of rule.keywords) {
-      if (messageLower.includes(keyword.toLowerCase())) {
-        matchedKeywords.push(keyword);
-        rule.serverPatterns.forEach(p => matchedPatterns.add(p));
-      }
-    }
-  }
-  
-  // If no keywords matched, return all tools
-  if (matchedPatterns.size === 0) {
-    return {
-      filteredTools: tools,
-      matchedKeywords: [],
-      wasRouted: false,
-    };
-  }
-  
-  // Filter tools to those matching the patterns
-  const filteredTools = tools.filter(tool => {
-    const serverIdLower = (tool.serverId || tool.name.split('/')[0]).toLowerCase();
-    for (const pattern of matchedPatterns) {
-      if (serverIdLower.includes(pattern.toLowerCase())) {
-        return true;
-      }
-    }
-    return false;
-  });
-  
-  // If no tools matched, return all tools
-  if (filteredTools.length === 0) {
-    return {
-      filteredTools: tools,
-      matchedKeywords,
-      wasRouted: false,
-    };
-  }
-  
-  return {
-    filteredTools,
-    matchedKeywords,
-    wasRouted: true,
-  };
-}
-
-// =============================================================================
 // Session Storage
 // =============================================================================
 
@@ -569,9 +455,8 @@ export const agent = {
   /**
    * Run an autonomous agent task with access to tools.
    * 
-   * The tool router is automatically enabled to select relevant tools
-   * based on the task content. This improves performance with local LLMs
-   * by reducing the number of tools presented.
+   * Uses the bridge orchestrator for proper text-based tool call parsing
+   * and consistent behavior with the injected provider.
    * 
    * @param options.task - The task description
    * @param options.tools - Optional array of allowed tool names (overrides router)
@@ -586,143 +471,143 @@ export const agent = {
     requireCitations?: boolean;
     maxToolCalls?: number;
   }): AsyncIterable<RunEvent> {
-    const { task, tools: allowedTools, useAllTools = false, requireCitations = false, maxToolCalls = 5 } = options;
+    const { task, requireCitations = false, maxToolCalls = 5 } = options;
     
     return {
       async *[Symbol.asyncIterator]() {
+        console.log('🔧 internal-api agent.run - using bridge orchestrator');
         yield { type: 'status', message: 'Initializing agent...' };
         
-        // Get available tools
-        let availableTools = await agent.tools.list();
+        // Get connected MCP servers
+        const connectionsResponse = await browser.runtime.sendMessage({
+          type: 'mcp_list_connections',
+        }) as { type: string; connections?: Array<{ serverId: string; serverName: string; toolCount: number }> };
         
-        // Filter if specific tools requested (explicit override)
-        if (allowedTools && allowedTools.length > 0) {
-          availableTools = availableTools.filter(t => allowedTools.includes(t.name));
-          yield { type: 'status', message: `Using ${availableTools.length} specified tools` };
-        } else if (!useAllTools && availableTools.length > 5) {
-          // Apply tool router for intelligent selection
-          const routing = routeTools(task, availableTools);
-          if (routing.wasRouted) {
-            availableTools = routing.filteredTools;
-            yield { type: 'status', message: `Router: selected ${availableTools.length} tools (${routing.matchedKeywords.slice(0, 3).join(', ')})` };
-          } else {
-            yield { type: 'status', message: `Found ${availableTools.length} tools` };
-          }
-        } else {
-          yield { type: 'status', message: `Found ${availableTools.length} tools` };
+        const enabledServers = connectionsResponse.connections?.map(c => c.serverId) || [];
+        const totalTools = connectionsResponse.connections?.reduce((sum, c) => sum + c.toolCount, 0) || 0;
+        
+        yield { type: 'status', message: `Found ${totalTools} tools from ${enabledServers.length} servers` };
+        
+        // Build custom system prompt if needed
+        let systemPrompt: string | undefined;
+        if (requireCitations) {
+          systemPrompt = 'You are a helpful AI assistant. When using information from tools, cite your sources.';
         }
         
-        // Build system prompt
-        const systemPrompt = `You are a helpful AI assistant with access to tools.
-Your task is to help the user by using the available tools when needed.
-Always explain what you're doing and why.
-${requireCitations ? 'Cite your sources when using information from tools.' : ''}
-
-Available tools:
-${availableTools.map(t => `- ${t.name}: ${t.description || 'No description'}`).join('\n')}
-`;
+        // Create a temporary chat session with the connected servers
+        const createResponse = await browser.runtime.sendMessage({
+          type: 'chat_create_session',
+          enabled_servers: enabledServers,
+          name: `Agent task: ${task.substring(0, 30)}...`,
+          system_prompt: systemPrompt,
+          max_iterations: maxToolCalls,
+        }) as { type: string; session?: { id: string }; error?: { message: string } };
         
-        const messages: Array<{ role: string; content: string }> = [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: task },
-        ];
+        if (createResponse.type === 'error' || !createResponse.session?.id) {
+          yield { type: 'error', error: { code: 'ERR_INTERNAL', message: createResponse.error?.message || 'Failed to create session' } };
+          return;
+        }
         
-        let toolCallCount = 0;
-        const citations: Array<{ source: 'tool'; ref: string; excerpt: string }> = [];
+        const sessionId = createResponse.session.id;
+        console.log('[AgentRun] Created session:', sessionId);
         
-        while (toolCallCount < maxToolCalls) {
-          // Build tools for LLM
-          const llmTools = availableTools.map(t => ({
-            type: 'function',
-            function: {
-              name: t.name.replace('/', '_'),
-              description: t.description,
-              parameters: t.inputSchema || { type: 'object', properties: {} },
-            },
-          }));
-          
-          const llmResponse = await browser.runtime.sendMessage({
-            type: 'llm_chat',
-            messages,
-            tools: llmTools.length > 0 ? llmTools : undefined,
-          }) as {
+        yield { type: 'status', message: 'Processing...' };
+        
+        try {
+          // Send the message - the bridge orchestrator handles everything
+          const chatResponse = await browser.runtime.sendMessage({
+            type: 'chat_send_message',
+            session_id: sessionId,
+            message: task,
+            use_tool_router: true,
+          }) as { 
             type: string;
-            response?: {
-              message?: {
-                content?: string;
-                tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
-              };
-            };
+            response?: string;
+            steps?: Array<{
+              type: 'llm_response' | 'tool_calls' | 'tool_results' | 'error' | 'final';
+              content?: string;
+              toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+              toolResults?: Array<{ toolCallId: string; toolName: string; serverId: string; content: string; isError: boolean }>;
+              error?: string;
+            }>;
+            iterations?: number;
+            reachedMaxIterations?: boolean;
             error?: { message: string };
           };
           
-          if (llmResponse.type === 'error' || !llmResponse.response?.message) {
-            yield { type: 'error', error: { code: 'ERR_MODEL_FAILED', message: llmResponse.error?.message || 'LLM failed' } };
+          if (chatResponse.type === 'error') {
+            yield { type: 'error', error: { code: 'ERR_INTERNAL', message: chatResponse.error?.message || 'Chat failed' } };
             return;
           }
           
-          const message = llmResponse.response.message;
+          // Stream the orchestration steps
+          const citations: Array<{ source: 'tool'; ref: string; excerpt: string }> = [];
           
-          // Handle tool calls
-          if (message.tool_calls && message.tool_calls.length > 0) {
-            for (const toolCall of message.tool_calls) {
-              if (toolCallCount >= maxToolCalls) break;
-              toolCallCount++;
-              
-              const toolName = toolCall.function.name.replace('_', '/');
-              let args: Record<string, unknown> = {};
-              try { args = JSON.parse(toolCall.function.arguments); } catch { /* empty */ }
-              
-              yield { type: 'tool_call', tool: toolName, args };
-              
-              let result: unknown;
-              let error: ApiError | undefined;
-              
-              try {
-                result = await agent.tools.call({ tool: toolName, args });
-                
-                if (requireCitations) {
-                  citations.push({
-                    source: 'tool',
-                    ref: toolName,
-                    excerpt: String(result).slice(0, 200),
-                  });
+          if (chatResponse.steps) {
+            for (const step of chatResponse.steps) {
+              if (step.type === 'tool_calls' && step.toolCalls) {
+                for (const tc of step.toolCalls) {
+                  yield { type: 'tool_call', tool: tc.name, args: tc.arguments };
                 }
-              } catch (err) {
-                error = { code: 'ERR_TOOL_FAILED' as const, message: String(err) };
-                result = `Error: ${err}`;
               }
               
-              yield { type: 'tool_result', tool: toolName, result, error };
+              if (step.type === 'tool_results' && step.toolResults) {
+                for (const tr of step.toolResults) {
+                  yield { 
+                    type: 'tool_result', 
+                    tool: tr.toolName,
+                    result: tr.content,
+                    error: tr.isError ? { code: 'ERR_TOOL_FAILED' as const, message: tr.content } : undefined,
+                  };
+                  
+                  if (requireCitations && !tr.isError) {
+                    citations.push({
+                      source: 'tool',
+                      ref: `${tr.serverId}/${tr.toolName}`,
+                      excerpt: tr.content.slice(0, 200),
+                    });
+                  }
+                }
+              }
               
-              messages.push({ role: 'assistant', content: `Calling tool: ${toolName}` });
-              messages.push({ role: 'user', content: `Tool result: ${typeof result === 'string' ? result : JSON.stringify(result)}` });
+              if (step.type === 'error' && step.error) {
+                yield { type: 'error', error: { code: 'ERR_INTERNAL', message: step.error } };
+                return;
+              }
             }
-            continue;
           }
           
-          // Final response
-          const output = message.content || '';
+          // Get the final response
+          const finalOutput = chatResponse.response || '';
           
-          // Stream tokens
-          const words = output.split(/(\s+)/);
-          for (const word of words) {
-            if (word) {
-              yield { type: 'token', token: word };
+          // Stream the output token by token
+          const tokens = finalOutput.split(/(\s+)/);
+          for (const token of tokens) {
+            if (token) {
+              yield { type: 'token', token };
               await new Promise(r => setTimeout(r, 10));
             }
           }
           
-          yield {
-            type: 'final',
-            output,
+          yield { 
+            type: 'final', 
+            output: finalOutput,
             citations: requireCitations && citations.length > 0 ? citations : undefined,
           };
           
-          return;
+          if (chatResponse.reachedMaxIterations) {
+            console.log('[AgentRun] Warning: reached max iterations');
+          }
+          
+        } finally {
+          // Clean up the temporary session
+          browser.runtime.sendMessage({
+            type: 'chat_delete_session',
+            session_id: sessionId,
+          }).catch(() => {
+            // Ignore cleanup errors
+          });
         }
-        
-        yield { type: 'error', error: { code: 'ERR_INTERNAL', message: `Max tool calls (${maxToolCalls}) reached` } };
       },
     };
   },

@@ -1,6 +1,10 @@
 import browser from 'webextension-polyfill';
 import { setupProviderRouter, handlePermissionPromptResponse } from './provider/background-router';
 
+// BUILD MARKER - if you don't see this, the extension is using cached code!
+// Harbor extension background script
+console.log('Harbor background script loading...');
+
 const NATIVE_HOST_NAME = 'harbor_bridge_host';
 
 interface HarborMessage {
@@ -355,6 +359,12 @@ browser.runtime.onMessage.addListener(
     
     if (msg.type === 'get_message_log') {
       return Promise.resolve({ log: messageLog });
+    }
+    
+    if (msg.type === 'get_debug_logs') {
+      return browser.storage.local.get('harbor_debug_logs').then(result => {
+        return { logs: result.harbor_debug_logs || [] };
+      });
     }
 
     if (msg.type === 'send_hello') {
@@ -952,7 +962,8 @@ browser.runtime.onMessage.addListener(
     }
 
     if (msg.type === 'llm_chat') {
-      // Use longer timeout for LLM chat
+      // Direct LLM chat - used by window.ai.createTextSession
+      // Note: For tool-enabled chat, use chat_send_message which goes through the bridge orchestrator
       return sendToBridge({
         type: 'llm_chat',
         request_id: generateRequestId(),
@@ -963,6 +974,63 @@ browser.runtime.onMessage.addListener(
         temperature: msg.temperature,
         system_prompt: msg.system_prompt,
       }, CHAT_TIMEOUT_MS);
+    }
+
+    // LLM provider configuration messages
+    if (msg.type === 'llm_get_supported_providers') {
+      return sendToBridge({
+        type: 'llm_get_supported_providers',
+        request_id: generateRequestId(),
+      });
+    }
+
+    if (msg.type === 'llm_get_config') {
+      return sendToBridge({
+        type: 'llm_get_config',
+        request_id: generateRequestId(),
+      });
+    }
+
+    if (msg.type === 'llm_set_active') {
+      return sendToBridge({
+        type: 'llm_set_active',
+        request_id: generateRequestId(),
+        provider_id: msg.provider_id,
+        model_id: msg.model_id,
+      });
+    }
+
+    if (msg.type === 'llm_set_model') {
+      return sendToBridge({
+        type: 'llm_set_model',
+        request_id: generateRequestId(),
+        model_id: msg.model_id,
+      });
+    }
+
+    if (msg.type === 'llm_list_models_for') {
+      return sendToBridge({
+        type: 'llm_list_models_for',
+        request_id: generateRequestId(),
+        provider_id: msg.provider_id,
+      });
+    }
+
+    if (msg.type === 'llm_set_api_key') {
+      return sendToBridge({
+        type: 'llm_set_api_key',
+        request_id: generateRequestId(),
+        provider_id: msg.provider_id,
+        api_key: msg.api_key,
+      });
+    }
+
+    if (msg.type === 'llm_remove_api_key') {
+      return sendToBridge({
+        type: 'llm_remove_api_key',
+        request_id: generateRequestId(),
+        provider_id: msg.provider_id,
+      });
     }
 
     // MCP connections list

@@ -39,6 +39,7 @@ let messages = [];
 let useTools = true;
 let useTabContext = false;
 let isProcessing = false;
+let availableTools = [];
 
 // =============================================================================
 // DOM Elements
@@ -63,7 +64,14 @@ const llmStatus = document.getElementById('llm-status');
 const llmStatusText = document.getElementById('llm-status-text');
 const toolsStatus = document.getElementById('tools-status');
 const toolsStatusText = document.getElementById('tools-status-text');
+const toolsStatusItem = document.getElementById('tools-status-item');
 const sessionText = document.getElementById('session-text');
+
+// Tools modal elements
+const toolsModal = document.getElementById('tools-modal');
+const toolsModalClose = document.getElementById('tools-modal-close');
+const toolsModalContent = document.getElementById('tools-modal-content');
+const toolsModalCount = document.getElementById('tools-modal-count');
 
 // =============================================================================
 // Theme Management
@@ -129,6 +137,7 @@ async function checkLLM() {
 async function checkTools() {
   try {
     const tools = await window.agent.tools.list();
+    availableTools = tools; // Store for modal
     if (tools.length > 0) {
       toolsStatus.classList.add('success');
       toolsStatusText.textContent = `Tools: ${tools.length}`;
@@ -143,6 +152,70 @@ async function checkTools() {
     console.error('[Demo] Tools check failed:', err);
     return [];
   }
+}
+
+// =============================================================================
+// Tools Modal
+// =============================================================================
+
+function showToolsModal() {
+  renderToolsList();
+  toolsModal.style.display = 'flex';
+}
+
+function hideToolsModal() {
+  toolsModal.style.display = 'none';
+}
+
+function renderToolsList() {
+  toolsModalCount.textContent = availableTools.length;
+  
+  if (availableTools.length === 0) {
+    toolsModalContent.innerHTML = `
+      <div class="tools-empty">
+        <div class="tools-empty-icon">🔌</div>
+        <p>No tools available.<br>Start an MCP server to see tools here.</p>
+      </div>
+    `;
+    return;
+  }
+  
+  // Group tools by server
+  const toolsByServer = {};
+  for (const tool of availableTools) {
+    // Parse server from tool name (format: "server__toolname" or just "toolname")
+    const parts = tool.name.split('__');
+    const server = parts.length > 1 ? parts[0] : 'default';
+    const shortName = parts.length > 1 ? parts.slice(1).join('__') : tool.name;
+    
+    if (!toolsByServer[server]) {
+      toolsByServer[server] = [];
+    }
+    toolsByServer[server].push({ ...tool, shortName, server });
+  }
+  
+  let html = '';
+  for (const [server, tools] of Object.entries(toolsByServer)) {
+    for (const tool of tools) {
+      const description = tool.description || 'No description available';
+      const schemaStr = tool.inputSchema 
+        ? JSON.stringify(tool.inputSchema, null, 2)
+        : '{}';
+      
+      html += `
+        <div class="tool-item" onclick="this.classList.toggle('expanded')">
+          <div class="tool-item-header">
+            <span class="tool-item-name">${escapeHtml(tool.shortName)}</span>
+            <span class="tool-item-server">${escapeHtml(server)}</span>
+          </div>
+          <div class="tool-item-description">${escapeHtml(description)}</div>
+          <div class="tool-item-schema">${escapeHtml(schemaStr)}</div>
+        </div>
+      `;
+    }
+  }
+  
+  toolsModalContent.innerHTML = html;
 }
 
 function updateSessionInfo() {
@@ -540,6 +613,25 @@ docsToggle.addEventListener('click', () => {
 docsClose.addEventListener('click', () => {
   docsPanel.style.display = 'none';
   docsToggle.classList.remove('active');
+});
+
+// Tools modal
+toolsStatusItem.addEventListener('click', showToolsModal);
+
+toolsModalClose.addEventListener('click', hideToolsModal);
+
+toolsModal.addEventListener('click', (e) => {
+  // Close when clicking outside the modal
+  if (e.target === toolsModal) {
+    hideToolsModal();
+  }
+});
+
+// Close modal on Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && toolsModal.style.display !== 'none') {
+    hideToolsModal();
+  }
 });
 
 // =============================================================================

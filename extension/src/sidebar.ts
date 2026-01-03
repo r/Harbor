@@ -84,6 +84,34 @@ interface LLMSetupStatus {
   ollamaInfo?: OllamaInfo;
 }
 
+// LLM Provider Configuration types
+interface LLMProviderStatus {
+  id: string;
+  name: string;
+  available: boolean;
+  baseUrl: string;
+  version?: string;
+  supportsTools?: boolean;
+  models?: LLMModel[];
+  error?: string;
+  warning?: string;
+  checkedAt: number;
+}
+
+interface LLMSupportedProviders {
+  local: string[];
+  remote: string[];
+  configuredApiKeys: string[];
+}
+
+interface LLMConfig {
+  providers: number;
+  available: number;
+  activeProvider: string | null;
+  activeModel: string | null;
+  configuredApiKeys: string[];
+}
+
 // Theme handling - synced across all extension pages via browser.storage
 async function initTheme(): Promise<void> {
   // Try to get from browser.storage first (synced across pages)
@@ -1919,6 +1947,9 @@ async function init(): Promise<void> {
   await checkLLMStatus();
   await checkDockerStatus();
   
+  // Load LLM provider configuration
+  await loadLLMConfig();
+  
   // Load site permissions
   await loadPermissions();
   
@@ -2252,6 +2283,522 @@ document.addEventListener('keydown', (e) => {
 llmDownloadBtn.addEventListener('click', downloadLLMModel);
 llmStartBtn.addEventListener('click', startLocalLLM);
 llmStopBtn.addEventListener('click', stopLocalLLM);
+
+// =============================================================================
+// LLM Provider Settings
+// =============================================================================
+
+// LLM Provider settings elements
+const llmProviderSelect = document.getElementById('llm-provider-select') as HTMLSelectElement;
+const llmModelSelect = document.getElementById('llm-model-select') as HTMLSelectElement;
+const llmProviderStatus = document.getElementById('llm-provider-status') as HTMLDivElement;
+const llmApiKeySection = document.getElementById('llm-api-key-section') as HTMLDivElement;
+const llmApiKeysList = document.getElementById('llm-api-keys-list') as HTMLDivElement;
+const llmSettingsDot = document.getElementById('llm-settings-dot') as HTMLSpanElement;
+const refreshLlmConfigBtn = document.getElementById('refresh-llm-config') as HTMLButtonElement;
+
+// LLM API Key Modal elements
+const llmApiKeyModal = document.getElementById('llm-api-key-modal') as HTMLDivElement;
+const llmApiKeyModalTitle = document.getElementById('llm-api-key-modal-title') as HTMLHeadingElement;
+const llmApiKeyModalDescription = document.getElementById('llm-api-key-modal-description') as HTMLParagraphElement;
+const llmApiKeyLabel = document.getElementById('llm-api-key-label') as HTMLSpanElement;
+const llmApiKeyInput = document.getElementById('llm-api-key-input') as HTMLInputElement;
+const llmApiKeyToggle = document.getElementById('llm-api-key-toggle') as HTMLButtonElement;
+const llmApiKeyStatus = document.getElementById('llm-api-key-status') as HTMLDivElement;
+const llmApiKeyHint = document.getElementById('llm-api-key-hint') as HTMLDivElement;
+const llmApiKeyModalClose = document.getElementById('llm-api-key-modal-close') as HTMLButtonElement;
+const llmApiKeyModalCancel = document.getElementById('llm-api-key-modal-cancel') as HTMLButtonElement;
+const llmApiKeyModalRemove = document.getElementById('llm-api-key-modal-remove') as HTMLButtonElement;
+const llmApiKeyModalSave = document.getElementById('llm-api-key-modal-save') as HTMLButtonElement;
+
+let llmProviders: LLMProviderStatus[] = [];
+let llmSupportedProviders: LLMSupportedProviders = { local: [], remote: [], configuredApiKeys: [] };
+let currentApiKeyProvider: string | null = null;
+
+// Provider display names and hints
+const PROVIDER_INFO: Record<string, { name: string; hint: string; envVar: string }> = {
+  openai: { 
+    name: 'OpenAI', 
+    hint: 'Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a>',
+    envVar: 'OPENAI_API_KEY'
+  },
+  anthropic: { 
+    name: 'Anthropic', 
+    hint: 'Get your API key from <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a>',
+    envVar: 'ANTHROPIC_API_KEY'
+  },
+  mistral: { 
+    name: 'Mistral', 
+    hint: 'Get your API key from <a href="https://console.mistral.ai/api-keys/" target="_blank">console.mistral.ai</a>',
+    envVar: 'MISTRAL_API_KEY'
+  },
+  groq: { 
+    name: 'Groq', 
+    hint: 'Get your API key from <a href="https://console.groq.com/keys" target="_blank">console.groq.com</a>',
+    envVar: 'GROQ_API_KEY'
+  },
+  ollama: { name: 'Ollama', hint: 'Local LLM - no API key required', envVar: '' },
+  llamafile: { name: 'llamafile', hint: 'Local LLM - no API key required', envVar: '' },
+};
+
+/**
+ * Load LLM provider configuration.
+ */
+async function loadLLMConfig(): Promise<void> {
+  try {
+    // First, get supported providers
+    const supportedResponse = await browser.runtime.sendMessage({
+      type: 'llm_get_supported_providers',
+    }) as { type: string; local?: string[]; remote?: string[]; configuredApiKeys?: string[] };
+    
+    if (supportedResponse.type === 'llm_get_supported_providers_result') {
+      llmSupportedProviders = {
+        local: supportedResponse.local || [],
+        remote: supportedResponse.remote || [],
+        configuredApiKeys: supportedResponse.configuredApiKeys || [],
+      };
+    }
+    
+    // Detect all providers
+    const detectResponse = await browser.runtime.sendMessage({
+      type: 'llm_detect',
+    }) as { type: string; providers?: LLMProviderStatus[]; active?: string | null };
+    
+    if (detectResponse.type === 'llm_detect_result' && detectResponse.providers) {
+      llmProviders = detectResponse.providers;
+    }
+    
+    // Get current config
+    const configResponse = await browser.runtime.sendMessage({
+      type: 'llm_get_config',
+    }) as { type: string; activeProvider?: string | null; activeModel?: string | null; configuredApiKeys?: string[] };
+    
+    if (configResponse.type === 'llm_get_config_result') {
+      // Update configured keys from fresh response
+      if (configResponse.configuredApiKeys) {
+        llmSupportedProviders.configuredApiKeys = configResponse.configuredApiKeys;
+      }
+    }
+    
+    renderLLMProviderSettings(configResponse.activeProvider, configResponse.activeModel);
+  } catch (err) {
+    console.error('Failed to load LLM config:', err);
+    llmProviderStatus.textContent = 'Error loading LLM configuration';
+  }
+}
+
+/**
+ * Render LLM provider settings UI.
+ */
+function renderLLMProviderSettings(activeProvider: string | null | undefined, activeModel: string | null | undefined): void {
+  // Populate provider dropdown
+  llmProviderSelect.innerHTML = '<option value="">-- Select Provider --</option>';
+  
+  // Add local providers first
+  const localGroup = document.createElement('optgroup');
+  localGroup.label = 'Local (no API key)';
+  for (const providerId of llmSupportedProviders.local) {
+    const option = document.createElement('option');
+    option.value = providerId;
+    const info = PROVIDER_INFO[providerId] || { name: providerId };
+    const providerStatus = llmProviders.find(p => p.id === providerId);
+    const available = providerStatus?.available ? ' ✓' : ' (offline)';
+    option.textContent = info.name + available;
+    option.disabled = !providerStatus?.available;
+    if (providerId === activeProvider) {
+      option.selected = true;
+    }
+    localGroup.appendChild(option);
+  }
+  llmProviderSelect.appendChild(localGroup);
+  
+  // Add remote providers
+  const remoteGroup = document.createElement('optgroup');
+  remoteGroup.label = 'Remote (API key required)';
+  for (const providerId of llmSupportedProviders.remote) {
+    const option = document.createElement('option');
+    option.value = providerId;
+    const info = PROVIDER_INFO[providerId] || { name: providerId };
+    const hasKey = llmSupportedProviders.configuredApiKeys.includes(providerId);
+    const providerStatus = llmProviders.find(p => p.id === providerId);
+    const available = providerStatus?.available ? ' ✓' : hasKey ? ' (configured)' : ' (no key)';
+    option.textContent = info.name + available;
+    if (providerId === activeProvider) {
+      option.selected = true;
+    }
+    remoteGroup.appendChild(option);
+  }
+  llmProviderSelect.appendChild(remoteGroup);
+  
+  // Populate model dropdown if a provider is selected
+  updateModelDropdown(activeProvider, activeModel);
+  
+  // Show API key section for remote providers
+  renderApiKeySection();
+  
+  // Update status dot
+  updateLLMSettingsDot(activeProvider);
+  
+  // Show provider status
+  if (activeProvider) {
+    const status = llmProviders.find(p => p.id === activeProvider);
+    if (status) {
+      let html = `<strong>${PROVIDER_INFO[activeProvider]?.name || activeProvider}</strong>`;
+      if (status.available) {
+        html += ` <span class="badge badge-success">Available</span>`;
+        if (status.version) {
+          html += ` v${status.version}`;
+        }
+        if (status.supportsTools) {
+          html += ` <span class="badge badge-success">Tools ✓</span>`;
+        }
+      } else if (status.error) {
+        html += ` <span class="badge badge-error">Error</span>`;
+        html += `<br><span class="text-xs text-muted">${status.error}</span>`;
+      }
+      if (activeModel) {
+        html += `<br><span class="text-xs text-muted">Model: ${activeModel}</span>`;
+      }
+      llmProviderStatus.innerHTML = html;
+    } else {
+      llmProviderStatus.innerHTML = '';
+    }
+  } else {
+    llmProviderStatus.innerHTML = '<span class="text-muted">No provider selected</span>';
+  }
+}
+
+/**
+ * Update model dropdown for selected provider.
+ */
+async function updateModelDropdown(providerId: string | null | undefined, activeModel: string | null | undefined): Promise<void> {
+  if (!providerId) {
+    llmModelSelect.innerHTML = '<option value="">-- Select Provider First --</option>';
+    llmModelSelect.disabled = true;
+    return;
+  }
+  
+  const providerStatus = llmProviders.find(p => p.id === providerId);
+  if (!providerStatus?.available) {
+    llmModelSelect.innerHTML = '<option value="">-- Provider Not Available --</option>';
+    llmModelSelect.disabled = true;
+    return;
+  }
+  
+  llmModelSelect.disabled = false;
+  
+  // Get models for this provider
+  let models = providerStatus.models || [];
+  
+  // If no cached models, fetch them
+  if (models.length === 0) {
+    try {
+      const response = await browser.runtime.sendMessage({
+        type: 'llm_list_models_for',
+        provider_id: providerId,
+      }) as { type: string; models?: LLMModel[] };
+      
+      if (response.type === 'llm_list_models_for_result' && response.models) {
+        models = response.models;
+      }
+    } catch (err) {
+      console.error('Failed to load models:', err);
+    }
+  }
+  
+  llmModelSelect.innerHTML = '';
+  
+  if (models.length === 0) {
+    llmModelSelect.innerHTML = '<option value="">-- No Models Available --</option>';
+    return;
+  }
+  
+  for (const model of models) {
+    const option = document.createElement('option');
+    option.value = model.id;
+    option.textContent = model.id + (model.supportsTools ? ' (tools)' : '');
+    if (model.id === activeModel) {
+      option.selected = true;
+    }
+    llmModelSelect.appendChild(option);
+  }
+  
+  // Select first if none selected
+  if (!activeModel && models.length > 0) {
+    llmModelSelect.value = models[0].id;
+  }
+}
+
+/**
+ * Render API key configuration section.
+ */
+function renderApiKeySection(): void {
+  // Only show if there are remote providers
+  if (llmSupportedProviders.remote.length === 0) {
+    llmApiKeySection.style.display = 'none';
+    return;
+  }
+  
+  llmApiKeySection.style.display = 'block';
+  
+  let html = '';
+  for (const providerId of llmSupportedProviders.remote) {
+    const info = PROVIDER_INFO[providerId] || { name: providerId };
+    const hasKey = llmSupportedProviders.configuredApiKeys.includes(providerId);
+    
+    html += `
+      <div class="credential-field" style="margin-bottom: var(--space-2);">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="credential-label-text">${info.name}</span>
+          <button class="btn btn-sm ${hasKey ? 'btn-ghost' : 'btn-primary'} api-key-configure-btn" data-provider="${providerId}">
+            ${hasKey ? '✓ Configured' : 'Add Key'}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+  
+  llmApiKeysList.innerHTML = html;
+  
+  // Add event listeners
+  llmApiKeysList.querySelectorAll('.api-key-configure-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const providerId = (btn as HTMLElement).dataset.provider!;
+      openApiKeyModal(providerId);
+    });
+  });
+}
+
+/**
+ * Update LLM settings status dot.
+ */
+function updateLLMSettingsDot(activeProvider: string | null | undefined): void {
+  llmSettingsDot.classList.remove('green', 'yellow', 'red', 'gray');
+  
+  if (!activeProvider) {
+    llmSettingsDot.classList.add('gray');
+    llmSettingsDot.title = 'No provider selected';
+    return;
+  }
+  
+  const status = llmProviders.find(p => p.id === activeProvider);
+  if (status?.available) {
+    llmSettingsDot.classList.add('green');
+    llmSettingsDot.title = `${PROVIDER_INFO[activeProvider]?.name || activeProvider} connected`;
+  } else if (llmSupportedProviders.configuredApiKeys.includes(activeProvider)) {
+    llmSettingsDot.classList.add('yellow');
+    llmSettingsDot.title = `${PROVIDER_INFO[activeProvider]?.name || activeProvider} configured but not available`;
+  } else {
+    llmSettingsDot.classList.add('red');
+    llmSettingsDot.title = `${PROVIDER_INFO[activeProvider]?.name || activeProvider} not available`;
+  }
+}
+
+/**
+ * Open API key configuration modal.
+ */
+function openApiKeyModal(providerId: string): void {
+  currentApiKeyProvider = providerId;
+  const info = PROVIDER_INFO[providerId] || { name: providerId, hint: '', envVar: '' };
+  const hasKey = llmSupportedProviders.configuredApiKeys.includes(providerId);
+  
+  llmApiKeyModalTitle.textContent = `Configure ${info.name} API Key`;
+  llmApiKeyModalDescription.textContent = `Enter your ${info.name} API key to enable this provider.`;
+  llmApiKeyLabel.textContent = info.envVar || 'API Key';
+  llmApiKeyInput.value = '';
+  llmApiKeyInput.placeholder = hasKey ? '••••••••••••' : 'Enter API key...';
+  llmApiKeyHint.innerHTML = info.hint || '';
+  
+  if (hasKey) {
+    llmApiKeyStatus.className = 'credential-status set';
+    llmApiKeyStatus.textContent = '✓ Key configured';
+    llmApiKeyModalRemove.style.display = 'inline-flex';
+  } else {
+    llmApiKeyStatus.className = 'credential-status missing';
+    llmApiKeyStatus.textContent = '! Not configured';
+    llmApiKeyModalRemove.style.display = 'none';
+  }
+  
+  llmApiKeyModal.style.display = 'flex';
+  llmApiKeyInput.focus();
+}
+
+/**
+ * Close API key modal.
+ */
+function closeApiKeyModal(): void {
+  llmApiKeyModal.style.display = 'none';
+  currentApiKeyProvider = null;
+}
+
+/**
+ * Save API key.
+ */
+async function saveApiKey(): Promise<void> {
+  if (!currentApiKeyProvider) return;
+  
+  const apiKey = llmApiKeyInput.value.trim();
+  if (!apiKey) {
+    alert('Please enter an API key.');
+    return;
+  }
+  
+  llmApiKeyModalSave.disabled = true;
+  llmApiKeyModalSave.textContent = 'Saving...';
+  
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'llm_set_api_key',
+      provider_id: currentApiKeyProvider,
+      api_key: apiKey,
+    }) as { type: string; success?: boolean; available?: boolean };
+    
+    if (response.type === 'llm_set_api_key_result' && response.success) {
+      closeApiKeyModal();
+      await loadLLMConfig();
+      
+      // If this provider is now available and not already selected, offer to select it
+      if (response.available && llmProviderSelect.value !== currentApiKeyProvider) {
+        if (confirm(`${PROVIDER_INFO[currentApiKeyProvider]?.name || currentApiKeyProvider} is now available. Use it as your LLM provider?`)) {
+          llmProviderSelect.value = currentApiKeyProvider;
+          await onProviderChange();
+        }
+      }
+    } else {
+      alert('Failed to save API key.');
+    }
+  } catch (err) {
+    console.error('Failed to save API key:', err);
+    alert('Error saving API key.');
+  } finally {
+    llmApiKeyModalSave.disabled = false;
+    llmApiKeyModalSave.textContent = 'Save';
+  }
+}
+
+/**
+ * Remove API key.
+ */
+async function removeApiKey(): Promise<void> {
+  if (!currentApiKeyProvider) return;
+  
+  if (!confirm(`Remove API key for ${PROVIDER_INFO[currentApiKeyProvider]?.name || currentApiKeyProvider}?`)) {
+    return;
+  }
+  
+  try {
+    await browser.runtime.sendMessage({
+      type: 'llm_remove_api_key',
+      provider_id: currentApiKeyProvider,
+    });
+    
+    closeApiKeyModal();
+    await loadLLMConfig();
+  } catch (err) {
+    console.error('Failed to remove API key:', err);
+    alert('Error removing API key.');
+  }
+}
+
+/**
+ * Handle provider selection change.
+ */
+async function onProviderChange(): Promise<void> {
+  const providerId = llmProviderSelect.value;
+  
+  if (!providerId) {
+    llmModelSelect.innerHTML = '<option value="">-- Select Provider First --</option>';
+    llmModelSelect.disabled = true;
+    llmProviderStatus.innerHTML = '';
+    updateLLMSettingsDot(null);
+    return;
+  }
+  
+  // Check if this is a remote provider without API key
+  if (llmSupportedProviders.remote.includes(providerId) && 
+      !llmSupportedProviders.configuredApiKeys.includes(providerId)) {
+    // Open API key modal
+    openApiKeyModal(providerId);
+    return;
+  }
+  
+  // Set the active provider
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'llm_set_active',
+      provider_id: providerId,
+    }) as { type: string; success?: boolean; model?: string };
+    
+    if (response.type === 'llm_set_active_result' && response.success) {
+      await loadLLMConfig();
+    } else {
+      alert('Failed to set provider.');
+      await loadLLMConfig();
+    }
+  } catch (err) {
+    console.error('Failed to set provider:', err);
+    alert('Error setting provider.');
+    await loadLLMConfig();
+  }
+}
+
+/**
+ * Handle model selection change.
+ */
+async function onModelChange(): Promise<void> {
+  const modelId = llmModelSelect.value;
+  
+  if (!modelId) return;
+  
+  try {
+    await browser.runtime.sendMessage({
+      type: 'llm_set_model',
+      model_id: modelId,
+    });
+    
+    // Update status display
+    const activeProvider = llmProviderSelect.value;
+    if (activeProvider) {
+      const status = llmProviders.find(p => p.id === activeProvider);
+      if (status) {
+        let html = `<strong>${PROVIDER_INFO[activeProvider]?.name || activeProvider}</strong>`;
+        if (status.available) {
+          html += ` <span class="badge badge-success">Available</span>`;
+        }
+        html += `<br><span class="text-xs text-muted">Model: ${modelId}</span>`;
+        llmProviderStatus.innerHTML = html;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to set model:', err);
+  }
+}
+
+// LLM Provider settings event listeners
+llmProviderSelect?.addEventListener('change', onProviderChange);
+llmModelSelect?.addEventListener('change', onModelChange);
+refreshLlmConfigBtn?.addEventListener('click', loadLLMConfig);
+
+// API Key modal event listeners
+llmApiKeyModalClose?.addEventListener('click', closeApiKeyModal);
+llmApiKeyModalCancel?.addEventListener('click', closeApiKeyModal);
+llmApiKeyModalSave?.addEventListener('click', saveApiKey);
+llmApiKeyModalRemove?.addEventListener('click', removeApiKey);
+llmApiKeyModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeApiKeyModal);
+
+// API Key toggle visibility
+llmApiKeyToggle?.addEventListener('click', () => {
+  const isPassword = llmApiKeyInput.type === 'password';
+  llmApiKeyInput.type = isPassword ? 'text' : 'password';
+  llmApiKeyToggle.textContent = isPassword ? '○' : '◉';
+});
+
+// Close modal on Escape
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && llmApiKeyModal?.style.display !== 'none') {
+    closeApiKeyModal();
+  }
+});
 
 // GitHub install event listeners
 installGithubBtn?.addEventListener('click', installFromGithubUrl);

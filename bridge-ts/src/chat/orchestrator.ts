@@ -409,14 +409,31 @@ export class ChatOrchestrator {
       if (!jsonStr) return null;
       
       const parsed = JSON.parse(jsonStr);
-      if (parsed.name && toolMapping[parsed.name]) {
-        const args = (parsed.parameters || parsed.arguments || {}) as Record<string, unknown>;
-        log(`[Orchestrator] Parsed name format: ${parsed.name}`);
-        return {
-          id: `text_call_${Date.now()}`,
-          name: parsed.name,
-          arguments: args,
-        };
+      if (parsed.name) {
+        // Try exact match first
+        let matchedName = toolMapping[parsed.name] ? parsed.name : null;
+        
+        // If not found, try to find a prefixed version (server__toolname)
+        if (!matchedName) {
+          for (const prefixedName of Object.keys(toolMapping)) {
+            const shortName = prefixedName.split('__').pop();
+            if (shortName === parsed.name) {
+              matchedName = prefixedName;
+              log(`[Orchestrator] Matched unprefixed name "${parsed.name}" to "${prefixedName}"`);
+              break;
+            }
+          }
+        }
+        
+        if (matchedName) {
+          const args = (parsed.parameters || parsed.arguments || {}) as Record<string, unknown>;
+          log(`[Orchestrator] Parsed name format: ${matchedName}`);
+          return {
+            id: `text_call_${Date.now()}`,
+            name: matchedName,
+            arguments: args,
+          };
+        }
       }
     } catch (e) {
       log(`[Orchestrator] tryParseNameFormat failed: ${e}`);
@@ -432,12 +449,24 @@ export class ChatOrchestrator {
     toolNames: string[], 
     toolMapping: ToolMapping
   ): ToolCall | null {
-    for (const toolName of toolNames) {
+    // Build a list of both prefixed and short names to search for
+    const namesToSearch: { searchName: string; prefixedName: string }[] = [];
+    for (const prefixedName of toolNames) {
+      namesToSearch.push({ searchName: prefixedName, prefixedName });
+      // Also add short name (without server prefix)
+      const shortName = prefixedName.split('__').pop();
+      if (shortName && shortName !== prefixedName) {
+        namesToSearch.push({ searchName: shortName, prefixedName });
+      }
+    }
+    
+    for (const { searchName, prefixedName } of namesToSearch) {
       // Look for "tool_name": { or tool_name: {
+      const escapedName = searchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const patterns = [
-        `"${toolName}":\\s*\\{`,
-        `${toolName}:\\s*\\{`,
-        `\`${toolName}\`:\\s*\\{`,
+        `"${escapedName}":\\s*\\{`,
+        `${escapedName}:\\s*\\{`,
+        `\`${escapedName}\`:\\s*\\{`,
       ];
       
       for (const pattern of patterns) {
@@ -453,14 +482,14 @@ export class ChatOrchestrator {
             if (!jsonStr) continue;
             
             const args = JSON.parse(jsonStr);
-            log(`[Orchestrator] Parsed key-value format for: ${toolName}`);
+            log(`[Orchestrator] Parsed key-value format for: ${searchName} -> ${prefixedName}`);
             return {
               id: `text_call_${Date.now()}`,
-              name: toolName,
+              name: prefixedName,
               arguments: args as Record<string, unknown>,
             };
           } catch (e) {
-            log(`[Orchestrator] tryParseKeyValueFormat failed for ${toolName}: ${e}`);
+            log(`[Orchestrator] tryParseKeyValueFormat failed for ${searchName}: ${e}`);
           }
         }
       }
@@ -476,8 +505,19 @@ export class ChatOrchestrator {
     toolNames: string[], 
     toolMapping: ToolMapping
   ): ToolCall | null {
-    for (const toolName of toolNames) {
-      const pattern = new RegExp(`${toolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(\\s*\\{`);
+    // Build a list of both prefixed and short names to search for
+    const namesToSearch: { searchName: string; prefixedName: string }[] = [];
+    for (const prefixedName of toolNames) {
+      namesToSearch.push({ searchName: prefixedName, prefixedName });
+      // Also add short name (without server prefix)
+      const shortName = prefixedName.split('__').pop();
+      if (shortName && shortName !== prefixedName) {
+        namesToSearch.push({ searchName: shortName, prefixedName });
+      }
+    }
+    
+    for (const { searchName, prefixedName } of namesToSearch) {
+      const pattern = new RegExp(`${searchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(\\s*\\{`);
       const match = content.match(pattern);
       if (match && match.index !== undefined) {
         try {
@@ -488,14 +528,14 @@ export class ChatOrchestrator {
           if (!jsonStr) continue;
           
           const args = JSON.parse(jsonStr);
-          log(`[Orchestrator] Parsed function call format for: ${toolName}`);
+          log(`[Orchestrator] Parsed function call format for: ${searchName} -> ${prefixedName}`);
           return {
             id: `text_call_${Date.now()}`,
-            name: toolName,
+            name: prefixedName,
             arguments: args as Record<string, unknown>,
           };
         } catch (e) {
-          log(`[Orchestrator] tryParseFunctionCallFormat failed for ${toolName}: ${e}`);
+          log(`[Orchestrator] tryParseFunctionCallFormat failed for ${searchName}: ${e}`);
         }
       }
     }
@@ -512,10 +552,19 @@ export class ChatOrchestrator {
   ): ToolCall | null {
     const contentLower = content.toLowerCase();
     
-    for (const toolName of toolNames) {
+    for (const prefixedName of toolNames) {
+      // Get short name for matching
+      const shortName = prefixedName.split('__').pop() || prefixedName;
+      
       // Check if tool name is mentioned (case insensitive, with or without underscores)
-      const normalizedTool = toolName.toLowerCase().replace(/__/g, '_');
-      if (contentLower.includes(normalizedTool) || contentLower.includes(toolName.toLowerCase())) {
+      const normalizedTool = prefixedName.toLowerCase().replace(/__/g, '_');
+      const normalizedShort = shortName.toLowerCase().replace(/_/g, ' '); // "get_current_time" -> "get current time"
+      const shortLower = shortName.toLowerCase();
+      
+      if (contentLower.includes(normalizedTool) || 
+          contentLower.includes(prefixedName.toLowerCase()) ||
+          contentLower.includes(shortLower) ||
+          contentLower.includes(normalizedShort)) {
         // Find the first JSON object in the content
         const braceStart = content.indexOf('{');
         if (braceStart === -1) continue;
@@ -525,17 +574,17 @@ export class ChatOrchestrator {
           if (!jsonStr) continue;
           
           const parsed = JSON.parse(jsonStr);
-          // Make sure it looks like arguments (not a meta-object)
+          // Make sure it looks like arguments (not a meta-object with name/tool which we handle elsewhere)
           if (parsed && typeof parsed === 'object' && !parsed.name && !parsed.tool) {
-            log(`[Orchestrator] Parsed loose format for: ${toolName}`);
+            log(`[Orchestrator] Parsed loose format for: ${shortName} -> ${prefixedName}`);
             return {
               id: `text_call_${Date.now()}`,
-              name: toolName,
+              name: prefixedName,
               arguments: parsed as Record<string, unknown>,
             };
           }
         } catch (e) {
-          log(`[Orchestrator] tryParseLooseFormat failed for ${toolName}: ${e}`);
+          log(`[Orchestrator] tryParseLooseFormat failed for ${prefixedName}: ${e}`);
         }
       }
     }

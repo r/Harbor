@@ -1382,6 +1382,86 @@
       </div>
     </div>
 
+    <!-- LLM Provider Settings -->
+    <div class="panel" id="llm-settings-card" data-panel="llm-settings">
+      <div class="panel-header">
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon">▼</span>
+          <span class="panel-title">🤖 LLM Provider</span>
+          <span class="panel-status-dot gray" id="llm-settings-dot" title="No provider selected"></span>
+        </div>
+        <div class="panel-header-actions" onclick="event.stopPropagation();">
+          <button class="btn btn-sm btn-ghost" id="refresh-llm-config" title="Refresh">↻</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <!-- Active Provider & Model Selection -->
+        <div class="form-group">
+          <label class="form-label">Provider</label>
+          <select id="llm-provider-select" class="input select">
+            <option value="">-- Select Provider --</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Model</label>
+          <select id="llm-model-select" class="input select" disabled>
+            <option value="">-- Select Provider First --</option>
+          </select>
+        </div>
+        
+        <div id="llm-provider-status" class="llm-details" style="margin-top: var(--space-2);">
+          <!-- Provider status will appear here -->
+        </div>
+        
+        <!-- API Key Configuration Section -->
+        <div id="llm-api-key-section" style="margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border-subtle); display: none;">
+          <div class="section-divider">
+            <span>🔑 API Keys</span>
+          </div>
+          
+          <div id="llm-api-keys-list">
+            <!-- API key inputs will be rendered here -->
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- LLM API Key Modal -->
+    <div id="llm-api-key-modal" class="modal" style="display: none;">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="llm-api-key-modal-title">Configure API Key</h3>
+          <button class="modal-close" id="llm-api-key-modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p id="llm-api-key-modal-description" class="text-sm text-muted mb-3"></p>
+          
+          <div class="credential-field">
+            <div class="credential-label">
+              <span class="credential-label-text" id="llm-api-key-label">API Key</span>
+              <span class="credential-required">*</span>
+            </div>
+            <div class="password-input-wrapper">
+              <input type="password" id="llm-api-key-input" class="credential-input" placeholder="Enter API key...">
+              <button class="password-toggle" type="button" id="llm-api-key-toggle">◉</button>
+            </div>
+            <div id="llm-api-key-status" class="credential-status"></div>
+          </div>
+          
+          <div class="credential-hint" id="llm-api-key-hint" style="margin-top: var(--space-2);">
+            <!-- Hint will be populated dynamically -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="llm-api-key-modal-cancel">Cancel</button>
+          <button class="btn btn-danger" id="llm-api-key-modal-remove" style="display: none;">Remove Key</button>
+          <button class="btn btn-primary" id="llm-api-key-modal-save">Save</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Add Server Section -->
     <div class="panel" id="add-server-card" data-panel="add-server">
       <div class="panel-header">

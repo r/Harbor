@@ -1,13 +1,12 @@
 /**
  * LLM Manager - detects and manages LLM providers.
  * 
- * Currently supports:
- * - llamafile (localhost:8080)
+ * Supports both local and remote providers through the any-llm library:
+ * - Local: Ollama (localhost:11434), llamafile (localhost:8080)
+ * - Remote: OpenAI, Anthropic, Mistral, Groq
  * 
- * Future:
- * - Ollama (localhost:11434)
- * - OpenAI API
- * - Anthropic API
+ * Remote providers require API keys which are stored securely via the
+ * credential store.
  */
 
 import { log } from '../native-messaging.js';
@@ -20,69 +19,166 @@ import {
   ChatResponse,
   ChatChunk,
 } from './provider.js';
-import { LlamafileProvider } from './llamafile.js';
-import { OllamaProvider } from './ollama.js';
+import { AnyLLMAdapter, createAnyLLMAdapter, getAnyLLMProviders } from './any-llm-adapter.js';
+import type { LLMProviderType, ProviderConfig } from '../any-llm/index.js';
 
-// Default provider configurations
-const DEFAULT_PROVIDERS: LLMProviderConfig[] = [
-  {
-    type: 'llamafile',
-    baseUrl: 'http://localhost:8080',
-  },
-  {
-    type: 'ollama',
-    baseUrl: 'http://localhost:11434',
-  },
-];
+// =============================================================================
+// Provider Configuration
+// =============================================================================
+
+/** Local providers that don't require API keys */
+const LOCAL_PROVIDERS: LLMProviderType[] = ['ollama', 'llamafile'];
+
+/** Remote providers that require API keys */
+const REMOTE_PROVIDERS: LLMProviderType[] = ['openai', 'anthropic', 'mistral', 'groq'];
+
+/** Default URLs for local providers */
+const DEFAULT_URLS: Record<string, string> = {
+  ollama: 'http://localhost:11434',
+  llamafile: 'http://localhost:8080',
+};
+
+/** Environment variable names for API keys */
+const API_KEY_ENV_VARS: Record<string, string> = {
+  openai: 'OPENAI_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY',
+  mistral: 'MISTRAL_API_KEY',
+  groq: 'GROQ_API_KEY',
+};
+
+/** Default models for each provider */
+const DEFAULT_MODELS: Record<string, string> = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-3-5-haiku-20241022',
+  mistral: 'mistral-large-latest',
+  groq: 'llama-3.1-70b-versatile',
+  ollama: 'llama3.2',
+  llamafile: 'default',
+};
+
+// =============================================================================
+// LLM Manager
+// =============================================================================
 
 /**
- * Manages LLM providers.
+ * Manages LLM providers with support for both local and remote services.
  * 
- * Responsibilities:
- * - Detect available providers
- * - Track which provider is active
- * - Proxy chat requests to the active provider
+ * Key features:
+ * - Automatic detection of local providers (Ollama, llamafile)
+ * - API key management for remote providers
+ * - Provider switching and model selection
+ * - Proxy for chat requests
  */
 export class LLMManager {
-  private providers: Map<string, LLMProvider> = new Map();
+  private providers: Map<string, AnyLLMAdapter> = new Map();
   private providerStatus: Map<string, LLMProviderStatus> = new Map();
   private activeProviderId: string | null = null;
+  private activeModelId: string | null = null;
+  
+  // API key storage (in-memory, populated from credential store)
+  private apiKeys: Map<string, string> = new Map();
+  
+  // Custom configurations per provider
+  private providerConfigs: Map<string, ProviderConfig> = new Map();
 
   constructor() {
-    // Register built-in providers
-    this.registerDefaultProviders();
+    // Register local providers by default
+    this.registerLocalProviders();
   }
 
-  private registerDefaultProviders(): void {
-    for (const config of DEFAULT_PROVIDERS) {
-      this.registerProviderFromConfig(config);
-    }
-  }
-
-  private registerProviderFromConfig(config: LLMProviderConfig): void {
-    let provider: LLMProvider | null = null;
-
-    switch (config.type) {
-      case 'llamafile':
-        provider = new LlamafileProvider(config.baseUrl);
-        break;
-      case 'ollama':
-        provider = new OllamaProvider(config.baseUrl);
-        break;
-    }
-
-    if (provider) {
-      this.providers.set(provider.id, provider);
-      log(`[LLMManager] Registered provider: ${provider.id}`);
+  /**
+   * Register the default local providers.
+   */
+  private registerLocalProviders(): void {
+    for (const providerType of LOCAL_PROVIDERS) {
+      const config: ProviderConfig = {
+        baseUrl: DEFAULT_URLS[providerType],
+      };
+      this.registerProvider(providerType, config);
     }
   }
 
   /**
-   * Register a custom provider.
+   * Register a provider.
    */
-  registerProvider(provider: LLMProvider): void {
-    this.providers.set(provider.id, provider);
-    log(`[LLMManager] Registered custom provider: ${provider.id}`);
+  registerProvider(
+    providerType: LLMProviderType,
+    config: ProviderConfig = {},
+  ): void {
+    // Merge with stored API key if available
+    const apiKey = this.apiKeys.get(providerType) || config.apiKey;
+    const fullConfig: ProviderConfig = {
+      ...config,
+      apiKey,
+    };
+    
+    const adapter = createAnyLLMAdapter(providerType, fullConfig);
+    this.providers.set(providerType, adapter);
+    this.providerConfigs.set(providerType, fullConfig);
+    
+    log(`[LLMManager] Registered provider: ${providerType}`);
+  }
+
+  /**
+   * Set an API key for a remote provider.
+   * This will register the provider if not already registered.
+   */
+  setApiKey(providerType: string, apiKey: string): void {
+    this.apiKeys.set(providerType, apiKey);
+    
+    // Re-register or register the provider with the new key
+    const existingConfig = this.providerConfigs.get(providerType) || {};
+    this.registerProvider(providerType as LLMProviderType, {
+      ...existingConfig,
+      apiKey,
+    });
+    
+    log(`[LLMManager] API key set for: ${providerType}`);
+  }
+
+  /**
+   * Remove an API key for a provider.
+   */
+  removeApiKey(providerType: string): void {
+    this.apiKeys.delete(providerType);
+    
+    // Remove the provider if it's a remote one
+    if (REMOTE_PROVIDERS.includes(providerType as LLMProviderType)) {
+      this.providers.delete(providerType);
+      this.providerStatus.delete(providerType);
+      this.providerConfigs.delete(providerType);
+      
+      if (this.activeProviderId === providerType) {
+        this.activeProviderId = null;
+        this.activeModelId = null;
+      }
+    }
+    
+    log(`[LLMManager] API key removed for: ${providerType}`);
+  }
+
+  /**
+   * Check if a provider has an API key configured.
+   */
+  hasApiKey(providerType: string): boolean {
+    return this.apiKeys.has(providerType);
+  }
+
+  /**
+   * Get list of configured API keys (provider names only).
+   */
+  getConfiguredApiKeys(): string[] {
+    return Array.from(this.apiKeys.keys());
+  }
+
+  /**
+   * Get all supported provider types.
+   */
+  getSupportedProviders(): { local: string[]; remote: string[] } {
+    return {
+      local: [...LOCAL_PROVIDERS],
+      remote: [...REMOTE_PROVIDERS],
+    };
   }
 
   /**
@@ -91,40 +187,35 @@ export class LLMManager {
   async detectAll(): Promise<LLMProviderStatus[]> {
     const results: LLMProviderStatus[] = [];
 
-    for (const [id, provider] of this.providers) {
+    for (const [id, adapter] of this.providers) {
       try {
         log(`[LLMManager] Detecting ${id}...`);
-        const available = await provider.detect();
+        const available = await adapter.detect();
 
         let models: LLMModel[] | undefined;
         if (available) {
           try {
-            models = await provider.listModels();
+            models = await adapter.listModels();
           } catch {
             // Models listing failed, but provider is still available
           }
         }
 
         const status: LLMProviderStatus = {
-          id: provider.id,
-          name: provider.name,
+          id: adapter.id,
+          name: adapter.name,
           available,
-          baseUrl: provider.baseUrl,
+          baseUrl: adapter.baseUrl,
           models,
           checkedAt: Date.now(),
         };
 
-        // Add Ollama-specific version and tool support info
-        if (id === 'ollama' && available) {
-          const ollamaProvider = provider as OllamaProvider;
-          if (ollamaProvider.version) {
-            status.version = ollamaProvider.version;
+        // Add version and tool support info
+        if (available) {
+          if (adapter.version) {
+            status.version = adapter.version;
           }
-          status.supportsTools = ollamaProvider.supportsTools;
-          
-          if (!ollamaProvider.supportsTools) {
-            status.warning = `Ollama version ${ollamaProvider.version} does not support tool calling. Upgrade to 0.3.0 or later.`;
-          }
+          status.supportsTools = adapter.supportsTools;
         }
 
         this.providerStatus.set(id, status);
@@ -133,17 +224,27 @@ export class LLMManager {
         // Auto-select first available provider if none is active
         if (available && !this.activeProviderId) {
           this.activeProviderId = id;
-          log(`[LLMManager] Auto-selected provider: ${id}`);
+          
+          // Set default model
+          if (models && models.length > 0) {
+            const toolModel = models.find(m => m.supportsTools);
+            this.activeModelId = toolModel?.id || models[0].id;
+          } else {
+            this.activeModelId = DEFAULT_MODELS[id] || null;
+          }
+          
+          log(`[LLMManager] Auto-selected provider: ${id}, model: ${this.activeModelId}`);
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         log(`[LLMManager] Detection failed for ${id}: ${message}`);
 
+        const adapter = this.providers.get(id)!;
         const status: LLMProviderStatus = {
-          id: provider.id,
-          name: provider.name,
+          id: adapter.id,
+          name: adapter.name,
           available: false,
-          baseUrl: provider.baseUrl,
+          baseUrl: adapter.baseUrl,
           error: message,
           checkedAt: Date.now(),
         };
@@ -180,7 +281,7 @@ export class LLMManager {
   /**
    * Set the active provider.
    */
-  setActive(providerId: string): boolean {
+  setActive(providerId: string, modelId?: string): boolean {
     if (!this.providers.has(providerId)) {
       log(`[LLMManager] Unknown provider: ${providerId}`);
       return false;
@@ -193,7 +294,32 @@ export class LLMManager {
     }
 
     this.activeProviderId = providerId;
-    log(`[LLMManager] Active provider set to: ${providerId}`);
+    
+    if (modelId) {
+      this.activeModelId = modelId;
+    } else if (status.models && status.models.length > 0) {
+      // Select best available model
+      const toolModel = status.models.find(m => m.supportsTools);
+      this.activeModelId = toolModel?.id || status.models[0].id;
+    } else {
+      this.activeModelId = DEFAULT_MODELS[providerId] || null;
+    }
+    
+    log(`[LLMManager] Active provider set to: ${providerId}, model: ${this.activeModelId}`);
+    return true;
+  }
+
+  /**
+   * Set the active model.
+   */
+  setActiveModel(modelId: string): boolean {
+    if (!this.activeProviderId) {
+      log('[LLMManager] No active provider to set model for');
+      return false;
+    }
+    
+    this.activeModelId = modelId;
+    log(`[LLMManager] Active model set to: ${modelId}`);
     return true;
   }
 
@@ -212,6 +338,13 @@ export class LLMManager {
    */
   getActiveId(): string | null {
     return this.activeProviderId;
+  }
+
+  /**
+   * Get the active model ID.
+   */
+  getActiveModelId(): string | null {
+    return this.activeModelId;
   }
 
   /**
@@ -244,6 +377,25 @@ export class LLMManager {
   }
 
   /**
+   * List models from a specific provider.
+   */
+  async listModelsFor(providerId: string): Promise<LLMModel[]> {
+    const provider = this.providers.get(providerId);
+    if (!provider) {
+      log(`[LLMManager] Unknown provider for listModels: ${providerId}`);
+      return [];
+    }
+
+    try {
+      return await provider.listModels();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`[LLMManager] listModels failed for ${providerId}: ${message}`);
+      return [];
+    }
+  }
+
+  /**
    * Send a chat request to the active provider.
    */
   async chat(request: ChatRequest): Promise<ChatResponse> {
@@ -252,12 +404,18 @@ export class LLMManager {
       return {
         message: { role: 'assistant', content: '' },
         finishReason: 'error',
-        error: 'No LLM provider available. Is llamafile running?',
+        error: 'No LLM provider available. Configure a provider first.',
       };
     }
 
+    // Use active model if not specified
+    const chatRequest = {
+      ...request,
+      model: request.model || this.activeModelId || undefined,
+    };
+
     try {
-      return await provider.chat(request);
+      return await provider.chat(chatRequest);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log(`[LLMManager] chat failed: ${message}`);
@@ -282,9 +440,15 @@ export class LLMManager {
       return;
     }
 
+    // Use active model if not specified
+    const chatRequest = {
+      ...request,
+      model: request.model || this.activeModelId || undefined,
+    };
+
     if (!provider.chatStream) {
       // Fall back to non-streaming
-      const response = await provider.chat(request);
+      const response = await provider.chat(chatRequest);
       yield {
         delta: response.message,
         finishReason: response.finishReason,
@@ -293,7 +457,7 @@ export class LLMManager {
     }
 
     try {
-      for await (const chunk of provider.chatStream(request)) {
+      for await (const chunk of provider.chatStream(chatRequest)) {
         yield chunk;
       }
     } catch (error) {
@@ -319,12 +483,16 @@ export class LLMManager {
   getSummary(): {
     providers: number;
     available: number;
-    active: string | null;
+    activeProvider: string | null;
+    activeModel: string | null;
+    configuredApiKeys: string[];
   } {
     return {
       providers: this.providers.size,
       available: this.getAvailableProviders().length,
-      active: this.activeProviderId,
+      activeProvider: this.activeProviderId,
+      activeModel: this.activeModelId,
+      configuredApiKeys: this.getConfiguredApiKeys(),
     };
   }
 }
@@ -339,3 +507,6 @@ export function getLLMManager(): LLMManager {
   return _manager;
 }
 
+// Re-export types for convenience
+export type { LLMProviderType, ProviderConfig };
+export { LOCAL_PROVIDERS, REMOTE_PROVIDERS, API_KEY_ENV_VARS, DEFAULT_MODELS };

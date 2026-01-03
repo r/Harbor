@@ -40,6 +40,8 @@ function log(...args: unknown[]): void {
   }
 }
 
+// Storage-based debug log for reliable reading
+
 // =============================================================================
 // State Management
 // =============================================================================
@@ -638,8 +640,17 @@ function extractReadableContent(): ActiveTabReadability {
 }
 
 // =============================================================================
-// Agent Run Handler
+// Agent Run Handler - Uses Bridge Orchestrator
 // =============================================================================
+// This is the single, clean path for tool-enabled chat:
+// 1. Create a chat session with connected servers
+// 2. Send the message via chat_send_message (uses bridge orchestrator)
+// 3. The bridge orchestrator handles:
+//    - Text-based tool call parsing (for LLMs that output JSON as text)
+//    - Tool execution via MCP
+//    - Iteration until final response
+// 4. Stream results back to the client
+// 5. Clean up the session
 
 async function handleAgentRun(
   port: browser.Runtime.Port,
@@ -647,12 +658,15 @@ async function handleAgentRun(
   origin: string,
   payload: { task: string; tools?: string[]; requireCitations?: boolean; maxToolCalls?: number }
 ): Promise<void> {
+  console.log('🔧 handleAgentRun v2 - using bridge orchestrator');
+  log('[AgentRun] Starting with task:', payload.task?.substring(0, 50));
+  
   // Require model:tools permission
   if (!(await requirePermission(port, requestId, origin, 'model:tools'))) {
     return;
   }
   
-  const { task, tools, requireCitations, maxToolCalls = 5 } = payload;
+  const { task, requireCitations, maxToolCalls = 5 } = payload;
   
   // Track this streaming request
   streamingRequests.set(requestId, { port, aborted: false });
@@ -664,261 +678,165 @@ async function handleAgentRun(
     }
   };
   
+  let sessionId: string | null = null;
+  
   try {
     sendEvent({ type: 'status', message: 'Initializing agent...' });
     
-    // Get available tools
-    let availableTools: ToolDescriptor[] = [];
-    if (await hasPermission(origin, 'mcp:tools.list')) {
-      const connectionsResponse = await browser.runtime.sendMessage({
-        type: 'mcp_list_connections',
-      }) as { type: string; connections?: Array<{ serverId: string; serverName: string; toolCount: number }> };
-      
-      if (connectionsResponse.connections) {
-        for (const conn of connectionsResponse.connections) {
-          const toolsResponse = await browser.runtime.sendMessage({
-            type: 'mcp_list_tools',
-            server_id: conn.serverId,
-          }) as { type: string; tools?: Array<{ name: string; description?: string; inputSchema?: unknown }> };
-          
-          if (toolsResponse.tools) {
-            for (const tool of toolsResponse.tools) {
-              availableTools.push({
-                name: `${conn.serverId}/${tool.name}`,
-                description: tool.description,
-                inputSchema: tool.inputSchema,
-                serverId: conn.serverId,
+    // Get connected MCP servers
+    const connectionsResponse = await browser.runtime.sendMessage({
+      type: 'mcp_list_connections',
+    }) as { type: string; connections?: Array<{ serverId: string; serverName: string; toolCount: number }> };
+    
+    const enabledServers = connectionsResponse.connections?.map(c => c.serverId) || [];
+    const totalTools = connectionsResponse.connections?.reduce((sum, c) => sum + c.toolCount, 0) || 0;
+    
+    sendEvent({ type: 'status', message: `Found ${totalTools} tools from ${enabledServers.length} servers` });
+    
+    // Check if aborted
+    const req = streamingRequests.get(requestId);
+    if (!req || req.aborted) {
+      sendEvent({ type: 'error', error: createError('ERR_INTERNAL', 'Request aborted') });
+      return;
+    }
+    
+    // Build custom system prompt if needed
+    let systemPrompt: string | undefined;
+    if (requireCitations) {
+      systemPrompt = 'You are a helpful AI assistant. When using information from tools, cite your sources.';
+    }
+    
+    // Create a temporary chat session with the connected servers
+    const createResponse = await browser.runtime.sendMessage({
+      type: 'chat_create_session',
+      enabled_servers: enabledServers,
+      name: `Agent task: ${task.substring(0, 30)}...`,
+      system_prompt: systemPrompt,
+      max_iterations: maxToolCalls,
+    }) as { type: string; session?: { id: string }; error?: { message: string } };
+    
+    if (createResponse.type === 'error' || !createResponse.session?.id) {
+      sendEvent({ type: 'error', error: createError('ERR_INTERNAL', createResponse.error?.message || 'Failed to create session') });
+      return;
+    }
+    
+    sessionId = createResponse.session.id;
+    log('[AgentRun] Created session:', sessionId);
+    
+    // Check if aborted
+    const req2 = streamingRequests.get(requestId);
+    if (!req2 || req2.aborted) {
+      sendEvent({ type: 'error', error: createError('ERR_INTERNAL', 'Request aborted') });
+      return;
+    }
+    
+    sendEvent({ type: 'status', message: 'Processing...' });
+    
+    // Send the message - the bridge orchestrator handles everything
+    const chatResponse = await browser.runtime.sendMessage({
+      type: 'chat_send_message',
+      session_id: sessionId,
+      message: task,
+      use_tool_router: true,
+    }) as { 
+      type: string;
+      response?: string;
+      steps?: Array<{
+        type: 'llm_response' | 'tool_calls' | 'tool_results' | 'error' | 'final';
+        content?: string;
+        toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+        toolResults?: Array<{ toolCallId: string; toolName: string; serverId: string; content: string; isError: boolean }>;
+        error?: string;
+      }>;
+      iterations?: number;
+      reachedMaxIterations?: boolean;
+      error?: { message: string };
+    };
+    
+    if (chatResponse.type === 'error') {
+      sendEvent({ type: 'error', error: createError('ERR_INTERNAL', chatResponse.error?.message || 'Chat failed') });
+      return;
+    }
+    
+    // Stream the orchestration steps to the client
+    const citations: Array<{ source: 'tab' | 'tool'; ref: string; excerpt: string }> = [];
+    
+    if (chatResponse.steps) {
+      for (const step of chatResponse.steps) {
+        // Check if aborted
+        const req3 = streamingRequests.get(requestId);
+        if (!req3 || req3.aborted) {
+          sendEvent({ type: 'error', error: createError('ERR_INTERNAL', 'Request aborted') });
+          return;
+        }
+        
+        if (step.type === 'tool_calls' && step.toolCalls) {
+          for (const tc of step.toolCalls) {
+            sendEvent({ type: 'tool_call', tool: tc.name, args: tc.arguments });
+          }
+        }
+        
+        if (step.type === 'tool_results' && step.toolResults) {
+          for (const tr of step.toolResults) {
+            sendEvent({ 
+              type: 'tool_result', 
+              tool: tr.toolName,
+              result: tr.content,
+              error: tr.isError ? createError('ERR_TOOL_FAILED', tr.content) : undefined,
+            });
+            
+            if (requireCitations && !tr.isError) {
+              citations.push({
+                source: 'tool',
+                ref: `${tr.serverId}/${tr.toolName}`,
+                excerpt: tr.content.slice(0, 200),
               });
             }
           }
         }
-      }
-    }
-    
-    // Filter to allowed tools if specified
-    if (tools && tools.length > 0) {
-      availableTools = availableTools.filter(t => tools.includes(t.name));
-    }
-    
-    // Check if we can read active tab
-    const canReadTab = await hasPermission(origin, 'browser:activeTab.read');
-    
-    sendEvent({ type: 'status', message: `Found ${availableTools.length} tools` });
-    
-    // Build system prompt
-    let systemPrompt = `You are a helpful AI assistant with access to tools.
-Your task is to help the user by using the available tools when needed.
-Always explain what you're doing and why.
-If you need more information, ask for clarification.
-${requireCitations ? 'When using information from tools or the browser, cite your sources.' : ''}
-
-Available tools:
-${availableTools.map(t => `- ${t.name}: ${t.description || 'No description'}`).join('\n')}
-${canReadTab ? '- BROWSER_READ_TAB: Read the content of the currently active browser tab' : ''}
-`;
-    
-    // Agent loop
-    const messages: Array<{ role: string; content: string }> = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: task },
-    ];
-    
-    let toolCallCount = 0;
-    const citations: Array<{ source: 'tab' | 'tool'; ref: string; excerpt: string }> = [];
-    
-    while (toolCallCount < maxToolCalls) {
-      // Check if aborted
-      const req = streamingRequests.get(requestId);
-      if (!req || req.aborted) {
-        sendEvent({ type: 'error', error: createError('ERR_INTERNAL', 'Request aborted') });
-        return;
-      }
-      
-      // Call LLM with tools
-      const toolsForLlm = availableTools.map(t => ({
-        type: 'function',
-        function: {
-          name: t.name.replace('/', '_'), // LLM-safe name
-          description: t.description,
-          parameters: t.inputSchema || { type: 'object', properties: {} },
-        },
-      }));
-      
-      if (canReadTab) {
-        toolsForLlm.push({
-          type: 'function',
-          function: {
-            name: 'BROWSER_READ_TAB',
-            description: 'Read the content of the currently active browser tab',
-            parameters: { type: 'object', properties: {} },
-          },
-        });
-      }
-      
-      const llmResponse = await browser.runtime.sendMessage({
-        type: 'llm_chat',
-        messages,
-        tools: toolsForLlm.length > 0 ? toolsForLlm : undefined,
-      }) as { 
-        type: string; 
-        response?: { 
-          message?: { 
-            content?: string;
-            tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
-          } 
-        }; 
-        error?: { message: string } 
-      };
-      
-      if (llmResponse.type === 'error' || !llmResponse.response?.message) {
-        sendEvent({ type: 'error', error: createError('ERR_MODEL_FAILED', llmResponse.error?.message || 'LLM failed') });
-        return;
-      }
-      
-      const message = llmResponse.response.message;
-      
-      // Check for tool calls
-      if (message.tool_calls && message.tool_calls.length > 0) {
-        // Process each tool call
-        for (const toolCall of message.tool_calls) {
-          if (toolCallCount >= maxToolCalls) {
-            break;
-          }
-          
-          toolCallCount++;
-          const toolName = toolCall.function.name.replace('_', '/');
-          let args: Record<string, unknown> = {};
-          
-          try {
-            args = JSON.parse(toolCall.function.arguments);
-          } catch {
-            // Empty args
-          }
-          
-          sendEvent({ type: 'tool_call', tool: toolName, args });
-          
-          let toolResult: string;
-          let toolError: ApiError | undefined;
-          
-          if (toolName === 'BROWSER/READ_TAB' || toolCall.function.name === 'BROWSER_READ_TAB') {
-            // Read active tab
-            try {
-              const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-              const activeTab = tabs[0];
-              
-              if (activeTab?.id) {
-                const results = await browser.scripting.executeScript({
-                  target: { tabId: activeTab.id },
-                  func: extractReadableContent,
-                });
-                
-                if (results && results[0]?.result) {
-                  const content = results[0].result as ActiveTabReadability;
-                  toolResult = `URL: ${content.url}\nTitle: ${content.title}\n\n${content.text}`;
-                  
-                  if (requireCitations) {
-                    citations.push({
-                      source: 'tab',
-                      ref: content.url,
-                      excerpt: content.text.slice(0, 200),
-                    });
-                  }
-                } else {
-                  toolResult = 'Failed to extract content';
-                }
-              } else {
-                toolResult = 'No active tab found';
-              }
-            } catch (err) {
-              toolResult = `Error: ${err}`;
-              toolError = createError('ERR_INTERNAL', String(err));
-            }
-          } else {
-            // Call MCP tool
-            try {
-              const slashIndex = toolName.indexOf('/');
-              const serverId = toolName.slice(0, slashIndex);
-              const mcpToolName = toolName.slice(slashIndex + 1);
-              
-              const callResponse = await browser.runtime.sendMessage({
-                type: 'mcp_call_tool',
-                server_id: serverId,
-                tool_name: mcpToolName,
-                arguments: args,
-              }) as { type: string; result?: unknown; error?: { message: string } };
-              
-              if (callResponse.type === 'error') {
-                toolResult = `Error: ${callResponse.error?.message || 'Tool call failed'}`;
-                toolError = createError('ERR_TOOL_FAILED', callResponse.error?.message || 'Tool call failed');
-              } else {
-                toolResult = typeof callResponse.result === 'string' 
-                  ? callResponse.result 
-                  : JSON.stringify(callResponse.result, null, 2);
-                
-                if (requireCitations) {
-                  citations.push({
-                    source: 'tool',
-                    ref: toolName,
-                    excerpt: toolResult.slice(0, 200),
-                  });
-                }
-              }
-            } catch (err) {
-              toolResult = `Error: ${err}`;
-              toolError = createError('ERR_TOOL_FAILED', String(err));
-            }
-          }
-          
-          sendEvent({ type: 'tool_result', tool: toolName, result: toolResult, error: toolError });
-          
-          // Add tool result to messages
-          messages.push({
-            role: 'assistant',
-            content: `Calling tool: ${toolName}`,
-          });
-          messages.push({
-            role: 'tool',
-            content: toolResult,
-          });
-        }
         
-        // Continue loop to get next LLM response
-        continue;
-      }
-      
-      // No tool calls - this is the final response
-      const output = message.content || '';
-      
-      // Stream the output token by token
-      const tokens = output.split(/(\s+)/);
-      for (const token of tokens) {
-        if (token) {
-          sendEvent({ type: 'token', token });
-          await new Promise(r => setTimeout(r, 10)); // Small delay for streaming effect
+        if (step.type === 'error' && step.error) {
+          sendEvent({ type: 'error', error: createError('ERR_INTERNAL', step.error) });
+          return;
         }
       }
-      
-      sendEvent({ 
-        type: 'final', 
-        output,
-        citations: requireCitations ? citations : undefined,
-      });
-      
-      break;
     }
     
-    // If we hit max tool calls without a final response
-    if (toolCallCount >= maxToolCalls) {
-      sendEvent({
-        type: 'error',
-        error: createError('ERR_INTERNAL', `Maximum tool calls (${maxToolCalls}) reached`),
-      });
+    // Get the final response
+    const finalOutput = chatResponse.response || '';
+    
+    // Stream the output token by token for a nice effect
+    const tokens = finalOutput.split(/(\s+)/);
+    for (const token of tokens) {
+      if (token) {
+        sendEvent({ type: 'token', token });
+        await new Promise(r => setTimeout(r, 10)); // Small delay for streaming effect
+      }
+    }
+    
+    sendEvent({ 
+      type: 'final', 
+      output: finalOutput,
+      citations: requireCitations && citations.length > 0 ? citations : undefined,
+    });
+    
+    if (chatResponse.reachedMaxIterations) {
+      log('[AgentRun] Warning: reached max iterations');
     }
     
   } catch (err) {
-    log('Agent run error:', err);
+    log('[AgentRun] Error:', err);
     sendEvent({ type: 'error', error: createError('ERR_INTERNAL', String(err)) });
   } finally {
+    // Clean up the temporary session
+    if (sessionId) {
+      browser.runtime.sendMessage({
+        type: 'chat_delete_session',
+        session_id: sessionId,
+      }).catch(() => {
+        // Ignore cleanup errors
+      });
+    }
     streamingRequests.delete(requestId);
   }
 }
@@ -998,10 +916,12 @@ function handleProviderMessage(
 // =============================================================================
 
 export function setupProviderRouter(): void {
+  console.log('🚀 Harbor Provider Router v2 (using bridge orchestrator)');
+  
   browser.runtime.onConnect.addListener((port) => {
     if (port.name !== 'provider-bridge') return;
     
-    log('Provider bridge connected');
+    log('[Router] Provider bridge connected');
     
     port.onMessage.addListener((message: ProviderMessage & { origin: string }) => {
       if (message.namespace !== 'harbor-provider') return;

@@ -1959,18 +1959,19 @@ const handleLlmListProviders: MessageHandler = async (message, _store, _client, 
 };
 
 /**
- * Set the active LLM provider.
+ * Set the active LLM provider and optionally the model.
  */
 const handleLlmSetActive: MessageHandler = async (message, _store, _client, _catalog, _installer, _mcpManager, llmManager) => {
   const requestId = message.request_id || '';
   const providerId = message.provider_id as string || '';
+  const modelId = message.model_id as string | undefined;
 
   if (!providerId) {
     return makeError(requestId, 'invalid_request', 'Missing provider_id');
   }
 
   try {
-    const success = llmManager.setActive(providerId);
+    const success = llmManager.setActive(providerId, modelId);
     
     if (!success) {
       return makeError(requestId, 'llm_error', `Provider not available: ${providerId}`);
@@ -1979,6 +1980,7 @@ const handleLlmSetActive: MessageHandler = async (message, _store, _client, _cat
     return makeResult('llm_set_active', requestId, { 
       success: true,
       active: providerId,
+      model: llmManager.getActiveModelId(),
     });
   } catch (e) {
     log(`Failed to set active LLM provider: ${e}`);
@@ -2060,13 +2062,166 @@ const handleLlmGetActive: MessageHandler = async (message, _store, _client, _cat
   try {
     const activeId = llmManager.getActiveId();
     const activeStatus = llmManager.getActiveStatus();
+    const activeModelId = llmManager.getActiveModelId();
     
     return makeResult('llm_get_active', requestId, { 
       active: activeId,
+      model: activeModelId,
       status: activeStatus,
     });
   } catch (e) {
     log(`Failed to get active LLM: ${e}`);
+    return makeError(requestId, 'llm_error', String(e));
+  }
+};
+
+/**
+ * Set the active model for the current provider.
+ */
+const handleLlmSetModel: MessageHandler = async (message, _store, _client, _catalog, _installer, _mcpManager, llmManager) => {
+  const requestId = message.request_id || '';
+  const modelId = message.model_id as string || '';
+
+  if (!modelId) {
+    return makeError(requestId, 'invalid_request', 'Missing model_id');
+  }
+
+  try {
+    const success = llmManager.setActiveModel(modelId);
+    
+    if (!success) {
+      return makeError(requestId, 'llm_error', 'No active provider to set model for');
+    }
+    
+    return makeResult('llm_set_model', requestId, { 
+      success: true,
+      model: modelId,
+      provider: llmManager.getActiveId(),
+    });
+  } catch (e) {
+    log(`Failed to set active model: ${e}`);
+    return makeError(requestId, 'llm_error', String(e));
+  }
+};
+
+/**
+ * Set an API key for an LLM provider.
+ */
+const handleLlmSetApiKey: MessageHandler = async (message, _store, _client, _catalog, _installer, _mcpManager, llmManager) => {
+  const requestId = message.request_id || '';
+  const providerId = message.provider_id as string || '';
+  const apiKey = message.api_key as string || '';
+
+  if (!providerId) {
+    return makeError(requestId, 'invalid_request', 'Missing provider_id');
+  }
+  if (!apiKey) {
+    return makeError(requestId, 'invalid_request', 'Missing api_key');
+  }
+
+  try {
+    llmManager.setApiKey(providerId, apiKey);
+    
+    // Detect the provider to verify it works
+    const providers = await llmManager.detectAll();
+    const providerStatus = providers.find(p => p.id === providerId);
+    
+    return makeResult('llm_set_api_key', requestId, { 
+      success: true,
+      provider: providerId,
+      available: providerStatus?.available || false,
+    });
+  } catch (e) {
+    log(`Failed to set API key: ${e}`);
+    return makeError(requestId, 'llm_error', String(e));
+  }
+};
+
+/**
+ * Remove an API key for an LLM provider.
+ */
+const handleLlmRemoveApiKey: MessageHandler = async (message, _store, _client, _catalog, _installer, _mcpManager, llmManager) => {
+  const requestId = message.request_id || '';
+  const providerId = message.provider_id as string || '';
+
+  if (!providerId) {
+    return makeError(requestId, 'invalid_request', 'Missing provider_id');
+  }
+
+  try {
+    llmManager.removeApiKey(providerId);
+    
+    return makeResult('llm_remove_api_key', requestId, { 
+      success: true,
+      provider: providerId,
+    });
+  } catch (e) {
+    log(`Failed to remove API key: ${e}`);
+    return makeError(requestId, 'llm_error', String(e));
+  }
+};
+
+/**
+ * Get supported LLM providers (local and remote).
+ */
+const handleLlmGetSupportedProviders: MessageHandler = async (message, _store, _client, _catalog, _installer, _mcpManager, llmManager) => {
+  const requestId = message.request_id || '';
+
+  try {
+    const supported = llmManager.getSupportedProviders();
+    const configured = llmManager.getConfiguredApiKeys();
+    
+    return makeResult('llm_get_supported_providers', requestId, { 
+      local: supported.local,
+      remote: supported.remote,
+      configuredApiKeys: configured,
+    });
+  } catch (e) {
+    log(`Failed to get supported providers: ${e}`);
+    return makeError(requestId, 'llm_error', String(e));
+  }
+};
+
+/**
+ * Get LLM configuration summary.
+ */
+const handleLlmGetConfig: MessageHandler = async (message, _store, _client, _catalog, _installer, _mcpManager, llmManager) => {
+  const requestId = message.request_id || '';
+
+  try {
+    const summary = llmManager.getSummary();
+    const allStatus = llmManager.getAllStatus();
+    
+    return makeResult('llm_get_config', requestId, { 
+      ...summary,
+      providers: allStatus,
+    });
+  } catch (e) {
+    log(`Failed to get LLM config: ${e}`);
+    return makeError(requestId, 'llm_error', String(e));
+  }
+};
+
+/**
+ * List models from a specific provider.
+ */
+const handleLlmListModelsFor: MessageHandler = async (message, _store, _client, _catalog, _installer, _mcpManager, llmManager) => {
+  const requestId = message.request_id || '';
+  const providerId = message.provider_id as string || '';
+
+  if (!providerId) {
+    return makeError(requestId, 'invalid_request', 'Missing provider_id');
+  }
+
+  try {
+    const models = await llmManager.listModelsFor(providerId);
+    
+    return makeResult('llm_list_models_for', requestId, { 
+      models,
+      provider: providerId,
+    });
+  } catch (e) {
+    log(`Failed to list models for ${providerId}: ${e}`);
     return makeError(requestId, 'llm_error', String(e));
   }
 };
@@ -3182,9 +3337,15 @@ const HANDLERS: Record<string, MessageHandler> = {
   llm_detect: handleLlmDetect,
   llm_list_providers: handleLlmListProviders,
   llm_set_active: handleLlmSetActive,
+  llm_set_model: handleLlmSetModel,
   llm_list_models: handleLlmListModels,
+  llm_list_models_for: handleLlmListModelsFor,
   llm_chat: handleLlmChat,
   llm_get_active: handleLlmGetActive,
+  llm_set_api_key: handleLlmSetApiKey,
+  llm_remove_api_key: handleLlmRemoveApiKey,
+  llm_get_supported_providers: handleLlmGetSupportedProviders,
+  llm_get_config: handleLlmGetConfig,
   // LLM setup handlers
   llm_setup_status: handleLlmSetupStatus,
   llm_download_model: handleLlmDownloadModel,
