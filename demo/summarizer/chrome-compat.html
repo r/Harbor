@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Page Summarizer — Harbor Demo</title>
+  <title>Page Summarizer (Chrome API) — Harbor Demo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -14,9 +14,9 @@
       --color-ink: #1a1815;
       --color-ink-soft: #4a4640;
       --color-ink-faded: #8a8680;
-      --color-accent: #c45a3b;
-      --color-accent-soft: #d4856e;
-      --color-accent-bg: #fdf6f4;
+      --color-accent: #3b82c4;
+      --color-accent-soft: #6ea3d4;
+      --color-accent-bg: #f4f8fd;
       --color-border: #e5e0d8;
       --color-border-strong: #d0c9be;
       --color-success: #2d8a5c;
@@ -57,8 +57,8 @@
       position: fixed;
       inset: 0;
       background-image: 
-        radial-gradient(circle at 25% 25%, rgba(196, 90, 59, 0.03) 0%, transparent 50%),
-        radial-gradient(circle at 75% 75%, rgba(196, 90, 59, 0.02) 0%, transparent 50%);
+        radial-gradient(circle at 25% 25%, rgba(59, 130, 196, 0.03) 0%, transparent 50%),
+        radial-gradient(circle at 75% 75%, rgba(59, 130, 196, 0.02) 0%, transparent 50%);
       pointer-events: none;
       z-index: -1;
     }
@@ -102,6 +102,20 @@
     .header p {
       font-size: 15px;
       color: var(--color-ink-faded);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: var(--color-accent-bg);
+      border: 1px solid rgba(59, 130, 196, 0.2);
+      border-radius: var(--radius-md);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-accent);
+      margin-top: 12px;
     }
 
     .card {
@@ -181,47 +195,6 @@
       color: var(--color-ink-soft);
     }
 
-    /* Instructions */
-    .instructions {
-      counter-reset: step;
-    }
-
-    .step {
-      display: flex;
-      gap: 16px;
-      margin-bottom: 20px;
-    }
-
-    .step:last-child {
-      margin-bottom: 0;
-    }
-
-    .step-number {
-      width: 28px;
-      height: 28px;
-      background: var(--color-accent);
-      color: white;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-
-    .step-content h3 {
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--color-ink);
-      margin-bottom: 4px;
-    }
-
-    .step-content p {
-      font-size: 14px;
-      color: var(--color-ink-soft);
-    }
-
     /* Code block */
     .code-block {
       background: var(--color-ink);
@@ -244,6 +217,46 @@
     .code-block .property { color: #9cdcfe; }
     .code-block .function { color: #dcdcaa; }
     .code-block .number { color: #b5cea8; }
+
+    /* Comparison table */
+    .comparison {
+      margin-top: 20px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+
+    .comparison-row {
+      display: flex;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .comparison-row:last-child {
+      border-bottom: none;
+    }
+
+    .comparison-label {
+      flex: 0 0 140px;
+      padding: 12px 16px;
+      background: var(--color-paper);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-ink-soft);
+    }
+
+    .comparison-value {
+      flex: 1;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--color-ink);
+    }
+
+    .comparison-value code {
+      background: var(--color-paper);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
 
     /* Requirements */
     .requirements {
@@ -339,14 +352,39 @@
       line-height: 1.7;
       color: rgba(255,255,255,0.9);
     }
+
+    .link-other {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 16px;
+      padding: 8px 16px;
+      background: var(--color-paper);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      color: var(--color-ink-soft);
+      text-decoration: none;
+      font-size: 13px;
+      transition: all 0.15s ease;
+    }
+
+    .link-other:hover {
+      background: white;
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <header class="header">
-      <div class="header-icon">📄</div>
+      <div class="header-icon">⚡</div>
       <h1>Page Summarizer</h1>
-      <p>A bookmarklet that summarizes any webpage using Harbor AI</p>
+      <p>Chrome API Compatible Version</p>
+      <div class="badge">
+        <span>🔵</span>
+        <span>Uses window.ai.languageModel</span>
+      </div>
     </header>
 
     <div class="card">
@@ -357,36 +395,12 @@
       
       <div class="bookmarklet-section">
         <a class="bookmarklet-link" id="bookmarklet" href="#">
-          <span>📝</span>
-          <span>Summarize Page</span>
+          <span>⚡</span>
+          <span>Summarize (Chrome API)</span>
         </a>
         <p class="bookmarklet-hint">
           <strong>Drag this button</strong> to your bookmarks bar
         </p>
-      </div>
-
-      <div class="instructions">
-        <div class="step">
-          <div class="step-number">1</div>
-          <div class="step-content">
-            <h3>Drag to Bookmarks Bar</h3>
-            <p>Drag the "Summarize Page" button above to your browser's bookmarks toolbar</p>
-          </div>
-        </div>
-        <div class="step">
-          <div class="step-number">2</div>
-          <div class="step-content">
-            <h3>Visit Any Page</h3>
-            <p>Navigate to an article, documentation, or any page you want summarized</p>
-          </div>
-        </div>
-        <div class="step">
-          <div class="step-number">3</div>
-          <div class="step-content">
-            <h3>Click the Bookmarklet</h3>
-            <p>Click "Summarize Page" in your bookmarks — a summary overlay will appear</p>
-          </div>
-        </div>
       </div>
 
       <div class="requirements">
@@ -395,8 +409,8 @@
           <span>Requires Harbor extension</span>
         </div>
         <div class="requirement">
-          <span class="requirement-icon">🤖</span>
-          <span>Requires LLM configured</span>
+          <span class="requirement-icon">🔵</span>
+          <span>Chrome API compatible</span>
         </div>
       </div>
 
@@ -404,7 +418,7 @@
         <div class="preview-label">Preview: What you'll see</div>
         <div class="overlay-preview">
           <div class="overlay-preview-header">
-            <span class="overlay-preview-title">📄 Page Summary</span>
+            <span class="overlay-preview-title">⚡ Page Summary</span>
             <button class="overlay-preview-close">×</button>
           </div>
           <div class="overlay-preview-content">
@@ -417,70 +431,90 @@
     <div class="card">
       <div class="card-header">
         <div class="card-header-icon">💻</div>
-        <h2>How It Works</h2>
+        <h2>The Code</h2>
       </div>
       
       <p style="color: var(--color-ink-soft); font-size: 14px; margin-bottom: 8px;">
-        Harbor supports two coding styles. The <strong>Chrome-compatible</strong> way auto-handles permissions:
+        This version uses the <strong>Chrome Prompt API</strong> style. The entire logic is just 4 lines:
       </p>
       
-      <div class="code-block"><span class="comment">// Chrome-compatible style (auto-permissions)</span>
-<span class="keyword">const</span> session = <span class="keyword">await</span> window.<span class="property">ai</span>.<span class="method">createTextSession</span>();
+      <div class="code-block"><span class="comment">// Create session using Chrome's languageModel API</span>
+<span class="keyword">const</span> session = <span class="keyword">await</span> window.<span class="property">ai</span>.<span class="property">languageModel</span>.<span class="method">create</span>({
+  <span class="property">systemPrompt</span>: <span class="string">'Summarize clearly in 2-3 paragraphs.'</span>
+});
+
+<span class="comment">// Prompt with page content</span>
 <span class="keyword">const</span> summary = <span class="keyword">await</span> session.<span class="method">prompt</span>(document.<span class="property">body</span>.<span class="property">innerText</span>);
 
-<span class="comment">// Or using the Chrome Prompt API style:</span>
-<span class="keyword">const</span> session = <span class="keyword">await</span> window.<span class="property">ai</span>.<span class="property">languageModel</span>.<span class="method">create</span>({
-  <span class="property">systemPrompt</span>: <span class="string">'Summarize clearly and concisely.'</span>
-});
-<span class="keyword">const</span> summary = <span class="keyword">await</span> session.<span class="method">prompt</span>(text);</div>
-      
-      <p style="color: var(--color-ink-soft); font-size: 14px; margin: 16px 0 8px;">
-        Or the <strong>explicit Harbor style</strong> with fine-grained control:
-      </p>
-      
-      <div class="code-block"><span class="comment">// Explicit Harbor style (full control)</span>
-<span class="keyword">await</span> window.<span class="property">agent</span>.<span class="method">requestPermissions</span>({
-  <span class="property">scopes</span>: [<span class="string">'model:prompt'</span>, <span class="string">'browser:activeTab.read'</span>],
-  <span class="property">reason</span>: <span class="string">'Summarize the current page'</span>
-});
-
-<span class="comment">// Read page content via extension API</span>
-<span class="keyword">const</span> tab = <span class="keyword">await</span> window.<span class="property">agent</span>.<span class="property">browser</span>.<span class="property">activeTab</span>.<span class="method">readability</span>();
-
-<span class="comment">// Create AI session with custom options</span>
-<span class="keyword">const</span> session = <span class="keyword">await</span> window.<span class="property">ai</span>.<span class="method">createTextSession</span>({
-  <span class="property">systemPrompt</span>: <span class="string">'Summarize clearly and concisely.'</span>,
-  <span class="property">temperature</span>: <span class="number">0.7</span>
-});
-
-<span class="keyword">const</span> summary = <span class="keyword">await</span> session.<span class="method">prompt</span>(tab.<span class="property">text</span>);</div>
+<span class="comment">// That's it! Permissions are auto-requested.</span></div>
 
       <p style="color: var(--color-ink-faded); font-size: 13px; margin-top: 16px;">
-        <strong>Tip:</strong> The Chrome-compatible style is simpler — permissions are auto-requested when needed. Use the explicit style when you need more control over permissions, want to specify a custom reason, or need access to browser APIs like <code>activeTab.read</code>.
+        <strong>No explicit permission request needed!</strong> Harbor automatically shows the permission dialog when <code>languageModel.create()</code> is called.
       </p>
+    </div>
 
-      <a href="chrome-compat.html" style="display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; padding: 8px 16px; background: var(--color-paper); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-ink-soft); text-decoration: none; font-size: 13px; transition: all 0.15s ease;">
-        <span>🔵</span>
-        <span>See the Chrome API version →</span>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon">🔄</div>
+        <h2>API Comparison</h2>
+      </div>
+      
+      <p style="color: var(--color-ink-soft); font-size: 14px; margin-bottom: 16px;">
+        Harbor supports both Chrome's API and its own extended API:
+      </p>
+      
+      <div class="comparison">
+        <div class="comparison-row">
+          <div class="comparison-label">Check availability</div>
+          <div class="comparison-value"><code>await ai.languageModel.capabilities()</code></div>
+        </div>
+        <div class="comparison-row">
+          <div class="comparison-label">Create session</div>
+          <div class="comparison-value"><code>await ai.languageModel.create(options)</code></div>
+        </div>
+        <div class="comparison-row">
+          <div class="comparison-label">Prompt</div>
+          <div class="comparison-value"><code>await session.prompt(text)</code></div>
+        </div>
+        <div class="comparison-row">
+          <div class="comparison-label">Stream</div>
+          <div class="comparison-value"><code>session.promptStreaming(text)</code></div>
+        </div>
+        <div class="comparison-row">
+          <div class="comparison-label">Clone session</div>
+          <div class="comparison-value"><code>await session.clone()</code></div>
+        </div>
+        <div class="comparison-row">
+          <div class="comparison-label">Destroy</div>
+          <div class="comparison-value"><code>await session.destroy()</code></div>
+        </div>
+      </div>
+
+      <a href="index.html" class="link-other">
+        <span>🔶</span>
+        <span>See the Harbor-style version →</span>
       </a>
     </div>
 
     <div class="card">
       <div class="card-header">
-        <div class="card-header-icon">🛠️</div>
-        <h2>Build Your Own</h2>
+        <div class="card-header-icon">✨</div>
+        <h2>Why Chrome Compatibility?</h2>
       </div>
       
-      <p style="color: var(--color-ink-soft); font-size: 14px;">
-        This pattern works for any AI-powered browser tool. Fork this example to build:
-      </p>
-      
-      <ul style="margin: 16px 0 0 20px; color: var(--color-ink-soft); font-size: 14px;">
-        <li style="margin-bottom: 8px;"><strong>Translation bookmarklet</strong> — translate any page to your language</li>
-        <li style="margin-bottom: 8px;"><strong>Explain Like I'm 5</strong> — simplify complex content</li>
-        <li style="margin-bottom: 8px;"><strong>Key Points Extractor</strong> — bullet point summaries</li>
-        <li style="margin-bottom: 8px;"><strong>Sentiment Analyzer</strong> — analyze tone of articles</li>
-        <li><strong>Accessibility Helper</strong> — describe images, simplify text</li>
+      <ul style="margin: 0 0 0 20px; color: var(--color-ink-soft); font-size: 14px;">
+        <li style="margin-bottom: 12px;">
+          <strong>Familiar API</strong> — If you've used Chrome's Prompt API, you already know this
+        </li>
+        <li style="margin-bottom: 12px;">
+          <strong>Simpler code</strong> — No explicit permission requests needed
+        </li>
+        <li style="margin-bottom: 12px;">
+          <strong>Future-proof</strong> — When Chrome ships native AI, minimal code changes needed
+        </li>
+        <li>
+          <strong>Still shows permissions</strong> — Users still see and approve the permission dialog
+        </li>
       </ul>
     </div>
 
@@ -490,11 +524,11 @@
   </div>
 
   <script>
-    // The actual bookmarklet code
+    // The actual bookmarklet code - Chrome API compatible version
     const bookmarkletCode = `
 (async function() {
   // Check Harbor availability
-  if (!window.agent || !window.ai) {
+  if (!window.ai || !window.ai.languageModel) {
     alert('Harbor extension not installed or not detected on this page.\\n\\nMake sure:\\n1. Harbor extension is installed\\n2. Refresh this page');
     return;
   }
@@ -517,17 +551,17 @@
         bottom: 20px;
         width: 400px;
         max-width: calc(100vw - 40px);
-        background: #fffcf9;
+        background: #fefefe;
         color: #1a1a1a;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
         font-size: 14px;
         line-height: 1.6;
         z-index: 2147483647;
         border-radius: 12px;
-        border: 1px solid rgba(196, 90, 59, 0.15);
+        border: 1px solid rgba(0,0,0,0.1);
         box-shadow: 
-          0 25px 50px -12px rgba(0,0,0,0.2),
-          0 0 0 1px rgba(196, 90, 59, 0.08);
+          0 25px 50px -12px rgba(0,0,0,0.25),
+          0 0 0 1px rgba(0,0,0,0.05);
         display: flex;
         flex-direction: column;
         animation: harborSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
@@ -553,8 +587,8 @@
         align-items: center;
         justify-content: space-between;
         padding: 16px 20px;
-        background: linear-gradient(180deg, #fdf6f4 0%, #faf2ef 100%);
-        border-bottom: 1px solid rgba(196, 90, 59, 0.12);
+        background: linear-gradient(180deg, #f8f9fa 0%, #f1f3f4 100%);
+        border-bottom: 1px solid rgba(0,0,0,0.08);
       }
       .harbor-title {
         font-size: 13px;
@@ -569,13 +603,25 @@
       .harbor-title-icon {
         width: 28px;
         height: 28px;
-        background: linear-gradient(135deg, #c45a3b 0%, #a04830 100%);
+        background: linear-gradient(135deg, #4285f4 0%, #1a73e8 100%);
         border-radius: 6px;
         display: flex;
         align-items: center;
         justify-content: center;
         font-size: 14px;
-        box-shadow: 0 2px 4px rgba(196, 90, 59, 0.3);
+        box-shadow: 0 2px 4px rgba(66,133,244,0.3);
+      }
+      .harbor-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 8px;
+        background: linear-gradient(135deg, #e8f0fe 0%, #d2e3fc 100%);
+        border: 1px solid rgba(66,133,244,0.2);
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        color: #1a73e8;
+        letter-spacing: 0.03em;
       }
       .harbor-close {
         width: 28px;
@@ -606,14 +652,14 @@
         width: 8px;
       }
       .harbor-content::-webkit-scrollbar-track {
-        background: #f5f0ed;
+        background: #f1f1f1;
       }
       .harbor-content::-webkit-scrollbar-thumb {
-        background: #d4c9c4;
+        background: #ccc;
         border-radius: 4px;
       }
       .harbor-content::-webkit-scrollbar-thumb:hover {
-        background: #bfb0a8;
+        background: #aaa;
       }
       .harbor-content p {
         font-family: 'Source Serif 4', 'Georgia', serif;
@@ -643,8 +689,8 @@
       .harbor-spinner {
         width: 36px;
         height: 36px;
-        border: 3px solid #f0e8e4;
-        border-top-color: #c45a3b;
+        border: 3px solid #e8e8e8;
+        border-top-color: #4285f4;
         border-radius: 50%;
         animation: harborSpin 0.8s linear infinite;
       }
@@ -667,14 +713,14 @@
       }
       .harbor-footer {
         padding: 12px 20px;
-        border-top: 1px solid rgba(196, 90, 59, 0.1);
+        border-top: 1px solid rgba(0,0,0,0.06);
         font-size: 11px;
         color: #888;
         text-align: center;
-        background: #faf6f4;
+        background: #fafafa;
       }
       .harbor-footer a {
-        color: #c45a3b;
+        color: #4285f4;
         text-decoration: none;
         font-weight: 600;
       }
@@ -684,8 +730,9 @@
     </style>
     <div class="harbor-header">
       <span class="harbor-title">
-        <span class="harbor-title-icon">📄</span>
+        <span class="harbor-title-icon">⚡</span>
         Summary
+        <span class="harbor-badge">Chrome API</span>
       </span>
       <button class="harbor-close" onclick="this.closest('#harbor-summary-overlay').remove()">×</button>
     </div>
@@ -708,14 +755,10 @@
   const contentEl = document.getElementById('harbor-summary-content');
   
   try {
-    // Request permission
-    const perms = await window.agent.requestPermissions({
-      scopes: ['model:prompt'],
-      reason: 'Summarize this page'
-    });
-    
-    if (!perms.granted && perms.scopes['model:prompt'] !== 'granted-always' && perms.scopes['model:prompt'] !== 'granted-once') {
-      throw new Error('Permission denied');
+    // Check if model is available
+    const caps = await window.ai.languageModel.capabilities();
+    if (caps.available === 'no') {
+      throw new Error('AI model not available');
     }
     
     // Get page text
@@ -725,11 +768,12 @@
       throw new Error('Not enough text content on this page');
     }
     
-    // Create session and summarize
-    const session = await window.ai.createTextSession({
+    // Create session using Chrome API style - permissions auto-requested!
+    const session = await window.ai.languageModel.create({
       systemPrompt: 'You are a helpful assistant that summarizes web pages. Provide a clear, concise summary in 2-3 paragraphs. Focus on the main points and key information.'
     });
     
+    // Prompt the model
     const summary = await session.prompt('Please summarize this page content:\\n\\n' + text);
     
     // Display summary
@@ -757,3 +801,4 @@
   </script>
 </body>
 </html>
+
