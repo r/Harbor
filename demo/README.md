@@ -14,10 +14,11 @@ Example code showing how web pages can use the Harbor JS AI Provider to interact
 
 1. **Build and install the Harbor extension** (see main README)
 
-2. **Start a local server**:
+2. **Install dependencies and start the server**:
    ```bash
    cd demo
-   python3 -m http.server 8000
+   npm install
+   npm start
    ```
 
 3. **Open a demo in your browser**:

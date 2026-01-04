@@ -1,0 +1,14 @@
+{
+  "name": "harbor-demos",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Demo applications for Harbor JS AI Provider",
+  "scripts": {
+    "start": "serve -l 8000",
+    "serve": "serve -l 8000"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
+
