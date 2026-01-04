@@ -31,6 +31,16 @@ So setup is: build extension → build bridge → install manifest → load exte
 | [JS AI Provider API](docs/JS_AI_PROVIDER_API.md) | Web Developers | Full reference for `window.ai` and `window.agent` APIs |
 | [MCP Host](docs/MCP_HOST.md) | Contributors | MCP execution environment internals |
 
+## Quick Reference
+
+| Task | URL / Command |
+|------|---------------|
+| Load/reload extension (Firefox) | `about:debugging#/runtime/this-firefox` |
+| Browser console (Firefox) | `Ctrl+Shift+J` (or `Cmd+Shift+J` on Mac) |
+| Build extension | `cd extension && npm run build` |
+| Build bridge | `cd bridge-ts && npm run build` |
+| Start demo server | `cd demo && npm start` → `http://localhost:8000` |
+
 ## Prerequisites
 
 - **Node.js** 18+ and npm

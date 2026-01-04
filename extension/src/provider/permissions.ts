@@ -186,7 +186,7 @@ export async function grantPermissions(
   origin: string,
   scopes: PermissionScope[],
   mode: 'once' | 'always',
-  options?: { allowedTools?: string[] }
+  options?: { allowedTools?: string[]; tabId?: number }
 ): Promise<void> {
   if (mode === 'once') {
     // Store as temporary grant
@@ -205,6 +205,7 @@ export async function grantPermissions(
       allowedTools: mergedTools.length > 0 ? mergedTools : undefined,
       grantedAt: Date.now(),
       expiresAt: Date.now() + ONCE_GRANT_TTL_MS,
+      tabId: options?.tabId ?? existing?.tabId,
     });
   } else {
     // Store persistently
@@ -412,6 +413,63 @@ export async function updateAllowedTools(
 }
 
 // =============================================================================
+// Permission Listing (for UI)
+// =============================================================================
+
+/**
+ * Get all permissions (both persistent and temporary) for display in the UI.
+ * This merges temporary grants with persistent ones.
+ */
+export async function getAllPermissions(): Promise<PermissionStatus[]> {
+  cleanupExpiredGrants();
+  
+  const stored = await loadStoredPermissions();
+  const result: Map<string, PermissionStatus> = new Map();
+  
+  // First, add all persistent permissions
+  for (const [origin, data] of Object.entries(stored)) {
+    result.set(origin, {
+      origin,
+      scopes: data.scopes as Record<PermissionScope, PermissionGrant>,
+      allowedTools: data.allowedTools,
+    });
+  }
+  
+  // Then, merge in temporary grants (they take precedence for granted-once scopes)
+  for (const [, tempGrant] of temporaryGrants) {
+    const { origin, scopes: tempScopes, allowedTools: tempTools } = tempGrant;
+    
+    const existing = result.get(origin);
+    if (existing) {
+      // Merge: temp scopes override persistent ones
+      const mergedScopes = { ...existing.scopes };
+      for (const scope of tempScopes) {
+        mergedScopes[scope] = 'granted-once';
+      }
+      // Temp tools take precedence if present
+      result.set(origin, {
+        origin,
+        scopes: mergedScopes,
+        allowedTools: tempTools ?? existing.allowedTools,
+      });
+    } else {
+      // New origin from temp grants only
+      const scopes: Record<PermissionScope, PermissionGrant> = {} as Record<PermissionScope, PermissionGrant>;
+      for (const scope of ALL_SCOPES) {
+        scopes[scope] = tempScopes.includes(scope) ? 'granted-once' : 'not-granted';
+      }
+      result.set(origin, {
+        origin,
+        scopes,
+        allowedTools: tempTools,
+      });
+    }
+  }
+  
+  return Array.from(result.values());
+}
+
+// =============================================================================
 // Testing Utilities
 // =============================================================================
 
@@ -421,5 +479,13 @@ export async function updateAllowedTools(
  */
 export function __clearAllTemporaryGrants(): void {
   temporaryGrants.clear();
+}
+
+/**
+ * Get temporary grants map. For testing only.
+ * @internal
+ */
+export function __getTemporaryGrants(): Map<string, TemporaryGrant> {
+  return temporaryGrants;
 }
 

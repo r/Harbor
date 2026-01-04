@@ -63,6 +63,7 @@ const pendingPermissionRequests = new Map<string, {
   requestId: string;
   origin: string;
   scopes: PermissionScope[];
+  tabId?: number;
   reason?: string;
   requestedTools?: string[];
 }>();
@@ -160,13 +161,15 @@ async function showPermissionPrompt(
   reason?: string,
   requestedTools?: string[]
 ): Promise<void> {
-  // Store the pending request
+  // Store the pending request (including tabId for cleanup on tab close)
   const promptId = `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const tabId = port.sender?.tab?.id;
   pendingPermissionRequests.set(promptId, {
     port,
     requestId,
     origin,
     scopes,
+    tabId,
     reason,
     requestedTools,
   });
@@ -252,8 +255,8 @@ export function handlePermissionPromptResponse(
   
   pendingPermissionRequests.delete(promptId);
   
-  const { port, requestId, origin, scopes } = pending;
-  log('Processing permission decision for:', { origin, scopes, requestId });
+  const { port, requestId, origin, scopes, tabId } = pending;
+  log('Processing permission decision for:', { origin, scopes, requestId, tabId });
   
   (async () => {
     if (decision === 'deny') {
@@ -265,10 +268,18 @@ export function handlePermissionPromptResponse(
     } else {
       const mode = decision === 'allow-once' ? 'once' : 'always';
       log('Granting permissions with mode:', mode);
-      await grantPermissions(origin, scopes, mode, { allowedTools });
+      // Pass tabId so temporary grants can be cleaned up when the tab closes
+      await grantPermissions(origin, scopes, mode, { allowedTools, tabId });
       const result = await buildGrantResult(origin, scopes);
       log('Sending grant result:', result);
       sendResponse(port, 'permissions_result', requestId, result);
+    }
+    
+    // Notify sidebar to refresh permissions display
+    try {
+      await browser.runtime.sendMessage({ type: 'permissions_changed' });
+    } catch {
+      // Sidebar may not be open, ignore
     }
   })().catch(err => {
     log('Error handling permission response:', err);

@@ -1,5 +1,6 @@
 import browser from 'webextension-polyfill';
 import { setupProviderRouter, handlePermissionPromptResponse } from './provider/background-router';
+import { getAllPermissions, revokeAllPermissions } from './provider/permissions';
 import {
   sendToBridge,
   generateRequestId,
@@ -979,18 +980,11 @@ browser.runtime.onMessage.addListener(
     }
 
     // List all permissions (for sidebar management UI)
+    // Includes both persistent AND temporary (once) grants
     if (msg.type === 'list_all_permissions') {
       return (async () => {
         try {
-          const result = await browser.storage.local.get('provider_permissions');
-          const stored = result.provider_permissions as Record<string, { scopes: Record<string, string>; allowedTools?: string[] }> || {};
-          
-          const permissions = Object.entries(stored).map(([origin, data]) => ({
-            origin,
-            scopes: data.scopes,
-            allowedTools: data.allowedTools,
-          }));
-          
+          const permissions = await getAllPermissions();
           return { type: 'list_all_permissions_result', permissions };
         } catch (err) {
           console.error('Failed to list permissions:', err);
@@ -999,17 +993,11 @@ browser.runtime.onMessage.addListener(
       })();
     }
 
-    // Revoke all permissions for an origin
+    // Revoke all permissions for an origin (clears both persistent and temporary grants)
     if (msg.type === 'revoke_origin_permissions') {
       return (async () => {
         try {
-          const result = await browser.storage.local.get('provider_permissions');
-          const stored = result.provider_permissions as Record<string, unknown> || {};
-          
-          delete stored[msg.origin as string];
-          
-          await browser.storage.local.set({ provider_permissions: stored });
-          
+          await revokeAllPermissions(msg.origin as string);
           return { type: 'revoke_origin_permissions_result', success: true };
         } catch (err) {
           console.error('Failed to revoke permissions:', err);

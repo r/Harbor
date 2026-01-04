@@ -1804,6 +1804,12 @@ browser.runtime.onMessage.addListener((message) => {
     setTimeout(() => checkDockerStatus(), 500); // Small delay for Docker to update
   }
   
+  // Handle permissions changed (after grant/deny in permission prompt)
+  if (message.type === 'permissions_changed') {
+    console.log('[Sidebar] Permissions changed, refreshing...');
+    loadPermissions();
+  }
+  
   // Handle server progress updates (Docker startup, etc.)
   if (message.type === 'server_progress') {
     const serverId = message.server_id as string;
@@ -2872,8 +2878,10 @@ function renderPermissions(permissions: PermissionStatus[]): void {
     const scopeBadges = [
       ...grantedScopes.map(({ scope, status }) => {
         const label = scope.split(':')[1] || scope;
-        const once = status === 'granted-once' ? ' (once)' : '';
-        return `<span class="permission-scope-badge">${escapeHtml(label)}${once}</span>`;
+        const isOnce = status === 'granted-once';
+        const badgeClass = isOnce ? 'permission-scope-badge temporary' : 'permission-scope-badge';
+        const suffix = isOnce ? ' <span class="permission-temp-label">⏱ once</span>' : '';
+        return `<span class="${badgeClass}">${escapeHtml(label)}${suffix}</span>`;
       }),
       ...deniedScopes.map(scope => {
         const label = scope.split(':')[1] || scope;
