@@ -383,31 +383,43 @@ export const agent = {
   
   tools: {
     async list(): Promise<ToolDescriptor[]> {
-      const connectionsResponse = await browser.runtime.sendMessage({
-        type: 'mcp_list_connections',
-      }) as { type: string; connections?: Array<{ serverId: string; serverName: string; toolCount: number }> };
+      let connectionsResponse: { type: string; connections?: Array<{ serverId: string; serverName: string; toolCount: number }>; error?: { message: string } } | undefined;
       
-      if (!connectionsResponse.connections) {
+      try {
+        connectionsResponse = await browser.runtime.sendMessage({
+          type: 'mcp_list_connections',
+        }) as typeof connectionsResponse;
+      } catch (err) {
+        console.log('[tools.list] Failed to get connections:', err);
+        return [];
+      }
+      
+      // Handle undefined or error response
+      if (!connectionsResponse || connectionsResponse.type === 'error' || !connectionsResponse.connections) {
         return [];
       }
       
       const allTools: ToolDescriptor[] = [];
       
       for (const conn of connectionsResponse.connections) {
-        const toolsResponse = await browser.runtime.sendMessage({
-          type: 'mcp_list_tools',
-          server_id: conn.serverId,
-        }) as { type: string; tools?: Array<{ name: string; description?: string; inputSchema?: unknown }> };
-        
-        if (toolsResponse.tools) {
-          for (const tool of toolsResponse.tools) {
-            allTools.push({
-              name: `${conn.serverId}/${tool.name}`,
-              description: tool.description,
-              inputSchema: tool.inputSchema,
-              serverId: conn.serverId,
-            });
+        try {
+          const toolsResponse = await browser.runtime.sendMessage({
+            type: 'mcp_list_tools',
+            server_id: conn.serverId,
+          }) as { type: string; tools?: Array<{ name: string; description?: string; inputSchema?: unknown }> };
+          
+          if (toolsResponse?.tools) {
+            for (const tool of toolsResponse.tools) {
+              allTools.push({
+                name: `${conn.serverId}/${tool.name}`,
+                description: tool.description,
+                inputSchema: tool.inputSchema,
+                serverId: conn.serverId,
+              });
+            }
           }
+        } catch (err) {
+          console.log(`[tools.list] Failed to get tools for ${conn.serverId}:`, err);
         }
       }
       
@@ -510,12 +522,42 @@ export const agent = {
         yield { type: 'status', message: 'Initializing agent...' };
         
         // Get connected MCP servers
-        const connectionsResponse = await browser.runtime.sendMessage({
-          type: 'mcp_list_connections',
-        }) as { type: string; connections?: Array<{ serverId: string; serverName: string; toolCount: number }> };
+        let connectionsResponse: { type: string; connections?: Array<{ serverId: string; serverName: string; toolCount: number }>; error?: { message: string } } | undefined;
+        try {
+          connectionsResponse = await browser.runtime.sendMessage({
+            type: 'mcp_list_connections',
+          }) as typeof connectionsResponse;
+          console.log('[AgentRun] Connections response:', connectionsResponse);
+        } catch (err) {
+          console.log('[AgentRun] Failed to get connections:', err);
+          yield { type: 'error', error: { code: 'ERR_INTERNAL', message: 'Failed to connect to bridge. Is the Harbor bridge running?' } };
+          return;
+        }
         
-        const enabledServers = connectionsResponse.connections?.map(c => c.serverId) || [];
-        const totalTools = connectionsResponse.connections?.reduce((sum, c) => sum + c.toolCount, 0) || 0;
+        // Handle error response or undefined
+        if (!connectionsResponse) {
+          console.log('[AgentRun] Connections response is undefined - bridge may not be connected');
+          yield { type: 'error', error: { code: 'ERR_INTERNAL', message: 'No response from bridge. Please check that the Harbor bridge is running.' } };
+          return;
+        }
+        
+        if (connectionsResponse.type === 'error') {
+          console.log('[AgentRun] Connections response error:', connectionsResponse);
+          const errorMsg = connectionsResponse.error?.message || 'Unknown error listing MCP connections';
+          yield { type: 'error', error: { code: 'ERR_INTERNAL', message: `Bridge error: ${errorMsg}` } };
+          return;
+        }
+        
+        // Check if we have any connected servers
+        const connections = connectionsResponse.connections || [];
+        if (connections.length === 0) {
+          console.log('[AgentRun] No MCP servers connected');
+          yield { type: 'error', error: { code: 'ERR_INTERNAL', message: 'No MCP servers connected. Please start and connect at least one server in the Harbor sidebar.' } };
+          return;
+        }
+        
+        const enabledServers = connections.map(c => c.serverId);
+        const totalTools = connections.reduce((sum, c) => sum + c.toolCount, 0);
         
         yield { type: 'status', message: `Found ${totalTools} tools from ${enabledServers.length} servers` };
         

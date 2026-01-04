@@ -713,12 +713,42 @@ async function handleAgentRun(
     sendEvent({ type: 'status', message: 'Initializing agent...' });
     
     // Get connected MCP servers
-    const connectionsResponse = await browser.runtime.sendMessage({
-      type: 'mcp_list_connections',
-    }) as { type: string; connections?: Array<{ serverId: string; serverName: string; toolCount: number }> };
+    let connectionsResponse: { type: string; connections?: Array<{ serverId: string; serverName: string; toolCount: number }>; error?: { message: string } } | undefined;
+    try {
+      connectionsResponse = await browser.runtime.sendMessage({
+        type: 'mcp_list_connections',
+      }) as typeof connectionsResponse;
+      log('[AgentRun] Connections response:', connectionsResponse);
+    } catch (err) {
+      log('[AgentRun] Failed to get connections:', err);
+      sendEvent({ type: 'error', error: createError('ERR_INTERNAL', 'Failed to connect to bridge. Is the Harbor bridge running?') });
+      return;
+    }
     
-    const enabledServers = connectionsResponse.connections?.map(c => c.serverId) || [];
-    const totalTools = connectionsResponse.connections?.reduce((sum, c) => sum + c.toolCount, 0) || 0;
+    // Handle error response or undefined
+    if (!connectionsResponse) {
+      log('[AgentRun] Connections response is undefined - bridge may not be connected');
+      sendEvent({ type: 'error', error: createError('ERR_INTERNAL', 'No response from bridge. Please check that the Harbor bridge is running.') });
+      return;
+    }
+    
+    if (connectionsResponse.type === 'error') {
+      log('[AgentRun] Connections response error:', connectionsResponse);
+      const errorMsg = connectionsResponse.error?.message || 'Unknown error listing MCP connections';
+      sendEvent({ type: 'error', error: createError('ERR_INTERNAL', `Bridge error: ${errorMsg}`) });
+      return;
+    }
+    
+    // Check if we have any connected servers
+    const connections = connectionsResponse.connections || [];
+    if (connections.length === 0) {
+      log('[AgentRun] No MCP servers connected');
+      sendEvent({ type: 'error', error: createError('ERR_INTERNAL', 'No MCP servers connected. Please start and connect at least one server in the Harbor sidebar.') });
+      return;
+    }
+    
+    const enabledServers = connections.map(c => c.serverId);
+    const totalTools = connections.reduce((sum, c) => sum + c.toolCount, 0);
     
     sendEvent({ type: 'status', message: `Found ${totalTools} tools from ${enabledServers.length} servers` });
     

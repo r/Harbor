@@ -525,8 +525,10 @@
       border: 1px solid var(--color-border-primary);
       border-radius: var(--radius-lg);
       padding: var(--space-5);
-      width: 400px;
+      width: 480px;
       max-width: 90vw;
+      max-height: 90vh;
+      overflow-y: auto;
       z-index: 1000;
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
     }
@@ -549,11 +551,20 @@
     .permissions-panel h3 {
       font-size: 18px;
       font-weight: 600;
+      margin-bottom: var(--space-2);
+    }
+
+    .permissions-intro {
+      font-size: 13px;
+      color: var(--color-text-secondary);
       margin-bottom: var(--space-4);
+      line-height: 1.5;
     }
 
     .permission-list {
       margin-bottom: var(--space-4);
+      max-height: 400px;
+      overflow-y: auto;
     }
 
     .permission-item {
@@ -564,21 +575,63 @@
       background: var(--color-bg-tertiary);
       border-radius: var(--radius-md);
       margin-bottom: var(--space-2);
+      border: 1px solid transparent;
+      transition: border-color 0.15s;
+      cursor: pointer;
+    }
+
+    .permission-item:hover {
+      border-color: var(--color-border-active);
+    }
+
+    .permission-item:has(input:checked) {
+      border-color: var(--color-accent-primary);
+      background: rgba(99, 102, 241, 0.08);
     }
 
     .permission-checkbox {
-      margin-top: 2px;
+      margin-top: 4px;
+      width: 18px;
+      height: 18px;
+      accent-color: var(--color-accent-primary);
+    }
+
+    .permission-info {
+      flex: 1;
     }
 
     .permission-info h4 {
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 600;
       margin-bottom: var(--space-1);
+      color: var(--color-text-primary);
+    }
+
+    .permission-info code {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: var(--color-bg-secondary);
+      color: var(--color-accent-primary);
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: var(--space-2);
     }
 
     .permission-info p {
       font-size: 12px;
+      color: var(--color-text-secondary);
+      line-height: 1.5;
+      margin-bottom: var(--space-2);
+    }
+
+    .permission-example {
+      display: block;
+      font-size: 11px;
       color: var(--color-text-muted);
+      font-style: italic;
+      padding-left: var(--space-2);
+      border-left: 2px solid var(--color-border-primary);
     }
 
     .permissions-actions {
@@ -685,47 +738,58 @@
   <!-- Permissions Panel (hidden by default) -->
   <div class="permissions-overlay hidden" id="permissions-overlay"></div>
   <div class="permissions-panel hidden" id="permissions-panel">
-    <h3>Request Permissions</h3>
+    <h3>🔐 Request Permissions</h3>
+    <p class="permissions-intro">Select which capabilities this page can use. Harbor will ask you to confirm.</p>
     <div class="permission-list">
       <label class="permission-item">
         <input type="checkbox" class="permission-checkbox" value="model:prompt" checked>
         <div class="permission-info">
-          <h4>model:prompt</h4>
-          <p>Generate text using AI models</p>
+          <h4>💬 Text Generation</h4>
+          <code>model:prompt</code>
+          <p>Send messages to AI and get responses back. This is the basic chat capability — without it, no AI interaction is possible.</p>
+          <span class="permission-example">Example: "What's the capital of France?"</span>
         </div>
       </label>
       <label class="permission-item">
         <input type="checkbox" class="permission-checkbox" value="model:tools" checked>
         <div class="permission-info">
-          <h4>model:tools</h4>
-          <p>Use AI with tool calling capabilities</p>
+          <h4>🛠️ AI with Tools</h4>
+          <code>model:tools</code>
+          <p>Let the AI decide when to use tools (like searching, reading files, etc.) to help answer your questions. The AI can make multiple tool calls in one response.</p>
+          <span class="permission-example">Example: "Look up today's weather and save it to a note"</span>
         </div>
       </label>
       <label class="permission-item">
         <input type="checkbox" class="permission-checkbox" value="mcp:tools.list" checked>
         <div class="permission-info">
-          <h4>mcp:tools.list</h4>
-          <p>List available MCP tools</p>
+          <h4>📋 List Available Tools</h4>
+          <code>mcp:tools.list</code>
+          <p>See what MCP tools are available from connected servers. This lets you browse capabilities without executing anything.</p>
+          <span class="permission-example">Example: Show tools from "filesystem" and "memory" servers</span>
         </div>
       </label>
       <label class="permission-item">
         <input type="checkbox" class="permission-checkbox" value="mcp:tools.call" checked>
         <div class="permission-info">
-          <h4>mcp:tools.call</h4>
-          <p>Execute MCP tools</p>
+          <h4>⚡ Execute Tools</h4>
+          <code>mcp:tools.call</code>
+          <p>Actually run MCP tools. This is needed for the AI to take actions like reading/writing files, searching the web, or storing memories.</p>
+          <span class="permission-example">Example: filesystem/read_file, memory/save_memory</span>
         </div>
       </label>
       <label class="permission-item">
         <input type="checkbox" class="permission-checkbox" value="browser:activeTab.read">
         <div class="permission-info">
-          <h4>browser:activeTab.read</h4>
-          <p>Read content from active browser tab</p>
+          <h4>👁️ Read Current Page</h4>
+          <code>browser:activeTab.read</code>
+          <p>Extract text content from the webpage you're currently viewing. Useful for summarizing articles or asking questions about page content.</p>
+          <span class="permission-example">Example: "Summarize this article for me"</span>
         </div>
       </label>
     </div>
     <div class="permissions-actions">
       <button class="cancel-btn" id="permissions-cancel">Cancel</button>
-      <button class="connect-btn" id="permissions-request">Request</button>
+      <button class="connect-btn" id="permissions-request">Request Permissions</button>
     </div>
   </div>
 

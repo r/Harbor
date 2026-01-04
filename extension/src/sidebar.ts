@@ -1945,7 +1945,13 @@ async function init(): Promise<void> {
   await loadServers();
   await loadInstalledServers();
   await checkLLMStatus();
-  await checkDockerStatus();
+  
+  // Skip automatic Docker check on startup to avoid macOS TCC permission popup
+  // Docker status will be checked lazily when user interacts with Docker features
+  const skipDockerAutoCheck = localStorage.getItem('harbor-skip-docker-autocheck') === 'true';
+  if (!skipDockerAutoCheck) {
+    await checkDockerStatus();
+  }
   
   // Load LLM provider configuration
   await loadLLMConfig();
@@ -1961,7 +1967,10 @@ async function init(): Promise<void> {
   initBridgeActivityPanel();
   
   // Check for orphaned Docker containers and reconnect them
-  await reconnectOrphanedContainers();
+  // Skip if user has disabled Docker auto-check (avoids macOS permission popup)
+  if (!skipDockerAutoCheck) {
+    await reconnectOrphanedContainers();
+  }
 }
 
 /**
