@@ -20,7 +20,7 @@ import {
   ChatChunk,
 } from './provider.js';
 import { AnyLLMAdapter, createAnyLLMAdapter, getAnyLLMProviders } from './any-llm-adapter.js';
-import type { LLMProviderType, ProviderConfig } from '../any-llm/index.js';
+import type { LLMProviderType, ProviderConfig } from 'any-llm-ts';
 
 // =============================================================================
 // Provider Configuration

@@ -29,7 +29,7 @@ import {
   type ChatCompletion,
   type ChatCompletionChunk,
   type Tool as AnyLLMTool,
-} from '../any-llm/index.js';
+} from 'any-llm-ts';
 
 /**
  * Adapter that wraps any-llm providers to work with the existing LLMProvider interface.

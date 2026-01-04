@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.1",
+    "any-llm-ts": "github:r/any-llm-ts",
     "better-sqlite3": "^11.7.0",
     "drizzle-orm": "^0.45.1"
   },

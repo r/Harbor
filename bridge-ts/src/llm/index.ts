@@ -36,9 +36,9 @@ export {
   completionStream,
   AnyLLM,
   getSupportedProviders,
-} from '../any-llm/index.js';
+} from 'any-llm-ts';
 
-export type { LLMProviderType, ProviderConfig } from '../any-llm/index.js';
+export type { LLMProviderType, ProviderConfig } from 'any-llm-ts';
 
 // Legacy providers (kept for backward compatibility, but deprecated)
 // TODO: Remove these in a future version
