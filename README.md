@@ -36,6 +36,20 @@ So setup is: build extension → build bridge → install manifest → load exte
 - **Node.js** 18+ and npm
 - **Firefox** 109+
 
+## Cloning the Repository
+
+This repository uses git submodules. Clone with:
+
+```bash
+git clone --recurse-submodules https://github.com/your-org/harbor.git
+```
+
+Or if you've already cloned without submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
 ## Project Structure
 
 ```
@@ -54,7 +68,8 @@ harbor/
 │   │   ├── server-store.ts      # Server persistence (SQLite)
 │   │   ├── mcp-client.ts        # MCP client interface
 │   │   ├── catalog/             # Directory/catalog system
-│   │   └── installer/           # MCP server installer (app store)
+│   │   ├── installer/           # MCP server installer (app store)
+│   │   └── any-llm-ts/          # LLM provider library (git submodule)
 │   ├── scripts/
 │   │   ├── install_native_manifest_macos.sh
 │   │   └── install_native_manifest_linux.sh
@@ -87,6 +102,11 @@ npm run dev
 
 ```bash
 cd bridge-ts
+
+# Build the any-llm-ts dependency (submodule)
+cd src/any-llm-ts && npm install && npm run build && cd ../..
+
+# Build the bridge
 npm install
 npm run build
 ```
@@ -512,12 +532,16 @@ Error codes:
 
 ### Demo
 
-A demo page is included at `/demo/index.html`. To try it:
+Demo pages are included at `/demo/`. To try them:
 
 1. Build and install the extension
-2. Start a local server: `cd demo && python -m http.server 8000`
+2. Start a local server: `cd demo && npm install && npm start`
 3. Open `http://localhost:8000` in Firefox
 4. Click "Connect to Harbor" to request permissions
+
+Available demos:
+- **Chat Demo** (`/chat-poc/`) - Full chat interface with tool calling
+- **Summarizer** (`/summarizer/`) - Page summarization example
 
 ### Security Model
 

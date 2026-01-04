@@ -1,3 +1,3 @@
-[submodule "any-llm-ts"]
-	path = any-llm-ts
+[submodule "bridge-ts/src/any-llm-ts"]
+	path = bridge-ts/src/any-llm-ts
 	url = https://github.com/r/any-llm-ts.git
