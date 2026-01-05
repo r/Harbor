@@ -389,7 +389,33 @@ const handleCatalogGet: MessageHandler = async (message, _store, _client, catalo
     }
     
     // Fall back to single-process CatalogManager
-    const result = await catalog.fetchAll({ forceRefresh: force, query });
+    // First try cache, if empty or stale, refresh from providers
+    log(`[handleCatalogGet] Using CatalogManager fallback (no worker)`);
+    let result = await catalog.getCached();
+    log(`[handleCatalogGet] Cache has ${result.servers.length} servers, isStale=${result.isStale}`);
+    
+    // If cache is empty or stale, or force refresh requested, fetch from providers
+    if (force || result.servers.length === 0 || result.isStale) {
+      log(`[handleCatalogGet] Refreshing from providers...`);
+      result = await catalog.refresh({ force: true, query });
+      log(`[handleCatalogGet] After refresh: ${result.servers.length} servers, ${result.providerStatus?.length || 0} providers`);
+      if (result.providerStatus) {
+        for (const p of result.providerStatus) {
+          log(`[handleCatalogGet] Provider ${p.id}: ok=${p.ok}, count=${p.count}, error=${p.error}`);
+        }
+      }
+    }
+    
+    // Apply search filter if query provided
+    if (query && result.servers.length > 0) {
+      const searchTerm = query.toLowerCase();
+      result.servers = result.servers.filter(s => 
+        s.name.toLowerCase().includes(searchTerm) ||
+        (s.description?.toLowerCase().includes(searchTerm)) ||
+        (s.tags?.some(t => t.toLowerCase().includes(searchTerm)))
+      );
+    }
+    
     return makeResult('catalog_get', requestId, result);
   } catch (e) {
     log(`Failed to fetch catalog: ${e}`);
@@ -413,7 +439,18 @@ const handleCatalogRefresh: MessageHandler = async (message, _store, _client, ca
     }
     
     // Fall back to single-process CatalogManager
-    const result = await catalog.fetchAll({ forceRefresh: true, query });
+    const result = await catalog.refresh({ force: true, query });
+    
+    // Apply search filter if query provided
+    if (query && result.servers.length > 0) {
+      const searchTerm = query.toLowerCase();
+      result.servers = result.servers.filter(s => 
+        s.name.toLowerCase().includes(searchTerm) ||
+        (s.description?.toLowerCase().includes(searchTerm)) ||
+        (s.tags?.some(t => t.toLowerCase().includes(searchTerm)))
+      );
+    }
+    
     return makeResult('catalog_refresh', requestId, result);
   } catch (e) {
     log(`Failed to refresh catalog: ${e}`);

@@ -481,10 +481,20 @@ create_product_pkg() {
     # Update version in distribution.xml
     sed "s/version=\"1.0.0\"/version=\"$VERSION\"/g" "$INSTALLER_DIR/distribution.xml" > "$BUILD_DIR/distribution.xml"
     
+    # Copy resources to build dir and substitute version
+    mkdir -p "$BUILD_DIR/resources"
+    cp "$INSTALLER_DIR/resources/"*.html "$BUILD_DIR/resources/" 2>/dev/null || true
+    cp "$INSTALLER_DIR/resources/"*.applescript "$BUILD_DIR/resources/" 2>/dev/null || true
+    
+    # Substitute version in welcome.html
+    if [ -f "$BUILD_DIR/resources/welcome.html" ]; then
+        sed -i '' "s/__VERSION__/$VERSION/g" "$BUILD_DIR/resources/welcome.html"
+    fi
+    
     # Build the final installer package with the distribution file
     productbuild \
         --distribution "$BUILD_DIR/distribution.xml" \
-        --resources "$INSTALLER_DIR/resources" \
+        --resources "$BUILD_DIR/resources" \
         --package-path "$BUILD_DIR" \
         "$OUTPUT_PKG"
     
