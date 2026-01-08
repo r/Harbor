@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Harbor Plugin: Time",
+  "version": "1.0.0",
+  "description": "Time-related tools for Harbor",
+  "permissions": [],
+  "background": {
+    "scripts": ["dist/background.js"],
+    "type": "module"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "harbor-plugin-time@local",
+      "strict_min_version": "112.0"
+    }
+  }
+}

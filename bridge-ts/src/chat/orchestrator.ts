@@ -13,9 +13,40 @@ import { ChatMessage, ToolDefinition, ToolCall, ChatRequest } from '../llm/index
 import { getLLMManager } from '../llm/manager.js';
 import { getMcpClientManager } from '../mcp/manager.js';
 import { log } from '../native-messaging.js';
-import { ChatSession, addMessage } from './session.js';
+import { ChatSession, addMessage, PluginToolDefinition } from './session.js';
 import { McpTool } from '../types.js';
 import { getToolRouter, RoutingResult } from './tool-router.js';
+
+/**
+ * Pending plugin tool call that needs execution by the extension.
+ */
+export interface PendingPluginToolCall {
+  /** Tool call ID */
+  id: string;
+
+  /** Plugin ID */
+  pluginId: string;
+
+  /** Tool name */
+  toolName: string;
+
+  /** Arguments */
+  arguments: Record<string, unknown>;
+}
+
+/**
+ * Result of a plugin tool execution from the extension.
+ */
+export interface PluginToolResult {
+  /** Tool call ID */
+  toolCallId: string;
+
+  /** Result content */
+  content: string;
+
+  /** Whether the call errored */
+  isError: boolean;
+}
 
 /**
  * Result of a single orchestration step.
@@ -78,31 +109,46 @@ export interface ToolCallResult {
 export interface OrchestrationResult {
   /** Final response from LLM */
   finalResponse: string;
-  
+
   /** All steps taken */
   steps: OrchestrationStep[];
-  
+
   /** Total iterations used */
   iterations: number;
-  
+
   /** Whether max iterations was reached */
   reachedMaxIterations: boolean;
-  
+
   /** Total time in milliseconds */
   durationMs: number;
-  
+
   /** Tool routing information (if router was used) */
   routing?: RoutingResult;
+
+  /** Whether orchestration is paused waiting for plugin tools */
+  paused?: boolean;
+
+  /** Plugin tool calls that need to be executed by the extension */
+  pendingPluginToolCalls?: PendingPluginToolCall[];
 }
 
 /**
- * Mapping from tool name to server ID.
+ * Mapping from tool name to its source (MCP server or plugin).
  */
 interface ToolMapping {
   [toolName: string]: {
-    serverId: string;
+    /** 'mcp' for MCP server tools, 'plugin' for extension plugin tools */
+    type: 'mcp' | 'plugin';
+    /** Server ID for MCP tools */
+    serverId?: string;
+    /** Plugin ID for plugin tools */
+    pluginId?: string;
+    /** Original tool name (without prefix) */
     originalName: string;
-    tool: McpTool;
+    /** MCP tool definition (for MCP tools) */
+    tool?: McpTool;
+    /** Plugin tool definition (for plugin tools) */
+    pluginTool?: PluginToolDefinition;
   };
 }
 
@@ -145,9 +191,11 @@ export class ChatOrchestrator {
       log('[Orchestrator] Router disabled, using all servers');
     }
     
-    // Collect tools from selected MCP servers
-    const { tools, toolMapping } = await this.collectTools(serversToUse);
-    log(`[Orchestrator] Collected ${tools.length} tools from ${serversToUse.length} servers`);
+    // Collect tools from selected MCP servers and plugins
+    const { tools, toolMapping } = await this.collectTools(serversToUse, session.pluginTools);
+    const mcpToolCount = tools.filter(t => !t.name.startsWith('plugin__')).length;
+    const pluginToolCount = tools.length - mcpToolCount;
+    log(`[Orchestrator] Collected ${tools.length} tools (${mcpToolCount} MCP, ${pluginToolCount} plugin)`);
     
     // Log tool names and descriptions for debugging
     log(`[Orchestrator] === TOOLS SENT TO LLM ===`);
@@ -229,7 +277,7 @@ export class ChatOrchestrator {
         }
         
         if (response.finishReason === 'tool_calls' && toolCalls?.length) {
-          
+
           // Record tool calls step
           const toolCallStep: OrchestrationStep = {
             index: steps.length,
@@ -243,14 +291,53 @@ export class ChatOrchestrator {
           };
           steps.push(toolCallStep);
           onStep?.(toolCallStep);
-          
+
           // Add assistant message with tool calls to conversation
           addMessage(session, response.message);
-          
-          // Execute tool calls
-          const toolResults = await this.executeToolCalls(toolCalls, toolMapping);
-          
-          // Record tool results step
+
+          // Execute tool calls (MCP tools executed, plugin tools returned for extension)
+          const { results: toolResults, pendingPluginCalls } = await this.executeToolCalls(toolCalls, toolMapping);
+
+          // If there are pending plugin tool calls, pause and return them
+          if (pendingPluginCalls.length > 0) {
+            log(`[Orchestrator] Pausing for ${pendingPluginCalls.length} plugin tool calls`);
+
+            // Still record any MCP tool results we got
+            if (toolResults.length > 0) {
+              const toolResultStep: OrchestrationStep = {
+                index: steps.length,
+                type: 'tool_results',
+                toolResults,
+                timestamp: Date.now(),
+              };
+              steps.push(toolResultStep);
+              onStep?.(toolResultStep);
+
+              // Add MCP tool results to conversation
+              for (const result of toolResults) {
+                const toolMsg: ChatMessage = {
+                  role: 'tool',
+                  content: result.content,
+                  toolCallId: result.toolCallId,
+                };
+                addMessage(session, toolMsg);
+              }
+            }
+
+            // Return paused state with pending plugin calls
+            return {
+              finalResponse: '',
+              steps,
+              iterations,
+              reachedMaxIterations: false,
+              durationMs: Date.now() - startTime,
+              routing: routingResult,
+              paused: true,
+              pendingPluginToolCalls: pendingPluginCalls,
+            };
+          }
+
+          // Record tool results step (only MCP results)
           const toolResultStep: OrchestrationStep = {
             index: steps.length,
             type: 'tool_results',
@@ -259,7 +346,7 @@ export class ChatOrchestrator {
           };
           steps.push(toolResultStep);
           onStep?.(toolResultStep);
-          
+
           // Add tool results to conversation
           for (const result of toolResults) {
             const toolMsg: ChatMessage = {
@@ -269,7 +356,7 @@ export class ChatOrchestrator {
             };
             addMessage(session, toolMsg);
           }
-          
+
           // Continue loop to get LLM response
           continue;
         }
@@ -372,7 +459,7 @@ export class ChatOrchestrator {
     
     // Reached max iterations
     log(`[Orchestrator] Reached max iterations (${session.config.maxIterations})`);
-    
+
     return {
       finalResponse: 'I reached the maximum number of steps. Please try a simpler request or increase the limit.',
       steps,
@@ -382,7 +469,188 @@ export class ChatOrchestrator {
       routing: routingResult,
     };
   }
-  
+
+  /**
+   * Continue orchestration after plugin tool results are provided.
+   *
+   * @param session - The chat session
+   * @param pluginResults - Results from plugin tool executions
+   * @param onStep - Optional callback for each step
+   */
+  async continueWithPluginResults(
+    session: ChatSession,
+    pluginResults: PluginToolResult[],
+    onStep?: (step: OrchestrationStep) => void
+  ): Promise<OrchestrationResult> {
+    log(`[Orchestrator] Continuing with ${pluginResults.length} plugin tool results`);
+
+    // Add plugin tool results to conversation
+    for (const result of pluginResults) {
+      const toolMsg: ChatMessage = {
+        role: 'tool',
+        content: result.content,
+        toolCallId: result.toolCallId,
+      };
+      addMessage(session, toolMsg);
+    }
+
+    // Continue orchestration from where we left off
+    // We call run() with an empty message since the tool results are already added
+    // Actually, we need to continue the loop - let's just call run with a synthetic continuation
+    return this.runContinuation(session, onStep);
+  }
+
+  /**
+   * Internal method to continue orchestration after tool results.
+   * Similar to run() but doesn't add a user message.
+   */
+  private async runContinuation(
+    session: ChatSession,
+    onStep?: (step: OrchestrationStep) => void
+  ): Promise<OrchestrationResult> {
+    const startTime = Date.now();
+    const steps: OrchestrationStep[] = [];
+    let iterations = 0;
+
+    log(`[Orchestrator] Running continuation for session ${session.id}`);
+
+    // Collect tools from enabled servers and plugins
+    const { tools, toolMapping } = await this.collectTools(session.enabledServers, session.pluginTools);
+
+    // Main agent loop
+    while (iterations < session.config.maxIterations) {
+      iterations++;
+      log(`[Orchestrator] Continuation iteration ${iterations}/${session.config.maxIterations}`);
+
+      try {
+        const llmManager = getLLMManager();
+        const activeProvider = llmManager.getActiveId();
+
+        const systemPrompt = session.systemPrompt || this.buildSystemPrompt(tools, activeProvider);
+
+        const request: ChatRequest = {
+          messages: [...session.messages],
+          tools: tools.length > 0 ? tools : undefined,
+          systemPrompt,
+        };
+
+        const response = await llmManager.chat(request);
+
+        if (response.finishReason === 'error') {
+          return {
+            finalResponse: `Error: ${response.error || 'Unknown LLM error'}`,
+            steps,
+            iterations,
+            reachedMaxIterations: false,
+            durationMs: Date.now() - startTime,
+          };
+        }
+
+        let toolCalls = response.message.toolCalls;
+
+        // Fallback for text-based tool calls
+        if ((!toolCalls || toolCalls.length === 0) && response.message.content) {
+          const parsedToolCall = this.parseToolCallFromText(response.message.content, toolMapping);
+          if (parsedToolCall) {
+            toolCalls = [parsedToolCall];
+            response.finishReason = 'tool_calls';
+          }
+        }
+
+        if (response.finishReason === 'tool_calls' && toolCalls?.length) {
+          const toolCallStep: OrchestrationStep = {
+            index: steps.length,
+            type: 'tool_calls',
+            toolCalls: toolCalls.map(tc => ({
+              id: tc.id,
+              name: tc.name,
+              arguments: tc.arguments,
+            })),
+            timestamp: Date.now(),
+          };
+          steps.push(toolCallStep);
+          onStep?.(toolCallStep);
+
+          addMessage(session, response.message);
+
+          const { results: toolResults, pendingPluginCalls } = await this.executeToolCalls(toolCalls, toolMapping);
+
+          // If there are pending plugin calls, pause again
+          if (pendingPluginCalls.length > 0) {
+            if (toolResults.length > 0) {
+              for (const result of toolResults) {
+                addMessage(session, {
+                  role: 'tool',
+                  content: result.content,
+                  toolCallId: result.toolCallId,
+                });
+              }
+            }
+
+            return {
+              finalResponse: '',
+              steps,
+              iterations,
+              reachedMaxIterations: false,
+              durationMs: Date.now() - startTime,
+              paused: true,
+              pendingPluginToolCalls: pendingPluginCalls,
+            };
+          }
+
+          // Add results to conversation
+          for (const result of toolResults) {
+            addMessage(session, {
+              role: 'tool',
+              content: result.content,
+              toolCallId: result.toolCallId,
+            });
+          }
+
+          continue;
+        }
+
+        // Final response
+        const finalContent = this.cleanLLMTokens(response.message.content || '');
+        addMessage(session, response.message);
+
+        const finalStep: OrchestrationStep = {
+          index: steps.length,
+          type: 'final',
+          content: finalContent,
+          timestamp: Date.now(),
+        };
+        steps.push(finalStep);
+        onStep?.(finalStep);
+
+        return {
+          finalResponse: finalContent,
+          steps,
+          iterations,
+          reachedMaxIterations: false,
+          durationMs: Date.now() - startTime,
+        };
+
+      } catch (error) {
+        return {
+          finalResponse: `I encountered an error: ${error}`,
+          steps,
+          iterations,
+          reachedMaxIterations: false,
+          durationMs: Date.now() - startTime,
+        };
+      }
+    }
+
+    return {
+      finalResponse: 'I reached the maximum number of steps.',
+      steps,
+      iterations,
+      reachedMaxIterations: true,
+      durationMs: Date.now() - startTime,
+    };
+  }
+
   /**
    * Parse a tool call from text when LLM writes it out instead of using proper format.
    * This is a fallback for models that don't support tool calling well.
@@ -917,16 +1185,20 @@ Summarize the results in plain language for the user.`;
   }
   
   /**
-   * Collect tools from all enabled MCP servers.
+   * Collect tools from all enabled MCP servers and plugin tools.
    */
-  private async collectTools(serverIds: string[]): Promise<{
+  private async collectTools(
+    serverIds: string[],
+    pluginTools: PluginToolDefinition[] = []
+  ): Promise<{
     tools: ToolDefinition[];
     toolMapping: ToolMapping;
   }> {
     const tools: ToolDefinition[] = [];
     const toolMapping: ToolMapping = {};
     const mcpManager = getMcpClientManager();
-    
+
+    // Collect MCP server tools
     for (const serverId of serverIds) {
       try {
         // Check if connected first
@@ -934,20 +1206,21 @@ Summarize the results in plain language for the user.`;
           log(`[Orchestrator] Skipping ${serverId} - not connected`);
           continue;
         }
-        
+
         const mcpTools = await mcpManager.listTools(serverId);
-        
+
         for (const mcpTool of mcpTools) {
           // Prefix tool name with server ID to avoid collisions
           const prefixedName = `${serverId}__${mcpTool.name}`;
-          
+
           tools.push({
             name: prefixedName,
             description: mcpTool.description || `Tool from ${serverId}`,
             inputSchema: mcpTool.inputSchema || { type: 'object', properties: {} },
           });
-          
+
           toolMapping[prefixedName] = {
+            type: 'mcp',
             serverId,
             originalName: mcpTool.name,
             tool: mcpTool,
@@ -957,24 +1230,47 @@ Summarize the results in plain language for the user.`;
         log(`[Orchestrator] Failed to get tools from ${serverId}: ${error}`);
       }
     }
-    
+
+    // Collect plugin tools
+    for (const pluginTool of pluginTools) {
+      // Use plugin__toolname format for consistency
+      const prefixedName = `plugin__${pluginTool.name}`;
+
+      tools.push({
+        name: prefixedName,
+        description: pluginTool.description || `Plugin tool ${pluginTool.name}`,
+        inputSchema: pluginTool.inputSchema || { type: 'object', properties: {} },
+      });
+
+      toolMapping[prefixedName] = {
+        type: 'plugin',
+        pluginId: pluginTool.pluginId,
+        originalName: pluginTool.name,
+        pluginTool,
+      };
+    }
+
     return { tools, toolMapping };
   }
   
   /**
-   * Execute tool calls via MCP.
+   * Execute tool calls - MCP tools are executed directly, plugin tools are returned for extension.
    */
   private async executeToolCalls(
     toolCalls: ToolCall[],
     toolMapping: ToolMapping
-  ): Promise<ToolCallResult[]> {
+  ): Promise<{
+    results: ToolCallResult[];
+    pendingPluginCalls: PendingPluginToolCall[];
+  }> {
     const results: ToolCallResult[] = [];
+    const pendingPluginCalls: PendingPluginToolCall[] = [];
     const mcpManager = getMcpClientManager();
-    
+
     for (const toolCall of toolCalls) {
       const prefixedName = toolCall.name;
       const mapping = toolMapping[prefixedName];
-      
+
       if (!mapping) {
         log(`[Orchestrator] Unknown tool: ${prefixedName}`);
         results.push({
@@ -986,22 +1282,40 @@ Summarize the results in plain language for the user.`;
         });
         continue;
       }
-      
+
+      // Handle plugin tools - return them for extension to execute
+      if (mapping.type === 'plugin') {
+        log(`[Orchestrator] Plugin tool call: ${mapping.originalName} (plugin: ${mapping.pluginId})`);
+
+        // Fix arguments before returning
+        const schema = mapping.pluginTool?.inputSchema;
+        const fixedArguments = this.fixToolArguments(toolCall.arguments, schema);
+
+        pendingPluginCalls.push({
+          id: toolCall.id,
+          pluginId: mapping.pluginId!,
+          toolName: mapping.originalName,
+          arguments: fixedArguments,
+        });
+        continue;
+      }
+
+      // Handle MCP tools - execute directly
       try {
-        log(`[Orchestrator] Calling tool ${mapping.originalName} on ${mapping.serverId}`);
+        log(`[Orchestrator] Calling MCP tool ${mapping.originalName} on ${mapping.serverId}`);
         log(`[Orchestrator] Raw arguments: ${JSON.stringify(toolCall.arguments)}`);
-        
+
         // Fix stringified JSON in arguments (common LLM issue)
-        const fixedArguments = this.fixToolArguments(toolCall.arguments, mapping.tool.inputSchema);
+        const fixedArguments = this.fixToolArguments(toolCall.arguments, mapping.tool?.inputSchema);
         log(`[Orchestrator] Fixed arguments: ${JSON.stringify(fixedArguments)}`);
-        
+
         // Call the tool via MCP
         const result = await mcpManager.callTool(
-          mapping.serverId,
+          mapping.serverId!,
           mapping.originalName,
           fixedArguments
         );
-        
+
         // Extract text content from result
         let content = '';
         if (result.content && result.content.length > 0) {
@@ -1013,28 +1327,28 @@ Summarize the results in plain language for the user.`;
             })
             .join('\n');
         }
-        
+
         results.push({
           toolCallId: toolCall.id,
           toolName: mapping.originalName,
-          serverId: mapping.serverId,
+          serverId: mapping.serverId!,
           content,
           isError: result.isError || false,
         });
-        
+
       } catch (error) {
         log(`[Orchestrator] Tool call error for ${mapping.originalName}: ${error}`);
         results.push({
           toolCallId: toolCall.id,
           toolName: mapping.originalName,
-          serverId: mapping.serverId,
+          serverId: mapping.serverId || 'unknown',
           content: `Error: ${error}`,
           isError: true,
         });
       }
     }
-    
-    return results;
+
+    return { results, pendingPluginCalls };
   }
 }
 

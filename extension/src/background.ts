@@ -11,10 +11,24 @@ import {
   setMessageCallback,
   getConnectionState,
   BridgeResponse,
+  HarborMessage,
   REQUEST_TIMEOUT_MS,
   DOCKER_TIMEOUT_MS,
   CHAT_TIMEOUT_MS,
 } from './native-connection';
+import {
+  initializePluginRouter,
+  getAllPlugins,
+  getRegistryStats,
+  getPluginAllowlist,
+  setPluginAllowlist,
+  enablePlugin,
+  disablePlugin,
+  revokePluginPermissions,
+  getAllPluginPermissions,
+  getAggregatedPluginTools,
+  callPluginTool,
+} from './plugins';
 
 // BUILD MARKER - if you don't see this, the extension is using cached code!
 // Harbor extension background script
@@ -898,6 +912,7 @@ browser.runtime.onMessage.addListener(
         type: 'chat_create_session',
         request_id: generateRequestId(),
         enabled_servers: msg.enabled_servers,
+        plugin_tools: msg.plugin_tools,
         name: msg.name,
         system_prompt: msg.system_prompt,
         max_iterations: msg.max_iterations,
@@ -918,6 +933,19 @@ browser.runtime.onMessage.addListener(
       }, CHAT_TIMEOUT_MS).catch((err) => {
         console.error('[Background] chat_send_message error:', err);
         return { type: 'error', error: { message: err instanceof Error ? err.message : 'Failed to send message' } };
+      });
+    }
+
+    if (msg.type === 'chat_continue_with_plugin_results') {
+      // Continue chat orchestration with plugin tool results
+      return sendToBridge({
+        type: 'chat_continue_with_plugin_results',
+        request_id: generateRequestId(),
+        session_id: msg.session_id,
+        plugin_results: msg.plugin_results,
+      }, CHAT_TIMEOUT_MS).catch((err) => {
+        console.error('[Background] chat_continue_with_plugin_results error:', err);
+        return { type: 'error', error: { message: err instanceof Error ? err.message : 'Failed to continue chat' } };
       });
     }
 
@@ -1016,21 +1044,21 @@ browser.runtime.onMessage.addListener(
             method: (msg.method as string) || 'GET',
             headers: (msg.headers as Record<string, string>) || {},
           });
-          
+
           console.log('[proxy_fetch] Response status:', response.status);
-          
+
           if (!response.ok) {
             console.log('[proxy_fetch] Response not ok:', response.statusText);
-            return { 
-              ok: false, 
-              status: response.status, 
-              error: response.statusText 
+            return {
+              ok: false,
+              status: response.status,
+              error: response.statusText
             };
           }
-          
+
           const contentType = response.headers.get('content-type') || '';
           let data: string | object;
-          
+
           if (contentType.includes('application/json')) {
             data = await response.json();
             console.log('[proxy_fetch] Parsed JSON, keys:', Object.keys(data as object));
@@ -1038,15 +1066,146 @@ browser.runtime.onMessage.addListener(
             data = await response.text();
             console.log('[proxy_fetch] Got text, length:', (data as string).length);
           }
-          
+
           return { ok: true, status: response.status, data };
         } catch (err) {
           console.error('[proxy_fetch] Error:', err);
-          return { 
-            ok: false, 
-            status: 0, 
-            error: err instanceof Error ? err.message : 'Fetch failed' 
+          return {
+            ok: false,
+            status: 0,
+            error: err instanceof Error ? err.message : 'Fetch failed'
           };
+        }
+      })();
+    }
+
+    // ==========================================================================
+    // Plugin System Messages
+    // ==========================================================================
+
+    // List all registered plugins
+    if (msg.type === 'list_plugins') {
+      return (async () => {
+        try {
+          const plugins = await getAllPlugins();
+          const stats = await getRegistryStats();
+          return { type: 'list_plugins_result', plugins, stats };
+        } catch (err) {
+          console.error('Failed to list plugins:', err);
+          return { type: 'error', error: { message: 'Failed to list plugins' } };
+        }
+      })();
+    }
+
+    // Get plugin allowlist
+    if (msg.type === 'get_plugin_allowlist') {
+      return (async () => {
+        try {
+          const allowlist = await getPluginAllowlist();
+          return { type: 'get_plugin_allowlist_result', allowlist };
+        } catch (err) {
+          console.error('Failed to get plugin allowlist:', err);
+          return { type: 'error', error: { message: 'Failed to get plugin allowlist' } };
+        }
+      })();
+    }
+
+    // Set plugin allowlist
+    if (msg.type === 'set_plugin_allowlist') {
+      return (async () => {
+        try {
+          await setPluginAllowlist(msg.allowlist as string[]);
+          return { type: 'set_plugin_allowlist_result', success: true };
+        } catch (err) {
+          console.error('Failed to set plugin allowlist:', err);
+          return { type: 'error', error: { message: 'Failed to set plugin allowlist' } };
+        }
+      })();
+    }
+
+    // Enable a plugin
+    if (msg.type === 'enable_plugin') {
+      return (async () => {
+        try {
+          const success = await enablePlugin(msg.plugin_id as string);
+          return { type: 'enable_plugin_result', success };
+        } catch (err) {
+          console.error('Failed to enable plugin:', err);
+          return { type: 'error', error: { message: 'Failed to enable plugin' } };
+        }
+      })();
+    }
+
+    // Disable a plugin
+    if (msg.type === 'disable_plugin') {
+      return (async () => {
+        try {
+          const success = await disablePlugin(msg.plugin_id as string, msg.reason as string);
+          return { type: 'disable_plugin_result', success };
+        } catch (err) {
+          console.error('Failed to disable plugin:', err);
+          return { type: 'error', error: { message: 'Failed to disable plugin' } };
+        }
+      })();
+    }
+
+    // Get all plugin permissions
+    if (msg.type === 'list_plugin_permissions') {
+      return (async () => {
+        try {
+          const permissions = await getAllPluginPermissions();
+          return { type: 'list_plugin_permissions_result', permissions };
+        } catch (err) {
+          console.error('Failed to list plugin permissions:', err);
+          return { type: 'error', error: { message: 'Failed to list plugin permissions' } };
+        }
+      })();
+    }
+
+    // Revoke plugin permissions for an origin
+    if (msg.type === 'revoke_plugin_permissions') {
+      return (async () => {
+        try {
+          await revokePluginPermissions(msg.origin as string);
+          return { type: 'revoke_plugin_permissions_result', success: true };
+        } catch (err) {
+          console.error('Failed to revoke plugin permissions:', err);
+          return { type: 'error', error: { message: 'Failed to revoke plugin permissions' } };
+        }
+      })();
+    }
+
+    // Get aggregated plugin tools (for sidebar display)
+    if (msg.type === 'list_plugin_tools') {
+      return (async () => {
+        try {
+          const tools = await getAggregatedPluginTools();
+          return { type: 'list_plugin_tools_result', tools };
+        } catch (err) {
+          console.error('Failed to list plugin tools:', err);
+          return { type: 'error', error: { message: 'Failed to list plugin tools' } };
+        }
+      })();
+    }
+
+    // Execute a plugin tool (for internal chat)
+    if (msg.type === 'execute_plugin_tool') {
+      return (async () => {
+        try {
+          const pluginId = msg.plugin_id as string;
+          const toolName = msg.tool_name as string;
+          const args = (msg.arguments as Record<string, unknown>) || {};
+          const callingOrigin = msg.calling_origin as string | undefined;
+
+          if (!pluginId || !toolName) {
+            return { type: 'error', error: { message: 'Missing plugin_id or tool_name' } };
+          }
+
+          const result = await callPluginTool(pluginId, toolName, args, callingOrigin);
+          return { type: 'execute_plugin_tool_result', result };
+        } catch (err) {
+          console.error('Failed to execute plugin tool:', err);
+          return { type: 'error', error: { message: err instanceof Error ? err.message : 'Failed to execute plugin tool' } };
         }
       })();
     }
@@ -1101,4 +1260,7 @@ autoDetectLLM();
 // Initialize the JS AI Provider router
 setupProviderRouter();
 
-console.log('Harbor background script initialized');
+// Initialize the Plugin router for extension-to-extension messaging
+initializePluginRouter();
+
+console.log('Harbor background script initialized (with plugin support)');

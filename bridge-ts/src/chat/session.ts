@@ -10,30 +10,50 @@
 import { ChatMessage } from '../llm/index.js';
 
 /**
+ * A plugin tool definition passed from the extension.
+ */
+export interface PluginToolDefinition {
+  /** Plugin ID (extension ID) */
+  pluginId: string;
+
+  /** Tool name (e.g., "decode.base64_encode") */
+  name: string;
+
+  /** Tool description */
+  description?: string;
+
+  /** Input schema (JSON Schema) */
+  inputSchema?: Record<string, unknown>;
+}
+
+/**
  * A chat session.
  */
 export interface ChatSession {
   /** Unique session ID */
   id: string;
-  
+
   /** Human-readable name */
   name: string;
-  
+
   /** Conversation messages */
   messages: ChatMessage[];
-  
+
   /** IDs of MCP servers enabled for this session */
   enabledServers: string[];
-  
+
+  /** Plugin tools available for this session */
+  pluginTools: PluginToolDefinition[];
+
   /** System prompt for this session */
   systemPrompt?: string;
-  
+
   /** When the session was created */
   createdAt: number;
-  
+
   /** When the session was last updated */
   updatedAt: number;
-  
+
   /** Session configuration */
   config: SessionConfig;
 }
@@ -84,6 +104,7 @@ export function createSession(
     name: string;
     systemPrompt: string;
     config: Partial<SessionConfig>;
+    pluginTools: PluginToolDefinition[];
   }> = {}
 ): ChatSession {
   return {
@@ -91,6 +112,7 @@ export function createSession(
     name: options.name || `Chat ${new Date().toLocaleTimeString()}`,
     messages: [],
     enabledServers,
+    pluginTools: options.pluginTools || [],
     systemPrompt: options.systemPrompt,
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -134,6 +156,7 @@ export function cloneSession(session: ChatSession): ChatSession {
     name: `${session.name} (copy)`,
     messages: [...session.messages],
     enabledServers: [...session.enabledServers],
+    pluginTools: [...session.pluginTools],
     config: { ...session.config },
     createdAt: Date.now(),
     updatedAt: Date.now(),

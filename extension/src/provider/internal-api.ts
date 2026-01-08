@@ -151,27 +151,59 @@ function createAgentRunOverride(): (options: {
           yield { type: 'error', error: { code: 'ERR_INTERNAL', message: 'Failed to connect to bridge. Is the Harbor bridge running?' } };
           return;
         }
-        
-        if (!connectionsResponse || connectionsResponse.type === 'error' || !connectionsResponse.connections) {
-          yield { type: 'error', error: { code: 'ERR_INTERNAL', message: 'No response from bridge. Please check that the Harbor bridge is running.' } };
+
+        // Get plugin tools
+        let pluginToolsResponse: { type: string; tools?: Array<{ pluginId: string; name: string; originalName: string; description?: string; inputSchema?: Record<string, unknown> }> } | undefined;
+        try {
+          pluginToolsResponse = await browser.runtime.sendMessage({
+            type: 'list_plugin_tools',
+          }) as typeof pluginToolsResponse;
+        } catch (err) {
+          console.log('[InternalAPI] Failed to get plugin tools:', err);
+          // Not fatal - continue without plugins
+        }
+
+        const connections = connectionsResponse?.connections || [];
+        const pluginTools = pluginToolsResponse?.tools || [];
+
+        if (!connectionsResponse || connectionsResponse.type === 'error') {
+          if (pluginTools.length === 0) {
+            yield { type: 'error', error: { code: 'ERR_INTERNAL', message: 'No response from bridge. Please check that the Harbor bridge is running.' } };
+            return;
+          }
+          // Bridge not connected but we have plugins - continue
+        }
+
+        if (connections.length === 0 && pluginTools.length === 0) {
+          yield { type: 'error', error: { code: 'ERR_INTERNAL', message: 'No MCP servers or plugins available. Please start an MCP server or install a plugin.' } };
           return;
         }
-        
-        const connections = connectionsResponse.connections;
-        if (connections.length === 0) {
-          yield { type: 'error', error: { code: 'ERR_INTERNAL', message: 'No MCP servers connected. Please start and connect at least one server.' } };
-          return;
-        }
-        
+
         const enabledServers = connections.map(c => c.serverId);
-        const totalTools = connections.reduce((sum, c) => sum + c.toolCount, 0);
-        
-        yield { type: 'status', message: `Found ${totalTools} tools from ${enabledServers.length} servers` };
-        
-        // Create chat session
+        const mcpToolCount = connections.reduce((sum, c) => sum + c.toolCount, 0);
+        const totalTools = mcpToolCount + pluginTools.length;
+
+        if (connections.length > 0 && pluginTools.length > 0) {
+          yield { type: 'status', message: `Found ${totalTools} tools (${mcpToolCount} MCP, ${pluginTools.length} plugin)` };
+        } else if (connections.length > 0) {
+          yield { type: 'status', message: `Found ${mcpToolCount} tools from ${enabledServers.length} servers` };
+        } else {
+          yield { type: 'status', message: `Found ${pluginTools.length} plugin tools` };
+        }
+
+        // Create chat session with plugin tools
+        // Map plugin tools to use originalName (the actual tool name the plugin expects)
+        const mappedPluginTools = pluginTools.map(pt => ({
+          pluginId: pt.pluginId,
+          name: pt.originalName,  // Use original name, not namespaced name
+          description: pt.description,
+          inputSchema: pt.inputSchema,
+        }));
+
         const createResponse = await browser.runtime.sendMessage({
           type: 'chat_create_session',
           enabled_servers: enabledServers,
+          plugin_tools: mappedPluginTools,
           name: `Agent task: ${task.substring(0, 30)}...`,
           max_iterations: maxToolCalls,
         }) as { type: string; session?: { id: string }; error?: { message: string } };
@@ -185,12 +217,8 @@ function createAgentRunOverride(): (options: {
         yield { type: 'status', message: 'Processing...' };
         
         try {
-          // Send message and get orchestration result
-          const chatResponse = await browser.runtime.sendMessage({
-            type: 'chat_send_message',
-            session_id: sessionId,
-            message: task,
-          }) as { 
+          // Type for chat responses
+          type ChatResponse = {
             type: string;
             response?: string;
             steps?: Array<{
@@ -200,55 +228,158 @@ function createAgentRunOverride(): (options: {
               toolResults?: Array<{ toolCallId: string; toolName: string; serverId: string; content: string; isError: boolean }>;
               error?: string;
             }>;
+            paused?: boolean;
+            pendingPluginToolCalls?: Array<{
+              id: string;
+              pluginId: string;
+              toolName: string;
+              arguments: Record<string, unknown>;
+            }>;
             error?: { message: string };
           };
-          
+
+          // Helper to process steps
+          const processSteps = function* (response: ChatResponse, citations: Array<{ source: 'tool'; ref: string; excerpt: string }>) {
+            if (response.steps) {
+              for (const step of response.steps) {
+                if (step.type === 'tool_calls' && step.toolCalls) {
+                  for (const tc of step.toolCalls) {
+                    yield { type: 'tool_call' as const, tool: tc.name, args: tc.arguments };
+                  }
+                }
+
+                if (step.type === 'tool_results' && step.toolResults) {
+                  for (const tr of step.toolResults) {
+                    const fullToolName = tr.serverId ? `${tr.serverId}__${tr.toolName}` : tr.toolName;
+                    yield {
+                      type: 'tool_result' as const,
+                      tool: fullToolName,
+                      result: tr.content,
+                      error: tr.isError ? { code: 'ERR_TOOL_FAILED' as const, message: tr.content } : undefined,
+                    };
+
+                    if (requireCitations && !tr.isError) {
+                      citations.push({
+                        source: 'tool',
+                        ref: `${tr.serverId}/${tr.toolName}`,
+                        excerpt: tr.content.slice(0, 200),
+                      });
+                    }
+                  }
+                }
+
+                if (step.type === 'error' && step.error) {
+                  yield { type: 'error' as const, error: { code: 'ERR_INTERNAL' as const, message: step.error } };
+                  return;
+                }
+              }
+            }
+          };
+
+          // Send message and get orchestration result
+          let chatResponse = await browser.runtime.sendMessage({
+            type: 'chat_send_message',
+            session_id: sessionId,
+            message: task,
+          }) as ChatResponse;
+
           if (chatResponse.type === 'error') {
             yield { type: 'error', error: { code: 'ERR_INTERNAL', message: chatResponse.error?.message || 'Chat failed' } };
             return;
           }
-          
+
           // Process steps and yield events
           const citations: Array<{ source: 'tool'; ref: string; excerpt: string }> = [];
-          
-          if (chatResponse.steps) {
-            for (const step of chatResponse.steps) {
-              if (step.type === 'tool_calls' && step.toolCalls) {
-                for (const tc of step.toolCalls) {
-                  yield { type: 'tool_call', tool: tc.name, args: tc.arguments };
+
+          // Process initial steps
+          for (const event of processSteps(chatResponse, citations)) {
+            yield event;
+            if (event.type === 'error') return;
+          }
+
+          // Handle plugin tool calls - loop until no more paused states
+          while (chatResponse.paused && chatResponse.pendingPluginToolCalls && chatResponse.pendingPluginToolCalls.length > 0) {
+            console.log('[InternalAPI] Processing plugin tool calls:', chatResponse.pendingPluginToolCalls.length);
+
+            const pluginResults: Array<{ toolCallId: string; content: string; isError: boolean }> = [];
+
+            for (const ptc of chatResponse.pendingPluginToolCalls) {
+              yield { type: 'tool_call', tool: `plugin__${ptc.toolName}`, args: ptc.arguments };
+
+              try {
+                const result = await browser.runtime.sendMessage({
+                  type: 'execute_plugin_tool',
+                  plugin_id: ptc.pluginId,
+                  tool_name: ptc.toolName,
+                  arguments: ptc.arguments,
+                }) as { type: string; result?: unknown; error?: { message: string } };
+
+                if (result.type === 'error') {
+                  throw new Error(result.error?.message || 'Plugin tool failed');
                 }
-              }
-              
-              if (step.type === 'tool_results' && step.toolResults) {
-                for (const tr of step.toolResults) {
-                  const fullToolName = tr.serverId ? `${tr.serverId}__${tr.toolName}` : tr.toolName;
-                  yield { 
-                    type: 'tool_result', 
-                    tool: fullToolName,
-                    result: tr.content,
-                    error: tr.isError ? { code: 'ERR_TOOL_FAILED' as const, message: tr.content } : undefined,
-                  };
-                  
-                  if (requireCitations && !tr.isError) {
-                    citations.push({
-                      source: 'tool',
-                      ref: `${tr.serverId}/${tr.toolName}`,
-                      excerpt: tr.content.slice(0, 200),
-                    });
-                  }
+
+                const resultStr = typeof result.result === 'string' ? result.result : JSON.stringify(result.result);
+
+                pluginResults.push({
+                  toolCallId: ptc.id,
+                  content: resultStr,
+                  isError: false,
+                });
+
+                yield {
+                  type: 'tool_result',
+                  tool: `plugin__${ptc.toolName}`,
+                  result: resultStr,
+                };
+
+                if (requireCitations) {
+                  citations.push({
+                    source: 'tool',
+                    ref: `plugin/${ptc.toolName}`,
+                    excerpt: resultStr.slice(0, 200),
+                  });
                 }
-              }
-              
-              if (step.type === 'error' && step.error) {
-                yield { type: 'error', error: { code: 'ERR_INTERNAL', message: step.error } };
-                return;
+              } catch (err) {
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                console.log('[InternalAPI] Plugin tool error:', ptc.toolName, errorMsg);
+
+                pluginResults.push({
+                  toolCallId: ptc.id,
+                  content: `Error: ${errorMsg}`,
+                  isError: true,
+                });
+
+                yield {
+                  type: 'tool_result',
+                  tool: `plugin__${ptc.toolName}`,
+                  result: `Error: ${errorMsg}`,
+                  error: { code: 'ERR_TOOL_FAILED' as const, message: errorMsg },
+                };
               }
             }
+
+            // Continue orchestration with plugin results
+            chatResponse = await browser.runtime.sendMessage({
+              type: 'chat_continue_with_plugin_results',
+              session_id: sessionId,
+              plugin_results: pluginResults,
+            }) as ChatResponse;
+
+            if (chatResponse.type === 'error') {
+              yield { type: 'error', error: { code: 'ERR_INTERNAL', message: chatResponse.error?.message || 'Chat continuation failed' } };
+              return;
+            }
+
+            // Process continuation steps
+            for (const event of processSteps(chatResponse, citations)) {
+              yield event;
+              if (event.type === 'error') return;
+            }
           }
-          
+
           // Yield final response
           const finalOutput = chatResponse.response || '';
-          
+
           // Stream tokens for nice effect
           const tokens = finalOutput.split(/(\s+)/);
           for (const token of tokens) {
@@ -257,13 +388,13 @@ function createAgentRunOverride(): (options: {
               await new Promise(r => setTimeout(r, 10));
             }
           }
-          
-          yield { 
-            type: 'final', 
+
+          yield {
+            type: 'final',
             output: finalOutput,
             citations: requireCitations && citations.length > 0 ? citations : undefined,
           };
-          
+
         } finally {
           // Clean up session
           browser.runtime.sendMessage({

@@ -32,13 +32,27 @@ import {
   getAllowedTools,
 } from './permissions';
 import { llmChat } from '../background';
-import { 
+import {
   getMcpConnections,
   listMcpTools,
-  createChatSession, 
-  sendChatMessage, 
+  createChatSession,
+  sendChatMessage,
+  continueChatWithPluginResults,
   deleteChatSession,
+  PluginToolDefinition,
+  PluginToolResult,
+  ChatSendMessageResponse,
 } from '../bridge-api';
+import {
+  getAggregatedPluginTools,
+  hasPluginToolPermission,
+  checkPluginConsent,
+  grantPluginPermission,
+  clearPluginTabGrants,
+  callPluginTool,
+  findToolPlugin,
+  parseToolNamespace,
+} from '../plugins';
 
 const DEBUG = true;
 
@@ -488,40 +502,54 @@ async function handleToolsList(
   if (!(await requirePermission(port, requestId, origin, 'mcp:tools.list'))) {
     return;
   }
-  
+
   try {
+    const allTools: ToolDescriptor[] = [];
+
     // Get list of connected MCP servers and their tools using direct function call
     const connectionsResponse = await getMcpConnections();
     log('[ToolsList] Connections response:', connectionsResponse);
-    
-    if (connectionsResponse.type === 'error' || !connectionsResponse.connections) {
-      log('[ToolsList] No connections available');
-      sendResponse(port, 'tools_list_result', requestId, { tools: [] });
-      return;
-    }
-    
-    const allTools: ToolDescriptor[] = [];
-    
-    log(`[ToolsList] Found ${connectionsResponse.connections.length} connected servers`);
-    
-    // For each connected server, get its tools
-    for (const conn of connectionsResponse.connections) {
-      log(`[ToolsList] Getting tools from server: ${conn.serverId}`);
-      const toolsResponse = await listMcpTools(conn.serverId);
-      log(`[ToolsList] Tools response for ${conn.serverId}:`, toolsResponse);
-      
-      if (toolsResponse.tools) {
-        for (const tool of toolsResponse.tools) {
-          allTools.push({
-            name: `${conn.serverId}/${tool.name}`,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-            serverId: conn.serverId,
-          });
+
+    if (connectionsResponse.type !== 'error' && connectionsResponse.connections) {
+      log(`[ToolsList] Found ${connectionsResponse.connections.length} connected servers`);
+
+      // For each connected server, get its tools
+      for (const conn of connectionsResponse.connections) {
+        log(`[ToolsList] Getting tools from server: ${conn.serverId}`);
+        const toolsResponse = await listMcpTools(conn.serverId);
+        log(`[ToolsList] Tools response for ${conn.serverId}:`, toolsResponse);
+
+        if (toolsResponse.tools) {
+          for (const tool of toolsResponse.tools) {
+            allTools.push({
+              name: `${conn.serverId}/${tool.name}`,
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+              serverId: conn.serverId,
+            });
+          }
         }
       }
     }
-    
+
+    // Also get tools from registered plugins
+    try {
+      const pluginTools = await getAggregatedPluginTools();
+      log(`[ToolsList] Found ${pluginTools.length} plugin tools`);
+
+      for (const pluginTool of pluginTools) {
+        allTools.push({
+          name: pluginTool.name, // Already namespaced as pluginId::toolName
+          description: pluginTool.description,
+          inputSchema: pluginTool.inputSchema,
+          serverId: pluginTool.pluginId,
+        });
+      }
+    } catch (err) {
+      log('[ToolsList] Error getting plugin tools:', err);
+      // Continue even if plugin tools fail
+    }
+
     log(`[ToolsList] Total tools found: ${allTools.length}`);
     sendResponse(port, 'tools_list_result', requestId, { tools: allTools });
   } catch (err) {
@@ -540,19 +568,56 @@ async function handleToolsCall(
   if (!(await requirePermission(port, requestId, origin, 'mcp:tools.call'))) {
     return;
   }
-  
+
   const { tool, args } = payload;
-  
-  // Parse tool name: "serverId/toolName"
+
+  // Check if this is a plugin tool (format: pluginId::toolName)
+  const pluginParsed = parseToolNamespace(tool);
+
+  if (pluginParsed) {
+    // This is a plugin tool call
+    const { pluginId, toolName } = pluginParsed;
+    log(`[ToolsCall] Plugin tool call: ${pluginId}::${toolName}`);
+
+    // Check plugin tool permission for this origin
+    // Since we already passed mcp:tools.call check above, auto-grant plugin tools
+    const hasPermission = await hasPluginToolPermission(origin, tool);
+    if (!hasPermission) {
+      // Auto-grant this plugin tool (user already has mcp:tools.call)
+      await grantPluginPermission(origin, {
+        mode: 'once',
+        tools: [tool],
+      });
+      log(`[ToolsCall] Auto-granted plugin permission for ${tool} to ${origin}`);
+    }
+
+    try {
+      // Call the plugin tool
+      const result = await callPluginTool(pluginId, toolName, args, origin);
+      sendResponse(port, 'tools_call_result', requestId, {
+        success: true,
+        result,
+      });
+    } catch (err) {
+      log('Plugin tool call error:', err);
+      sendError(port, requestId, createError(
+        'ERR_TOOL_FAILED',
+        err instanceof Error ? err.message : String(err)
+      ));
+    }
+    return;
+  }
+
+  // This is an MCP tool call (format: serverId/toolName)
   const slashIndex = tool.indexOf('/');
   if (slashIndex === -1) {
     sendError(port, requestId, createError(
       'ERR_TOOL_NOT_ALLOWED',
-      'Tool name must be in format "serverId/toolName"'
+      'Tool name must be in format "serverId/toolName" or "pluginId::toolName"'
     ));
     return;
   }
-  
+
   // Check if this specific tool is allowed for this origin
   const toolAllowed = await isToolAllowed(origin, tool);
   if (!toolAllowed) {
@@ -564,10 +629,10 @@ async function handleToolsCall(
     ));
     return;
   }
-  
+
   const serverId = tool.slice(0, slashIndex);
   const toolName = tool.slice(slashIndex + 1);
-  
+
   try {
     // Call the tool via MCP
     const callResponse = await browser.runtime.sendMessage({
@@ -576,12 +641,12 @@ async function handleToolsCall(
       tool_name: toolName,
       arguments: args,
     }) as { type: string; result?: unknown; error?: { message: string } };
-    
+
     if (callResponse.type === 'error') {
       sendError(port, requestId, createError('ERR_TOOL_FAILED', callResponse.error?.message || 'Tool call failed'));
       return;
     }
-    
+
     sendResponse(port, 'tools_call_result', requestId, {
       success: true,
       result: callResponse.result,
@@ -745,18 +810,36 @@ async function handleAgentRun(
       return;
     }
     
-    // Check if we have any connected servers
+    // Check if we have any connected servers or plugin tools
     const connections = connectionsResponse.connections || [];
-    if (connections.length === 0) {
-      log('[AgentRun] No MCP servers connected');
-      sendEvent({ type: 'error', error: createError('ERR_INTERNAL', 'No MCP servers connected. Please start and connect at least one server in the Harbor sidebar.') });
+    const pluginToolsFromRegistry = await getAggregatedPluginTools();
+
+    // Convert plugin tools to the format expected by the bridge
+    // Use originalName (e.g., "time.format") not the namespaced name (e.g., "plugin@id::time.format")
+    const pluginTools: PluginToolDefinition[] = pluginToolsFromRegistry.map(pt => ({
+      pluginId: pt.pluginId,
+      name: pt.originalName,
+      description: pt.description,
+      inputSchema: pt.inputSchema as Record<string, unknown>,
+    }));
+
+    if (connections.length === 0 && pluginTools.length === 0) {
+      log('[AgentRun] No MCP servers or plugins available');
+      sendEvent({ type: 'error', error: createError('ERR_INTERNAL', 'No MCP servers or plugins available. Please start an MCP server or install a plugin in the Harbor sidebar.') });
       return;
     }
-    
+
     const enabledServers = connections.map(c => c.serverId);
-    const totalTools = connections.reduce((sum, c) => sum + c.toolCount, 0);
-    
-    sendEvent({ type: 'status', message: `Found ${totalTools} tools from ${enabledServers.length} servers` });
+    const mcpToolCount = connections.reduce((sum, c) => sum + c.toolCount, 0);
+    const totalTools = mcpToolCount + pluginTools.length;
+
+    if (connections.length > 0 && pluginTools.length > 0) {
+      sendEvent({ type: 'status', message: `Found ${totalTools} tools (${mcpToolCount} MCP, ${pluginTools.length} plugin)` });
+    } else if (connections.length > 0) {
+      sendEvent({ type: 'status', message: `Found ${mcpToolCount} tools from ${enabledServers.length} servers` });
+    } else {
+      sendEvent({ type: 'status', message: `Found ${pluginTools.length} plugin tools` });
+    }
     
     // Check if aborted
     const req = streamingRequests.get(requestId);
@@ -771,9 +854,10 @@ async function handleAgentRun(
       systemPrompt = 'You are a helpful AI assistant. When using information from tools, cite your sources.';
     }
     
-    // Create a temporary chat session with the connected servers
+    // Create a temporary chat session with the connected servers and plugin tools
     const createResponse = await createChatSession({
       enabledServers,
+      pluginTools,
       name: `Agent task: ${task.substring(0, 30)}...`,
       systemPrompt,
       maxIterations: maxToolCalls,
@@ -795,68 +879,163 @@ async function handleAgentRun(
     }
     
     sendEvent({ type: 'status', message: 'Processing...' });
-    
+
+    // Helper function to process chat response steps
+    const processSteps = (response: ChatSendMessageResponse, citations: Array<{ source: 'tab' | 'tool'; ref: string; excerpt: string }>): boolean => {
+      if (response.steps) {
+        for (const step of response.steps) {
+          // Check if aborted
+          const reqCheck = streamingRequests.get(requestId);
+          if (!reqCheck || reqCheck.aborted) {
+            sendEvent({ type: 'error', error: createError('ERR_INTERNAL', 'Request aborted') });
+            return false;
+          }
+
+          if (step.type === 'tool_calls' && step.toolCalls) {
+            for (const tc of step.toolCalls) {
+              sendEvent({ type: 'tool_call', tool: tc.name, args: tc.arguments });
+            }
+          }
+
+          if (step.type === 'tool_results' && step.toolResults) {
+            for (const tr of step.toolResults) {
+              // Use full prefixed name to match tool_call event
+              const fullToolName = tr.serverId ? `${tr.serverId}__${tr.toolName}` : tr.toolName;
+              sendEvent({
+                type: 'tool_result',
+                tool: fullToolName,
+                result: tr.content,
+                error: tr.isError ? createError('ERR_TOOL_FAILED', tr.content) : undefined,
+              });
+
+              if (requireCitations && !tr.isError) {
+                citations.push({
+                  source: 'tool',
+                  ref: `${tr.serverId}/${tr.toolName}`,
+                  excerpt: tr.content.slice(0, 200),
+                });
+              }
+            }
+          }
+
+          if (step.type === 'error' && step.error) {
+            sendEvent({ type: 'error', error: createError('ERR_INTERNAL', step.error) });
+            return false;
+          }
+        }
+      }
+      return true;
+    };
+
     // Send the message - the bridge orchestrator handles everything
-    const chatResponse = await sendChatMessage({
+    let chatResponse = await sendChatMessage({
       sessionId,
       message: task,
       // useToolRouter defaults to false - LLM sees all tools and decides
     });
-    
+
     if (chatResponse.type === 'error') {
       sendEvent({ type: 'error', error: createError('ERR_INTERNAL', chatResponse.error?.message || 'Chat failed') });
       return;
     }
-    
+
     // Stream the orchestration steps to the client
     const citations: Array<{ source: 'tab' | 'tool'; ref: string; excerpt: string }> = [];
-    
-    if (chatResponse.steps) {
-      for (const step of chatResponse.steps) {
+
+    // Process initial steps
+    if (!processSteps(chatResponse, citations)) {
+      return;
+    }
+
+    // Handle plugin tool calls - loop until no more paused states
+    while (chatResponse.paused && chatResponse.pendingPluginToolCalls && chatResponse.pendingPluginToolCalls.length > 0) {
+      log('[AgentRun] Processing plugin tool calls:', chatResponse.pendingPluginToolCalls.length);
+
+      // Execute plugin tools
+      const pluginResults: PluginToolResult[] = [];
+
+      for (const ptc of chatResponse.pendingPluginToolCalls) {
         // Check if aborted
-        const req3 = streamingRequests.get(requestId);
-        if (!req3 || req3.aborted) {
+        const reqCheck = streamingRequests.get(requestId);
+        if (!reqCheck || reqCheck.aborted) {
           sendEvent({ type: 'error', error: createError('ERR_INTERNAL', 'Request aborted') });
           return;
         }
-        
-        if (step.type === 'tool_calls' && step.toolCalls) {
-          for (const tc of step.toolCalls) {
-            sendEvent({ type: 'tool_call', tool: tc.name, args: tc.arguments });
-          }
-        }
-        
-        if (step.type === 'tool_results' && step.toolResults) {
-          for (const tr of step.toolResults) {
-            // Use full prefixed name to match tool_call event
-            const fullToolName = tr.serverId ? `${tr.serverId}__${tr.toolName}` : tr.toolName;
-            sendEvent({ 
-              type: 'tool_result', 
-              tool: fullToolName,
-              result: tr.content,
-              error: tr.isError ? createError('ERR_TOOL_FAILED', tr.content) : undefined,
+
+        // Send tool call event
+        sendEvent({ type: 'tool_call', tool: `plugin__${ptc.toolName}`, args: ptc.arguments });
+
+        try {
+          // Call the plugin tool
+          const result = await callPluginTool(
+            ptc.pluginId,
+            ptc.toolName,
+            ptc.arguments,
+            origin
+          );
+
+          const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+
+          pluginResults.push({
+            toolCallId: ptc.id,
+            content: resultStr,
+            isError: false,
+          });
+
+          // Send tool result event
+          sendEvent({
+            type: 'tool_result',
+            tool: `plugin__${ptc.toolName}`,
+            result: resultStr,
+          });
+
+          if (requireCitations) {
+            citations.push({
+              source: 'tool',
+              ref: `plugin/${ptc.toolName}`,
+              excerpt: resultStr.slice(0, 200),
             });
-            
-            if (requireCitations && !tr.isError) {
-              citations.push({
-                source: 'tool',
-                ref: `${tr.serverId}/${tr.toolName}`,
-                excerpt: tr.content.slice(0, 200),
-              });
-            }
           }
-        }
-        
-        if (step.type === 'error' && step.error) {
-          sendEvent({ type: 'error', error: createError('ERR_INTERNAL', step.error) });
-          return;
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          log('[AgentRun] Plugin tool error:', ptc.toolName, errorMsg);
+
+          pluginResults.push({
+            toolCallId: ptc.id,
+            content: `Error: ${errorMsg}`,
+            isError: true,
+          });
+
+          // Send error tool result event
+          sendEvent({
+            type: 'tool_result',
+            tool: `plugin__${ptc.toolName}`,
+            result: `Error: ${errorMsg}`,
+            error: createError('ERR_TOOL_FAILED', errorMsg),
+          });
         }
       }
+
+      // Continue orchestration with plugin results
+      chatResponse = await continueChatWithPluginResults({
+        sessionId,
+        pluginResults,
+      });
+
+      if (chatResponse.type === 'error') {
+        sendEvent({ type: 'error', error: createError('ERR_INTERNAL', chatResponse.error?.message || 'Chat continuation failed') });
+        return;
+      }
+
+      // Process continuation steps
+      if (!processSteps(chatResponse, citations)) {
+        return;
+      }
     }
-    
+
     // Get the final response
     const finalOutput = chatResponse.response || '';
-    
+
     // Stream the output token by token for a nice effect
     const tokens = finalOutput.split(/(\s+)/);
     for (const token of tokens) {
@@ -865,13 +1044,13 @@ async function handleAgentRun(
         await new Promise(r => setTimeout(r, 10)); // Small delay for streaming effect
       }
     }
-    
-    sendEvent({ 
-      type: 'final', 
+
+    sendEvent({
+      type: 'final',
       output: finalOutput,
       citations: requireCitations && citations.length > 0 ? citations : undefined,
     });
-    
+
     if (chatResponse.reachedMaxIterations) {
       log('[AgentRun] Warning: reached max iterations');
     }
@@ -989,6 +1168,7 @@ export function setupProviderRouter(): void {
   // Clean up temporary grants when tabs close
   browser.tabs.onRemoved.addListener((tabId) => {
     clearTabGrants(tabId);
+    clearPluginTabGrants(tabId);
   });
   
   log('Provider router initialized');
