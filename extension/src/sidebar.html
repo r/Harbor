@@ -1521,7 +1521,28 @@
         </div>
       </div>
     </div>
-    
+
+    <!-- Plugins Section -->
+    <div class="panel" id="plugins-card" data-panel="plugins">
+      <div class="panel-header">
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon">▼</span>
+          <span class="panel-title">🔌 Plugins</span>
+          <span class="panel-status-dot gray" id="plugins-status-dot" title="No plugins"></span>
+        </div>
+        <div class="panel-header-actions" onclick="event.stopPropagation();">
+          <button class="btn btn-sm btn-ghost" id="refresh-plugins" title="Refresh">↻</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="plugin-list" class="server-list">
+          <div class="empty-state">
+            No plugins registered. Plugins are Firefox extensions that provide tools without needing the native bridge.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Add Remote Server Modal -->
     <div id="add-remote-modal" class="modal" style="display: none;">
       <div class="modal-backdrop"></div>

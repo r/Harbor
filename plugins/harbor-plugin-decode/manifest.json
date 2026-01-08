@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Harbor Plugin: Decode",
+  "version": "1.0.0",
+  "description": "Decoding and formatting tools for Harbor",
+  "permissions": [],
+  "background": {
+    "scripts": ["dist/background.js"],
+    "type": "module"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "harbor-plugin-decode@local",
+      "strict_min_version": "112.0"
+    }
+  }
+}

@@ -232,6 +232,11 @@ const themeToggleBtn = document.getElementById('theme-toggle') as HTMLButtonElem
 
 // Installed servers elements
 const installedServerListEl = document.getElementById('installed-server-list') as HTMLDivElement;
+
+// Plugin elements
+const pluginListEl = document.getElementById('plugin-list') as HTMLDivElement;
+const pluginsStatusDot = document.getElementById('plugins-status-dot') as HTMLSpanElement;
+const refreshPluginsBtn = document.getElementById('refresh-plugins') as HTMLButtonElement;
 const credentialModal = document.getElementById('credential-modal') as HTMLDivElement;
 const credentialModalTitle = document.getElementById('credential-modal-title') as HTMLHeadingElement;
 const credentialModalBody = document.getElementById('credential-modal-body') as HTMLDivElement;
@@ -265,6 +270,17 @@ let servers: MCPServer[] = [];
 let selectedServerId: string | null = null;
 let installedServers: InstalledServerStatus[] = [];
 let currentCredentialServerId: string | null = null;
+
+// Plugin state
+interface PluginInfo {
+  pluginId: string;
+  name: string;
+  version: string;
+  description?: string;
+  status: 'active' | 'disabled' | 'unreachable' | 'error';
+  toolCount: number;
+}
+let registeredPlugins: PluginInfo[] = [];
 
 // Add server elements
 const githubUrlInput = document.getElementById('github-url-input') as HTMLInputElement;
@@ -533,6 +549,88 @@ function renderInstalledServers(): void {
   installedServerListEl.querySelectorAll('.uninstall-btn').forEach(btn => {
     btn.addEventListener('click', () => uninstallServer((btn as HTMLElement).dataset.serverId!));
   });
+}
+
+// =============================================================================
+// Plugin Management
+// =============================================================================
+
+async function loadPlugins(): Promise<void> {
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'list_plugins',
+    }) as { type: string; plugins?: Array<{
+      descriptor: { extensionId: string; name: string; version: string; description?: string; tools: unknown[] };
+      status: 'active' | 'disabled' | 'unreachable' | 'error';
+    }> };
+
+    if (response.type === 'list_plugins_result' && response.plugins) {
+      registeredPlugins = response.plugins.map(p => ({
+        pluginId: p.descriptor.extensionId,
+        name: p.descriptor.name,
+        version: p.descriptor.version,
+        description: p.descriptor.description,
+        status: p.status,
+        toolCount: p.descriptor.tools.length,
+      }));
+    } else {
+      registeredPlugins = [];
+    }
+  } catch (err) {
+    console.error('[Sidebar] Failed to load plugins:', err);
+    registeredPlugins = [];
+  }
+
+  renderPlugins();
+}
+
+function renderPlugins(): void {
+  if (!pluginListEl) return;
+
+  // Update status dot
+  const activeCount = registeredPlugins.filter(p => p.status === 'active').length;
+  if (pluginsStatusDot) {
+    if (activeCount > 0) {
+      pluginsStatusDot.className = 'panel-status-dot green';
+      pluginsStatusDot.title = `${activeCount} plugin${activeCount > 1 ? 's' : ''} active`;
+    } else {
+      pluginsStatusDot.className = 'panel-status-dot gray';
+      pluginsStatusDot.title = 'No plugins';
+    }
+  }
+
+  if (registeredPlugins.length === 0) {
+    pluginListEl.innerHTML = `
+      <div class="empty-state">
+        No plugins registered. Plugins are Firefox extensions that provide tools without needing the native bridge.
+      </div>
+    `;
+    return;
+  }
+
+  const pluginsHtml = registeredPlugins.map(plugin => {
+    const statusClass = plugin.status === 'active' ? 'running' :
+                        plugin.status === 'error' ? 'error' : '';
+    const statusBadgeClass = plugin.status === 'active' ? 'badge-green' :
+                             plugin.status === 'disabled' ? 'badge-gray' :
+                             'badge-red';
+
+    return `
+      <div class="installed-server-item ${statusClass}" data-plugin-id="${escapeHtml(plugin.pluginId)}">
+        <div class="server-header">
+          <span class="server-label">${escapeHtml(plugin.name)}</span>
+          <span class="server-status-badge ${statusBadgeClass}">${plugin.status}</span>
+        </div>
+        ${plugin.description ? `<div class="text-xs text-muted mt-1">${escapeHtml(plugin.description)}</div>` : ''}
+        <div class="server-package-info">
+          <span class="lang-badge badge-blue">🔌 Plugin</span>
+          <span class="package-name">v${escapeHtml(plugin.version)} • ${plugin.toolCount} tool${plugin.toolCount !== 1 ? 's' : ''}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  pluginListEl.innerHTML = pluginsHtml;
 }
 
 async function openCredentialModal(serverId: string): Promise<void> {
@@ -2134,6 +2232,7 @@ async function init(): Promise<void> {
 
   await loadServers();
   await loadInstalledServers();
+  await loadPlugins();
   await checkLLMStatus();
   
   // Skip automatic Docker check on startup to avoid macOS TCC permission popup
@@ -2267,6 +2366,15 @@ refreshInstalledBtn?.addEventListener('click', async () => {
   await loadInstalledServers();
   refreshInstalledBtn.classList.remove('loading');
   refreshInstalledBtn.disabled = false;
+});
+
+// Refresh plugins button
+refreshPluginsBtn?.addEventListener('click', async () => {
+  refreshPluginsBtn.classList.add('loading');
+  refreshPluginsBtn.disabled = true;
+  await loadPlugins();
+  refreshPluginsBtn.classList.remove('loading');
+  refreshPluginsBtn.disabled = false;
 });
 
 // Go to directory link (in empty state)

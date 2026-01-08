@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BRIDGE_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Firefox extension ID - must match manifest.json
-EXTENSION_ID="harbor@example.com"
+EXTENSION_ID="raffi.krikorian.harbor@gmail.com"
 
 # Manifest name (must match what the extension connects to)
 MANIFEST_NAME="harbor_bridge_host"
@@ -18,13 +18,21 @@ MANIFEST_DIR="$HOME/Library/Application Support/Mozilla/NativeMessagingHosts"
 # Path to the bridge executable (node running the compiled JS)
 BRIDGE_MAIN="$BRIDGE_DIR/dist/main.js"
 
+# Find node - use full path since Firefox launches with minimal environment
+NODE_PATH=$(which node)
+if [ -z "$NODE_PATH" ]; then
+  echo "Error: node not found in PATH"
+  exit 1
+fi
+
 # Create a launcher script that runs the bridge with node
 LAUNCHER_SCRIPT="$BRIDGE_DIR/harbor-bridge"
 
 echo "Creating launcher script at $LAUNCHER_SCRIPT..."
+echo "Using node at: $NODE_PATH"
 cat > "$LAUNCHER_SCRIPT" << EOF
 #!/bin/bash
-exec node "$BRIDGE_MAIN"
+exec "$NODE_PATH" "$BRIDGE_MAIN"
 EOF
 chmod +x "$LAUNCHER_SCRIPT"
 

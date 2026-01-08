@@ -78,6 +78,26 @@ export interface ChatSession {
   config?: { maxIterations?: number };
 }
 
+export interface PluginToolDefinition {
+  pluginId: string;
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+export interface PendingPluginToolCall {
+  id: string;
+  pluginId: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface PluginToolResult {
+  toolCallId: string;
+  content: string;
+  isError: boolean;
+}
+
 export interface CreateChatSessionResponse {
   type: string;
   session?: ChatSession;
@@ -86,6 +106,7 @@ export interface CreateChatSessionResponse {
 
 export async function createChatSession(options: {
   enabledServers: string[];
+  pluginTools?: PluginToolDefinition[];
   name?: string;
   systemPrompt?: string;
   maxIterations?: number;
@@ -95,6 +116,7 @@ export async function createChatSession(options: {
       type: 'chat_create_session',
       request_id: generateRequestId(),
       enabled_servers: options.enabledServers,
+      plugin_tools: options.pluginTools,
       name: options.name,
       system_prompt: options.systemPrompt,
       max_iterations: options.maxIterations,
@@ -118,6 +140,8 @@ export interface ChatSendMessageResponse {
   }>;
   iterations?: number;
   reachedMaxIterations?: boolean;
+  paused?: boolean;
+  pendingPluginToolCalls?: PendingPluginToolCall[];
   error?: { message: string };
 }
 
@@ -138,6 +162,24 @@ export async function sendChatMessage(options: {
   } catch (err) {
     console.error('[BridgeAPI] sendChatMessage error:', err);
     return { type: 'error', error: { message: err instanceof Error ? err.message : 'Failed to send message' } };
+  }
+}
+
+export async function continueChatWithPluginResults(options: {
+  sessionId: string;
+  pluginResults: PluginToolResult[];
+}): Promise<ChatSendMessageResponse> {
+  try {
+    const response = await sendToBridge({
+      type: 'chat_continue_with_plugin_results',
+      request_id: generateRequestId(),
+      session_id: options.sessionId,
+      plugin_results: options.pluginResults,
+    }, CHAT_TIMEOUT_MS);
+    return response as ChatSendMessageResponse;
+  } catch (err) {
+    console.error('[BridgeAPI] continueChatWithPluginResults error:', err);
+    return { type: 'error', error: { message: err instanceof Error ? err.message : 'Failed to continue chat' } };
   }
 }
 

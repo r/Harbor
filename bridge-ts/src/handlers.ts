@@ -25,12 +25,14 @@ import {
 } from './types.js';
 import { getLLMManager, LLMManager, ChatMessage, ToolDefinition, getLLMSetupManager, DownloadProgress } from './llm/index.js';
 import { 
-  getChatOrchestrator, 
-  getChatSessionStore, 
+  getChatOrchestrator,
+  getChatSessionStore,
   createSession,
   ChatSession,
   OrchestrationResult,
   OrchestrationStep,
+  PluginToolDefinition,
+  PluginToolResult,
 } from './chat/index.js';
 import { CURATED_SERVERS, getCuratedServer, type CuratedServerFull } from './directory/curated-servers.js';
 import { getDockerExec } from './installer/docker-exec.js';
@@ -2407,26 +2409,29 @@ const handleLlmStopLocal: MessageHandler = async (message, _store, _client, _cat
 const handleChatCreateSession: MessageHandler = async (message, _store, _client, _catalog, _installer, _mcpManager) => {
   const requestId = message.request_id || '';
   const enabledServers = (message.enabled_servers as string[]) || [];
+  const pluginTools = (message.plugin_tools as PluginToolDefinition[]) || [];
   const name = message.name as string | undefined;
   const systemPrompt = message.system_prompt as string | undefined;
   const maxIterations = message.max_iterations as number | undefined;
 
   try {
     const sessionStore = getChatSessionStore();
-    
+
     const session = createSession(enabledServers, {
       name,
       systemPrompt,
+      pluginTools,
       config: maxIterations ? { maxIterations } : undefined,
     });
-    
+
     sessionStore.save(session);
-    
-    return makeResult('chat_create_session', requestId, { 
+
+    return makeResult('chat_create_session', requestId, {
       session: {
         id: session.id,
         name: session.name,
         enabledServers: session.enabledServers,
+        pluginTools: session.pluginTools,
         systemPrompt: session.systemPrompt,
         createdAt: session.createdAt,
         config: session.config,
@@ -2474,20 +2479,75 @@ const handleChatSendMessage: MessageHandler = async (message, _store, _client, _
     
     const orchestrator = getChatOrchestrator();
     const result = await orchestrator.run(session, userMessage);
-    
+
     // Save updated session
     sessionStore.save(session);
-    
-    return makeResult('chat_send_message', requestId, { 
+
+    return makeResult('chat_send_message', requestId, {
       response: result.finalResponse,
       steps: result.steps,
       iterations: result.iterations,
       reachedMaxIterations: result.reachedMaxIterations,
       durationMs: result.durationMs,
       routing: result.routing,
+      // Include paused state for plugin tool calls
+      paused: result.paused,
+      pendingPluginToolCalls: result.pendingPluginToolCalls,
     });
   } catch (e) {
     log(`Failed to process chat message: ${e}`);
+    return makeError(requestId, 'chat_error', String(e));
+  }
+};
+
+/**
+ * Continue a chat session after plugin tool results are provided.
+ */
+const handleChatContinueWithPluginResults: MessageHandler = async (message, _store, _client, _catalog, _installer, _mcpManager, llmManager) => {
+  const requestId = message.request_id || '';
+  const sessionId = message.session_id as string || '';
+  const pluginResults = (message.plugin_results as PluginToolResult[]) || [];
+
+  if (!sessionId) {
+    return makeError(requestId, 'invalid_request', 'Missing session_id');
+  }
+  if (pluginResults.length === 0) {
+    return makeError(requestId, 'invalid_request', 'Missing plugin_results');
+  }
+
+  try {
+    // Ensure LLM is available
+    const activeId = llmManager.getActiveId();
+    if (!activeId) {
+      return makeError(requestId, 'llm_error', 'No active LLM provider. Run llm_detect first.');
+    }
+
+    const sessionStore = getChatSessionStore();
+    const session = sessionStore.get(sessionId);
+
+    if (!session) {
+      return makeError(requestId, 'not_found', `Session not found: ${sessionId}`);
+    }
+
+    const orchestrator = getChatOrchestrator();
+    const result = await orchestrator.continueWithPluginResults(session, pluginResults);
+
+    // Save updated session
+    sessionStore.save(session);
+
+    return makeResult('chat_continue_with_plugin_results', requestId, {
+      response: result.finalResponse,
+      steps: result.steps,
+      iterations: result.iterations,
+      reachedMaxIterations: result.reachedMaxIterations,
+      durationMs: result.durationMs,
+      routing: result.routing,
+      // Include paused state if more plugin tools are needed
+      paused: result.paused,
+      pendingPluginToolCalls: result.pendingPluginToolCalls,
+    });
+  } catch (e) {
+    log(`Failed to continue chat with plugin results: ${e}`);
     return makeError(requestId, 'chat_error', String(e));
   }
 };
@@ -3391,6 +3451,7 @@ const HANDLERS: Record<string, MessageHandler> = {
   // Chat session handlers
   chat_create_session: handleChatCreateSession,
   chat_send_message: handleChatSendMessage,
+  chat_continue_with_plugin_results: handleChatContinueWithPluginResults,
   chat_get_session: handleChatGetSession,
   chat_list_sessions: handleChatListSessions,
   chat_delete_session: handleChatDeleteSession,
