@@ -149,11 +149,11 @@ export class McpRunnerClient {
    */
   private waitForReady(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // 30 second timeout for runner startup
-      // npx packages may need time to download on first run
+      // 2 minute timeout for runner startup
+      // Docker + git packages need extra time for image pull + npm install
       const timeout = setTimeout(() => {
-        reject(new Error('Runner startup timeout'));
-      }, 30000);
+        reject(new Error('Runner startup timeout (120s) - Docker builds may need more time'));
+      }, 120000);
 
       const messageHandler = (message: { type: string; status?: string }) => {
         if (message.type === 'status' && message.status === 'ready') {
@@ -212,7 +212,7 @@ export class McpRunnerClient {
     this.runner.send(message);
   }
 
-  private sendRequest<T>(type: string, data: Record<string, unknown>, timeoutMs = 30000): Promise<T> {
+  private sendRequest<T>(type: string, data: Record<string, unknown>, timeoutMs = 120000): Promise<T> {
     if (!this.runner) {
       return Promise.reject(new Error('Runner not started'));
     }

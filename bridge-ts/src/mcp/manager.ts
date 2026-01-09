@@ -447,6 +447,15 @@ export class McpClientManager {
       if (packageType === 'npm') {
         // Our node image expects the npm package as argument
         dockerArgs.push(packageId);
+      } else if (packageType === 'git') {
+        // For git packages, convert URL to github:user/repo format
+        let gitRef = packageId;
+        const match = packageId.match(/github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?$/);
+        if (match) {
+          gitRef = `github:${match[1]}`;
+        }
+        log(`[McpClientManager] Git package: ${packageId} -> ${gitRef}`);
+        dockerArgs.push(gitRef);
       } else if (packageType === 'pypi') {
         // Our python image expects the pypi package as argument
         dockerArgs.push(packageId);
@@ -489,8 +498,25 @@ export class McpClientManager {
 
       // Connect via the MCP protocol
       progress('Container starting, waiting for MCP handshake...');
-      const connectionInfo = await client.connect();
-      progress('✓ MCP connection established!');
+      log(`[McpClientManager] Waiting for MCP handshake from Docker container ${containerName}...`);
+      
+      // Log periodic updates while waiting
+      const connectStartTime = Date.now();
+      const connectStatusInterval = setInterval(() => {
+        const elapsed = Math.round((Date.now() - connectStartTime) / 1000);
+        log(`[McpClientManager:${serverId}] Still waiting for MCP response... (${elapsed}s)`);
+        progress(`Waiting for server to initialize... (${elapsed}s)`);
+      }, 10000);
+      
+      let connectionInfo;
+      try {
+        connectionInfo = await client.connect();
+      } finally {
+        clearInterval(connectStatusInterval);
+      }
+      const connectTime = Math.round((Date.now() - connectStartTime) / 1000);
+      progress(`✓ MCP connection established! (${connectTime}s)`);
+      log(`[McpClientManager] Docker MCP handshake completed in ${connectTime}s`);
 
       // Fetch capabilities
       const [tools, resources, prompts] = await Promise.all([

@@ -181,30 +181,42 @@ export class DockerRunner {
       proc.startedAt = Date.now();
       proc.state = ProcessState.RUNNING;
       
-      // Handle stdout
+      // Handle stdout - log all output during startup
       child.stdout?.on('data', (data: Buffer) => {
         const lines = data.toString('utf-8').split('\n');
         for (const line of lines) {
           if (line.trim()) {
+            log(`[DockerRunner:${serverId}:stdout] ${line}`);
             proc.logBuffer.push(`[stdout] ${line}`);
             if (proc.logBuffer.length > 1000) {
               proc.logBuffer = proc.logBuffer.slice(-500);
             }
             options.onOutput?.('stdout', line);
+            // Send progress for npm-related output
+            if (line.includes('npm') || line.includes('install') || line.includes('added') || 
+                line.includes('packages') || line.includes('Downloading') || line.includes('Cloning')) {
+              options.onProgress?.(`[npm] ${line}`);
+            }
           }
         }
       });
       
-      // Handle stderr
+      // Handle stderr - log all output during startup (npm uses stderr for progress)
       child.stderr?.on('data', (data: Buffer) => {
         const lines = data.toString('utf-8').split('\n');
         for (const line of lines) {
           if (line.trim()) {
+            log(`[DockerRunner:${serverId}:stderr] ${line}`);
             proc.logBuffer.push(`[stderr] ${line}`);
             if (proc.logBuffer.length > 1000) {
               proc.logBuffer = proc.logBuffer.slice(-500);
             }
             options.onOutput?.('stderr', line);
+            // Send progress for npm-related output (npm often uses stderr)
+            if (line.includes('npm') || line.includes('WARN') || line.includes('added') || 
+                line.includes('packages') || line.includes('deprecated') || line.includes('audit')) {
+              options.onProgress?.(`[npm] ${line}`);
+            }
           }
         }
       });
@@ -247,7 +259,23 @@ export class DockerRunner {
         }
       }, 500);
       
-      log(`[DockerRunner] Started container ${containerName}`);
+      log(`[DockerRunner] Container ${containerName} started, waiting for initialization...`);
+      options.onProgress?.(`Container started, installing dependencies...`);
+      
+      // Log periodic status updates while container is initializing
+      const statusInterval = setInterval(() => {
+        if (proc.state === ProcessState.RUNNING) {
+          const elapsed = Math.round((Date.now() - proc.startedAt!) / 1000);
+          log(`[DockerRunner:${serverId}] Still initializing... (${elapsed}s elapsed)`);
+          options.onProgress?.(`Still initializing... (${elapsed}s elapsed)`);
+        } else {
+          clearInterval(statusInterval);
+        }
+      }, 10000); // Every 10 seconds
+      
+      // Clear interval when process exits
+      child.on('exit', () => clearInterval(statusInterval));
+      
       return this.toServerProcess(proc);
       
     } catch (error) {

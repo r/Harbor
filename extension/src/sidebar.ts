@@ -582,7 +582,14 @@ function renderInstalledServers(): void {
               <button class="btn btn-sm btn-primary configure-btn" data-server-id="${escapeHtml(server.id)}">Configure</button>
             ` : ''}
             ${!needsAuth && !isRunning ? `
-              <button class="btn btn-sm btn-success start-btn" data-server-id="${escapeHtml(server.id)}">Start</button>
+              <div class="start-btn-group" style="display: inline-flex; position: relative;">
+                <button class="btn btn-sm btn-success start-btn" data-server-id="${escapeHtml(server.id)}">Start</button>
+                <button class="btn btn-sm btn-success start-dropdown-btn" data-server-id="${escapeHtml(server.id)}" style="padding: 0 4px; border-left: 1px solid rgba(255,255,255,0.2);" title="Start options">▾</button>
+                <div class="start-dropdown" style="display: none; position: absolute; top: 100%; left: 0; background: var(--color-bg-elevated); border: 1px solid var(--color-border); border-radius: 4px; min-width: 140px; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+                  <button class="dropdown-item start-native-btn" data-server-id="${escapeHtml(server.id)}" style="display: block; width: 100%; padding: 8px 12px; text-align: left; background: none; border: none; color: var(--color-text); cursor: pointer;">▶ Start</button>
+                  <button class="dropdown-item start-docker-btn" data-server-id="${escapeHtml(server.id)}" style="display: block; width: 100%; padding: 8px 12px; text-align: left; background: none; border: none; color: var(--color-text); cursor: pointer;">🐳 Start in Docker</button>
+                </div>
+              </div>
             ` : ''}
             ${isRunning ? `
               <button class="btn btn-sm btn-danger stop-btn" data-server-id="${escapeHtml(server.id)}">Stop</button>
@@ -609,6 +616,7 @@ function renderInstalledServers(): void {
     btn.addEventListener('click', () => openCredentialModal((btn as HTMLElement).dataset.serverId!));
   });
 
+  // Start button (main) - starts normally
   const startBtns = installedServerListEl.querySelectorAll('.start-btn');
   console.log('[Sidebar] Found start buttons:', startBtns.length);
   startBtns.forEach(btn => {
@@ -619,6 +627,43 @@ function renderInstalledServers(): void {
       e.stopPropagation();
       console.log('[Sidebar] *** START BUTTON CLICKED *** for:', serverId);
       startInstalledServer(serverId!);
+    });
+  });
+
+  // Start dropdown toggle
+  installedServerListEl.querySelectorAll('.start-dropdown-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const dropdown = (btn as HTMLElement).parentElement?.querySelector('.start-dropdown') as HTMLElement;
+      if (dropdown) {
+        const isVisible = dropdown.style.display !== 'none';
+        // Close all other dropdowns first
+        document.querySelectorAll('.start-dropdown').forEach(d => (d as HTMLElement).style.display = 'none');
+        dropdown.style.display = isVisible ? 'none' : 'block';
+      }
+    });
+  });
+
+  // Start native option
+  installedServerListEl.querySelectorAll('.start-native-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const serverId = (btn as HTMLElement).dataset.serverId!;
+      (btn as HTMLElement).closest('.start-dropdown')!.setAttribute('style', 'display: none');
+      startInstalledServer(serverId, false, false);
+    });
+  });
+
+  // Start in Docker option
+  installedServerListEl.querySelectorAll('.start-docker-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const serverId = (btn as HTMLElement).dataset.serverId!;
+      (btn as HTMLElement).closest('.start-dropdown')!.setAttribute('style', 'display: none');
+      startInstalledServer(serverId, false, true);
     });
   });
 
@@ -1081,6 +1126,10 @@ async function startInstalledServer(
       if (response.connected) {
         console.log('[Sidebar] Server started and connected:', serverId, 'docker:', response.running_in_docker);
         clearServerProgress(serverId);
+        // Refresh Docker status to show running container
+        if (response.running_in_docker) {
+          setTimeout(() => checkDockerStatus(), 1000);
+        }
       } else if (response.needs_security_approval) {
         // Show security approval instructions with Docker option if available
         showSecurityApprovalModal(

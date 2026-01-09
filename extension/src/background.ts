@@ -817,13 +817,16 @@ browser.runtime.onMessage.addListener(
     }
 
     if (msg.type === 'start_manifest_server') {
-      console.log('[Background] start_manifest_server for:', msg.server_id);
+      const useDocker = msg.use_docker || false;
+      console.log('[Background] start_manifest_server for:', msg.server_id, 'use_docker:', useDocker);
+      // Use 5-minute timeout for Docker (image pull + npm install from GitHub can be slow)
+      const timeout = useDocker ? DOCKER_TIMEOUT_MS : REQUEST_TIMEOUT_MS * 4; // 2 minutes for native
       return sendToBridge({
         type: 'start_manifest_server',
         request_id: generateRequestId(),
         server_id: msg.server_id,
-        use_docker: msg.use_docker,
-      });
+        use_docker: useDocker,
+      }, timeout);
     }
 
     // LLM messages

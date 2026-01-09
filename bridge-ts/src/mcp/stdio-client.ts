@@ -150,9 +150,24 @@ export class StdioMcpClient {
 
     try {
       log(`[StdioMcpClient] Connecting to: ${this.options.command} ${this.options.args?.join(' ') || ''}`);
+      log(`[StdioMcpClient] Spawning process and waiting for MCP initialization...`);
+      
+      // Log periodic status while waiting for connect
+      const startTime = Date.now();
+      const statusInterval = setInterval(() => {
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        log(`[StdioMcpClient] Still waiting for MCP handshake... (${elapsed}s elapsed)`);
+      }, 5000);
       
       // Connect the client to the transport
-      await this.client.connect(this.transport);
+      try {
+        await this.client.connect(this.transport);
+      } finally {
+        clearInterval(statusInterval);
+      }
+      
+      const connectTime = Math.round((Date.now() - startTime) / 1000);
+      log(`[StdioMcpClient] MCP handshake completed in ${connectTime}s`);
       
       this.connected = true;
 
