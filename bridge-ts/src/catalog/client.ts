@@ -9,29 +9,17 @@
  * 
  * The main bridge should use this instead of CatalogManager when running
  * with the worker architecture.
+ * 
+ * PKG COMPATIBILITY:
+ * Instead of forking a separate worker.js file (which doesn't work in pkg binaries),
+ * we fork the same executable with a special flag (--catalog-worker).
+ * The main.ts entry point detects this flag and runs in worker mode.
  */
 
 import { fork, ChildProcess } from 'child_process';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import { log } from '../native-messaging.js';
 import { getCatalogDb, CatalogDatabase } from './database.js';
 import { CatalogServer, CatalogResult, ProviderStatus } from '../types.js';
-
-// Support both ESM and CJS bundling  
-// In pkg/bundled environments, use process.cwd() as fallback
-const getCurrentDir = (): string => {
-  try {
-    // @ts-ignore - import.meta might not exist in CJS
-    if (typeof import.meta?.url === 'string') {
-      return dirname(fileURLToPath(import.meta.url));
-    }
-  } catch {
-    // Fall through
-  }
-  return process.cwd();
-};
-const __dirname = getCurrentDir();
 
 export interface CatalogClientOptions {
   /** Start worker automatically on client creation */
@@ -83,10 +71,20 @@ export class CatalogClient {
     log('[CatalogClient] Starting catalog worker...');
     this.workerStatus = 'starting';
     
-    // Fork the worker process
-    const workerPath = join(__dirname, 'worker.js');
-    this.worker = fork(workerPath, [], {
+    // Fork the worker process using pkg-compatible approach:
+    // Instead of forking worker.js (which doesn't exist in pkg binaries),
+    // we fork the same script with a special flag.
+    // Main.ts detects --catalog-worker and runs in worker mode.
+    // fork(modulePath, args) - modulePath is the script to run, NOT the node executable
+    const scriptPath = process.argv[1]; // e.g., /path/to/main.js
+    this.worker = fork(scriptPath, ['--catalog-worker'], {
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+      // Ensure proper environment for pkg
+      env: {
+        ...process.env,
+        // Prevent nested worker spawning
+        HARBOR_CATALOG_WORKER: '0',
+      },
     });
     
     // Handle worker messages

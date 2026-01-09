@@ -72,6 +72,19 @@ const RECOMMENDED_SERVERS: RecommendedServer[] = [
     requiresConfig: false,
     homepageUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/time',
   },
+  {
+    id: 'curated-gmail',  // Must match curated-servers.ts
+    name: 'Gmail',
+    description: 'Read, search, send emails, manage labels and filters via Gmail API. Sign in with Google to get started.',
+    icon: '📧',
+    packageType: 'npm',
+    packageId: '@gongrzhe/server-gmail-autoauth-mcp',
+    tags: ['email', 'google', 'productivity'],
+    requiresNative: true,
+    requiresConfig: true,
+    configHint: 'Sign in with Google to authorize access',
+    homepageUrl: 'https://github.com/r/Gmail-MCP-Server',
+  },
 ];
 
 // ============================================================================
@@ -1226,12 +1239,17 @@ function updateInstallStep(stepName: string, status: 'active' | 'complete' | 'er
   });
 }
 
-function showInstallSuccess(serverName: string, needsConfig: boolean): void {
+function showInstallSuccess(serverName: string, needsConfig: boolean, customMessage?: string): void {
   installModalSubtitle.textContent = 'Installation complete!';
   
-  const configMessage = needsConfig 
-    ? 'Open the <strong>sidebar</strong> to configure credentials and start the server.'
-    : 'Open the <strong>sidebar</strong> to start the server.';
+  let configMessage: string;
+  if (customMessage) {
+    configMessage = customMessage;
+  } else if (needsConfig) {
+    configMessage = 'Open the <strong>sidebar</strong> to configure credentials and start the server.';
+  } else {
+    configMessage = 'Open the <strong>sidebar</strong> to start the server.';
+  }
   
   installModalBody.innerHTML = `
     <div class="install-success-message">
@@ -1379,7 +1397,14 @@ async function installServer(server: CatalogServer): Promise<void> {
       type: 'install_server',
       catalog_entry: server,
       package_index: 0,
-    }) as { type: string; server?: { id: string; requiredEnvVars?: Array<{ isSecret?: boolean }> }; error?: { message: string } };
+    }) as { 
+      type: string; 
+      server?: { id: string; requiredEnvVars?: Array<{ isSecret?: boolean }> }; 
+      hasManifest?: boolean;
+      needsOAuth?: boolean;
+      oauthMode?: 'host' | 'user' | 'server';
+      error?: { message: string };
+    };
 
     console.log('[Directory] install_server response:', installResponse);
     
@@ -1396,7 +1421,23 @@ async function installServer(server: CatalogServer): Promise<void> {
     // Step 4: Configure
     updateInstallStep('configure', 'active', 'Configuring server...');
     await new Promise(resolve => setTimeout(resolve, 300));
-    updateInstallStep('configure', 'complete', 'Configuration complete');
+    
+    // Handle OAuth if needed (manifest-based installation)
+    if (installResponse.needsOAuth && installResponse.oauthMode === 'host' && installResponse.server?.id) {
+      updateInstallStep('configure', 'active', 'Authorization required...');
+      
+      // Start OAuth flow
+      const oauthStarted = await startOAuthForServer(installResponse.server.id, server.name);
+      
+      if (!oauthStarted) {
+        updateInstallStep('configure', 'complete', 'Configuration complete (OAuth pending)');
+        // Still show success - user can authorize later
+      } else {
+        updateInstallStep('configure', 'complete', 'Authorized and configured');
+      }
+    } else {
+      updateInstallStep('configure', 'complete', 'Configuration complete');
+    }
 
     // Check if needs credentials
     const needsConfig = installResponse.server?.requiredEnvVars?.some(v => v.isSecret) || false;
@@ -1417,6 +1458,74 @@ async function installServer(server: CatalogServer): Promise<void> {
     updateInstallStep('install', 'error', String(error));
     showInstallError(String(error));
   }
+}
+
+/**
+ * Start OAuth flow for a server that needs it.
+ * Opens browser for authentication.
+ */
+async function startOAuthForServer(serverId: string, serverName: string): Promise<boolean> {
+  // Confirm with user
+  const proceed = confirm(
+    `${serverName} needs to connect to your Google account.\n\n` +
+    `Click OK to sign in with Google and grant access.`
+  );
+  
+  if (!proceed) {
+    return false;
+  }
+  
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'manifest_oauth_start',
+      server_id: serverId,
+    }) as { type: string; authUrl?: string; state?: string; error?: string };
+    
+    if (response.type === 'error' || !response.authUrl) {
+      showToast(`Failed to start authorization: ${response.error || 'Unknown error'}`, 'error');
+      return false;
+    }
+    
+    // Open auth URL in browser
+    window.open(response.authUrl, '_blank');
+    
+    // Wait for completion (poll)
+    showToast('Complete sign-in in the browser window...', 'info');
+    
+    const completed = await waitForOAuth(serverId, 5 * 60 * 1000); // 5 min timeout
+    
+    if (completed) {
+      showToast('Authorization successful!', 'success');
+    }
+    
+    return completed;
+  } catch (err) {
+    console.error('[Directory] OAuth flow failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Wait for OAuth to complete by polling status.
+ */
+async function waitForOAuth(serverId: string, maxWaitMs: number): Promise<boolean> {
+  const startTime = Date.now();
+  const pollInterval = 2000;
+  
+  while (Date.now() - startTime < maxWaitMs) {
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+    
+    const status = await browser.runtime.sendMessage({
+      type: 'manifest_oauth_status',
+      server_id: serverId,
+    }) as { required: boolean; hasTokens: boolean; tokensValid: boolean };
+    
+    if (status.hasTokens && status.tokensValid) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 // Install a recommended server (hardcoded Quick Start servers)
@@ -1448,6 +1557,7 @@ async function installRecommendedServer(recommended: RecommendedServer): Promise
     updateInstallStep('install', 'active', 'Installing dependencies...');
 
     // Create a synthetic catalog entry for the recommended server
+    // The backend's install_server handler will check for mcp-manifest.json in the repo
     const syntheticCatalogEntry: CatalogServer = {
       id: recommended.id,
       name: recommended.name,
@@ -1455,12 +1565,12 @@ async function installRecommendedServer(recommended: RecommendedServer): Promise
       endpointUrl: '',
       installableOnly: true,
       tags: recommended.tags,
-      source: 'official_registry',
+      source: 'curated',
       fetchedAt: Date.now(),
       homepageUrl: recommended.homepageUrl,
     };
 
-    console.log('[Directory] Installing recommended server:', recommended.name, recommended.packageId);
+    console.log('[Directory] Installing recommended server:', recommended.name, recommended.homepageUrl);
     
     // Build packages array - only include if packageId is specified
     // If packageId is empty, let the backend resolve from homepageUrl
@@ -1471,6 +1581,7 @@ async function installRecommendedServer(recommended: RecommendedServer): Promise
         }]
       : undefined;
     
+    // Use install_server which automatically fetches mcp-manifest.json from the repo
     const installResponse = await browser.runtime.sendMessage({
       type: 'install_server',
       catalog_entry: {
@@ -1478,7 +1589,14 @@ async function installRecommendedServer(recommended: RecommendedServer): Promise
         packages,
       },
       package_index: 0,
-    }) as { type: string; server?: { id: string; requiredEnvVars?: Array<{ isSecret?: boolean }> }; error?: { message: string } };
+    }) as { 
+      type: string; 
+      server?: { id: string; requiredEnvVars?: Array<{ isSecret?: boolean }> }; 
+      hasManifest?: boolean;
+      needsOAuth?: boolean;
+      oauthMode?: string;
+      error?: { message: string };
+    };
 
     console.log('[Directory] install_server response:', installResponse);
     
@@ -1497,10 +1615,14 @@ async function installRecommendedServer(recommended: RecommendedServer): Promise
     await new Promise(resolve => setTimeout(resolve, 300));
     updateInstallStep('configure', 'complete', 'Configuration complete');
 
-    // Check if needs credentials
+    // Check if needs credentials or OAuth
     const needsConfig = recommended.requiresConfig || 
       installResponse.server?.requiredEnvVars?.some(v => v.isSecret) || false;
+    const needsOAuth = installResponse.needsOAuth || false;
+    const hasManifest = installResponse.hasManifest || false;
     lastInstalledServerId = installResponse.server?.id || null;
+    
+    console.log('[Directory] Install complete - hasManifest:', hasManifest, 'needsOAuth:', needsOAuth, 'oauthMode:', installResponse.oauthMode);
     
     // Update installed servers set
     if (lastInstalledServerId) {
@@ -1509,7 +1631,12 @@ async function installRecommendedServer(recommended: RecommendedServer): Promise
     // Also mark recommended as installed
     installedServerIds.add(recommended.id);
     
-    showInstallSuccess(recommended.name, needsConfig);
+    // If OAuth is needed, show appropriate message
+    if (needsOAuth && installResponse.oauthMode === 'host') {
+      showInstallSuccess(recommended.name, false, 'Sign in with Google to start using this server');
+    } else {
+      showInstallSuccess(recommended.name, needsConfig);
+    }
     
     // Re-render to update installed status
     renderServers();

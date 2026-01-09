@@ -360,7 +360,14 @@ function stopRefreshInterval(): void {
 // Worker Entry Point
 // =============================================================================
 
-async function main(): Promise<void> {
+/**
+ * Run the catalog worker.
+ * This is called from main.ts when the --catalog-worker flag is passed.
+ * 
+ * This design allows the worker to be run from a pkg-compiled binary,
+ * where we can't fork separate .js files.
+ */
+export async function runCatalogWorker(): Promise<void> {
   log('[CatalogWorker] Starting catalog worker process...');
   
   // Initialize components
@@ -401,11 +408,10 @@ async function main(): Promise<void> {
   
   log('[CatalogWorker] Worker ready');
   sendStatus('ready', { message: 'Catalog worker initialized' });
+  
+  // Keep the process alive - wait for parent to disconnect
+  await new Promise<void>(() => {
+    // This promise never resolves - we exit via the disconnect handler
+  });
 }
-
-// Run if this is the main module
-main().catch(err => {
-  console.error('[CatalogWorker] Fatal error:', err);
-  process.exit(1);
-});
 

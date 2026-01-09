@@ -7,6 +7,9 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Determine target browser from env: 'firefox' (default), 'chrome', or 'all'
+const targetBrowser = process.env.TARGET_BROWSER || 'firefox';
+
 // Content scripts that must be bundled as IIFE (not ES modules)
 // These are injected into web page contexts and cannot load separate modules
 const contentScriptEntries = {
@@ -115,12 +118,16 @@ export default defineConfig({
         );
         writeFileSync(resolve(__dirname, 'dist/welcome.js'), welcomeJs);
 
-        // Copy manifest.json
+        // Copy manifest.json based on target browser
+        const manifestFile = targetBrowser === 'chrome' 
+          ? 'manifest.chrome.json' 
+          : 'manifest.json';
         const manifest = readFileSync(
-          resolve(__dirname, 'manifest.json'),
+          resolve(__dirname, manifestFile),
           'utf-8'
         );
         writeFileSync(resolve(__dirname, 'dist/manifest.json'), manifest);
+        console.log(`[vite] Built for ${targetBrowser} browser (using ${manifestFile})`);
 
         // Copy icons
         const iconsDir = resolve(__dirname, 'dist/icons');

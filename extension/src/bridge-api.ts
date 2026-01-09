@@ -154,3 +154,61 @@ export async function deleteChatSession(sessionId: string): Promise<void> {
   }
 }
 
+// =============================================================================
+// LLM Provider API
+// =============================================================================
+
+export interface LLMProviderInfo {
+  id: string;
+  name: string;
+  available: boolean;
+  baseUrl?: string;
+  models?: string[];
+  isDefault: boolean;
+  supportsTools?: boolean;
+}
+
+export interface ListLLMProvidersResponse {
+  type: string;
+  providers?: LLMProviderInfo[];
+  error?: { message: string };
+}
+
+export async function listLLMProviders(): Promise<ListLLMProvidersResponse> {
+  try {
+    const response = await sendToBridge({
+      type: 'llm_list_providers',
+      request_id: generateRequestId(),
+    });
+    return response as ListLLMProvidersResponse;
+  } catch (err) {
+    console.error('[BridgeAPI] listLLMProviders error:', err);
+    return { type: 'error', error: { message: err instanceof Error ? err.message : 'Failed to list providers' } };
+  }
+}
+
+export interface ActiveLLMConfig {
+  provider: string | null;
+  model: string | null;
+}
+
+export interface GetActiveLLMResponse {
+  type: string;
+  provider?: string | null;
+  model?: string | null;
+  error?: { message: string };
+}
+
+export async function getActiveLLM(): Promise<GetActiveLLMResponse> {
+  try {
+    const response = await sendToBridge({
+      type: 'llm_get_active',
+      request_id: generateRequestId(),
+    });
+    return response as GetActiveLLMResponse;
+  } catch (err) {
+    console.error('[BridgeAPI] getActiveLLM error:', err);
+    return { type: 'error', error: { message: err instanceof Error ? err.message : 'Failed to get active LLM' } };
+  }
+}
+

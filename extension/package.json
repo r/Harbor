@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
+    "build:firefox": "TARGET_BROWSER=firefox vite build",
+    "build:chrome": "TARGET_BROWSER=chrome vite build",
+    "dev:chrome": "TARGET_BROWSER=chrome vite build --watch",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
