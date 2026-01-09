@@ -107,6 +107,7 @@ export class PackageRunner {
         const lines = data.toString('utf-8').split('\n');
         for (const line of lines) {
           if (line.trim()) {
+            log(`[${serverId}:stderr] ${line}`);  // Always log stderr
             proc.logBuffer.push(`[stderr] ${line}`);
             if (proc.logBuffer.length > 1000) {
               proc.logBuffer = proc.logBuffer.slice(-500);
@@ -237,6 +238,24 @@ export class PackageRunner {
         return null;
       }
       const cmd = ['npx', '-y', packageId];
+      if (args) cmd.push(...args);
+      return cmd;
+    }
+
+    if (packageType === 'git') {
+      // For git packages, use npm/npx with the GitHub URL
+      // npm supports: github:user/repo, https://github.com/user/repo.git
+      const runtime = this.runtimeManager.getRuntime(RuntimeType.NODE);
+      if (!runtime?.available) {
+        return null;
+      }
+      // Convert full URL to github:user/repo format
+      let gitRef = packageId;
+      const match = packageId.match(/github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?$/);
+      if (match) {
+        gitRef = `github:${match[1]}`;
+      }
+      const cmd = ['npx', '-y', gitRef];
       if (args) cmd.push(...args);
       return cmd;
     }

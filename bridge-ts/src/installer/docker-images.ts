@@ -258,6 +258,7 @@ export class DockerImageManager {
   getImageTypeForPackage(packageType: string): DockerImageType {
     switch (packageType.toLowerCase()) {
       case 'npm':
+      case 'git':  // git packages use npm/node for installation
         return 'node';
       case 'pypi':
         return 'python';

@@ -53,13 +53,21 @@ select_binary() {
     fi
 }
 
-# Firefox native messaging paths
+# Native messaging paths
 FIREFOX_NATIVE_HOSTS="/Library/Application Support/Mozilla/NativeMessagingHosts"
+CHROME_NATIVE_HOSTS="/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+CHROMIUM_NATIVE_HOSTS="/Library/Application Support/Chromium/NativeMessagingHosts"
 MANIFEST_NAME="harbor_bridge_host"
 
-# Firefox extension ID (must match extension's manifest.json)
-# This is stamped by build-pkg.sh from credentials.env
+# Extension IDs (stamped by build-pkg.sh from credentials.env)
+# Firefox extension ID (email format, e.g., "raffi.krikorian.harbor@gmail.com")
 EXTENSION_ID="__EXTENSION_ID__"
+# Chrome extension ID (32-char string, e.g., "abcdefghijklmnopqrstuvwxyzabcdef")
+CHROME_EXTENSION_ID="__CHROME_EXTENSION_ID__"
+
+# Which browsers to install for (set by installer choices)
+# Can be: "firefox", "chrome", or "both" (default)
+INSTALL_BROWSERS="${INSTALL_BROWSERS:-both}"
 
 # =============================================================================
 # Create launcher script
@@ -97,10 +105,10 @@ LAUNCHER_EOF
 }
 
 # =============================================================================
-# Install native messaging manifest
+# Install native messaging manifest for Firefox
 # =============================================================================
-install_native_manifest() {
-    echo "Installing native messaging manifest..."
+install_firefox_native_manifest() {
+    echo "Installing Firefox native messaging manifest..."
     
     # Create directory if it doesn't exist
     mkdir -p "$FIREFOX_NATIVE_HOSTS"
@@ -121,11 +129,10 @@ install_native_manifest() {
 }
 EOF
 
-    echo "Native messaging manifest installed at: $MANIFEST_FILE" >> "$LOG_FILE"
-    echo "  ✓ System manifest installed: $MANIFEST_FILE"
+    echo "Firefox native manifest installed at: $MANIFEST_FILE" >> "$LOG_FILE"
+    echo "  ✓ Firefox system manifest: $MANIFEST_FILE"
     
-    # Also update/remove user-level manifest if it exists (it takes precedence)
-    # Try to find the actual user (the one who ran sudo)
+    # Also update user-level manifest if it exists (it takes precedence)
     ACTUAL_USER="${SUDO_USER:-}"
     if [ -z "$ACTUAL_USER" ]; then
         ACTUAL_USER=$(stat -f '%Su' /dev/console 2>/dev/null || echo "")
@@ -136,10 +143,7 @@ EOF
         USER_MANIFEST="$USER_HOME/Library/Application Support/Mozilla/NativeMessagingHosts/${MANIFEST_NAME}.json"
         
         if [ -f "$USER_MANIFEST" ]; then
-            echo "  Found user-level manifest, updating..."
-            echo "Found user manifest at: $USER_MANIFEST" >> "$LOG_FILE"
-            
-            # Update it to point to the installed bridge (not remove, to preserve user's choice)
+            echo "  Found user-level Firefox manifest, updating..."
             cat > "$USER_MANIFEST" << EOF
 {
   "name": "$MANIFEST_NAME",
@@ -149,12 +153,105 @@ EOF
   "allowed_extensions": ["$EXTENSION_ID"]
 }
 EOF
-            # Fix ownership since we're running as root
             chown "$ACTUAL_USER" "$USER_MANIFEST"
-            echo "  ✓ User manifest updated: $USER_MANIFEST"
-            echo "User manifest updated" >> "$LOG_FILE"
+            echo "  ✓ Firefox user manifest updated"
         fi
     fi
+}
+
+# =============================================================================
+# Install native messaging manifest for Chrome/Chromium
+# =============================================================================
+install_chrome_native_manifest() {
+    echo "Installing Chrome native messaging manifest..."
+    
+    LAUNCHER_PATH="$HARBOR_DIR/harbor-bridge-launcher"
+    
+    # Chrome extension ID - stamped from credentials.env by build script
+    # This is the ID from Chrome Web Store (32 lowercase letters a-p)
+    # Leave as placeholder if not yet published to Web Store
+    CHROME_EXTENSION_ID="__CHROME_EXTENSION_ID__"
+    
+    # Skip if no Chrome extension ID configured
+    if [ -z "$CHROME_EXTENSION_ID" ] || [ "$CHROME_EXTENSION_ID" = "__CHROME_EXTENSION_ID__" ]; then
+        echo "  ⚠ Chrome extension ID not configured (extension not yet in Web Store?)"
+        echo "  Native messaging will be configured when CHROME_EXTENSION_ID is set"
+        echo "Chrome extension ID not configured, skipping native messaging" >> "$LOG_FILE"
+        return 0
+    fi
+    
+    echo "  Chrome extension ID: $CHROME_EXTENSION_ID"
+    
+    # Install for Google Chrome
+    mkdir -p "$CHROME_NATIVE_HOSTS"
+    CHROME_MANIFEST="$CHROME_NATIVE_HOSTS/${MANIFEST_NAME}.json"
+    
+    cat > "$CHROME_MANIFEST" << EOF
+{
+  "name": "$MANIFEST_NAME",
+  "description": "Harbor Bridge - AI Agent Platform with MCP Tools",
+  "path": "$LAUNCHER_PATH",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://$CHROME_EXTENSION_ID/"]
+}
+EOF
+
+    echo "Chrome native manifest installed at: $CHROME_MANIFEST" >> "$LOG_FILE"
+    echo "  ✓ Chrome system manifest: $CHROME_MANIFEST"
+    
+    # Also install for Chromium (same format)
+    mkdir -p "$CHROMIUM_NATIVE_HOSTS"
+    CHROMIUM_MANIFEST="$CHROMIUM_NATIVE_HOSTS/${MANIFEST_NAME}.json"
+    cp "$CHROME_MANIFEST" "$CHROMIUM_MANIFEST"
+    echo "  ✓ Chromium system manifest: $CHROMIUM_MANIFEST"
+    
+    # Update user-level manifests if they exist
+    ACTUAL_USER="${SUDO_USER:-}"
+    if [ -z "$ACTUAL_USER" ]; then
+        ACTUAL_USER=$(stat -f '%Su' /dev/console 2>/dev/null || echo "")
+    fi
+    
+    if [ -n "$ACTUAL_USER" ] && [ "$ACTUAL_USER" != "root" ]; then
+        USER_HOME=$(eval echo "~$ACTUAL_USER")
+        
+        # Chrome user manifest
+        USER_CHROME_DIR="$USER_HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+        USER_CHROME_MANIFEST="$USER_CHROME_DIR/${MANIFEST_NAME}.json"
+        if [ -f "$USER_CHROME_MANIFEST" ]; then
+            cp "$CHROME_MANIFEST" "$USER_CHROME_MANIFEST"
+            chown "$ACTUAL_USER" "$USER_CHROME_MANIFEST"
+            echo "  ✓ Chrome user manifest updated"
+        fi
+        
+        # Chromium user manifest  
+        USER_CHROMIUM_DIR="$USER_HOME/Library/Application Support/Chromium/NativeMessagingHosts"
+        USER_CHROMIUM_MANIFEST="$USER_CHROMIUM_DIR/${MANIFEST_NAME}.json"
+        if [ -f "$USER_CHROMIUM_MANIFEST" ]; then
+            cp "$CHROME_MANIFEST" "$USER_CHROMIUM_MANIFEST"
+            chown "$ACTUAL_USER" "$USER_CHROMIUM_MANIFEST"
+            echo "  ✓ Chromium user manifest updated"
+        fi
+    fi
+}
+
+# =============================================================================
+# Install native messaging manifests (wrapper for both browsers)
+# =============================================================================
+install_native_manifest() {
+    echo "Installing native messaging manifests..."
+    
+    case "$INSTALL_BROWSERS" in
+        firefox)
+            install_firefox_native_manifest
+            ;;
+        chrome)
+            install_chrome_native_manifest
+            ;;
+        both|*)
+            install_firefox_native_manifest
+            install_chrome_native_manifest
+            ;;
+    esac
 }
 
 # =============================================================================
@@ -221,6 +318,46 @@ EOF
         echo "  ⚠ Could not determine user (got: '$ACTUAL_USER'), please install extension manually"
         echo "Could not determine user: SUDO_USER='$SUDO_USER' USER='$USER'" >> "$LOG_FILE"
         echo "  Open: $HARBOR_XPI"
+    fi
+}
+
+# =============================================================================
+# Install Chrome extension via Web Store
+# =============================================================================
+install_chrome_extension() {
+    echo "Setting up Chrome extension..."
+    
+    # Chrome Web Store URL - stamped by build script
+    # Format: https://chrome.google.com/webstore/detail/harbor/EXTENSION_ID
+    CHROME_WEBSTORE_URL="__CHROME_WEBSTORE_URL__"
+    
+    # Skip if no Web Store URL configured
+    if [ -z "$CHROME_WEBSTORE_URL" ] || [ "$CHROME_WEBSTORE_URL" = "__CHROME_WEBSTORE_URL__" ]; then
+        echo "  ⚠ Chrome Web Store URL not configured"
+        echo "  For development, load the extension manually:"
+        echo "    1. Open Chrome → chrome://extensions/"
+        echo "    2. Enable 'Developer mode'"
+        echo "    3. Click 'Load unpacked' → select: $HARBOR_DIR/chrome-extension"
+        return 0
+    fi
+    
+    # Get the actual user
+    ACTUAL_USER="${SUDO_USER:-}"
+    if [ -z "$ACTUAL_USER" ]; then
+        ACTUAL_USER=$(stat -f '%Su' /dev/console 2>/dev/null || echo "")
+    fi
+    
+    echo "  Opening Chrome Web Store..."
+    echo "Chrome Web Store URL: $CHROME_WEBSTORE_URL" >> "$LOG_FILE"
+    
+    if [ -n "$ACTUAL_USER" ] && [ "$ACTUAL_USER" != "root" ]; then
+        # Open Chrome Web Store page to trigger installation
+        su "$ACTUAL_USER" -c "open -a 'Google Chrome' '$CHROME_WEBSTORE_URL'" 2>> "$LOG_FILE" &
+        echo "  ✓ Chrome Web Store opened"
+        echo "  Click 'Add to Chrome' to install the extension"
+    else
+        echo "  ⚠ Could not determine user, please install manually:"
+        echo "    $CHROME_WEBSTORE_URL"
     fi
 }
 
@@ -315,22 +452,39 @@ set_permissions
 create_launcher
 install_native_manifest
 install_firefox_extension
+install_chrome_extension
 install_uninstaller
 create_first_run_marker
+
+CHROME_WEBSTORE_URL="__CHROME_WEBSTORE_URL__"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 echo "✓ Harbor has been installed successfully!"
 echo ""
-echo "What happens next:"
-echo "  1. Firefox will open with an extension install prompt"
-echo "  2. Click 'Add' to install the Harbor extension"
-echo "  3. Look for the ⚓ icon in the sidebar"
-echo "  4. Start Docker Desktop before using MCP servers"
+echo "FIREFOX:"
+echo "  Firefox will open with an extension install prompt."
+echo "  Click 'Add' to install, then look for ⚓ in the sidebar."
 echo ""
-echo "If Firefox doesn't open, manually open this file:"
-echo "  $HARBOR_XPI"
+echo "  If Firefox doesn't open, manually open this file:"
+echo "    $HARBOR_XPI"
+echo ""
+if [ -n "$CHROME_WEBSTORE_URL" ] && [ "$CHROME_WEBSTORE_URL" != "__CHROME_WEBSTORE_URL__" ]; then
+echo "CHROME:"
+echo "  Chrome Web Store will open. Click 'Add to Chrome' to install."
+echo "  Then click the Harbor icon to open the side panel."
+echo ""
+else
+echo "CHROME (Developer Mode):"
+echo "  1. Open Chrome → chrome://extensions/"
+echo "  2. Enable 'Developer mode' (top right toggle)"
+echo "  3. Click 'Load unpacked'"
+echo "  4. Select: $HARBOR_DIR/chrome-extension"
+echo "  5. Click the Harbor icon to open the side panel"
+echo ""
+fi
+echo "IMPORTANT: Start Docker Desktop before using MCP servers."
 echo ""
 echo "To uninstall Harbor later:"
 echo "  • Double-click 'Uninstall Harbor' in /Applications"

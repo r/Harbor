@@ -130,7 +130,7 @@ cleanup() {
 }
 
 # =============================================================================
-# Build Extension
+# Build Extension (Firefox)
 # =============================================================================
 
 build_extension() {
@@ -152,14 +152,52 @@ build_extension() {
     # Update the gecko ID in browser_specific_settings
     sed -i '' "s/\"id\": \"[^\"]*@[^\"]*\"/\"id\": \"$EXTENSION_ID\"/" manifest.json
     
-    # Build
-    npm run build
+    # Build for Firefox (default)
+    TARGET_BROWSER=firefox npm run build
     
     # Create XPI (unsigned)
     cd dist
     zip -r "$BUILD_DIR/harbor-unsigned.xpi" . -x "*.map"
     
-    echo_success "Extension built: $BUILD_DIR/harbor-unsigned.xpi"
+    echo_success "Firefox extension built: $BUILD_DIR/harbor-unsigned.xpi"
+}
+
+# =============================================================================
+# Build Chrome Extension
+# =============================================================================
+
+build_chrome_extension() {
+    echo_step "Building Chrome extension..."
+    
+    cd "$EXTENSION_DIR"
+    
+    # Update Chrome manifest version
+    echo "  Setting version to $VERSION..."
+    sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" manifest.chrome.json
+    
+    # Build for Chrome
+    TARGET_BROWSER=chrome npm run build
+    
+    # Copy unpacked extension (for dev mode loading)
+    mkdir -p "$BUILD_DIR/chrome-extension"
+    cp -r dist/* "$BUILD_DIR/chrome-extension/"
+    
+    # Create a zip for Chrome Web Store upload
+    cd dist
+    zip -r "$BUILD_DIR/harbor-chrome.zip" . -x "*.map"
+    cd ..
+    
+    echo_success "Chrome extension built:"
+    echo "  - Unpacked: $BUILD_DIR/chrome-extension/ (for dev mode)"
+    echo "  - ZIP: $BUILD_DIR/harbor-chrome.zip (for Web Store upload)"
+    
+    if [ -n "$CHROME_EXTENSION_ID" ]; then
+        echo "  - Extension ID: $CHROME_EXTENSION_ID (from credentials.env)"
+    else
+        echo "  - Extension ID: Will be assigned by Chrome Web Store"
+        echo "  NOTE: After publishing to Chrome Web Store, add CHROME_EXTENSION_ID"
+        echo "        and CHROME_WEBSTORE_URL to credentials.env"
+    fi
 }
 
 # =============================================================================
@@ -400,13 +438,23 @@ EOF
 }
 
 # =============================================================================
-# Copy Extension to Payload
+# Copy Extensions to Payload
 # =============================================================================
 
 copy_extension() {
-    echo_step "Copying extension to payload..."
+    echo_step "Copying extensions to payload..."
+    
+    # Copy Firefox extension
     cp "$BUILD_DIR/harbor.xpi" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
-    echo_success "Extension copied"
+    echo "  ✓ Firefox extension (harbor.xpi)"
+    
+    # Copy Chrome extension (unpacked folder for dev mode loading)
+    if [ -d "$BUILD_DIR/chrome-extension" ]; then
+        cp -r "$BUILD_DIR/chrome-extension" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
+        echo "  ✓ Chrome extension (chrome-extension/) - for dev mode"
+    fi
+    
+    echo_success "Extensions copied"
 }
 
 # =============================================================================
@@ -452,8 +500,11 @@ create_component_pkg() {
     
     sed "s/__BUILD_ARCH__/$BUILD_ARCH_MARKER/g" "$INSTALLER_DIR/scripts/preinstall" > "$SCRIPTS_TEMP/preinstall"
     
-    # Stamp postinstall with extension ID
-    sed "s/__EXTENSION_ID__/$EXTENSION_ID/g" "$INSTALLER_DIR/scripts/postinstall" > "$SCRIPTS_TEMP/postinstall"
+    # Stamp postinstall with extension IDs and URLs
+    sed -e "s/__EXTENSION_ID__/$EXTENSION_ID/g" \
+        -e "s/__CHROME_EXTENSION_ID__/${CHROME_EXTENSION_ID:-}/g" \
+        -e "s|__CHROME_WEBSTORE_URL__|${CHROME_WEBSTORE_URL:-}|g" \
+        "$INSTALLER_DIR/scripts/postinstall" > "$SCRIPTS_TEMP/postinstall"
     
     # Make scripts executable
     chmod +x "$SCRIPTS_TEMP/preinstall"
@@ -673,9 +724,10 @@ main() {
     # Default to standalone binary with bundled Node
     USE_PKG=true
     BUILD_UNIVERSAL=true    # Universal by default
-    SIGN_EXT=false
-    SIGN_PKG=false
-    NOTARIZE=false
+    # Auto-detect: sign if credentials are available (can be overridden)
+    SIGN_EXT=auto
+    SIGN_PKG=auto
+    NOTARIZE=auto
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -702,6 +754,13 @@ main() {
                 SIGN_PKG=true
                 shift
                 ;;
+            --no-sign)
+                # Explicitly disable all signing
+                SIGN_EXT=false
+                SIGN_PKG=false
+                NOTARIZE=false
+                shift
+                ;;
             --all)
                 SIGN_EXT=true
                 SIGN_PKG=true
@@ -713,6 +772,8 @@ main() {
                 # Fast dev build: current arch only, no signing
                 BUILD_UNIVERSAL=false
                 SIGN_EXT=false
+                SIGN_PKG=false
+                NOTARIZE=false
                 shift
                 ;;
             --clean)
@@ -732,15 +793,21 @@ main() {
                 echo "  --clean           Deep clean all artifacts before building"
                 echo "  --clean-only      Clean only, don't build"
                 echo "  --fast            Fast dev build (current arch, no signing)"
-                echo "  --sign-extension  Sign extension with Mozilla Add-ons"
-                echo "  --sign            Sign the .pkg package (requires DEVELOPER_ID)"
-                echo "  --notarize        Notarize the package"
-                echo "  --all             Enable all signing options"
+                echo "  --no-sign         Skip all signing (even if credentials available)"
+                echo "  --sign-extension  Force extension signing (default: auto-detect)"
+                echo "  --sign            Force pkg signing (default: auto-detect)"
+                echo "  --notarize        Force notarization (default: auto-detect)"
+                echo "  --all             Enable all signing options + universal build"
                 echo "  --node            Use system Node.js instead of bundling"
                 echo ""
+                echo "By default, signing and notarization happen automatically if"
+                echo "credentials are configured in installer/credentials.env"
+                echo ""
                 echo "Examples:"
-                echo "  $0 --clean --sign-extension   # Clean build with signed extension"
-                echo "  $0 --fast                     # Quick dev build"
+                echo "  $0                            # Auto-sign if credentials available"
+                echo "  $0 --clean                    # Clean + auto-sign"
+                echo "  $0 --fast                     # Quick dev build (no signing)"
+                echo "  $0 --no-sign                  # Build without any signing"
                 echo "  $0 --clean-only               # Just clean, no build"
                 echo ""
                 echo "Credentials file: installer/credentials.env"
@@ -756,15 +823,47 @@ main() {
     # Load credentials
     load_credentials
     
+    # Resolve "auto" settings based on available credentials
+    if [ "$SIGN_EXT" = "auto" ]; then
+        if [ -n "$AMO_JWT_ISSUER" ] && [ -n "$AMO_JWT_SECRET" ]; then
+            SIGN_EXT=true
+            echo_step "Auto-detected: Extension signing credentials available"
+        else
+            SIGN_EXT=false
+        fi
+    fi
+    
+    if [ "$SIGN_PKG" = "auto" ]; then
+        if [ -n "$DEVELOPER_ID" ]; then
+            SIGN_PKG=true
+            echo_step "Auto-detected: Package signing credentials available"
+        else
+            SIGN_PKG=false
+        fi
+    fi
+    
+    if [ "$NOTARIZE" = "auto" ]; then
+        if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$DEVELOPER_ID" ]; then
+            NOTARIZE=true
+            echo_step "Auto-detected: Notarization credentials available"
+        else
+            NOTARIZE=false
+        fi
+    fi
+    
     # Run build steps
     cleanup
-    build_extension
     
+    # Build Firefox extension
+    build_extension
     if [ "$SIGN_EXT" = true ]; then
         sign_extension
     else
         cp "$BUILD_DIR/harbor-unsigned.xpi" "$BUILD_DIR/harbor.xpi"
     fi
+    
+    # Build Chrome extension
+    build_chrome_extension
     
     if [ "$USE_PKG" = true ]; then
         if [ "$BUILD_UNIVERSAL" = true ]; then
@@ -802,16 +901,37 @@ main() {
         echo "  Architecture: $ARCH only"
     fi
     echo ""
+    
+    # Signing status summary
+    echo "  Signing status:"
+    if [ "$SIGN_EXT" = true ]; then
+        echo "    ✓ Extension: Signed with Mozilla Add-ons"
+    else
+        echo "    ○ Extension: Unsigned (set AMO_JWT_ISSUER/AMO_JWT_SECRET)"
+    fi
+    if [ "$SIGN_PKG" = true ]; then
+        echo "    ✓ Package: Signed with Developer ID"
+    else
+        echo "    ○ Package: Unsigned (set DEVELOPER_ID in credentials.env)"
+    fi
+    if [ "$NOTARIZE" = true ]; then
+        echo "    ✓ Notarization: Submitted and stapled"
+    else
+        echo "    ○ Notarization: Skipped (set APPLE_ID/APPLE_TEAM_ID + keychain password)"
+    fi
+    echo ""
+    
     echo "To install locally:"
     echo "  sudo installer -pkg \"$OUTPUT_PKG\" -target /"
     echo ""
     echo "Or double-click the .pkg file in Finder."
     echo ""
-    if [ "$SIGN_EXT" != true ]; then
-        echo_warn "Extension was not signed. To sign, run with --sign-extension"
-    fi
     if [ "$BUILD_UNIVERSAL" != true ]; then
         echo_warn "Built for $ARCH only. Remove --fast or --arch-only for universal build."
+    fi
+    if [ "$SIGN_PKG" != true ] || [ "$NOTARIZE" != true ]; then
+        echo_warn "Package may trigger Gatekeeper warnings without signing/notarization."
+        echo "       Configure Apple Developer credentials in credentials.env for distribution."
     fi
     echo ""
     echo "═══════════════════════════════════════════════════════════════"

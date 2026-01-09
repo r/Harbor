@@ -25,12 +25,14 @@ No Node.js or other development tools required!
 ```bash
 cd installer/macos
 
-# First time or after major changes: clean build with signed extension
-./build-pkg.sh --clean --sign-extension
+# First time or after major changes
+./build-pkg.sh --clean
 
-# Subsequent builds (faster)
-./build-pkg.sh --sign-extension
+# Subsequent builds
+./build-pkg.sh
 ```
+
+**Signing happens automatically** when credentials are configured in `credentials.env`. The build will sign the extension, sign the package, and notarize it if the respective credentials are available.
 
 The output will be at `installer/macos/build/Harbor-<version>.pkg`.
 
@@ -73,9 +75,14 @@ AMO_JWT_SECRET="your-64-character-hex-secret"
 
 ### Build Options
 
+By default, all signing and notarization happens **automatically** when credentials are configured. You only need flags to override this behavior.
+
 ```bash
-# Clean build with signed extension (recommended for first build)
-./build-pkg.sh --clean --sign-extension
+# Standard build (auto-signs if credentials available)
+./build-pkg.sh
+
+# Clean build (removes all cached artifacts first)
+./build-pkg.sh --clean
 
 # Just clean all artifacts (no build)
 ./build-pkg.sh --clean-only
@@ -83,20 +90,14 @@ AMO_JWT_SECRET="your-64-character-hex-secret"
 # Fast development build (current arch only, no signing)
 ./build-pkg.sh --fast
 
-# Standard universal build (both arm64 and x64)
-./build-pkg.sh --sign-extension
+# Skip all signing even if credentials are available
+./build-pkg.sh --no-sign
+
+# Force all signing options (useful if auto-detect fails)
+./build-pkg.sh --all
 
 # Use system Node.js instead of bundling (smaller, requires Node installed)
 ./build-pkg.sh --node
-
-# Sign the .pkg package (requires Apple Developer ID)
-./build-pkg.sh --sign
-
-# Notarize for distribution (requires Apple credentials)
-./build-pkg.sh --notarize
-
-# Full production build (all signing options)
-./build-pkg.sh --all
 
 # Show all options
 ./build-pkg.sh --help
@@ -107,10 +108,10 @@ AMO_JWT_SECRET="your-64-character-hex-secret"
 # Development: clean + fast (no signing, current arch only)
 ./build-pkg.sh --clean --fast
 
-# Development: clean + signed extension (for testing real installs)
-./build-pkg.sh --clean --sign-extension
+# Development: clean + auto-sign (default behavior)
+./build-pkg.sh --clean
 
-# Production: clean + all signing
+# Production: clean + force all signing
 ./build-pkg.sh --clean --all
 ```
 

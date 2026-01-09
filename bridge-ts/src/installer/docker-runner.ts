@@ -443,6 +443,14 @@ export class DockerRunner {
     // Add command based on package type
     if (packageType === 'npm') {
       args.push(packageId);
+    } else if (packageType === 'git') {
+      // Convert git URL to github:user/repo format
+      let gitRef = packageId;
+      const match = packageId.match(/github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?$/);
+      if (match) {
+        gitRef = `github:${match[1]}`;
+      }
+      args.push(gitRef);
     } else if (packageType === 'pypi') {
       args.push(packageId);
     } else if (packageType === 'binary') {
