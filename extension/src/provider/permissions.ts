@@ -30,7 +30,9 @@ export const ALL_SCOPES: PermissionScope[] = [
   'model:list',
   'mcp:tools.list',
   'mcp:tools.call',
+  'mcp:servers.register',
   'browser:activeTab.read',
+  'chat:open',
   'web:fetch',
 ];
 
@@ -41,7 +43,9 @@ export const SCOPE_DESCRIPTIONS: Record<PermissionScope, string> = {
   'model:list': 'List configured AI providers and models',
   'mcp:tools.list': 'List available MCP tools',
   'mcp:tools.call': 'Execute MCP tools',
+  'mcp:servers.register': 'Register temporary AI tool servers',
   'browser:activeTab.read': 'Read content from the currently active browser tab',
+  'chat:open': 'Open the AI chat assistant',
   'web:fetch': 'Make web requests on your behalf (not implemented)',
 };
 

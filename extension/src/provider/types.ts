@@ -37,7 +37,9 @@ export type PermissionScope =
   | 'model:list'        // List configured LLM providers
   | 'mcp:tools.list'    // List available MCP tools
   | 'mcp:tools.call'    // Call MCP tools
+  | 'mcp:servers.register' // Register temporary MCP servers (BYOC)
   | 'browser:activeTab.read'  // Read content from active tab
+  | 'chat:open'         // Open the browser's chat UI (BYOC)
   | 'web:fetch';        // Proxy fetch requests (NOT IMPLEMENTED in v1)
 
 export type PermissionGrant = 
@@ -90,6 +92,89 @@ export interface ActiveTabReadability {
   url: string;
   title: string;
   text: string;
+}
+
+// =============================================================================
+// MCP Server Registration Types (BYOC - Bring Your Own Chatbot)
+// =============================================================================
+
+/** MCP server declared via <link rel="mcp-server"> in the page */
+export interface DeclaredMCPServer {
+  /** Server endpoint URL */
+  url: string;
+  /** Human-readable name */
+  title: string;
+  /** Description of what the server provides */
+  description?: string;
+  /** List of tool names this server provides */
+  tools?: string[];
+  /** Transport type */
+  transport?: 'sse' | 'websocket';
+  /** Server icon URL */
+  iconUrl?: string;
+}
+
+/** Options for registering a website's MCP server */
+export interface MCPServerRegistration {
+  /** Server endpoint URL (must be HTTPS in production) */
+  url: string;
+  /** Human-readable name shown to user */
+  name: string;
+  /** Description of what the server provides */
+  description?: string;
+  /** List of tools this server provides (for transparency) */
+  tools?: string[];
+  /** Server icon URL */
+  iconUrl?: string;
+  /** Transport type (default: 'sse') */
+  transport?: 'sse' | 'websocket';
+}
+
+/** Result of MCP server registration */
+export interface MCPRegistrationResult {
+  success: boolean;
+  /** ID to use for unregistration */
+  serverId?: string;
+  error?: {
+    code: 'USER_DENIED' | 'INVALID_URL' | 'CONNECTION_FAILED' | 'NOT_SUPPORTED';
+    message: string;
+  };
+}
+
+// =============================================================================
+// Chat UI Types (BYOC - Bring Your Own Chatbot)
+// =============================================================================
+
+/** Chat UI availability status */
+export type ChatAvailability = 'readily' | 'no';
+
+/** Options for opening the browser's chat UI */
+export interface ChatOpenOptions {
+  /** Initial message to display or send */
+  initialMessage?: string;
+  /** System prompt to configure the AI */
+  systemPrompt?: string;
+  /** Which tools to make available (from registered MCP servers) */
+  tools?: string[];
+  /** Session ID for persistence across navigations */
+  sessionId?: string;
+  /** Styling hints (browser may ignore) */
+  style?: {
+    theme?: 'light' | 'dark' | 'auto';
+    accentColor?: string;
+    position?: 'right' | 'left' | 'center';
+  };
+}
+
+/** Result of opening the chat UI */
+export interface ChatOpenResult {
+  success: boolean;
+  /** ID to reference this chat session */
+  chatId?: string;
+  error?: {
+    code: 'USER_DENIED' | 'NOT_AVAILABLE' | 'ALREADY_OPEN' | 'PERMISSION_REQUIRED';
+    message: string;
+  };
 }
 
 // =============================================================================
@@ -291,6 +376,20 @@ export type ProviderMessageType =
   | 'agent_run'
   | 'agent_run_event'
   | 'agent_run_abort'
+  // MCP Server Registration (BYOC)
+  | 'mcp_discover'
+  | 'mcp_discover_result'
+  | 'mcp_register'
+  | 'mcp_register_result'
+  | 'mcp_unregister'
+  | 'mcp_unregister_result'
+  // Chat UI (BYOC)
+  | 'chat_can_open'
+  | 'chat_can_open_result'
+  | 'chat_open'
+  | 'chat_open_result'
+  | 'chat_close'
+  | 'chat_close_result'
   // Errors
   | 'error';
 
