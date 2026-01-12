@@ -163,5 +163,3 @@ This is an active proposal. We welcome feedback via GitHub Issues and Discussion
 ---
 
 **Author**: Raffi Krikorian &lt;raffi@mozilla.org&gt;
-
-*This is a personal project, not an official Mozilla product or endorsed by any browser vendor.*
