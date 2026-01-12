@@ -1,0 +1,8 @@
+{
+  "name": "Acme Shop",
+  "description": "Shopping assistant for Acme Shop - search products, manage cart, get recommendations",
+  "command": "node",
+  "args": ["server.js"],
+  "cwd": "${serverDir}",
+  "env": {}
+}

@@ -6,20 +6,30 @@
   <title>Bring Your Own Chatbot — Web Agent API Demo</title>
   
   <!-- 
-    PROPOSED: Declarative MCP Server Discovery
+    Declarative MCP Server Discovery
     
-    This <link> element would allow browsers to discover that this site
-    offers MCP servers for the user's chatbot. The browser could show
+    This <link> element allows browsers to discover that this site
+    offers MCP servers for the user's chatbot. The browser can show
     an indicator (like the RSS icon) that the user can click to connect.
     
-    This is a proposal - browsers don't support this yet!
+    The Harbor extension implements this via agent.mcp.discover().
+  -->
+  <!-- 
+    Real MCP Server Discovery
+    
+    The href points to our actual MCP server running at http://localhost:3001
+    This server provides shopping tools via Server-Sent Events (SSE) transport.
+    
+    To start the MCP server:
+    $ cd demo/bring-your-chatbot/mcp-server && node http-server.js
   -->
   <link 
     rel="mcp-server" 
-    href="/mcp/shop-assistant"
+    href="http://localhost:3001/mcp"
     title="Acme Shop Assistant"
     data-description="Search products, manage cart, track orders"
     data-tools="search_products,get_product_details,add_to_cart,get_cart"
+    data-transport="sse"
   >
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -28,27 +38,30 @@
   <link rel="stylesheet" href="../shared/styles.css">
   <style>
     :root {
-      /* Shop theme colors - website can customize these */
-      --shop-primary: #f97316;
-      --shop-primary-dark: #ea580c;
-      --shop-bg: #fffbf5;
+      /* Amazon-inspired color scheme */
+      --shop-primary: #ff9900;
+      --shop-primary-dark: #e68a00;
+      --shop-header-bg: #131921;
+      --shop-header-text: #ffffff;
+      --shop-bg: #eaeded;
       --shop-surface: #ffffff;
-      --shop-text: #1f2937;
-      --shop-text-muted: #6b7280;
-      --shop-border: #e5e7eb;
+      --shop-text: #0f1111;
+      --shop-text-muted: #565959;
+      --shop-border: #ddd;
+      --shop-link: #007185;
     }
 
     body {
       background: var(--shop-bg);
       color: var(--shop-text);
       min-height: 100vh;
+      font-family: "Amazon Ember", Arial, sans-serif;
     }
 
-    /* Shop header */
+    /* Shop header - Amazon dark style */
     .shop-header {
-      background: var(--shop-surface);
-      border-bottom: 1px solid var(--shop-border);
-      padding: var(--demo-space-4) var(--demo-space-6);
+      background: var(--shop-header-bg);
+      padding: var(--demo-space-3) var(--demo-space-6);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -60,18 +73,18 @@
       gap: var(--demo-space-2);
       font-size: var(--demo-text-xl);
       font-weight: var(--demo-weight-bold);
-      color: var(--shop-primary);
+      color: var(--shop-header-text);
     }
 
     .shop-logo-icon {
       width: 36px;
       height: 36px;
       background: var(--shop-primary);
-      border-radius: var(--demo-radius-md);
+      border-radius: var(--demo-radius-sm);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: white;
+      color: var(--shop-header-bg);
       font-size: 18px;
     }
 
@@ -81,7 +94,7 @@
     }
 
     .shop-nav a {
-      color: var(--shop-text-muted);
+      color: var(--shop-header-text);
       text-decoration: none;
       font-size: var(--demo-text-sm);
       font-weight: var(--demo-weight-medium);
@@ -90,6 +103,7 @@
 
     .shop-nav a:hover {
       color: var(--shop-primary);
+      text-decoration: underline;
     }
 
     /* Main content area */
@@ -102,84 +116,104 @@
     /* Hero section */
     .shop-hero {
       text-align: center;
-      margin-bottom: var(--demo-space-12);
+      margin-bottom: var(--demo-space-8);
+      padding: var(--demo-space-6);
+      background: var(--shop-surface);
+      border: 1px solid var(--shop-border);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     }
 
     .shop-hero h1 {
-      font-size: 2.5rem;
+      font-size: 28px;
+      font-weight: 400;
       color: var(--shop-text);
-      margin-bottom: var(--demo-space-4);
+      margin-bottom: var(--demo-space-2);
     }
 
     .shop-hero p {
-      font-size: var(--demo-text-lg);
+      font-size: 14px;
       color: var(--shop-text-muted);
       max-width: 600px;
       margin: 0 auto;
     }
 
-    /* Product grid */
+    /* Product grid - Amazon style */
     .product-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: var(--demo-space-6);
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: var(--demo-space-4);
     }
 
     .product-card {
       background: var(--shop-surface);
       border: 1px solid var(--shop-border);
-      border-radius: var(--demo-radius-lg);
+      border-radius: 8px;
       overflow: hidden;
-      transition: box-shadow 0.2s, transform 0.2s;
+      transition: box-shadow 0.2s;
+      cursor: pointer;
     }
 
     .product-card:hover {
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
     .product-image {
       aspect-ratio: 1;
-      background: linear-gradient(135deg, #fef3c7, #fde68a);
+      background: #f7f7f7;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 64px;
-    }
-
-    .product-info {
       padding: var(--demo-space-4);
     }
 
+    .product-info {
+      padding: var(--demo-space-3);
+    }
+
     .product-name {
-      font-weight: var(--demo-weight-semibold);
-      color: var(--shop-text);
+      font-size: 14px;
+      color: var(--shop-link);
       margin-bottom: var(--demo-space-1);
+      line-height: 1.3;
+    }
+
+    .product-name:hover {
+      color: #c7511f;
+      text-decoration: underline;
     }
 
     .product-price {
-      font-size: var(--demo-text-lg);
-      font-weight: var(--demo-weight-bold);
-      color: var(--shop-primary);
+      font-size: 18px;
+      font-weight: 400;
+      color: var(--shop-text);
+    }
+
+    .product-price::before {
+      content: '';
+      font-size: 13px;
+      vertical-align: top;
     }
 
     .product-rating {
-      font-size: var(--demo-text-sm);
+      font-size: 12px;
       color: var(--shop-text-muted);
-      margin-top: var(--demo-space-2);
+      margin-top: var(--demo-space-1);
     }
 
     /* ============================================
-       BYOC Demo UI
+       BYOC Demo UI - Amazon-style cards
        ============================================ */
     
     /* Demo banner */
     .demo-banner {
-      background: linear-gradient(135deg, var(--demo-bg-surface), var(--demo-bg-elevated));
-      border: 1px solid var(--demo-border-default);
-      border-radius: var(--demo-radius-xl);
-      padding: var(--demo-space-6);
-      margin-bottom: var(--demo-space-8);
+      background: var(--shop-surface);
+      border: 1px solid var(--shop-border);
+      border-radius: 8px;
+      padding: var(--demo-space-5);
+      margin-bottom: var(--demo-space-4);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     }
 
     .demo-banner-header {
@@ -192,8 +226,8 @@
     .demo-banner-icon {
       width: 48px;
       height: 48px;
-      background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-tertiary));
-      border-radius: var(--demo-radius-lg);
+      background: var(--shop-primary);
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -203,14 +237,22 @@
 
     .demo-banner-content h2 {
       font-size: var(--demo-text-lg);
-      color: var(--demo-text-primary);
+      color: var(--shop-text);
       margin-bottom: var(--demo-space-1);
     }
 
     .demo-banner-content p {
       font-size: var(--demo-text-sm);
-      color: var(--demo-text-secondary);
+      color: var(--shop-text-muted);
       line-height: var(--demo-leading-relaxed);
+    }
+
+    .demo-banner-content code {
+      background: #f0f0f0;
+      color: var(--shop-text);
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 12px;
     }
 
     .demo-banner-actions {
@@ -218,20 +260,35 @@
       gap: var(--demo-space-3);
     }
 
-    /* Chat FAB (Floating Action Button) */
+    .demo-banner-actions .demo-btn {
+      background: var(--shop-surface);
+      border: 1px solid var(--shop-border);
+      color: var(--shop-text);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+
+    .demo-banner-actions .demo-btn:hover {
+      background: #f7f7f7;
+    }
+
+    /* Chat FAB (Floating Action Button) - Amazon style */
     .chat-fab {
       position: fixed;
       bottom: var(--demo-space-6);
       right: var(--demo-space-6);
-      width: 60px;
-      height: 60px;
+      width: 56px;
+      height: 56px;
       background: var(--shop-primary);
       border: none;
       border-radius: 50%;
-      color: white;
+      color: var(--shop-header-bg);
       font-size: 24px;
       cursor: pointer;
-      box-shadow: 0 4px 20px rgba(249, 115, 22, 0.4);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
       transition: all 0.2s;
       z-index: 100;
       display: flex;
@@ -240,8 +297,8 @@
     }
 
     .chat-fab:hover {
-      transform: scale(1.05);
-      box-shadow: 0 6px 28px rgba(249, 115, 22, 0.5);
+      background: var(--shop-primary-dark);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
     .chat-fab.hidden {
@@ -252,7 +309,7 @@
     .permission-modal-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.5);
+      background: rgba(0, 0, 0, 0.6);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -270,13 +327,14 @@
     }
 
     .permission-modal {
-      background: var(--demo-bg-surface);
-      border: 1px solid var(--demo-border-default);
-      border-radius: var(--demo-radius-xl);
+      background: var(--shop-surface);
+      border: 1px solid var(--shop-border);
+      border-radius: 8px;
       width: 480px;
       max-width: 90%;
-      padding: var(--demo-space-6);
+      padding: var(--demo-space-5);
       animation: slideUp 0.2s ease;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
     }
 
     @keyframes slideUp {
@@ -295,7 +353,7 @@
       width: 44px;
       height: 44px;
       background: var(--shop-primary);
-      border-radius: var(--demo-radius-md);
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -303,35 +361,35 @@
     }
 
     .permission-title {
-      font-size: var(--demo-text-base);
-      font-weight: var(--demo-weight-semibold);
-      color: var(--demo-text-primary);
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--shop-text);
     }
 
     .permission-origin {
-      font-size: var(--demo-text-sm);
-      color: var(--demo-text-muted);
+      font-size: 13px;
+      color: var(--shop-text-muted);
     }
 
     .permission-description {
-      font-size: var(--demo-text-sm);
-      color: var(--demo-text-secondary);
+      font-size: 14px;
+      color: var(--shop-text-muted);
       margin-bottom: var(--demo-space-4);
-      line-height: var(--demo-leading-relaxed);
+      line-height: 1.5;
     }
 
     .permission-tools {
-      background: var(--demo-bg-elevated);
-      border: 1px solid var(--demo-border-default);
-      border-radius: var(--demo-radius-md);
+      background: #f7f7f7;
+      border: 1px solid var(--shop-border);
+      border-radius: 8px;
       padding: var(--demo-space-3);
       margin-bottom: var(--demo-space-4);
     }
 
     .permission-tools-title {
-      font-size: var(--demo-text-xs);
-      font-weight: var(--demo-weight-semibold);
-      color: var(--demo-text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--shop-text-muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       margin-bottom: var(--demo-space-2);
@@ -342,29 +400,32 @@
       align-items: center;
       gap: var(--demo-space-2);
       padding: var(--demo-space-2) 0;
-      font-size: var(--demo-text-sm);
+      font-size: 13px;
+      color: var(--shop-text);
     }
 
     .permission-tool-check {
-      color: var(--demo-success);
+      color: #067d17;
     }
 
     .permission-tool-name {
-      font-family: var(--demo-font-mono);
-      color: var(--demo-accent-primary);
+      font-family: monospace;
+      color: var(--shop-link);
+      font-size: 12px;
     }
 
     .permission-tool-desc {
-      color: var(--demo-text-secondary);
+      color: var(--shop-text-muted);
     }
 
     .permission-note {
-      font-size: var(--demo-text-xs);
-      color: var(--demo-text-muted);
+      font-size: 12px;
+      color: var(--shop-text-muted);
       margin-bottom: var(--demo-space-4);
       padding: var(--demo-space-3);
-      background: var(--demo-bg-base);
-      border-radius: var(--demo-radius-md);
+      background: #fff8e6;
+      border: 1px solid #f0c36d;
+      border-radius: 8px;
     }
 
     .permission-actions {
@@ -374,57 +435,59 @@
     }
 
     .permission-btn {
-      padding: var(--demo-space-2) var(--demo-space-4);
-      border-radius: var(--demo-radius-md);
-      font-size: var(--demo-text-sm);
-      font-weight: var(--demo-weight-semibold);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
       cursor: pointer;
       transition: all 0.15s;
     }
 
     .permission-btn-deny {
-      background: transparent;
-      border: 1px solid var(--demo-border-default);
-      color: var(--demo-text-secondary);
+      background: var(--shop-surface);
+      border: 1px solid var(--shop-border);
+      color: var(--shop-text);
     }
 
     .permission-btn-deny:hover {
-      background: var(--demo-bg-elevated);
+      background: #f7f7f7;
     }
 
     .permission-btn-once {
-      background: var(--demo-bg-elevated);
-      border: 1px solid var(--demo-border-default);
-      color: var(--demo-text-primary);
+      background: var(--shop-surface);
+      border: 1px solid var(--shop-border);
+      color: var(--shop-text);
     }
 
     .permission-btn-once:hover {
-      background: var(--demo-bg-overlay);
+      background: #f7f7f7;
     }
 
     .permission-btn-allow {
       background: var(--shop-primary);
-      border: 1px solid var(--shop-primary);
-      color: white;
+      border: 1px solid #a88734;
+      color: var(--shop-header-bg);
+      background: linear-gradient(to bottom, #f7dfa5, #f0c14b);
+      color: #111;
     }
 
     .permission-btn-allow:hover {
-      background: var(--shop-primary-dark);
+      background: linear-gradient(to bottom, #f5d78e, #eeb933);
     }
 
-    /* Chatbot panel */
+    /* Chatbot panel - Amazon style */
     .chatbot-panel {
       position: fixed;
       bottom: var(--demo-space-6);
       right: var(--demo-space-6);
-      width: 400px;
+      width: 380px;
       max-width: calc(100vw - 48px);
-      height: 600px;
+      height: 560px;
       max-height: calc(100vh - 100px);
-      background: var(--demo-bg-surface);
-      border: 1px solid var(--demo-border-default);
-      border-radius: var(--demo-radius-xl);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+      background: var(--shop-surface);
+      border: 1px solid var(--shop-border);
+      border-radius: 8px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
       display: flex;
       flex-direction: column;
       z-index: 150;
@@ -440,9 +503,9 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: var(--demo-space-4);
-      background: var(--shop-primary);
-      color: white;
+      padding: var(--demo-space-3) var(--demo-space-4);
+      background: var(--shop-header-bg);
+      color: var(--shop-header-text);
     }
 
     .chatbot-header-left {
@@ -454,8 +517,8 @@
     .chatbot-header-icon {
       width: 32px;
       height: 32px;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: var(--demo-radius-md);
+      background: var(--shop-primary);
+      border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -463,21 +526,22 @@
     }
 
     .chatbot-header-title {
-      font-weight: var(--demo-weight-semibold);
+      font-weight: 700;
+      font-size: 14px;
     }
 
     .chatbot-header-subtitle {
-      font-size: var(--demo-text-xs);
-      opacity: 0.8;
+      font-size: 11px;
+      opacity: 0.7;
     }
 
     .chatbot-close {
-      width: 32px;
-      height: 32px;
-      background: rgba(255, 255, 255, 0.1);
+      width: 28px;
+      height: 28px;
+      background: transparent;
       border: none;
-      border-radius: var(--demo-radius-md);
-      color: white;
+      border-radius: 4px;
+      color: var(--shop-header-text);
       font-size: 18px;
       cursor: pointer;
       display: flex;
@@ -487,7 +551,7 @@
     }
 
     .chatbot-close:hover {
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.1);
     }
 
     .chatbot-messages {
@@ -497,6 +561,7 @@
       display: flex;
       flex-direction: column;
       gap: var(--demo-space-3);
+      background: #fafafa;
     }
 
     .chat-message {
@@ -513,49 +578,50 @@
     }
 
     .chat-message-bubble {
-      padding: var(--demo-space-3) var(--demo-space-4);
-      border-radius: var(--demo-radius-lg);
-      font-size: var(--demo-text-sm);
-      line-height: var(--demo-leading-relaxed);
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.4;
     }
 
     .chat-message.user .chat-message-bubble {
-      background: var(--shop-primary);
-      color: white;
-      border-bottom-right-radius: var(--demo-radius-sm);
+      background: var(--shop-header-bg);
+      color: var(--shop-header-text);
+      border-bottom-right-radius: 4px;
     }
 
     .chat-message.assistant .chat-message-bubble {
-      background: var(--demo-bg-elevated);
-      color: var(--demo-text-primary);
-      border-bottom-left-radius: var(--demo-radius-sm);
+      background: var(--shop-surface);
+      color: var(--shop-text);
+      border: 1px solid var(--shop-border);
+      border-bottom-left-radius: 4px;
     }
 
     .chat-tool-call {
-      background: var(--demo-bg-base);
-      border: 1px solid var(--demo-border-default);
-      border-radius: var(--demo-radius-md);
-      padding: var(--demo-space-2) var(--demo-space-3);
-      margin-top: var(--demo-space-2);
-      font-size: var(--demo-text-xs);
-      color: var(--demo-text-muted);
+      background: #f0f0f0;
+      border: 1px solid var(--shop-border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--shop-text-muted);
     }
 
     .chat-tool-name {
-      font-family: var(--demo-font-mono);
-      color: var(--demo-accent-primary);
+      font-family: monospace;
+      color: var(--shop-link);
     }
 
     .chat-typing {
       display: flex;
       gap: 4px;
-      padding: var(--demo-space-2);
+      padding: 8px;
     }
 
     .chat-typing span {
       width: 8px;
       height: 8px;
-      background: var(--demo-text-muted);
+      background: var(--shop-text-muted);
       border-radius: 50%;
       animation: typing 1s infinite;
     }
@@ -570,20 +636,21 @@
 
     .chatbot-input {
       padding: var(--demo-space-3);
-      border-top: 1px solid var(--demo-border-default);
+      border-top: 1px solid var(--shop-border);
       display: flex;
-      gap: var(--demo-space-2);
+      gap: 8px;
+      background: var(--shop-surface);
     }
 
     .chatbot-input textarea {
       flex: 1;
-      padding: var(--demo-space-3);
-      background: var(--demo-bg-elevated);
-      border: 1px solid var(--demo-border-default);
-      border-radius: var(--demo-radius-md);
-      color: var(--demo-text-primary);
-      font-family: var(--demo-font-sans);
-      font-size: var(--demo-text-sm);
+      padding: 10px 12px;
+      background: var(--shop-surface);
+      border: 1px solid var(--shop-border);
+      border-radius: 8px;
+      color: var(--shop-text);
+      font-family: Arial, sans-serif;
+      font-size: 14px;
       resize: none;
       min-height: 40px;
       max-height: 100px;
@@ -591,16 +658,17 @@
 
     .chatbot-input textarea:focus {
       outline: none;
-      border-color: var(--shop-primary);
+      border-color: var(--shop-link);
+      box-shadow: 0 0 0 3px rgba(0, 113, 133, 0.1);
     }
 
     .chatbot-input button {
       width: 40px;
       height: 40px;
-      background: var(--shop-primary);
-      border: none;
-      border-radius: var(--demo-radius-md);
-      color: white;
+      background: linear-gradient(to bottom, #f7dfa5, #f0c14b);
+      border: 1px solid #a88734;
+      border-radius: 8px;
+      color: #111;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -610,7 +678,7 @@
     }
 
     .chatbot-input button:hover:not(:disabled) {
-      background: var(--shop-primary-dark);
+      background: linear-gradient(to bottom, #f5d78e, #eeb933);
     }
 
     .chatbot-input button:disabled {
@@ -620,11 +688,11 @@
 
     /* API not available state */
     .no-api-banner {
-      background: var(--demo-warning-dim);
-      border: 1px solid rgba(245, 158, 11, 0.3);
-      border-radius: var(--demo-radius-lg);
+      background: #fff8e6;
+      border: 1px solid #f0c36d;
+      border-radius: 8px;
       padding: var(--demo-space-4);
-      margin-bottom: var(--demo-space-6);
+      margin-bottom: var(--demo-space-4);
       display: flex;
       align-items: flex-start;
       gap: var(--demo-space-3);
@@ -639,27 +707,34 @@
     }
 
     .no-api-content h3 {
-      font-size: var(--demo-text-base);
-      font-weight: var(--demo-weight-semibold);
-      color: var(--demo-warning);
-      margin-bottom: var(--demo-space-1);
+      font-size: 14px;
+      font-weight: 700;
+      color: #b7791f;
+      margin-bottom: 4px;
     }
 
     .no-api-content p {
-      font-size: var(--demo-text-sm);
-      color: var(--demo-text-secondary);
+      font-size: 13px;
+      color: var(--shop-text-muted);
     }
 
-    /* Footer */
+    /* Footer - Amazon style */
     .shop-footer {
       text-align: center;
-      padding: var(--demo-space-8) var(--demo-space-6);
-      color: var(--shop-text-muted);
-      font-size: var(--demo-text-sm);
+      padding: var(--demo-space-6) var(--demo-space-6);
+      background: var(--shop-header-bg);
+      color: #999;
+      font-size: 12px;
+      margin-top: var(--demo-space-8);
     }
 
     .shop-footer a {
-      color: var(--demo-accent-primary);
+      color: var(--shop-link);
+    }
+
+    .shop-footer a:hover {
+      color: var(--shop-primary);
+      text-decoration: underline;
     }
   </style>
 </head>
@@ -685,29 +760,77 @@
       <div class="demo-banner-header">
         <div class="demo-banner-icon">🤖</div>
         <div class="demo-banner-content">
-          <h2>Bring Your Own Chatbot Demo</h2>
+          <h2>Bring Your Own Chatbot (BYOC) Demo</h2>
           <p>
-            This demo shows how websites can integrate with the user's own AI chatbot. 
-            Instead of embedding an AI into the page, the website declares its MCP servers 
-            (via <code>&lt;link rel="mcp-server"&gt;</code>) and the browser brings up 
-            your chatbot with access to those tools.
+            This demo shows how websites can integrate with <strong>your own AI chatbot</strong> instead of 
+            embedding their own AI. Click the chat button in the corner to try it!
           </p>
         </div>
       </div>
       <div class="demo-banner-actions">
-        <a href="README.md" class="demo-btn demo-btn-secondary">📖 Read the Plan</a>
         <a href="../" class="demo-btn demo-btn-ghost">← Back to Demos</a>
       </div>
     </div>
+    
+    <!-- How It Works Explanation -->
+    <div class="byoc-explanation" style="background: var(--shop-surface); border: 1px solid var(--shop-border); border-radius: 8px; padding: var(--demo-space-5); margin-bottom: var(--demo-space-4); box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+      <h3 style="font-size: 16px; font-weight: 700; margin-bottom: var(--demo-space-4); color: var(--shop-text);">
+        📋 How BYOC Works
+      </h3>
+      
+      <div class="byoc-steps" style="display: grid; gap: var(--demo-space-3);">
+        <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
+          <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">1</span>
+          <div>
+            <strong style="color: var(--shop-text);">Website Declares MCP Server</strong>
+            <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
+              This page has <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">&lt;link rel="mcp-server" href="http://localhost:3001/mcp"&gt;</code> in its <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">&lt;head&gt;</code>. 
+              The browser can detect this and show an indicator (like RSS did).
+            </p>
+          </div>
+        </div>
+        
+        <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
+          <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">2</span>
+          <div>
+            <strong style="color: var(--shop-text);">User Clicks "Chat with AI"</strong>
+            <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
+              Website calls <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">agent.mcp.register()</code> then <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">agent.chat.open()</code> to request your chatbot.
+            </p>
+          </div>
+        </div>
+        
+        <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
+          <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">3</span>
+          <div>
+            <strong style="color: var(--shop-text);">Browser Asks for Permission</strong>
+            <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
+              Your browser shows a permission prompt listing the tools the website wants to provide. You decide to allow or deny.
+            </p>
+          </div>
+        </div>
+        
+        <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
+          <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">4</span>
+          <div>
+            <strong style="color: var(--shop-text);">Your Chatbot Opens with Website Tools</strong>
+            <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
+              If you allow, your personal AI chatbot opens with access to the website's tools (search, cart, etc.).
+            </p>
+          </div>
+        </div>
+      </div>
+      
+    </div>
 
-    <!-- API Not Available Warning -->
+    <!-- API Not Available Warning (shown if agent not available) -->
     <div class="no-api-banner hidden" id="no-api-banner">
       <div class="no-api-icon">⚠️</div>
       <div class="no-api-content">
-        <h3>Web Agent API Not Available</h3>
+        <h3>Harbor Extension Required</h3>
         <p>
-          The AI chatbot features require a Web Agent API implementation (like Harbor) to be installed. 
-          You can still browse the demo, but the chatbot won't be functional.
+          This demo requires the Harbor extension for the full BYOC experience. 
+          Install Harbor to try the "Bring Your Own Chatbot" feature!
         </p>
       </div>
     </div>
@@ -864,7 +987,7 @@
   <footer class="shop-footer">
     <p>
       This is a demo for the <a href="../">Web Agent API</a>. 
-      <a href="README.md">View the implementation plan</a>.
+      <a href="README.md">Learn more about how BYOC works</a>.
     </p>
   </footer>
 
@@ -937,8 +1060,58 @@
     };
 
     let cart = [];
+    let registeredServerId = null; // Track our registered server
 
-    // Simulated MCP tool functions
+    // =============================================================================
+    // BYOC: Tool Call Handler
+    // Listen for tool calls from the browser extension and execute them
+    // =============================================================================
+    
+    window.addEventListener('message', (event) => {
+      if (event.source !== window) return;
+      
+      const data = event.data;
+      if (!data || data.namespace !== 'harbor-website-tools') return;
+      
+      if (data.type === 'tool_call') {
+        console.log('[Acme Shop] Tool call received:', data.toolName, data.args);
+        
+        // Execute the tool
+        const toolFn = SHOP_TOOLS[data.toolName];
+        if (!toolFn) {
+          window.postMessage({
+            namespace: 'harbor-website-tools',
+            type: 'tool_result',
+            callId: data.callId,
+            error: `Unknown tool: ${data.toolName}`,
+          }, '*');
+          return;
+        }
+        
+        // Execute and return result
+        toolFn(data.args || {})
+          .then(result => {
+            console.log('[Acme Shop] Tool result:', data.toolName, result);
+            window.postMessage({
+              namespace: 'harbor-website-tools',
+              type: 'tool_result',
+              callId: data.callId,
+              result,
+            }, '*');
+          })
+          .catch(err => {
+            console.error('[Acme Shop] Tool error:', data.toolName, err);
+            window.postMessage({
+              namespace: 'harbor-website-tools',
+              type: 'tool_result',
+              callId: data.callId,
+              error: err.message || String(err),
+            }, '*');
+          });
+      }
+    });
+
+    // MCP tool implementations
     const SHOP_TOOLS = {
       search_products: async (args) => {
         const query = (args.query || '').toLowerCase();
@@ -1033,18 +1206,31 @@
     // =============================================================================
     
     async function checkApiAvailability() {
-      if (typeof window.ai !== 'undefined' && typeof window.agent !== 'undefined') {
-        apiAvailable = true;
-        chatFab.classList.remove('hidden');
-        console.log('[BYOC Demo] Web Agent API detected');
-        return true;
-      }
+      console.log('[BYOC Demo] Checking API availability...');
       
-      // API not available - show warning
-      noApiBanner.classList.remove('hidden');
-      chatFab.classList.remove('hidden'); // Still show FAB for demo purposes
-      console.log('[BYOC Demo] Web Agent API not available - running in demo mode');
-      return false;
+      try {
+        // Check base agent API
+        const hasAgent = typeof window.agent !== 'undefined';
+        console.log('[BYOC Demo] hasAgent:', hasAgent);
+        
+        // Set overall API availability
+        if (hasAgent) {
+          apiAvailable = true;
+          chatFab.classList.remove('hidden');
+          console.log('[BYOC Demo] Web Agent API detected - ready!');
+          return true;
+        }
+        
+        // API not available - show warning
+        noApiBanner.classList.remove('hidden');
+        chatFab.classList.remove('hidden'); // Still show FAB for demo purposes
+        console.log('[BYOC Demo] Web Agent API not available - demo mode');
+        return false;
+        
+      } catch (err) {
+        console.error('[BYOC Demo] Error checking API:', err);
+        return false;
+      }
     }
 
     // =============================================================================
@@ -1325,12 +1511,119 @@ Current cart: ${cart.length === 0 ? 'Empty' : cart.map(p => p.name).join(', ')}`
     }
 
     // =============================================================================
+    // BYOC: Real API Integration
+    // =============================================================================
+    
+    async function registerWebsiteTools() {
+      if (!window.agent || !window.agent.mcp) {
+        console.log('[Acme Shop] agent.mcp not available');
+        return null;
+      }
+      
+      try {
+        // Register our shop MCP server with the browser
+        // This points to the real MCP server running at localhost:3001
+        // The server provides tools via SSE transport
+        const result = await window.agent.mcp.register({
+          url: 'http://localhost:3001/mcp',  // Real MCP server URL
+          name: 'Acme Shop Assistant',
+          description: 'Search products, manage cart, get recommendations',
+          tools: ['search_products', 'get_product_details', 'add_to_cart', 'get_cart'],
+          transport: 'sse',
+        });
+        
+        if (result.success) {
+          console.log('[Acme Shop] MCP server registered:', result.serverId);
+          registeredServerId = result.serverId;
+          return result.serverId;
+        } else {
+          console.error('[Acme Shop] Failed to register:', result.error);
+          // Still return null but show user-friendly message
+          if (result.error?.code === 'CONNECTION_FAILED') {
+            console.warn('[Acme Shop] MCP server not running. Start it with: cd mcp-server && node http-server.js');
+          }
+          return null;
+        }
+      } catch (err) {
+        console.error('[Acme Shop] Registration error:', err);
+        return null;
+      }
+    }
+    
+    async function openBrowserChatbot() {
+      if (!window.agent || !window.agent.chat) {
+        console.log('[Acme Shop] agent.chat not available, using fallback');
+        openChatbot(); // Fallback to embedded chat
+        return;
+      }
+      
+      try {
+        // Request all needed permissions in one prompt
+        console.log('[Acme Shop] Requesting permissions...');
+        const permResult = await window.agent.requestPermissions({
+          scopes: ['mcp:servers.register', 'chat:open', 'model:prompt', 'mcp:tools.call'],
+          reason: 'Acme Shop wants to open your AI assistant with shopping tools'
+        });
+        
+        if (!permResult.granted) {
+          console.log('[Acme Shop] Permission denied, using fallback');
+          openChatbot();
+          return;
+        }
+        
+        // Register our tools
+        if (!registeredServerId) {
+          await registerWebsiteTools();
+        }
+        
+        // Now open the browser's chat with our configuration
+        const result = await window.agent.chat.open({
+          systemPrompt: `You are a helpful shopping assistant for Acme Shop.
+You help customers find products, answer questions about items, and manage their cart.
+
+Available products in our catalog:
+${Object.values(PRODUCTS).map(p => `- ${p.name}: $${p.price} (${p.inStock ? 'In Stock' : 'Out of Stock'})`).join('\n')}
+
+Use the website's tools to help customers:
+- search_products: Search the product catalog by query
+- get_product_details: Get detailed info about a specific product
+- add_to_cart: Add a product to the customer's cart
+- get_cart: View the current cart contents
+
+Be helpful, concise, and always confirm actions with the customer.`,
+          tools: registeredServerId 
+            ? [`${registeredServerId}/search_products`, `${registeredServerId}/get_product_details`, `${registeredServerId}/add_to_cart`, `${registeredServerId}/get_cart`]
+            : undefined,
+          style: {
+            theme: 'light',  // Match the website's light theme
+            accentColor: '#ff9900',  // Amazon orange
+            position: 'right',
+          },
+        });
+        
+        if (result.success) {
+          console.log('[Acme Shop] Browser chat opened:', result.chatId);
+          chatFab.classList.add('hidden');
+        } else {
+          console.log('[Acme Shop] Browser chat failed:', result.error, '- using fallback');
+          openChatbot(); // Fallback to embedded chat
+        }
+      } catch (err) {
+        console.error('[Acme Shop] Chat open error:', err);
+        openChatbot(); // Fallback to embedded chat
+      }
+    }
+
+    // =============================================================================
     // Event Listeners
     // =============================================================================
     
     // Chat FAB click
-    chatFab.addEventListener('click', () => {
-      if (permissionGranted) {
+    chatFab.addEventListener('click', async () => {
+      if (apiAvailable) {
+        // Try to use the real browser chatbot
+        await openBrowserChatbot();
+      } else if (permissionGranted) {
         openChatbot();
       } else {
         showPermissionPrompt();
@@ -1375,10 +1668,11 @@ Current cart: ${cart.length === 0 ? 'Empty' : cart.map(p => p.name).join(', ')}`
     }
 
     // Wait for DOM and potential extension injection
+    // Use longer timeout to ensure extension has injected window.agent
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => setTimeout(init, 100));
+      document.addEventListener('DOMContentLoaded', () => setTimeout(init, 300));
     } else {
-      setTimeout(init, 100);
+      setTimeout(init, 300);
     }
   </script>
 </body>
