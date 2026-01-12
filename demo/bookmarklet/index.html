@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page Chat Bookmarklet — Web Agent API Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../shared/styles.css">
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      padding: var(--demo-space-10) var(--demo-space-6);
+    }
+
+    .page-container {
+      max-width: 720px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .bookmarklet-section {
+      text-align: center;
+      margin: var(--demo-space-8) 0;
+    }
+
+    .bookmarklet-link {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--demo-space-3);
+      padding: var(--demo-space-5) var(--demo-space-8);
+      background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-tertiary));
+      color: white;
+      text-decoration: none;
+      border-radius: var(--demo-radius-xl);
+      font-size: var(--demo-text-lg);
+      font-weight: var(--demo-weight-bold);
+      box-shadow: var(--demo-shadow-glow), var(--demo-shadow-lg);
+      transition: all var(--demo-transition-normal);
+      cursor: grab;
+    }
+
+    .bookmarklet-link:hover {
+      transform: translateY(-3px) scale(1.02);
+      box-shadow: 0 0 40px var(--demo-accent-glow), var(--demo-shadow-lg);
+    }
+
+    .bookmarklet-link:active { cursor: grabbing; }
+    .bookmarklet-icon { font-size: 1.5em; }
+
+    .drag-hint {
+      margin-top: var(--demo-space-4);
+      font-size: var(--demo-text-sm);
+      color: var(--demo-text-muted);
+    }
+
+    .drag-hint strong { color: var(--demo-text-secondary); }
+
+    .instructions { margin-top: var(--demo-space-10); }
+
+    .instruction-step {
+      display: flex;
+      gap: var(--demo-space-4);
+      margin-bottom: var(--demo-space-6);
+    }
+
+    .step-number {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-secondary));
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: var(--demo-weight-bold);
+      font-size: var(--demo-text-sm);
+      flex-shrink: 0;
+    }
+
+    .step-content h3 {
+      font-size: var(--demo-text-base);
+      font-weight: var(--demo-weight-semibold);
+      margin-bottom: var(--demo-space-1);
+    }
+
+    .step-content p {
+      font-size: var(--demo-text-sm);
+      color: var(--demo-text-secondary);
+      line-height: var(--demo-leading-relaxed);
+    }
+
+    .try-section {
+      margin-top: var(--demo-space-10);
+      padding: var(--demo-space-6);
+      background: var(--demo-bg-surface);
+      border: 1px solid var(--demo-border-default);
+      border-radius: var(--demo-radius-xl);
+      text-align: center;
+    }
+
+    .try-title {
+      font-size: var(--demo-text-lg);
+      font-weight: var(--demo-weight-bold);
+      margin-bottom: var(--demo-space-2);
+    }
+
+    .try-desc {
+      font-size: var(--demo-text-sm);
+      color: var(--demo-text-secondary);
+      margin-bottom: var(--demo-space-5);
+    }
+
+    .try-btn {
+      padding: var(--demo-space-4) var(--demo-space-6);
+      background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-secondary));
+      border: none;
+      border-radius: var(--demo-radius-md);
+      color: white;
+      font-size: var(--demo-text-sm);
+      font-weight: var(--demo-weight-semibold);
+      cursor: pointer;
+      transition: all var(--demo-transition-fast);
+    }
+
+    .try-btn:hover {
+      filter: brightness(1.1);
+      box-shadow: var(--demo-shadow-glow);
+    }
+
+    .footer {
+      margin-top: auto;
+      padding-top: var(--demo-space-10);
+      text-align: center;
+    }
+
+    .footer a {
+      color: var(--demo-text-muted);
+      font-size: var(--demo-text-sm);
+    }
+
+    .footer a:hover { color: var(--demo-accent-primary); }
+
+    .note-box {
+      margin-top: var(--demo-space-6);
+      padding: var(--demo-space-4);
+      background: var(--demo-info-dim);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: var(--demo-radius-md);
+      font-size: var(--demo-text-sm);
+      color: var(--demo-text-secondary);
+    }
+
+    .note-box strong { color: var(--demo-info); }
+  </style>
+</head>
+<body class="demo-bg-glow">
+  <div class="page-container">
+    <header class="demo-header">
+      <div class="demo-logo">🔖</div>
+      <h1 class="demo-title demo-text-gradient">Page Chat Bookmarklet</h1>
+      <p class="demo-subtitle">
+        Drag this bookmarklet to your bookmarks bar, then click it on any page to chat about the content.
+      </p>
+    </header>
+
+    <div class="bookmarklet-section">
+      <a class="bookmarklet-link" id="bookmarklet" href="#">
+        <span class="bookmarklet-icon">💬</span>
+        <span>Chat About Page</span>
+      </a>
+      <p class="drag-hint">
+        <strong>Drag this button</strong> to your bookmarks bar
+      </p>
+    </div>
+
+    <div class="instructions demo-card">
+      <h2 style="margin-bottom: var(--demo-space-6);">How to Use</h2>
+      
+      <div class="instruction-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <h3>Add to Bookmarks</h3>
+          <p>Drag the purple button above to your bookmarks bar. If you don't see the bookmarks bar, press <code>Cmd+Shift+B</code> (Mac) or <code>Ctrl+Shift+B</code> (Windows).</p>
+        </div>
+      </div>
+
+      <div class="instruction-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <h3>Navigate to Any Page</h3>
+          <p>Go to any webpage you want to chat about — an article, documentation, blog post, or anything else.</p>
+        </div>
+      </div>
+
+      <div class="instruction-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <h3>Click the Bookmarklet</h3>
+          <p>Click "Chat About Page" in your bookmarks bar. A sidebar will appear on the right side of the page.</p>
+        </div>
+      </div>
+
+      <div class="instruction-step">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <h3>Start Chatting</h3>
+          <p>Connect to the AI and ask questions about the page content. Get summaries, explanations, or dive deeper into topics.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="note-box">
+      <strong>💡 About accessing other tabs:</strong> For security reasons, bookmarklets can only access the current page. However, if you have MCP tools installed (like a browser tools server), the AI can potentially access tab information through those tools when you ask.
+    </div>
+
+    <div class="try-section">
+      <h2 class="try-title">Try It Right Here</h2>
+      <p class="try-desc">Don't want to add a bookmark? Just click to inject the sidebar on this page.</p>
+      <button class="try-btn" id="try-btn">Launch Sidebar</button>
+    </div>
+
+    <footer class="footer">
+      <a href="../">← Back to Demos</a>
+    </footer>
+  </div>
+
+  <script>
+    const bookmarkletSource = `
+(function() {
+  var sb = document.getElementById('hc-sb');
+  if (sb) { sb.remove(); document.getElementById('hc-st')?.remove(); document.body.style.marginRight = ''; return; }
+
+  var css = '#hc-sb,#hc-sb *,#hc-sb *::before,#hc-sb *::after{all:revert!important;box-sizing:border-box!important}' +
+    '#hc-sb{position:fixed!important;top:0!important;right:0!important;width:380px!important;height:100vh!important;' +
+    'background:#0a0a0b!important;border-left:1px solid #333!important;z-index:2147483647!important;' +
+    'font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif!important;font-size:14px!important;' +
+    'line-height:1.5!important;color:#f5f5f5!important;display:flex!important;flex-direction:column!important;' +
+    'box-shadow:-8px 0 32px rgba(0,0,0,0.6)!important;margin:0!important;padding:0!important}' +
+    '#hc-sb .hd{display:flex!important;align-items:center!important;justify-content:space-between!important;' +
+    'padding:16px!important;background:#141414!important;border-bottom:1px solid #333!important;margin:0!important}' +
+    '#hc-sb .hd-l{display:flex!important;align-items:center!important;gap:12px!important}' +
+    '#hc-sb .logo{width:36px!important;height:36px!important;background:linear-gradient(135deg,#a78bfa,#c084fc)!important;' +
+    'border-radius:10px!important;display:flex!important;align-items:center!important;justify-content:center!important;' +
+    'font-size:18px!important;box-shadow:0 2px 12px rgba(167,139,250,0.3)!important}' +
+    '#hc-sb .tt{font-weight:600!important;font-size:16px!important;color:#fff!important;margin:0!important;padding:0!important}' +
+    '#hc-sb .st{font-size:12px!important;color:#888!important;margin-top:2px!important}' +
+    '#hc-sb .hd-r{display:flex!important;align-items:center!important;gap:12px!important}' +
+    '#hc-sb .sts{display:flex!important;align-items:center!important;gap:6px!important;font-size:12px!important;color:#888!important}' +
+    '#hc-sb .dot{width:8px!important;height:8px!important;border-radius:50%!important;background:#888!important}' +
+    '#hc-sb .dot.ok{background:#4ade80!important;box-shadow:0 0 8px #4ade80!important}' +
+    '#hc-sb .dot.err{background:#f87171!important}' +
+    '#hc-sb .xbtn{width:32px!important;height:32px!important;border:1px solid #333!important;background:#1a1a1a!important;' +
+    'color:#aaa!important;font-size:20px!important;border-radius:8px!important;cursor:pointer!important;' +
+    'display:flex!important;align-items:center!important;justify-content:center!important;padding:0!important;margin:0!important}' +
+    '#hc-sb .xbtn:hover{background:#252525!important;color:#fff!important}' +
+    '#hc-sb .ctx{padding:10px 16px!important;background:#141414!important;border-bottom:1px solid #333!important;' +
+    'font-size:12px!important;color:#777!important;display:flex!important;align-items:center!important;gap:8px!important;' +
+    'overflow:hidden!important;margin:0!important}' +
+    '#hc-sb .ctx-t{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;flex:1!important}' +
+    '#hc-sb .setup{flex:1!important;display:flex!important;flex-direction:column!important;align-items:center!important;' +
+    'justify-content:center!important;padding:40px 32px!important;text-align:center!important;margin:0!important}' +
+    '#hc-sb .setup.hide{display:none!important}' +
+    '#hc-sb .setup-ico{width:72px!important;height:72px!important;background:linear-gradient(135deg,#a78bfa,#c084fc)!important;' +
+    'border-radius:18px!important;display:flex!important;align-items:center!important;justify-content:center!important;' +
+    'font-size:32px!important;margin-bottom:24px!important;box-shadow:0 8px 32px rgba(167,139,250,0.25)!important}' +
+    '#hc-sb .setup h3{font-size:20px!important;font-weight:600!important;color:#fff!important;margin:0 0 10px 0!important;padding:0!important}' +
+    '#hc-sb .setup p{font-size:14px!important;color:#999!important;margin:0 0 28px 0!important;padding:0!important;' +
+    'max-width:280px!important;line-height:1.6!important}' +
+    '#hc-sb .conn{padding:14px 32px!important;background:linear-gradient(135deg,#a78bfa,#c084fc)!important;' +
+    'border:none!important;border-radius:12px!important;color:#000!important;font-weight:600!important;font-size:15px!important;' +
+    'cursor:pointer!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;' +
+    'gap:8px!important;box-shadow:0 4px 20px rgba(167,139,250,0.3)!important;margin:0!important}' +
+    '#hc-sb .conn:hover{transform:translateY(-2px)!important;box-shadow:0 8px 28px rgba(167,139,250,0.4)!important}' +
+    '#hc-sb .conn:disabled{opacity:0.7!important;cursor:not-allowed!important;transform:none!important}' +
+    '#hc-sb .err{display:none!important;margin-top:20px!important;padding:14px 18px!important;background:rgba(248,113,113,0.1)!important;' +
+    'border:1px solid rgba(248,113,113,0.2)!important;border-radius:12px!important;color:#f87171!important;' +
+    'font-size:13px!important;max-width:300px!important;line-height:1.5!important}' +
+    '#hc-sb .err.show{display:block!important}' +
+    '#hc-sb .msgs{flex:1!important;overflow-y:auto!important;padding:20px!important;display:none!important;margin:0!important}' +
+    '#hc-sb .msgs.on{display:block!important}' +
+    '#hc-sb .empty{height:100%!important;display:flex!important;flex-direction:column!important;align-items:center!important;' +
+    'justify-content:center!important;padding:32px!important;text-align:center!important}' +
+    '#hc-sb .empty.hide{display:none!important}' +
+    '#hc-sb .empty-ico{width:60px!important;height:60px!important;background:linear-gradient(135deg,#a78bfa,#c084fc)!important;' +
+    'border-radius:16px!important;display:flex!important;align-items:center!important;justify-content:center!important;' +
+    'font-size:26px!important;margin-bottom:18px!important;opacity:0.9!important}' +
+    '#hc-sb .empty h4{font-size:18px!important;font-weight:600!important;color:#fff!important;margin:0 0 8px 0!important;padding:0!important}' +
+    '#hc-sb .empty>p{font-size:14px!important;color:#777!important;margin:0 0 24px 0!important;padding:0!important}' +
+    '#hc-sb .chips{display:flex!important;flex-direction:column!important;gap:10px!important;width:100%!important}' +
+    '#hc-sb .chip{padding:14px 16px!important;background:#1a1a1a!important;border:1px solid #333!important;' +
+    'border-radius:12px!important;color:#bbb!important;font-size:14px!important;text-align:left!important;' +
+    'cursor:pointer!important;margin:0!important}' +
+    '#hc-sb .chip:hover{background:#222!important;border-color:#a78bfa!important;color:#fff!important}' +
+    '#hc-sb .msg{margin:0 0 20px 0!important;padding:0!important;animation:hcIn .2s ease!important}' +
+    '@keyframes hcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}' +
+    '#hc-sb .msg-h{display:flex!important;align-items:center!important;gap:10px!important;margin:0 0 8px 0!important;padding:0!important}' +
+    '#hc-sb .av{width:28px!important;height:28px!important;border-radius:8px!important;display:flex!important;' +
+    'align-items:center!important;justify-content:center!important;font-size:12px!important;font-weight:600!important}' +
+    '#hc-sb .msg.u .av{background:linear-gradient(135deg,#a78bfa,#c084fc)!important;color:#000!important}' +
+    '#hc-sb .msg.a .av{background:#252525!important;border:1px solid #333!important;color:#999!important}' +
+    '#hc-sb .role{font-size:13px!important;font-weight:600!important;color:#eee!important}' +
+    '#hc-sb .body{margin:0 0 0 38px!important;padding:0!important;font-size:14px!important;line-height:1.7!important;' +
+    'color:#bbb!important;white-space:pre-wrap!important;word-wrap:break-word!important}' +
+    '#hc-sb .think{display:flex!important;gap:6px!important;margin:0 0 0 38px!important;padding:8px 0!important}' +
+    '#hc-sb .think span{width:8px!important;height:8px!important;background:#a78bfa!important;border-radius:50%!important;' +
+    'animation:hcP 1.3s ease-in-out infinite!important}' +
+    '#hc-sb .think span:nth-child(2){animation-delay:.15s!important}' +
+    '#hc-sb .think span:nth-child(3){animation-delay:.3s!important}' +
+    '@keyframes hcP{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}' +
+    '#hc-sb .inp{padding:16px!important;border-top:1px solid #333!important;background:#141414!important;' +
+    'display:none!important;margin:0!important}' +
+    '#hc-sb .inp.on{display:flex!important;gap:12px!important;align-items:flex-end!important}' +
+    '#hc-sb .inp textarea{flex:1!important;background:#0a0a0b!important;border:1px solid #333!important;' +
+    'border-radius:12px!important;padding:12px 16px!important;color:#f5f5f5!important;font-size:14px!important;' +
+    'font-family:inherit!important;resize:none!important;min-height:24px!important;max-height:120px!important;' +
+    'line-height:1.5!important;margin:0!important}' +
+    '#hc-sb .inp textarea:focus{outline:none!important;border-color:#a78bfa!important;box-shadow:0 0 0 3px rgba(167,139,250,0.2)!important}' +
+    '#hc-sb .inp textarea::placeholder{color:#666!important}' +
+    '#hc-sb .send{width:44px!important;height:44px!important;background:linear-gradient(135deg,#a78bfa,#c084fc)!important;' +
+    'border:none!important;border-radius:12px!important;color:#000!important;cursor:pointer!important;' +
+    'display:flex!important;align-items:center!important;justify-content:center!important;flex-shrink:0!important;' +
+    'padding:0!important;margin:0!important}' +
+    '#hc-sb .send:hover{transform:scale(1.05)!important;box-shadow:0 4px 16px rgba(167,139,250,0.3)!important}' +
+    '#hc-sb .send:disabled{opacity:0.5!important;cursor:not-allowed!important;transform:none!important}' +
+    '#hc-sb .send{font-size:20px!important;line-height:1!important}' +
+    '#hc-sb .spin{width:16px!important;height:16px!important;border:2px solid rgba(0,0,0,0.2)!important;' +
+    'border-top-color:#000!important;border-radius:50%!important;animation:hcSp .7s linear infinite!important}' +
+    '@keyframes hcSp{to{transform:rotate(360deg)}}' +
+    '#hc-sb .msgs::-webkit-scrollbar{width:6px!important}' +
+    '#hc-sb .msgs::-webkit-scrollbar-track{background:transparent!important}' +
+    '#hc-sb .msgs::-webkit-scrollbar-thumb{background:#333!important;border-radius:3px!important}';
+
+  var st = document.createElement('style');
+  st.id = 'hc-st';
+  st.textContent = css;
+  document.head.appendChild(st);
+
+  var sb = document.createElement('div');
+  sb.id = 'hc-sb';
+  sb.innerHTML = '<div class="hd"><div class="hd-l"><div class="logo">⚓</div><div><div class="tt">Harbor</div>' +
+    '<div class="st">Chat about this page</div></div></div><div class="hd-r"><div class="sts"><span class="dot" id="hc-dot"></span>' +
+    '<span id="hc-sts">Ready</span></div><button class="xbtn" id="hc-x">×</button></div></div>' +
+    '<div class="ctx"><span>📄</span><span class="ctx-t">' + (document.title || location.hostname) + '</span></div>' +
+    '<div class="setup" id="hc-setup"><div class="setup-ico">💬</div><h3>Chat About This Page</h3>' +
+    '<p>Ask questions, get summaries, or explore the content with AI assistance.</p>' +
+    '<button class="conn" id="hc-conn">Connect to AI</button><div class="err" id="hc-err"></div></div>' +
+    '<div class="msgs" id="hc-msgs"><div class="empty" id="hc-empty"><div class="empty-ico">💭</div>' +
+    '<h4>Ask Me Anything</h4><p>I can help you understand this page.</p><div class="chips">' +
+    '<button class="chip" data-q="Summarize this page in 3 bullet points">📝 Summarize in 3 points</button>' +
+    '<button class="chip" data-q="What is the main topic of this page?">🎯 Main topic</button>' +
+    '<button class="chip" data-q="What are the key takeaways?">💡 Key takeaways</button></div></div></div>' +
+    '<div class="inp" id="hc-inp"><textarea id="hc-ta" placeholder="Ask about this page..." rows="1"></textarea>' +
+    '<button class="send" id="hc-btn">➤</button></div>';
+  document.body.appendChild(sb);
+
+  var om = document.body.style.marginRight;
+  document.body.style.transition = 'margin-right .25s ease';
+  document.body.style.marginRight = '380px';
+
+  var ok = false, busy = false, ctx = '';
+  var dot = document.getElementById('hc-dot');
+  var sts = document.getElementById('hc-sts');
+  var setup = document.getElementById('hc-setup');
+  var conn = document.getElementById('hc-conn');
+  var err = document.getElementById('hc-err');
+  var msgs = document.getElementById('hc-msgs');
+  var empty = document.getElementById('hc-empty');
+  var inp = document.getElementById('hc-inp');
+  var ta = document.getElementById('hc-ta');
+  var btn = document.getElementById('hc-btn');
+
+  document.getElementById('hc-x').onclick = function() {
+    document.body.style.marginRight = om;
+    sb.remove();
+    st.remove();
+  };
+
+  function getCtx() {
+    var c = document.querySelector('article') || document.querySelector('main') || document.body;
+    var t = c.innerText;
+    return t.length > 6000 ? t.slice(0, 6000) + '\\n[truncated]' : t;
+  }
+
+  function connect() {
+    conn.disabled = true;
+    conn.innerHTML = '<span class="spin"></span> Connecting...';
+    err.className = 'err';
+    if (!window.ai || !window.agent) {
+      fail('Harbor not found. Install the extension first.');
+      return;
+    }
+    window.agent.requestPermissions({ scopes: ['model:prompt'], reason: 'Chat about page' }).then(function(r) {
+      if (!r.granted) { fail('Permission denied.'); return; }
+      window.ai.createTextSession().then(function(s) {
+        s.destroy();
+        ok = true;
+        ctx = getCtx();
+        dot.className = 'dot ok';
+        sts.textContent = 'Connected';
+        setup.className = 'setup hide';
+        msgs.className = 'msgs on';
+        inp.className = 'inp on';
+        ta.focus();
+      }).catch(function(e) { fail(e.message); });
+    }).catch(function(e) { fail(e.message); });
+  }
+
+  function fail(m) {
+    conn.disabled = false;
+    conn.textContent = 'Try Again';
+    err.textContent = m;
+    err.className = 'err show';
+    dot.className = 'dot err';
+    sts.textContent = 'Error';
+  }
+
+  function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+  function scroll() { msgs.scrollTop = msgs.scrollHeight; }
+
+  function addMsg(role, txt) {
+    empty.className = 'empty hide';
+    var m = document.createElement('div');
+    m.className = 'msg ' + (role === 'user' ? 'u' : 'a');
+    m.innerHTML = '<div class="msg-h"><div class="av">' + (role === 'user' ? 'U' : 'H') + '</div>' +
+      '<span class="role">' + (role === 'user' ? 'You' : 'Harbor') + '</span></div>' +
+      '<div class="body">' + esc(txt) + '</div>';
+    msgs.appendChild(m);
+    scroll();
+    return m;
+  }
+
+  function think() {
+    var t = document.getElementById('hc-think');
+    if (t) t.remove();
+    empty.className = 'empty hide';
+    var m = document.createElement('div');
+    m.className = 'msg a';
+    m.id = 'hc-think';
+    m.innerHTML = '<div class="msg-h"><div class="av">H</div><span class="role">Harbor</span></div>' +
+      '<div class="think"><span></span><span></span><span></span></div>';
+    msgs.appendChild(m);
+    scroll();
+  }
+
+  function unthink() { var t = document.getElementById('hc-think'); if (t) t.remove(); }
+
+  async function send(q) {
+    if (!q.trim() || !ok || busy) return;
+    busy = true;
+    btn.disabled = true;
+    ta.value = '';
+    ta.style.height = 'auto';
+    addMsg('user', q);
+    think();
+    try {
+      var sys = 'You are a helpful assistant. Be concise.\\n\\nPage: ' + document.title + '\\nURL: ' + location.href + '\\n\\nContent:\\n' + ctx;
+      var sess = await window.ai.createTextSession({ systemPrompt: sys });
+      var res = '', m = null;
+      for await (var ev of sess.promptStreaming(q)) {
+        if (ev.type === 'token' && ev.token) {
+          res += ev.token;
+          if (!m) { unthink(); m = addMsg('assistant', res); }
+          else { m.querySelector('.body').textContent = res; }
+          scroll();
+        }
+      }
+      await sess.destroy();
+      unthink();
+      if (!m && !res) addMsg('assistant', '(No response)');
+    } catch (e) {
+      unthink();
+      addMsg('assistant', 'Error: ' + e.message);
+    }
+    busy = false;
+    btn.disabled = false;
+    ta.focus();
+  }
+
+  conn.onclick = connect;
+  ta.oninput = function() { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'; };
+  ta.onkeydown = function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(ta.value); } };
+  btn.onclick = function() { send(ta.value); };
+  document.querySelectorAll('#hc-sb .chip').forEach(function(c) { c.onclick = function() { if (ok) send(c.dataset.q); }; });
+
+  if (window.ai && window.agent) sts.textContent = 'Ready';
+  else { dot.className = 'dot err'; sts.textContent = 'No API'; }
+})();
+    `.trim();
+
+    function minify(code) {
+      return code
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '')
+        .replace(/\n\s*/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    }
+
+    const minified = minify(bookmarkletSource);
+    const bookmarkletHref = 'javascript:' + encodeURIComponent(minified);
+
+    document.getElementById('bookmarklet').href = bookmarkletHref;
+
+    document.getElementById('bookmarklet').addEventListener('click', (e) => {
+      e.preventDefault();
+      alert('Drag this button to your bookmarks bar to save it!\n\nOr click "Launch Sidebar" below to try it on this page.');
+    });
+
+    document.getElementById('try-btn').addEventListener('click', () => {
+      eval(bookmarkletSource);
+    });
+  </script>
+</body>
+</html>

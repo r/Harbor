@@ -15,7 +15,7 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      padding: var(--harbor-space-10) var(--harbor-space-6);
+      padding: var(--demo-space-10) var(--demo-space-6);
     }
 
     .page-container {
@@ -26,7 +26,7 @@
     .demos-grid {
       display: flex;
       flex-direction: column;
-      gap: var(--harbor-space-4);
+      gap: var(--demo-space-4);
     }
 
     .demo-card {
@@ -35,21 +35,21 @@
       color: inherit;
     }
 
-    .demo-card .harbor-card {
+    .demo-card .demo-card {
       cursor: pointer;
     }
 
     .demo-card-content {
       display: flex;
       align-items: flex-start;
-      gap: var(--harbor-space-4);
+      gap: var(--demo-space-4);
     }
 
     .demo-card-icon {
       width: 44px;
       height: 44px;
-      background: linear-gradient(135deg, var(--harbor-accent-primary), var(--harbor-accent-tertiary));
-      border-radius: var(--harbor-radius-lg);
+      background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-tertiary));
+      border-radius: var(--demo-radius-lg);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -63,47 +63,47 @@
     }
 
     .demo-card-title {
-      font-size: var(--harbor-text-lg);
-      font-weight: var(--harbor-weight-semibold);
-      color: var(--harbor-text-primary);
-      margin-bottom: var(--harbor-space-1);
+      font-size: var(--demo-text-lg);
+      font-weight: var(--demo-weight-semibold);
+      color: var(--demo-text-primary);
+      margin-bottom: var(--demo-space-1);
       display: flex;
       align-items: center;
-      gap: var(--harbor-space-2);
+      gap: var(--demo-space-2);
     }
 
     .demo-card-description {
-      font-size: var(--harbor-text-sm);
-      color: var(--harbor-text-secondary);
-      line-height: var(--harbor-leading-relaxed);
+      font-size: var(--demo-text-sm);
+      color: var(--demo-text-secondary);
+      line-height: var(--demo-leading-relaxed);
     }
 
     .demo-card-description code {
-      font-size: var(--harbor-text-xs);
+      font-size: var(--demo-text-xs);
     }
 
     .extension-note {
-      margin-top: var(--harbor-space-10);
-      padding: var(--harbor-space-5);
-      background: var(--harbor-accent-glow);
+      margin-top: var(--demo-space-10);
+      padding: var(--demo-space-5);
+      background: var(--demo-accent-glow);
       border: 1px solid rgba(139, 92, 246, 0.2);
-      border-radius: var(--harbor-radius-lg);
-      font-size: var(--harbor-text-sm);
-      color: var(--harbor-text-secondary);
+      border-radius: var(--demo-radius-lg);
+      font-size: var(--demo-text-sm);
+      color: var(--demo-text-secondary);
       text-align: center;
     }
 
     .extension-note strong {
-      color: var(--harbor-text-primary);
+      color: var(--demo-text-primary);
     }
   </style>
 </head>
-<body class="harbor-bg-glow">
+<body class="demo-bg-glow">
   <div class="page-container">
-    <header class="harbor-demo-header">
-      <div class="harbor-demo-logo">⚓</div>
-      <h1 class="harbor-demo-title harbor-text-gradient">Web Agent API Demos</h1>
-      <p class="harbor-demo-subtitle">
+    <header class="demo-header">
+      <div class="demo-logo">⚓</div>
+      <h1 class="demo-title demo-text-gradient">Web Agent API Demos</h1>
+      <p class="demo-subtitle">
         Example applications showing how to use the Web Agent API
         (<code>window.ai</code> and <code>window.agent</code>) to add AI capabilities to any website.
       </p>
@@ -111,13 +111,13 @@
 
     <div class="demos-grid">
       <a href="getting-started/" class="demo-card">
-        <div class="harbor-card harbor-card-interactive">
+        <div class="demo-card demo-card-interactive">
           <div class="demo-card-content">
             <div class="demo-card-icon">🚀</div>
             <div class="demo-card-text">
               <div class="demo-card-title">
                 Getting Started
-                <span class="harbor-badge">Start Here</span>
+                <span class="demo-badge">Start Here</span>
               </div>
               <p class="demo-card-description">
                 Interactive walkthrough — step through detecting the Web Agent API, 
@@ -129,13 +129,13 @@
       </a>
 
       <a href="chat-poc/" class="demo-card">
-        <div class="harbor-card harbor-card-interactive">
+        <div class="demo-card demo-card-interactive">
           <div class="demo-card-content">
             <div class="demo-card-icon">💬</div>
             <div class="demo-card-text">
               <div class="demo-card-title">
                 Chat Demo
-                <span class="harbor-badge harbor-badge-info">API</span>
+                <span class="demo-badge demo-badge-info">API</span>
               </div>
               <p class="demo-card-description">
                 Full-featured chat interface using <code>window.agent.run()</code> with 
@@ -147,7 +147,7 @@
       </a>
 
       <a href="summarizer/" class="demo-card">
-        <div class="harbor-card harbor-card-interactive">
+        <div class="demo-card demo-card-interactive">
           <div class="demo-card-content">
             <div class="demo-card-icon">📄</div>
             <div class="demo-card-text">
@@ -162,7 +162,7 @@
       </a>
 
       <a href="summarizer/chrome-compat.html" class="demo-card">
-        <div class="harbor-card harbor-card-interactive">
+        <div class="demo-card demo-card-interactive">
           <div class="demo-card-content">
             <div class="demo-card-icon">🔄</div>
             <div class="demo-card-text">
@@ -170,6 +170,57 @@
               <p class="demo-card-description">
                 Same summarizer but using the Chrome-compatible 
                 <code>window.ai.languageModel.create()</code> API style.
+              </p>
+            </div>
+          </div>
+        </div>
+      </a>
+
+      <a href="email-chat/" class="demo-card">
+        <div class="demo-card demo-card-interactive">
+          <div class="demo-card-content">
+            <div class="demo-card-icon">📧</div>
+            <div class="demo-card-text">
+              <div class="demo-card-title">
+                Email Chat
+                <span class="demo-badge demo-badge-info">MCP</span>
+              </div>
+              <p class="demo-card-description">
+                Chat with your email inbox using <code>window.agent.run()</code> with 
+                Gmail MCP tools. Setup wizard walks you through the process.
+              </p>
+            </div>
+          </div>
+        </div>
+      </a>
+
+      <a href="bookmarklet/" class="demo-card">
+        <div class="demo-card demo-card-interactive">
+          <div class="demo-card-content">
+            <div class="demo-card-icon">🔖</div>
+            <div class="demo-card-text">
+              <div class="demo-card-title">Page Chat Bookmarklet</div>
+              <p class="demo-card-description">
+                Drag-and-drop bookmarklet that injects a chat sidebar into any page.
+                Works on any website to chat about the current content.
+              </p>
+            </div>
+          </div>
+        </div>
+      </a>
+
+      <a href="bring-your-chatbot/" class="demo-card">
+        <div class="demo-card demo-card-interactive">
+          <div class="demo-card-content">
+            <div class="demo-card-icon">🛍️</div>
+            <div class="demo-card-text">
+              <div class="demo-card-title">
+                Bring Your Own Chatbot
+                <span class="demo-badge demo-badge-warning">Proposal</span>
+              </div>
+              <p class="demo-card-description">
+                Concept demo showing how websites can integrate with the user's own 
+                AI chatbot while providing site-specific MCP tools.
               </p>
             </div>
           </div>
