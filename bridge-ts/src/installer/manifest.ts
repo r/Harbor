@@ -433,58 +433,86 @@ export interface ManifestValidationResult {
 
 /**
  * Fetch and parse a manifest from a GitHub repository.
+ * Tries multiple branches (main, master) if the specified branch fails.
  */
 export async function fetchManifestFromGitHub(
   owner: string,
   repo: string,
-  branch: string = 'main'
+  branch?: string
 ): Promise<McpManifest | null> {
-  // Try manifest files
-  for (const filename of MANIFEST_FILENAMES) {
-    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${filename}`;
-    
-    try {
-      log(`[Manifest] Trying: ${rawUrl}`);
-      const response = await fetch(rawUrl);
-      
-      if (!response.ok) continue;
-      
-      const manifest = await response.json() as McpManifest;
-      const result = validateManifest(manifest);
-      
-      if (result.valid) {
-        log(`[Manifest] Found manifest at ${filename}`);
-        return result.manifest!;
-      } else {
-        log(`[Manifest] Invalid manifest at ${filename}: ${result.errors?.join(', ')}`);
-      }
-      
-    } catch (e) {
-      log(`[Manifest] Failed to fetch ${rawUrl}: ${e}`);
-      continue;
-    }
-  }
+  // Branches to try (in order)
+  const branchesToTry = branch ? [branch] : ['main', 'master'];
   
-  // Try package.json "mcp" field
-  try {
-    const pkgUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/package.json`;
-    const response = await fetch(pkgUrl);
+  for (const branchName of branchesToTry) {
+    log(`[Manifest] Checking ${owner}/${repo} on branch: ${branchName}`);
     
-    if (response.ok) {
-      const pkg = await response.json() as { mcp?: McpManifest };
-      if (pkg.mcp) {
-        const result = validateManifest(pkg.mcp);
+    // Try manifest files
+    for (const filename of MANIFEST_FILENAMES) {
+      const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branchName}/${filename}`;
+      
+      try {
+        log(`[Manifest] Trying: ${rawUrl}`);
+        const response = await fetch(rawUrl);
+        
+        if (!response.ok) {
+          log(`[Manifest] Not found (${response.status}): ${rawUrl}`);
+          continue;
+        }
+        
+        const text = await response.text();
+        log(`[Manifest] Found file, parsing JSON (${text.length} bytes)...`);
+        
+        let manifest: McpManifest;
+        try {
+          manifest = JSON.parse(text) as McpManifest;
+        } catch (parseErr) {
+          log(`[Manifest] Failed to parse JSON: ${parseErr}`);
+          continue;
+        }
+        
+        const result = validateManifest(manifest);
+        
         if (result.valid) {
-          log(`[Manifest] Found manifest in package.json`);
+          log(`[Manifest] ✓ Valid manifest found at ${filename} (branch: ${branchName})`);
+          log(`[Manifest] Package info: type=${result.manifest!.package.type}, name=${result.manifest!.package.name || 'N/A'}, url=${result.manifest!.package.url || 'N/A'}`);
           return result.manifest!;
+        } else {
+          log(`[Manifest] ✗ Invalid manifest at ${filename}: ${result.errors?.join(', ')}`);
+        }
+        
+      } catch (e) {
+        log(`[Manifest] Network error fetching ${rawUrl}: ${e}`);
+        continue;
+      }
+    }
+    
+    // Try package.json "mcp" field
+    try {
+      const pkgUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branchName}/package.json`;
+      log(`[Manifest] Trying package.json mcp field: ${pkgUrl}`);
+      const response = await fetch(pkgUrl);
+      
+      if (response.ok) {
+        const pkg = await response.json() as { mcp?: McpManifest };
+        if (pkg.mcp) {
+          log(`[Manifest] Found 'mcp' field in package.json, validating...`);
+          const result = validateManifest(pkg.mcp);
+          if (result.valid) {
+            log(`[Manifest] ✓ Valid manifest in package.json (branch: ${branchName})`);
+            return result.manifest!;
+          } else {
+            log(`[Manifest] ✗ Invalid mcp field in package.json: ${result.errors?.join(', ')}`);
+          }
+        } else {
+          log(`[Manifest] No 'mcp' field in package.json`);
         }
       }
+    } catch (e) {
+      log(`[Manifest] Error checking package.json: ${e}`);
     }
-  } catch {
-    // Ignore
   }
   
-  log(`[Manifest] No manifest found for ${owner}/${repo}`);
+  log(`[Manifest] No manifest found for ${owner}/${repo} (tried branches: ${branchesToTry.join(', ')})`);
   return null;
 }
 
