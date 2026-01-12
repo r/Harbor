@@ -10,13 +10,14 @@ interface RecommendedServer {
   name: string;
   description: string;
   icon: string;
-  packageType: 'npm' | 'pypi' | 'binary' | 'oci';
-  packageId: string;
+  packageType?: 'npm' | 'pypi' | 'binary' | 'oci';
+  packageId?: string;
   tags: string[];
   requiresNative: boolean;
   requiresConfig?: boolean;
   configHint?: string;
   homepageUrl: string;
+  repositoryUrl?: string;  // For manifest-first installation from GitHub
 }
 
 // IDs MUST match the curated-servers.ts IDs exactly for install state sync
@@ -77,12 +78,12 @@ const RECOMMENDED_SERVERS: RecommendedServer[] = [
     name: 'Gmail',
     description: 'Read, search, send emails, manage labels and filters via Gmail API. Sign in with Google to get started.',
     icon: '📧',
-    packageType: 'npm',
-    packageId: '@gongrzhe/server-gmail-autoauth-mcp',
+    // Don't set packageType/packageId - let the installer resolve from GitHub URL
     tags: ['email', 'google', 'productivity'],
     requiresNative: true,
     requiresConfig: true,
     configHint: 'Sign in with Google to authorize access',
+    repositoryUrl: 'https://github.com/r/Gmail-MCP-Server',
     homepageUrl: 'https://github.com/r/Gmail-MCP-Server',
   },
 ];
@@ -822,7 +823,7 @@ function renderQuickStartSection(): string {
   const recommendedWithStatus = RECOMMENDED_SERVERS.map(server => {
     const serverIdLower = server.id.toLowerCase();
     const serverNameLower = server.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const pkgPart = server.packageId.split('/').pop()?.toLowerCase() || '';
+    const pkgPart = server.packageId?.split('/').pop()?.toLowerCase() || '';
     
     const isInstalled = [...installedServerIds].some(installedId => {
       if (!installedId || typeof installedId !== 'string') return false;
@@ -1568,6 +1569,7 @@ async function installRecommendedServer(recommended: RecommendedServer): Promise
       source: 'curated',
       fetchedAt: Date.now(),
       homepageUrl: recommended.homepageUrl,
+      repositoryUrl: recommended.repositoryUrl || recommended.homepageUrl,  // Include for manifest-first lookup
     };
 
     console.log('[Directory] Installing recommended server:', recommended.name, recommended.homepageUrl);
