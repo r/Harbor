@@ -70,9 +70,12 @@ describe('API Types Match Documentation', () => {
       const documentedScopes: PermissionScope[] = [
         'model:prompt',           // Generate text using AI models
         'model:tools',            // Use AI with tool calling
+        'model:list',             // List configured LLM providers
         'mcp:tools.list',         // List available MCP tools
         'mcp:tools.call',         // Execute MCP tools
+        'mcp:servers.register',   // Register temporary MCP servers (BYOC)
         'browser:activeTab.read', // Read content from active tab
+        'chat:open',              // Open browser's chat UI (BYOC)
         'web:fetch',              // Proxy fetch requests (NOT IMPLEMENTED in v1)
       ];
 
@@ -100,9 +103,12 @@ describe('API Types Match Documentation', () => {
         const status: Record<PermissionScope, PermissionGrant> = {
           'model:prompt': grant,
           'model:tools': grant,
+          'model:list': grant,
           'mcp:tools.list': grant,
           'mcp:tools.call': grant,
+          'mcp:servers.register': grant,
           'browser:activeTab.read': grant,
+          'chat:open': grant,
           'web:fetch': grant,
         };
         expect(status['model:prompt']).toBe(grant);
@@ -118,9 +124,12 @@ describe('API Types Match Documentation', () => {
         scopes: {
           'model:prompt': 'granted-always',
           'model:tools': 'granted-always',
+          'model:list': 'granted-always',
           'mcp:tools.list': 'granted-always',
           'mcp:tools.call': 'granted-always',
+          'mcp:servers.register': 'not-granted',
           'browser:activeTab.read': 'not-granted',
+          'chat:open': 'not-granted',
           'web:fetch': 'not-granted',
         },
       };
@@ -137,9 +146,12 @@ describe('API Types Match Documentation', () => {
         scopes: {
           'model:prompt': 'granted-always',
           'model:tools': 'granted-always',
+          'model:list': 'granted-always',
           'mcp:tools.list': 'granted-always',
           'mcp:tools.call': 'granted-always',
+          'mcp:servers.register': 'not-granted',
           'browser:activeTab.read': 'not-granted',
+          'chat:open': 'not-granted',
           'web:fetch': 'not-granted',
         },
         allowedTools: ['server1/tool1', 'server2/tool2'],
@@ -157,9 +169,12 @@ describe('API Types Match Documentation', () => {
         scopes: {
           'model:prompt': 'granted-always',
           'model:tools': 'not-granted',
+          'model:list': 'not-granted',
           'mcp:tools.list': 'granted-once',
           'mcp:tools.call': 'denied',
+          'mcp:servers.register': 'not-granted',
           'browser:activeTab.read': 'not-granted',
+          'chat:open': 'not-granted',
           'web:fetch': 'not-granted',
         },
       };
@@ -175,9 +190,12 @@ describe('API Types Match Documentation', () => {
         scopes: {
           'model:prompt': 'granted-always',
           'model:tools': 'not-granted',
+          'model:list': 'not-granted',
           'mcp:tools.list': 'granted-once',
           'mcp:tools.call': 'granted-always',
+          'mcp:servers.register': 'not-granted',
           'browser:activeTab.read': 'not-granted',
+          'chat:open': 'not-granted',
           'web:fetch': 'not-granted',
         },
         allowedTools: ['memory-server/save_memory'],
@@ -495,9 +513,12 @@ describe('API Behavior Contract', () => {
         scopes: {
           'model:prompt': 'granted-always',
           'model:tools': 'granted-always',
+          'model:list': 'not-granted',
           'mcp:tools.list': 'not-granted',
           'mcp:tools.call': 'not-granted',
+          'mcp:servers.register': 'not-granted',
           'browser:activeTab.read': 'not-granted',
+          'chat:open': 'not-granted',
           'web:fetch': 'not-granted',
         },
       };
@@ -514,9 +535,12 @@ describe('API Behavior Contract', () => {
         scopes: {
           'model:prompt': 'granted-always',
           'model:tools': 'denied',
+          'model:list': 'not-granted',
           'mcp:tools.list': 'not-granted',
           'mcp:tools.call': 'not-granted',
+          'mcp:servers.register': 'not-granted',
           'browser:activeTab.read': 'not-granted',
+          'chat:open': 'not-granted',
           'web:fetch': 'not-granted',
         },
       };
@@ -529,9 +553,12 @@ describe('API Behavior Contract', () => {
         scopes: {
           'model:prompt': 'granted-always',  // Persisted
           'model:tools': 'granted-once',      // Temporary
+          'model:list': 'not-granted',
           'mcp:tools.list': 'denied',         // Explicitly denied
           'mcp:tools.call': 'not-granted',    // Never requested
+          'mcp:servers.register': 'not-granted',
           'browser:activeTab.read': 'not-granted',
+          'chat:open': 'not-granted',
           'web:fetch': 'not-granted',
         },
       };

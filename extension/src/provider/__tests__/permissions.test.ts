@@ -48,7 +48,9 @@ describe('Permission System', () => {
         'model:list',
         'mcp:tools.list',
         'mcp:tools.call',
+        'mcp:servers.register',  // BYOC: Register temporary MCP servers
         'browser:activeTab.read',
+        'chat:open',             // BYOC: Open browser's chat UI
         'web:fetch',
       ];
 
