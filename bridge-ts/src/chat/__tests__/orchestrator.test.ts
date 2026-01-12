@@ -10,6 +10,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ChatOrchestrator } from '../orchestrator.js';
 import { parseToolCallFromText } from '../tool-call-parser.js';
 
+// Mock MCP tool call result for tool result extraction tests
+let mockCallToolResult = { content: [{ type: 'text', text: 'test result' }] };
+
 // Mock the dependencies
 vi.mock('../../llm/manager.js', () => ({
   getLLMManager: () => ({
@@ -22,7 +25,7 @@ vi.mock('../../mcp/manager.js', () => ({
   getMcpClientManager: () => ({
     getConnectedServers: () => [],
     getToolsForServer: () => [],
-    callTool: vi.fn(),
+    callTool: vi.fn().mockImplementation(() => Promise.resolve(mockCallToolResult)),
   }),
 }));
 
@@ -404,6 +407,163 @@ Here's a JSON object for the function call:
       // Should explain multi-step workflow
       expect(prompt).toContain('SEARCH first');
       expect(prompt).toContain('READ');
+    });
+  });
+
+  describe('Tool Result Extraction', () => {
+    /**
+     * Tests for extracting content from MCP tool call results.
+     * This is critical to ensure tool results are properly passed to the LLM.
+     * 
+     * MCP tool results have the format:
+     * { content: [{ type: 'text', text: '...' }, ...], isError?: boolean }
+     */
+
+    // Helper to test tool result extraction logic
+    function extractToolResultContent(result: { content?: Array<{ type: string; text?: string }>; isError?: boolean }): string {
+      let content = '';
+      if (result.content && result.content.length > 0) {
+        content = result.content
+          .map(c => {
+            if (c.type === 'text') return c.text || '';
+            if (c.type === 'image') return '[Image data]';
+            return JSON.stringify(c);
+          })
+          .join('\n');
+      }
+      return content;
+    }
+
+    describe('Standard text content', () => {
+      it('should extract text from single content item', () => {
+        const result = {
+          content: [{ type: 'text', text: 'Hello, World!' }],
+        };
+        
+        const extracted = extractToolResultContent(result);
+        expect(extracted).toBe('Hello, World!');
+      });
+
+      it('should extract text from multiple content items', () => {
+        const result = {
+          content: [
+            { type: 'text', text: 'First line' },
+            { type: 'text', text: 'Second line' },
+          ],
+        };
+        
+        const extracted = extractToolResultContent(result);
+        expect(extracted).toBe('First line\nSecond line');
+      });
+
+      it('should handle rich content like email data', () => {
+        const emailContent = JSON.stringify({
+          emails: [
+            { from: 'john@example.com', subject: 'Meeting', snippet: 'Let us meet tomorrow' },
+            { from: 'jane@example.com', subject: 'Report', snippet: 'Attached is the report' },
+          ],
+        });
+        
+        const result = {
+          content: [{ type: 'text', text: emailContent }],
+        };
+        
+        const extracted = extractToolResultContent(result);
+        expect(extracted).toContain('john@example.com');
+        expect(extracted).toContain('Meeting');
+        expect(extracted).toContain('jane@example.com');
+        expect(extracted).toContain('Report');
+      });
+
+      it('should preserve JSON structure in text content', () => {
+        const jsonData = { count: 5, items: ['a', 'b', 'c'] };
+        const result = {
+          content: [{ type: 'text', text: JSON.stringify(jsonData) }],
+        };
+        
+        const extracted = extractToolResultContent(result);
+        const parsed = JSON.parse(extracted);
+        expect(parsed.count).toBe(5);
+        expect(parsed.items).toEqual(['a', 'b', 'c']);
+      });
+    });
+
+    describe('Empty and edge cases', () => {
+      it('should return empty string for empty content array', () => {
+        const result = { content: [] };
+        
+        const extracted = extractToolResultContent(result);
+        expect(extracted).toBe('');
+      });
+
+      it('should return empty string for undefined content', () => {
+        const result = {};
+        
+        const extracted = extractToolResultContent(result as any);
+        expect(extracted).toBe('');
+      });
+
+      it('should return empty string for null content', () => {
+        const result = { content: null };
+        
+        const extracted = extractToolResultContent(result as any);
+        expect(extracted).toBe('');
+      });
+
+      it('should handle text items with empty text', () => {
+        const result = {
+          content: [{ type: 'text', text: '' }],
+        };
+        
+        const extracted = extractToolResultContent(result);
+        expect(extracted).toBe('');
+      });
+
+      it('should handle text items with undefined text', () => {
+        const result = {
+          content: [{ type: 'text' }],
+        };
+        
+        const extracted = extractToolResultContent(result as any);
+        expect(extracted).toBe('');
+      });
+    });
+
+    describe('Image and mixed content', () => {
+      it('should handle image content type', () => {
+        const result = {
+          content: [{ type: 'image', data: 'base64data' }],
+        };
+        
+        const extracted = extractToolResultContent(result as any);
+        expect(extracted).toBe('[Image data]');
+      });
+
+      it('should handle mixed text and image content', () => {
+        const result = {
+          content: [
+            { type: 'text', text: 'Here is the chart:' },
+            { type: 'image', data: 'base64data' },
+            { type: 'text', text: 'Chart shows growth.' },
+          ],
+        };
+        
+        const extracted = extractToolResultContent(result as any);
+        expect(extracted).toBe('Here is the chart:\n[Image data]\nChart shows growth.');
+      });
+    });
+
+    describe('Unknown content types', () => {
+      it('should JSON stringify unknown content types', () => {
+        const result = {
+          content: [{ type: 'custom', data: { foo: 'bar' } }],
+        };
+        
+        const extracted = extractToolResultContent(result as any);
+        const parsed = JSON.parse(extracted);
+        expect(parsed.type).toBe('custom');
+        expect(parsed.data.foo).toBe('bar');
+      });
     });
   });
 });

@@ -702,17 +702,27 @@ When you receive tool results:
           fixedArguments
         );
         
+        // DEBUG: Log raw result to understand what's coming back
+        log(`[Orchestrator] Raw tool result for ${mapping.originalName}:`);
+        log(`[Orchestrator]   result object: ${JSON.stringify(result)}`);
+        log(`[Orchestrator]   result.content: ${JSON.stringify(result.content)}`);
+        log(`[Orchestrator]   result.content length: ${result.content?.length ?? 'undefined'}`);
+        
         // Extract text content from result
         let content = '';
         if (result.content && result.content.length > 0) {
           content = result.content
             .map(c => {
+              log(`[Orchestrator]   content item: type=${c.type}, text=${c.text?.substring(0, 100)}...`);
               if (c.type === 'text') return c.text || '';
               if (c.type === 'image') return '[Image data]';
               return JSON.stringify(c);
             })
             .join('\n');
         }
+        
+        log(`[Orchestrator] Extracted content (first 200 chars): ${content.substring(0, 200)}`);
+        log(`[Orchestrator] Content length: ${content.length}`);
         
         results.push({
           toolCallId: toolCall.id,
