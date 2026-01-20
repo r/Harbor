@@ -220,7 +220,7 @@ export async function ensureBuiltinServers(): Promise<McpServerManifest[]> {
   if (!hasEcho) {
     const echoManifest: McpServerManifest = {
       id: 'echo-js',
-      name: 'Echo Server (JS)',
+      name: 'Echo Server',
       version: '0.1.0',
       runtime: 'js',
       scriptBase64: btoa(ECHO_SERVER_SOURCE),
