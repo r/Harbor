@@ -449,21 +449,27 @@ console.<span class="method">log</span>(response);</pre>
           window._webAgentDemoToolCalls = [];
           let tokenText = '';
           
-          // Use the agent API to run with tools
+          // Use the agent API to run with tools (matches displayed code)
           for await (const event of window.agent.run({
-            task: 'What is the current time? Please use the get_current_time tool.',
-            maxToolCalls: 5
+            task: 'What is the current time?',
+            maxToolCalls: 3
           })) {
+            // Log all events for debugging
             console.log('[Demo] Agent event:', event.type, event);
             
+            // These match what's shown in the UI
             if (event.type === 'tool_call') {
+              console.log('Using tool:', event.tool);
               window._webAgentDemoToolCalls.push(event.tool);
             }
+            if (event.type === 'final') {
+              console.log('Response:', event.output);
+              window._webAgentDemoResponse = event.output || tokenText;
+            }
+            
+            // Additional handling for demo functionality
             if (event.type === 'token' && event.token) {
               tokenText += event.token;
-            }
-            if (event.type === 'final') {
-              window._webAgentDemoResponse = event.output || tokenText;
             }
             if (event.type === 'error') {
               throw new Error(event.error?.message || 'Agent error');
