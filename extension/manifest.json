@@ -40,8 +40,7 @@
         "dist/permission-prompt.js",
         "dist/design-tokens.css",
         "dist/demo-bootstrap.js",
-        "dist/js-runtime/worker-loader.js",
-        "dist/js-runtime/sandbox.html",
+        "dist/js-runtime/builtin-echo-worker.js",
         "demo/*",
         "assets/mcp-time.wasm"
       ],
@@ -57,10 +56,6 @@
     "default_panel": "dist/sidebar.html"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
-    "sandbox": "sandbox allow-scripts; script-src 'self' 'unsafe-eval'"
-  },
-  "sandbox": {
-    "pages": ["dist/js-runtime/sandbox.html"]
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   }
 }

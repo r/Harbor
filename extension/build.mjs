@@ -31,7 +31,8 @@ async function copyStatic() {
   await copyFile('src/sidebar.html', 'dist/sidebar.html');
   await copyFile('src/permission-prompt.html', 'dist/permission-prompt.html');
   await copyFile('src/design-tokens.css', 'dist/design-tokens.css');
-  await copyFile('src/js-runtime/sandbox.html', 'dist/js-runtime/sandbox.html');
+  await copyFile('src/js-runtime/sandbox.html', 'dist/js-runtime/sandbox.html').catch(() => {});
+  await copyFile('src/js-runtime/builtin-echo-worker.js', 'dist/js-runtime/builtin-echo-worker.js');
   
   // Copy demo files
   await cp('demo', 'dist/../demo', { recursive: true }).catch(() => {});

@@ -1,14 +1,17 @@
 /**
  * JS MCP Server session management.
  *
- * Creates and manages sandboxed iframe sessions for JS MCP servers.
- * Uses manifest sandbox feature to allow eval/Function in the iframe.
+ * For Firefox MV3 compatibility, uses pre-bundled worker files for built-in servers.
+ * Dynamic JS servers are not fully supported in Firefox MV3 due to CSP restrictions.
  */
 
 import type { StdioEndpoint } from '../mcp/stdio-transport';
 import type { McpServerManifest } from '../wasm/types';
-import { wrapServerCode } from './sandbox';
-import { isHostAllowed } from './fetch-proxy';
+
+// Built-in server IDs that have pre-bundled worker files
+const BUILTIN_WORKER_MAP: Record<string, string> = {
+  'echo-js': 'dist/js-runtime/builtin-echo-worker.js',
+};
 
 export type JsSession = {
   endpoint: StdioEndpoint;
@@ -16,44 +19,23 @@ export type JsSession = {
 };
 
 /**
- * Loads the server code from the manifest.
- * Supports loading from URL or inline base64.
+ * Creates a stdio endpoint for communication with a worker.
  */
-async function loadServerCode(manifest: McpServerManifest): Promise<string> {
-  if (manifest.scriptBase64) {
-    return atob(manifest.scriptBase64);
-  }
-
-  if (manifest.scriptUrl) {
-    const response = await fetch(manifest.scriptUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch JS server: ${response.status}`);
-    }
-    return response.text();
-  }
-
-  throw new Error('JS server manifest must have scriptUrl or scriptBase64');
-}
-
-/**
- * Creates a stdio endpoint for communication with an iframe.
- */
-function createIframeStdioEndpoint(): {
+function createWorkerStdioEndpoint(): {
   endpoint: StdioEndpoint;
-  attachIframe: (iframe: HTMLIFrameElement) => void;
+  attachWorker: (worker: Worker) => void;
   close: () => void;
 } {
   let handler: ((data: Uint8Array) => void) | null = null;
-  let iframe: HTMLIFrameElement | null = null;
+  let worker: Worker | null = null;
   const encoder = new TextEncoder();
 
   const endpoint: StdioEndpoint = {
     write(data: Uint8Array) {
-      // Convert Uint8Array to string and send to iframe
       const decoder = new TextDecoder();
       const jsonString = decoder.decode(data);
-      if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage({ type: 'stdin', data: jsonString }, '*');
+      if (worker) {
+        worker.postMessage({ type: 'stdin', data: jsonString });
       }
     },
     onData(nextHandler: (data: Uint8Array) => void) {
@@ -61,110 +43,39 @@ function createIframeStdioEndpoint(): {
     },
   };
 
-  const messageHandler = (event: MessageEvent) => {
-    // Only accept messages from our iframe
-    if (!iframe || event.source !== iframe.contentWindow) return;
-    
-    const data = event.data;
-    if (!data) return;
+  const attachWorker = (w: Worker) => {
+    worker = w;
+    worker.addEventListener('message', (event) => {
+      const data = event.data;
+      if (!data) return;
 
-    if (data.type === 'stdout') {
-      // Convert string to Uint8Array and send to handler
-      const encoded = encoder.encode(data.data + '\n');
-      handler?.(encoded);
-    } else if (data.type === 'console') {
-      // Forward console messages
-      const level = data.level as 'log' | 'warn' | 'error' | 'info' | 'debug';
-      const args = data.args || [];
-      console[level]?.('[JS MCP]', ...args);
-    }
-  };
-
-  const attachIframe = (f: HTMLIFrameElement) => {
-    iframe = f;
-    window.addEventListener('message', messageHandler);
+      if (data.type === 'stdout') {
+        const encoded = encoder.encode(data.data + '\n');
+        handler?.(encoded);
+      } else if (data.type === 'console') {
+        const level = data.level as 'log' | 'warn' | 'error' | 'info' | 'debug';
+        const args = data.args || [];
+        console[level]?.('[JS MCP]', ...args);
+      }
+    });
   };
 
   return {
     endpoint,
-    attachIframe,
+    attachWorker,
     close: () => {
-      window.removeEventListener('message', messageHandler);
       handler = null;
-      iframe = null;
+      worker = null;
     },
   };
 }
 
 /**
- * Sets up fetch proxy for an iframe sandbox.
- */
-function setupFetchProxyForIframe(
-  iframe: HTMLIFrameElement,
-  allowedHosts: string[],
-  onFetchAttempt?: (url: string, allowed: boolean) => void,
-): void {
-  const handler = async (event: MessageEvent) => {
-    if (event.source !== iframe.contentWindow) return;
-    
-    const data = event.data;
-    if (data?.type !== 'fetch-request') return;
-
-    const { id, url, options } = data;
-    
-    // Check if host is allowed
-    const allowed = isHostAllowed(url, allowedHosts);
-    onFetchAttempt?.(url, allowed);
-
-    if (!allowed) {
-      iframe.contentWindow?.postMessage({
-        type: 'fetch-response',
-        id,
-        error: `Network access denied: ${new URL(url).hostname} is not in allowed hosts`,
-      }, '*');
-      return;
-    }
-
-    try {
-      // Reconstruct the request
-      const fetchOptions: RequestInit = {
-        method: options?.method || 'GET',
-        headers: options?.headers,
-      };
-
-      if (options?.body) {
-        if (typeof options.body === 'string') {
-          fetchOptions.body = options.body;
-        } else if (options.body.type === 'arraybuffer' || options.body.type === 'uint8array') {
-          fetchOptions.body = new Uint8Array(options.body.data);
-        }
-      }
-
-      const response = await fetch(url, fetchOptions);
-      const body = await response.text();
-
-      iframe.contentWindow?.postMessage({
-        type: 'fetch-response',
-        id,
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-        body,
-      }, '*');
-    } catch (error) {
-      iframe.contentWindow?.postMessage({
-        type: 'fetch-response',
-        id,
-        error: error instanceof Error ? error.message : String(error),
-      }, '*');
-    }
-  };
-
-  window.addEventListener('message', handler);
-}
-
-/**
- * Creates a JS MCP server session in a sandboxed Web Worker.
+ * Creates a JS MCP server session.
+ * 
+ * For built-in servers (like echo-js), uses pre-bundled worker files.
+ * For custom servers, falls back to stub implementation in Firefox MV3
+ * (dynamic JS workers are not supported due to CSP restrictions).
  *
  * @param manifest - The server manifest with JS-specific fields
  * @returns A session with stdio endpoint and close function
@@ -177,92 +88,61 @@ export async function createJsSession(
     throw new Error(`Expected JS server, got runtime: ${manifest.runtime}`);
   }
 
-  // Load and wrap server code with sandbox preamble
-  const serverCode = await loadServerCode(manifest);
-  const wrappedCode = wrapServerCode(serverCode);
+  // Check if this is a built-in server with a pre-bundled worker
+  const builtinWorkerPath = BUILTIN_WORKER_MAP[manifest.id];
+  
+  if (builtinWorkerPath) {
+    // Use pre-bundled worker file
+    const workerUrl = chrome.runtime.getURL(builtinWorkerPath);
+    const worker = new Worker(workerUrl);
 
-  // Create sandboxed iframe for JS execution
-  // The sandbox page allows eval/Function via manifest sandbox config
-  const sandboxUrl = chrome.runtime.getURL('dist/js-runtime/sandbox.html');
-  const iframe = document.createElement('iframe');
-  iframe.src = sandboxUrl;
-  iframe.style.display = 'none';
-  iframe.setAttribute('sandbox', 'allow-scripts');
-  document.body.appendChild(iframe);
+    const { endpoint, attachWorker, close: closeEndpoint } =
+      createWorkerStdioEndpoint();
+    attachWorker(worker);
 
-  // Create stdio endpoint for iframe communication
-  const { endpoint, attachIframe, close: closeEndpoint } =
-    createIframeStdioEndpoint();
+    // Wait for worker to signal ready
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('JS server failed to initialize within timeout'));
+      }, 5000);
 
-  // Wait for iframe to load and sandbox to be ready
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error('JS server failed to initialize within timeout'));
-    }, 5000);
+      const readyHandler = (event: MessageEvent) => {
+        if (event.data?.type === 'ready') {
+          clearTimeout(timeout);
+          worker.removeEventListener('message', readyHandler);
+          resolve();
+        }
+      };
 
-    let sandboxReady = false;
-    let codeReady = false;
-
-    const handler = (event: MessageEvent) => {
-      // Only accept messages from our iframe
-      if (event.source !== iframe.contentWindow) return;
-      
-      const data = event.data;
-      if (!data?.type) return;
-
-      if (data.type === 'sandbox-ready' && !sandboxReady) {
-        sandboxReady = true;
-        // Send the code to execute
-        iframe.contentWindow?.postMessage({ type: 'load-code', code: wrappedCode }, '*');
-      } else if (data.type === 'ready' && !codeReady) {
-        codeReady = true;
+      worker.addEventListener('message', readyHandler);
+      worker.addEventListener('error', (e) => {
         clearTimeout(timeout);
-        window.removeEventListener('message', handler);
-        attachIframe(iframe);
-        resolve();
-      } else if (data.type === 'error') {
-        clearTimeout(timeout);
-        window.removeEventListener('message', handler);
-        reject(new Error(data.message || 'Sandbox error'));
-      }
-    };
+        reject(new Error(`Worker error: ${e.message}`));
+      });
+    });
 
-    window.addEventListener('message', handler);
-  });
-
-  // Set up fetch proxy with capability enforcement
-  const allowedHosts = manifest.capabilities?.network?.hosts || [];
-  setupFetchProxyForIframe(iframe, allowedHosts, (url, allowed) => {
-    if (!allowed) {
-      console.warn(
-        `[Harbor] JS MCP server "${manifest.id}" attempted blocked fetch:`,
-        url,
-      );
+    // Inject secrets if present
+    if (manifest.secrets && Object.keys(manifest.secrets).length > 0) {
+      worker.postMessage({ type: 'init-env', env: manifest.secrets });
     }
-  });
 
-  // Inject secrets as environment variables
-  if (manifest.secrets && Object.keys(manifest.secrets).length > 0) {
-    iframe.contentWindow?.postMessage({ type: 'init-env', env: manifest.secrets }, '*');
+    console.log('[Harbor] JS MCP server session started (builtin worker):', manifest.id);
+
+    return {
+      endpoint,
+      close: () => {
+        worker.postMessage({ type: 'terminate' });
+        setTimeout(() => worker.terminate(), 100);
+        closeEndpoint();
+        console.log('[Harbor] JS MCP server session closed:', manifest.id);
+      },
+    };
   }
 
-  console.log('[Harbor] JS MCP server session started:', manifest.id);
-
-  return {
-    endpoint,
-    close: () => {
-      // Request clean shutdown
-      iframe.contentWindow?.postMessage({ type: 'terminate' }, '*');
-
-      // Remove iframe after a short delay
-      setTimeout(() => {
-        iframe.remove();
-      }, 100);
-
-      closeEndpoint();
-      console.log('[Harbor] JS MCP server session closed:', manifest.id);
-    },
-  };
+  // For non-builtin servers, use stub implementation
+  // (Firefox MV3 doesn't support dynamic JS workers due to CSP)
+  console.warn('[Harbor] Using stub implementation for non-builtin JS server:', manifest.id);
+  return createJsStubSession(manifest);
 }
 
 /**
