@@ -127,8 +127,6 @@ async function checkLLM() {
       console.log('[Demo] No LLM providers configured');
       llmStatus.classList.add('warning');
       llmStatusText.textContent = 'No LLM configured';
-      activeModel = undefined;
-      nativeTools = false;
       return false;
     }
     
@@ -143,9 +141,9 @@ async function checkLLM() {
     llmStatusText.textContent = 'LLM Ready';
     return true;
   } catch (err) {
-    console.error('[Demo] LLM check failed:', err);
+    console.error('[Demo] LLM check failed:', err?.message || err);
     llmStatus.classList.add('warning');
-    llmStatusText.textContent = 'LLM Error';
+    llmStatusText.textContent = `LLM: ${err?.message?.slice(0, 20) || 'Error'}`;
     return false;
   }
 }
