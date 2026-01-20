@@ -13,6 +13,7 @@
     "buffer": "latest"
   },
   "devDependencies": {
+    "@types/chrome": "^0.1.35",
     "esbuild": "latest",
     "typescript": "latest"
   }
