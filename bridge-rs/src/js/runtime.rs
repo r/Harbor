@@ -92,6 +92,9 @@ impl JsServer {
             ctx.eval::<(), _>(config.code.as_str())
                 .map_err(|e| format!("Failed to execute server code: {}", e))?;
 
+            // Flush any startup logs
+            Self::flush_console_logs(&ctx, &config.id);
+
             Ok::<(), String>(())
         })?;
 
@@ -116,7 +119,7 @@ impl JsServer {
             }) {
                 Some(request) => {
                     let response = context.with(|ctx| {
-                        Self::handle_mcp_request(&ctx, request.payload)
+                        Self::handle_mcp_request(&ctx, request.payload, &config.id)
                     });
                     let _ = request.response_tx.send(response);
                 }
@@ -156,14 +159,25 @@ impl JsServer {
         process.set("platform", "harbor-bridge").map_err(|e| e.to_string())?;
         globals.set("process", process).map_err(|e| e.to_string())?;
 
-        // Create console object
+        // Create console object that captures logs
         ctx.eval::<(), _>(r#"
+            globalThis.__console_logs = [];
             globalThis.console = {
-                log: (...args) => {},
-                warn: (...args) => {},
-                error: (...args) => {},
-                info: (...args) => {},
-                debug: (...args) => {},
+                log: (...args) => {
+                    globalThis.__console_logs.push({ level: 'log', args: args.map(a => String(a)) });
+                },
+                warn: (...args) => {
+                    globalThis.__console_logs.push({ level: 'warn', args: args.map(a => String(a)) });
+                },
+                error: (...args) => {
+                    globalThis.__console_logs.push({ level: 'error', args: args.map(a => String(a)) });
+                },
+                info: (...args) => {
+                    globalThis.__console_logs.push({ level: 'info', args: args.map(a => String(a)) });
+                },
+                debug: (...args) => {
+                    globalThis.__console_logs.push({ level: 'debug', args: args.map(a => String(a)) });
+                },
             };
         "#).map_err(|e| e.to_string())?;
 
@@ -234,9 +248,41 @@ impl JsServer {
         Ok(())
     }
 
+    /// Flush any pending console logs from JS and emit them via tracing
+    fn flush_console_logs(ctx: &rquickjs::Ctx, server_id: &str) {
+        // Get logs as JSON string and parse on Rust side
+        let logs_json: Result<String, _> = ctx.eval(r#"
+            JSON.stringify(globalThis.__console_logs.splice(0))
+        "#);
+
+        if let Ok(json) = logs_json {
+            if let Ok(logs) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
+                for log in logs {
+                    let level = log.get("level").and_then(|v| v.as_str()).unwrap_or("log");
+                    let args = log.get("args")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .collect::<Vec<_>>()
+                            .join(" "))
+                        .unwrap_or_default();
+                    
+                    match level {
+                        "error" => tracing::error!("[JS:{}] {}", server_id, args),
+                        "warn" => tracing::warn!("[JS:{}] {}", server_id, args),
+                        "info" => tracing::info!("[JS:{}] {}", server_id, args),
+                        "debug" => tracing::debug!("[JS:{}] {}", server_id, args),
+                        _ => tracing::info!("[JS:{}] {}", server_id, args),
+                    }
+                }
+            }
+        }
+    }
+
     fn handle_mcp_request(
         ctx: &rquickjs::Ctx,
         request: serde_json::Value,
+        server_id: &str,
     ) -> Result<serde_json::Value, String> {
         let request_json = serde_json::to_string(&request).map_err(|e| e.to_string())?;
 
@@ -263,6 +309,9 @@ impl JsServer {
                 r
             "#).map_err(|e| e.to_string())?;
 
+            // Flush any console logs
+            Self::flush_console_logs(ctx, server_id);
+
             if !responses.is_empty() {
                 let response_str = responses.last().unwrap();
                 return serde_json::from_str(response_str)
@@ -273,6 +322,8 @@ impl JsServer {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
 
+        // Final flush before timeout
+        Self::flush_console_logs(ctx, server_id);
         Err("Timeout waiting for server response".to_string())
     }
 }
