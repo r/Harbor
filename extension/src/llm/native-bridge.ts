@@ -35,7 +35,7 @@ type PendingStream = {
   onError: (error: Error) => void;
 };
 
-let nativePort: browser.runtime.Port | null = null;
+let nativePort: chrome.runtime.Port | null = null;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3;
 const RECONNECT_DELAY = 2000;
@@ -171,8 +171,7 @@ export function connectNativeBridge(): void {
   connectionAttempts++;
 
   try {
-    const runtime = (typeof browser !== 'undefined' ? browser : chrome).runtime;
-    nativePort = runtime.connectNative(NATIVE_APP_ID);
+    nativePort = chrome.runtime.connectNative(NATIVE_APP_ID);
 
     nativePort.onMessage.addListener((message: IncomingMessage) => {
       console.debug('[Harbor] Native message:', message.type);
@@ -180,7 +179,7 @@ export function connectNativeBridge(): void {
     });
 
     nativePort.onDisconnect.addListener(() => {
-      const error = (typeof browser !== 'undefined' ? browser : chrome).runtime.lastError;
+      const error = chrome.runtime.lastError;
       const errorMessage = error?.message || 'Native bridge disconnected';
       
       console.log('[Harbor] Native bridge disconnected:', errorMessage);
