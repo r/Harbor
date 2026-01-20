@@ -2,10 +2,68 @@
  * Permission Prompt Handler
  *
  * Runs in the permission prompt popup window.
+ * Uses the same design tokens as the sidebar for consistency.
  */
 
 import { SCOPE_DESCRIPTIONS } from './policy/permissions';
 import type { PermissionScope } from './agents/types';
+
+// Icons for each scope category
+const SCOPE_ICONS: Record<string, string> = {
+  'model:prompt': '🤖',
+  'model:tools': '🔧',
+  'model:list': '📋',
+  'mcp:tools.list': '🔌',
+  'mcp:tools.call': '⚡',
+  'mcp:servers.register': '📡',
+  'browser:activeTab.read': '📄',
+  'chat:open': '💬',
+  'web:fetch': '🌐',
+  'addressBar:suggest': '🔍',
+};
+
+// =============================================================================
+// Theme Management (synced with sidebar)
+// =============================================================================
+
+type Theme = 'light' | 'dark' | 'system';
+
+function getSystemTheme(): 'light' | 'dark' {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyTheme(theme: Theme): void {
+  const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
+  document.documentElement.setAttribute('data-theme', effectiveTheme);
+}
+
+function initTheme(): void {
+  const saved = localStorage.getItem('harbor-theme') as Theme | null;
+  const theme = saved || 'system';
+  applyTheme(theme);
+
+  // Listen for system theme changes
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    const current = localStorage.getItem('harbor-theme') as Theme | null;
+    if (current === 'system' || !current) {
+      applyTheme('system');
+    }
+  });
+
+  // Listen for theme changes from other windows (sidebar)
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'harbor-theme' && e.newValue) {
+      applyTheme(e.newValue as Theme);
+    }
+  });
+}
+
+// Initialize theme immediately
+initTheme();
+
+// =============================================================================
+// Permission Prompt Logic
+// =============================================================================
 
 // Parse URL params
 const params = new URLSearchParams(window.location.search);
@@ -36,20 +94,40 @@ if (reason) {
 // Render scopes
 const scopesList = document.getElementById('scopes-list');
 if (scopesList) {
-  for (const scope of scopes) {
-    const info = SCOPE_DESCRIPTIONS[scope];
-    if (!info) continue;
-
-    const item = document.createElement('div');
-    item.className = 'scope-item';
-    item.innerHTML = `
-      <div class="scope-header">
-        <span class="scope-title">${info.title}</span>
-        <span class="risk-badge risk-${info.risk}">${info.risk}</span>
-      </div>
-      <div class="scope-description">${info.description}</div>
-    `;
-    scopesList.appendChild(item);
+  if (scopes.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'scopes-empty';
+    empty.textContent = 'No specific permissions requested';
+    scopesList.appendChild(empty);
+  } else {
+    for (const scope of scopes) {
+      const info = SCOPE_DESCRIPTIONS[scope];
+      const icon = SCOPE_ICONS[scope] || '🔐';
+      
+      const item = document.createElement('div');
+      item.className = 'scope-item';
+      
+      if (info) {
+        item.innerHTML = `
+          <div class="scope-header">
+            <span class="scope-icon">${icon}</span>
+            <span class="scope-title">${info.title}</span>
+            <span class="risk-badge risk-${info.risk}">${info.risk}</span>
+          </div>
+          <div class="scope-description">${info.description}</div>
+        `;
+      } else {
+        // Fallback for unknown scopes
+        item.innerHTML = `
+          <div class="scope-header">
+            <span class="scope-icon">${icon}</span>
+            <span class="scope-title">${scope}</span>
+          </div>
+          <div class="scope-description">Access to ${scope}</div>
+        `;
+      }
+      scopesList.appendChild(item);
+    }
   }
 }
 
