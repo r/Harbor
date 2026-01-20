@@ -37,7 +37,6 @@
 let session = null;
 let messages = [];
 let useTools = true;
-let useTabContext = false;
 let isProcessing = false;
 let availableTools = [];
 
@@ -51,12 +50,7 @@ const emptyState = document.getElementById('empty-state');
 const messageInput = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
 const toolsToggle = document.getElementById('tools-toggle');
-const tabToggle = document.getElementById('tab-toggle');
 const clearBtn = document.getElementById('clear-btn');
-const themeToggle = document.getElementById('theme-toggle');
-const docsToggle = document.getElementById('docs-toggle');
-const docsPanel = document.getElementById('docs-panel');
-const docsClose = document.getElementById('docs-close');
 
 const extensionStatus = document.getElementById('extension-status');
 const extensionStatusText = document.getElementById('extension-status-text');
@@ -65,33 +59,12 @@ const llmStatusText = document.getElementById('llm-status-text');
 const toolsStatus = document.getElementById('tools-status');
 const toolsStatusText = document.getElementById('tools-status-text');
 const toolsStatusItem = document.getElementById('tools-status-item');
-const sessionText = document.getElementById('session-text');
 
 // Tools modal elements
 const toolsModal = document.getElementById('tools-modal');
 const toolsModalClose = document.getElementById('tools-modal-close');
 const toolsModalContent = document.getElementById('tools-modal-content');
 const toolsModalCount = document.getElementById('tools-modal-count');
-
-// =============================================================================
-// Theme Management
-// =============================================================================
-
-function initTheme() {
-  const saved = localStorage.getItem('demo-chat-theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const theme = saved || (prefersDark ? 'dark' : 'light');
-  document.documentElement.setAttribute('data-theme', theme);
-  themeToggle.textContent = theme === 'dark' ? '○' : '●';
-}
-
-function toggleTheme() {
-  const current = document.documentElement.getAttribute('data-theme');
-  const next = current === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('demo-chat-theme', next);
-  themeToggle.textContent = next === 'dark' ? '○' : '●';
-}
 
 // =============================================================================
 // Status Checking
@@ -241,11 +214,7 @@ function renderToolsList() {
 }
 
 function updateSessionInfo() {
-  if (session) {
-    sessionText.textContent = `Session: ${session.sessionId.slice(-8)}`;
-  } else {
-    sessionText.textContent = 'No session';
-  }
+  // Session info display removed in simplified version
 }
 
 // =============================================================================
@@ -440,19 +409,7 @@ async function runSimple(content) {
   addThinkingUI();
   
   try {
-    // Get tab context if enabled
     let fullContent = content;
-    if (useTabContext) {
-      try {
-        updateThinkingText('Reading active tab...');
-        // EXAMPLE: Reading the active tab's content
-        const tab = await window.agent.browser.activeTab.readability();
-        fullContent = `Context from active tab (${tab.title}):\n${tab.text.slice(0, 2000)}\n\n---\n\nUser question: ${content}`;
-      } catch (err) {
-        console.warn('[Demo] Could not read tab:', err);
-      }
-    }
-    
     updateThinkingText('Generating response...');
     
     // EXAMPLE: Streaming tokens from the LLM
@@ -502,18 +459,7 @@ async function runWithTools(content) {
   addThinkingUI('Initializing agent...');
   
   try {
-    // Get tab context if enabled
     let task = content;
-    if (useTabContext) {
-      try {
-        updateThinkingText('Reading active tab...');
-        const tab = await window.agent.browser.activeTab.readability();
-        task = `Context from active tab (${tab.title}):\n${tab.text.slice(0, 2000)}\n\n---\n\nUser request: ${content}`;
-      } catch (err) {
-        console.warn('[Demo] Could not read tab:', err);
-      }
-    }
-    
     let responseText = '';
     let messageEl = null;
     const toolElements = new Map();
@@ -662,26 +608,7 @@ toolsToggle.addEventListener('click', () => {
   toolsToggle.classList.toggle('active', useTools);
 });
 
-tabToggle.addEventListener('click', () => {
-  useTabContext = !useTabContext;
-  tabToggle.classList.toggle('active', useTabContext);
-});
-
 clearBtn.addEventListener('click', clearChat);
-
-themeToggle.addEventListener('click', toggleTheme);
-
-// Docs panel toggle
-docsToggle.addEventListener('click', () => {
-  const isOpen = docsPanel.style.display !== 'none';
-  docsPanel.style.display = isOpen ? 'none' : 'flex';
-  docsToggle.classList.toggle('active', !isOpen);
-});
-
-docsClose.addEventListener('click', () => {
-  docsPanel.style.display = 'none';
-  docsToggle.classList.remove('active');
-});
 
 // Tools modal
 toolsStatusItem.addEventListener('click', showToolsModal);
@@ -707,8 +634,6 @@ document.addEventListener('keydown', (e) => {
 // =============================================================================
 
 async function init() {
-  initTheme();
-  
   // Check if extension is installed
   const hasExtension = checkExtension();
   
