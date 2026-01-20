@@ -1,14 +1,16 @@
 /**
  * JS MCP Server session management.
  *
- * For Firefox MV3 compatibility, uses pre-bundled worker files for built-in servers.
- * Dynamic JS servers are not fully supported in Firefox MV3 due to CSP restrictions.
+ * Uses the native bridge's QuickJS runtime for JS MCP servers.
+ * This provides full sandboxing with controlled fetch/fs access.
+ * Falls back to in-browser worker for built-in servers when bridge unavailable.
  */
 
 import type { StdioEndpoint } from '../mcp/stdio-transport';
 import type { McpServerManifest } from '../wasm/types';
+import { bridgeRequest, getBridgeConnectionState } from '../llm/bridge-client';
 
-// Built-in server IDs that have pre-bundled worker files
+// Built-in server IDs that have pre-bundled worker files (fallback)
 const BUILTIN_WORKER_MAP: Record<string, string> = {
   'echo-js': 'dist/js-runtime/builtin-echo-worker.js',
 };
@@ -17,6 +19,118 @@ export type JsSession = {
   endpoint: StdioEndpoint;
   close: () => void;
 };
+
+/**
+ * Load server code from manifest (URL or base64).
+ */
+async function loadServerCode(manifest: McpServerManifest): Promise<string> {
+  if (manifest.scriptBase64) {
+    return atob(manifest.scriptBase64);
+  }
+
+  if (manifest.scriptUrl) {
+    const response = await fetch(manifest.scriptUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch JS server: ${response.status}`);
+    }
+    return response.text();
+  }
+
+  throw new Error('JS server manifest must have scriptUrl or scriptBase64');
+}
+
+/**
+ * Creates a JS MCP server session using the native bridge.
+ * The bridge runs the JS code in QuickJS with sandboxed capabilities.
+ */
+async function createBridgeSession(manifest: McpServerManifest): Promise<JsSession> {
+  // Load the server code
+  const code = await loadServerCode(manifest);
+
+  // Build environment variables from manifest secrets
+  const env: Record<string, string> = {};
+  if (manifest.secrets) {
+    Object.assign(env, manifest.secrets);
+  }
+
+  // Build capabilities from manifest
+  const capabilities = {
+    network: {
+      allowed_hosts: manifest.capabilities?.network?.hosts || [],
+    },
+    filesystem: {
+      read_paths: [] as string[],
+      write_paths: [] as string[],
+    },
+  };
+
+  // Start the server in the bridge
+  await bridgeRequest<{ id: string; status: string }>('js.start_server', {
+    id: manifest.id,
+    code,
+    env,
+    capabilities,
+  });
+
+  console.log('[Harbor] Started JS MCP server via bridge:', manifest.id);
+
+  // Create endpoint that proxies through the bridge
+  let handler: ((data: Uint8Array) => void) | null = null;
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  const endpoint: StdioEndpoint = {
+    async write(data: Uint8Array) {
+      const jsonString = decoder.decode(data).trim();
+      if (!jsonString) return;
+
+      try {
+        const request = JSON.parse(jsonString);
+        
+        // Call the bridge to forward request to JS server
+        const response = await bridgeRequest<unknown>('js.call', {
+          id: manifest.id,
+          request,
+        });
+
+        // Send response back through the endpoint
+        const responseData = encoder.encode(JSON.stringify(response) + '\n');
+        handler?.(responseData);
+      } catch (e) {
+        console.error('[Harbor] Bridge JS call error:', e);
+        // Send error response
+        try {
+          const request = JSON.parse(jsonString);
+          const errorResponse = {
+            jsonrpc: '2.0',
+            id: request.id,
+            error: { code: -32000, message: e instanceof Error ? e.message : 'Unknown error' },
+          };
+          const responseData = encoder.encode(JSON.stringify(errorResponse) + '\n');
+          handler?.(responseData);
+        } catch {
+          // Couldn't parse original request, can't send error response
+        }
+      }
+    },
+    onData(nextHandler: (data: Uint8Array) => void) {
+      handler = nextHandler;
+    },
+  };
+
+  return {
+    endpoint,
+    close: async () => {
+      try {
+        await bridgeRequest('js.stop_server', { id: manifest.id });
+        console.log('[Harbor] Stopped JS MCP server via bridge:', manifest.id);
+      } catch (e) {
+        console.warn('[Harbor] Failed to stop JS server:', e);
+      }
+      handler = null;
+    },
+  };
+}
 
 /**
  * Creates a stdio endpoint for communication with a worker.
@@ -71,11 +185,63 @@ function createWorkerStdioEndpoint(): {
 }
 
 /**
+ * Creates a JS MCP server session using a pre-bundled in-browser worker.
+ * Used as fallback for built-in servers when bridge is unavailable.
+ */
+async function createBuiltinWorkerSession(
+  manifest: McpServerManifest,
+  workerPath: string,
+): Promise<JsSession> {
+  const workerUrl = chrome.runtime.getURL(workerPath);
+  const worker = new Worker(workerUrl);
+
+  const { endpoint, attachWorker, close: closeEndpoint } = createWorkerStdioEndpoint();
+  attachWorker(worker);
+
+  // Wait for worker to signal ready
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('JS server failed to initialize within timeout'));
+    }, 5000);
+
+    const readyHandler = (event: MessageEvent) => {
+      if (event.data?.type === 'ready') {
+        clearTimeout(timeout);
+        worker.removeEventListener('message', readyHandler);
+        resolve();
+      }
+    };
+
+    worker.addEventListener('message', readyHandler);
+    worker.addEventListener('error', (e) => {
+      clearTimeout(timeout);
+      reject(new Error(`Worker error: ${e.message}`));
+    });
+  });
+
+  // Inject secrets if present
+  if (manifest.secrets && Object.keys(manifest.secrets).length > 0) {
+    worker.postMessage({ type: 'init-env', env: manifest.secrets });
+  }
+
+  console.log('[Harbor] JS MCP server session started (builtin worker):', manifest.id);
+
+  return {
+    endpoint,
+    close: () => {
+      worker.postMessage({ type: 'terminate' });
+      setTimeout(() => worker.terminate(), 100);
+      closeEndpoint();
+      console.log('[Harbor] JS MCP server session closed:', manifest.id);
+    },
+  };
+}
+
+/**
  * Creates a JS MCP server session.
  * 
- * For built-in servers (like echo-js), uses pre-bundled worker files.
- * For custom servers, falls back to stub implementation in Firefox MV3
- * (dynamic JS workers are not supported due to CSP restrictions).
+ * Prefers the native bridge (QuickJS) for full sandboxing support.
+ * Falls back to in-browser workers for built-in servers.
  *
  * @param manifest - The server manifest with JS-specific fields
  * @returns A session with stdio endpoint and close function
@@ -88,60 +254,29 @@ export async function createJsSession(
     throw new Error(`Expected JS server, got runtime: ${manifest.runtime}`);
   }
 
-  // Check if this is a built-in server with a pre-bundled worker
+  const bridgeState = getBridgeConnectionState();
   const builtinWorkerPath = BUILTIN_WORKER_MAP[manifest.id];
-  
-  if (builtinWorkerPath) {
-    // Use pre-bundled worker file
-    const workerUrl = chrome.runtime.getURL(builtinWorkerPath);
-    const worker = new Worker(workerUrl);
 
-    const { endpoint, attachWorker, close: closeEndpoint } =
-      createWorkerStdioEndpoint();
-    attachWorker(worker);
-
-    // Wait for worker to signal ready
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('JS server failed to initialize within timeout'));
-      }, 5000);
-
-      const readyHandler = (event: MessageEvent) => {
-        if (event.data?.type === 'ready') {
-          clearTimeout(timeout);
-          worker.removeEventListener('message', readyHandler);
-          resolve();
-        }
-      };
-
-      worker.addEventListener('message', readyHandler);
-      worker.addEventListener('error', (e) => {
-        clearTimeout(timeout);
-        reject(new Error(`Worker error: ${e.message}`));
-      });
-    });
-
-    // Inject secrets if present
-    if (manifest.secrets && Object.keys(manifest.secrets).length > 0) {
-      worker.postMessage({ type: 'init-env', env: manifest.secrets });
+  // Try bridge first for non-builtin servers, or when bridge is connected
+  if (bridgeState.connected && (!builtinWorkerPath || manifest.scriptBase64 || manifest.scriptUrl)) {
+    try {
+      return await createBridgeSession(manifest);
+    } catch (e) {
+      console.warn('[Harbor] Bridge session failed, trying fallback:', e);
     }
-
-    console.log('[Harbor] JS MCP server session started (builtin worker):', manifest.id);
-
-    return {
-      endpoint,
-      close: () => {
-        worker.postMessage({ type: 'terminate' });
-        setTimeout(() => worker.terminate(), 100);
-        closeEndpoint();
-        console.log('[Harbor] JS MCP server session closed:', manifest.id);
-      },
-    };
   }
 
-  // For non-builtin servers, use stub implementation
-  // (Firefox MV3 doesn't support dynamic JS workers due to CSP)
-  console.warn('[Harbor] Using stub implementation for non-builtin JS server:', manifest.id);
+  // Fallback to builtin worker if available
+  if (builtinWorkerPath) {
+    try {
+      return await createBuiltinWorkerSession(manifest, builtinWorkerPath);
+    } catch (e) {
+      console.warn('[Harbor] Builtin worker failed:', e);
+    }
+  }
+
+  // Last resort: stub implementation
+  console.warn('[Harbor] Using stub implementation for JS server:', manifest.id);
   return createJsStubSession(manifest);
 }
 
