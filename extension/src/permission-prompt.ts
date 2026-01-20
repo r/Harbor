@@ -153,7 +153,7 @@ if (tools.length > 0) {
 // Handle deny button
 const btnDeny = document.getElementById('btn-deny');
 btnDeny?.addEventListener('click', () => {
-  sendResponse({ granted: false });
+  sendResponse({ granted: false, explicitDeny: true });
 });
 
 // Handle allow button
@@ -184,7 +184,9 @@ function sendResponse(response: {
   granted: boolean;
   grantType?: 'granted-once' | 'granted-always';
   allowedTools?: string[];
+  explicitDeny?: boolean;
 }): void {
+  console.log('[Permission Prompt] Sending response:', response);
   chrome.runtime.sendMessage({
     type: 'permission_prompt_response',
     response,

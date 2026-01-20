@@ -176,6 +176,8 @@ export async function grantPermissions(
   tabId?: number,
   allowedTools?: string[],
 ): Promise<PermissionGrantResult> {
+  console.log('[Permissions] grantPermissions:', { origin, scopes, grantType, tabId, allowedTools });
+  
   let stored = await loadOriginPermissions(origin);
 
   if (!stored) {
@@ -204,6 +206,12 @@ export async function grantPermissions(
   }
 
   await saveOriginPermissions(stored);
+  console.log('[Permissions] Saved permissions for', origin);
+
+  // Notify sidebar to refresh
+  chrome.runtime.sendMessage({ type: 'permissions_changed' }).catch(() => {
+    // Sidebar may not be open
+  });
 
   // Build result
   const resultScopes: Record<PermissionScope, PermissionGrant> = {} as Record<PermissionScope, PermissionGrant>;
@@ -293,6 +301,64 @@ export async function cleanupExpiredGrants(): Promise<void> {
   }
 }
 
+/**
+ * Get all permissions for all origins (for sidebar display).
+ * Shows both permanent and temporary grants.
+ */
+export async function listAllPermissions(): Promise<PermissionStatus[]> {
+  const allPermissions = await getAllOriginPermissions();
+  const result: PermissionStatus[] = [];
+  const now = Date.now();
+
+  for (const [origin, stored] of Object.entries(allPermissions)) {
+    const scopes: Record<PermissionScope, PermissionGrant> = {
+      'model:prompt': 'not-granted',
+      'model:tools': 'not-granted',
+      'model:list': 'not-granted',
+      'mcp:tools.list': 'not-granted',
+      'mcp:tools.call': 'not-granted',
+      'mcp:servers.register': 'not-granted',
+      'browser:activeTab.read': 'not-granted',
+      'chat:open': 'not-granted',
+      'web:fetch': 'not-granted',
+      'addressBar:suggest': 'not-granted',
+      'addressBar:context': 'not-granted',
+      'addressBar:history': 'not-granted',
+      'addressBar:execute': 'not-granted',
+    };
+
+    for (const scope of Object.keys(scopes) as PermissionScope[]) {
+      const storedPerm = stored.scopes[scope];
+      if (storedPerm) {
+        // For display purposes, show the stored grant directly
+        // But filter out expired temporary grants
+        if (storedPerm.grant === 'granted-once') {
+          if (storedPerm.expiresAt && storedPerm.expiresAt < now) {
+            // Expired, show as not-granted
+            scopes[scope] = 'not-granted';
+          } else {
+            scopes[scope] = 'granted-once';
+          }
+        } else {
+          scopes[scope] = storedPerm.grant;
+        }
+      }
+    }
+
+    // Only include origins with at least one non-default grant
+    const hasGrants = Object.values(scopes).some(g => g !== 'not-granted');
+    if (hasGrants) {
+      result.push({
+        origin,
+        scopes,
+        allowedTools: stored.allowedTools,
+      });
+    }
+  }
+
+  return result;
+}
+
 // =============================================================================
 // Permission Prompt
 // =============================================================================
@@ -302,6 +368,7 @@ let pendingPromptResolve: ((result: {
   granted: boolean;
   grantType?: 'granted-once' | 'granted-always';
   allowedTools?: string[];
+  explicitDeny?: boolean;
 }) => void) | null = null;
 
 /**
@@ -316,7 +383,10 @@ export async function showPermissionPrompt(
   granted: boolean;
   grantType?: 'granted-once' | 'granted-always';
   allowedTools?: string[];
+  explicitDeny?: boolean;
 }> {
+  console.log('[Permissions] showPermissionPrompt called:', { origin, scopes, reason });
+
   // Close any existing prompt
   if (promptWindowId !== null) {
     try {
@@ -342,25 +412,38 @@ export async function showPermissionPrompt(
   }
 
   const promptUrl = chrome.runtime.getURL(`dist/permission-prompt.html?${params.toString()}`);
+  console.log('[Permissions] Opening prompt URL:', promptUrl);
 
   return new Promise((resolve) => {
     pendingPromptResolve = resolve;
 
-    chrome.windows.create({
+    // Use promise-based API (works in both Chrome and Firefox)
+    const createPromise = chrome.windows.create({
       url: promptUrl,
       type: 'popup',
       width: 450,
       height: 500,
       focused: true,
-    }, (window) => {
-      if (window?.id) {
-        promptWindowId = window.id;
-      } else {
-        // Failed to create window
+    });
+
+    // Handle both callback and promise patterns
+    if (createPromise && typeof createPromise.then === 'function') {
+      // Promise-based (Firefox/modern Chrome)
+      createPromise.then((window) => {
+        console.log('[Permissions] Window created (promise):', window?.id);
+        if (window?.id) {
+          promptWindowId = window.id;
+        } else {
+          console.error('[Permissions] Window creation failed - no window returned');
+          pendingPromptResolve = null;
+          resolve({ granted: false });
+        }
+      }).catch((err) => {
+        console.error('[Permissions] Window creation failed:', err);
         pendingPromptResolve = null;
         resolve({ granted: false });
-      }
-    });
+      });
+    }
   });
 }
 
@@ -371,7 +454,9 @@ export function handlePermissionPromptResponse(response: {
   granted: boolean;
   grantType?: 'granted-once' | 'granted-always';
   allowedTools?: string[];
+  explicitDeny?: boolean;
 }): void {
+  console.log('[Permissions] handlePermissionPromptResponse:', response);
   if (pendingPromptResolve) {
     pendingPromptResolve(response);
     pendingPromptResolve = null;
@@ -448,8 +533,16 @@ export async function requestPermissions(
 
   if (promptResult.granted && promptResult.grantType) {
     return grantPermissions(origin, check.missingScopes, promptResult.grantType, tabId, promptResult.allowedTools);
-  } else {
+  } else if (promptResult.explicitDeny) {
+    // Only store denial if user explicitly clicked deny (not just dismissed or window failed)
     return denyPermissions(origin, check.missingScopes);
+  } else {
+    // User dismissed or window failed to open - don't store denial, just return not-granted
+    const status = await getPermissionStatus(origin, tabId);
+    return {
+      granted: false,
+      scopes: status.scopes,
+    };
   }
 }
 
