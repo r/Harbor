@@ -140,9 +140,9 @@ impl JsServer {
                 }
             }) {
                 Some(request) => {
-                    let response = context.with(|ctx| {
-                        Self::handle_mcp_request(&ctx, &runtime, request.payload, &config.id)
-                    });
+                    let response = Self::handle_mcp_request_with_jobs(
+                        &context, &runtime, request.payload, &config.id
+                    );
                     let _ = request.response_tx.send(response);
                 }
                 None => {
@@ -311,8 +311,9 @@ impl JsServer {
         }
     }
 
-    fn handle_mcp_request(
-        ctx: &rquickjs::Ctx,
+    /// Handle an MCP request, properly separating context access from job execution
+    fn handle_mcp_request_with_jobs(
+        context: &Context,
         runtime: &Runtime,
         request: serde_json::Value,
         server_id: &str,
@@ -321,58 +322,99 @@ impl JsServer {
         
         let request_json = serde_json::to_string(&request).map_err(|e| e.to_string())?;
 
-        // Check state before sending
-        let has_pending: bool = ctx.eval("!!globalThis.__mcp_pendingRead").unwrap_or(false);
-        tracing::info!("[JS:{}] __mcp_pendingRead before: {}", server_id, has_pending);
+        // Step 1: Inject the request (inside context lock)
+        context.with(|ctx| {
+            let has_pending: bool = ctx.eval("!!globalThis.__mcp_pendingRead").unwrap_or(false);
+            tracing::info!("[JS:{}] __mcp_pendingRead before: {}", server_id, has_pending);
 
-        // Push the request to the JS side and resolve pending read
-        let code = format!(r#"
-            const req = '{}';
-            if (globalThis.__mcp_pendingRead) {{
-                const resolve = globalThis.__mcp_pendingRead;
-                globalThis.__mcp_pendingRead = null;
-                resolve(req);
-            }} else {{
-                globalThis.__mcp_requests.push(req);
-            }}
-        "#, request_json.replace("'", "\\'").replace("\n", "\\n"));
+            let code = format!(r#"
+                const req = '{}';
+                if (globalThis.__mcp_pendingRead) {{
+                    const resolve = globalThis.__mcp_pendingRead;
+                    globalThis.__mcp_pendingRead = null;
+                    resolve(req);
+                }} else {{
+                    globalThis.__mcp_requests.push(req);
+                }}
+            "#, request_json.replace("'", "\\'").replace("\n", "\\n"));
 
-        ctx.eval::<(), _>(code.as_str()).map_err(|e| e.to_string())?;
+            ctx.eval::<(), _>(code.as_str())
+        }).map_err(|e| format!("Failed to inject request: {}", e))?;
         
-        tracing::info!("[JS:{}] Request injected, running job queue", server_id);
+        tracing::info!("[JS:{}] Request injected", server_id);
 
-        // Run the QuickJS job queue to process Promises
-        // This is critical - Promises won't resolve without executing pending jobs
-        for _ in 0..10000 {
-            // Execute all pending jobs (Promise microtasks)
+        // Step 2: Run job queue and check for responses (alternating context access and job execution)
+        let mut total_jobs = 0;
+        for iteration in 0..10000 {
+            // Execute pending jobs OUTSIDE context lock
+            let jobs_pending = runtime.is_job_pending();
+            if iteration == 0 {
+                tracing::info!("[JS:{}] Jobs pending after injection: {}", server_id, jobs_pending);
+            }
+            
+            let mut jobs_this_round = 0;
             while runtime.is_job_pending() {
-                if let Err(e) = runtime.execute_pending_job() {
-                    tracing::warn!("[JS:{}] Job execution error: {:?}", server_id, e);
-                    break;
+                match runtime.execute_pending_job() {
+                    Ok(_) => {
+                        jobs_this_round += 1;
+                        total_jobs += 1;
+                    }
+                    Err(e) => {
+                        tracing::warn!("[JS:{}] Job execution error: {:?}", server_id, e);
+                        break;
+                    }
                 }
             }
             
-            // Check if there's a response
-            let responses: Vec<String> = ctx.eval(r#"
-                const r = globalThis.__mcp_responses.splice(0);
-                r
-            "#).map_err(|e| e.to_string())?;
+            if iteration == 0 {
+                tracing::info!("[JS:{}] First iteration: executed {} jobs", server_id, jobs_this_round);
+            }
+            
+            // Check for response INSIDE context lock
+            let response_result: Result<Option<String>, String> = context.with(|ctx| {
+                let responses: Vec<String> = ctx.eval(r#"
+                    const r = globalThis.__mcp_responses.splice(0);
+                    r
+                "#).map_err(|e| e.to_string())?;
 
-            // Flush any console logs
-            Self::flush_console_logs(ctx, server_id);
+                Self::flush_console_logs(&ctx, server_id);
 
-            if !responses.is_empty() {
-                let response_str = responses.last().unwrap();
-                return serde_json::from_str(response_str)
-                    .map_err(|e| format!("Invalid response JSON: {}", e));
+                if !responses.is_empty() {
+                    Ok(Some(responses.into_iter().last().unwrap()))
+                } else {
+                    Ok(None)
+                }
+            });
+
+            match response_result {
+                Ok(Some(response_str)) => {
+                    tracing::info!("[JS:{}] Got response after {} iterations, {} total jobs", server_id, iteration, total_jobs);
+                    return serde_json::from_str(&response_str)
+                        .map_err(|e| format!("Invalid response JSON: {}", e));
+                }
+                Ok(None) => {
+                    // No response yet, continue
+                }
+                Err(e) => {
+                    return Err(format!("Error checking response: {}", e));
+                }
             }
 
             // Small delay before checking again
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
 
-        // Final flush before timeout
-        Self::flush_console_logs(ctx, server_id);
+        // Final state check
+        let (has_pending, response_count) = context.with(|ctx| {
+            Self::flush_console_logs(&ctx, server_id);
+            let has_pending: bool = ctx.eval("!!globalThis.__mcp_pendingRead").unwrap_or(false);
+            let response_count: i32 = ctx.eval("globalThis.__mcp_responses.length").unwrap_or(-1);
+            (has_pending, response_count)
+        });
+        
+        tracing::error!("[JS:{}] TIMEOUT after {} jobs. __mcp_pendingRead={}, responses={}", 
+            server_id, total_jobs, has_pending, response_count);
+        
         Err("Timeout waiting for server response".to_string())
     }
 }
