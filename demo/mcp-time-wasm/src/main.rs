@@ -79,54 +79,61 @@ fn handle_request(request: RpcRequest) {
       });
     }
     "tools/call" => {
-      // Get actual current time
-      let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| {
-          // Convert to ISO 8601 format
-          let secs = d.as_secs();
-          let millis = d.subsec_millis();
-          // Calculate date/time components
-          let days = secs / 86400;
-          let remaining = secs % 86400;
-          let hours = remaining / 3600;
-          let minutes = (remaining % 3600) / 60;
-          let seconds = remaining % 60;
-          
-          // Simple date calculation (days since 1970-01-01)
-          let mut year = 1970i32;
-          let mut remaining_days = days as i32;
-          
-          loop {
-            let days_in_year = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 366 } else { 365 };
-            if remaining_days < days_in_year {
-              break;
-            }
-            remaining_days -= days_in_year;
-            year += 1;
-          }
-          
-          let is_leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-          let days_in_months = if is_leap {
-            [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-          } else {
-            [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-          };
-          
-          let mut month = 1;
-          for &days_in_month in &days_in_months {
-            if remaining_days < days_in_month {
-              break;
-            }
-            remaining_days -= days_in_month;
-            month += 1;
-          }
-          let day = remaining_days + 1;
-          
-          format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z", 
-            year, month, day, hours, minutes, seconds, millis)
-        })
-        .unwrap_or_else(|_| "unknown".to_string());
+      // In WASM, we can't access system time directly.
+      // The host injects the current time via the "now" argument.
+      // Extract it from params.arguments.now
+      let now = request.params
+        .get("arguments")
+        .and_then(|args| args.get("now"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+          // Fallback: try SystemTime (works in native, not in WASM)
+          SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| {
+              let secs = d.as_secs();
+              let millis = d.subsec_millis();
+              let days = secs / 86400;
+              let remaining = secs % 86400;
+              let hours = remaining / 3600;
+              let minutes = (remaining % 3600) / 60;
+              let seconds = remaining % 60;
+              
+              let mut year = 1970i32;
+              let mut remaining_days = days as i32;
+              
+              loop {
+                let days_in_year = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 366 } else { 365 };
+                if remaining_days < days_in_year {
+                  break;
+                }
+                remaining_days -= days_in_year;
+                year += 1;
+              }
+              
+              let is_leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+              let days_in_months = if is_leap {
+                [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+              } else {
+                [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+              };
+              
+              let mut month = 1;
+              for &days_in_month in &days_in_months {
+                if remaining_days < days_in_month {
+                  break;
+                }
+                remaining_days -= days_in_month;
+                month += 1;
+              }
+              let day = remaining_days + 1;
+              
+              format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z", 
+                year, month, day, hours, minutes, seconds, millis)
+            })
+            .unwrap_or_else(|_| "Time unavailable - host did not provide 'now' argument".to_string())
+        });
       
       let result = serde_json::json!({
         "content": [
