@@ -119,10 +119,10 @@ export async function createJsSession(
   const serverCode = await loadServerCode(manifest);
   const wrappedCode = wrapServerCode(serverCode);
 
-  // Create worker from static loader script (avoids blob URL CSP issues)
-  // The loader receives the actual code via postMessage
-  const loaderUrl = chrome.runtime.getURL('dist/js-runtime/worker-loader.js');
-  const worker = new Worker(loaderUrl);
+  // Create worker from data URL (avoids blob URL CSP issues in some browsers)
+  // Encode the wrapped code as a data URL
+  const dataUrl = `data:application/javascript;base64,${btoa(unescape(encodeURIComponent(wrappedCode)))}`;
+  const worker = new Worker(dataUrl);
 
   // Create stdio endpoint early so we can receive messages
   const { endpoint, attachWorker, close: closeEndpoint } =
@@ -140,25 +140,17 @@ export async function createJsSession(
     }
   });
 
-  // Wait for loader-ready, send code, then wait for ready from sandbox
+  // Wait for sandbox to signal ready
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error('JS server failed to initialize within timeout'));
     }, 5000);
 
-    let loaderReady = false;
-    let codeReady = false;
-
     const handler = (event: MessageEvent) => {
       const data = event.data;
       if (!data?.type) return;
 
-      if (data.type === 'loader-ready' && !loaderReady) {
-        loaderReady = true;
-        // Send the sandboxed code to the worker
-        worker.postMessage({ type: 'load-code', code: wrappedCode });
-      } else if (data.type === 'ready' && !codeReady) {
-        codeReady = true;
+      if (data.type === 'ready') {
         clearTimeout(timeout);
         worker.removeEventListener('message', handler);
         resolve();
