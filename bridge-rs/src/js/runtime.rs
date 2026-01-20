@@ -93,11 +93,25 @@ impl JsServer {
             ctx.eval::<(), _>(config.code.as_str())
                 .map_err(|e| format!("Failed to execute server code: {}", e))?;
 
-            // Flush any startup logs
-            Self::flush_console_logs(&ctx, &config.id);
-
             Ok::<(), String>(())
         })?;
+
+        // Run pending jobs to start the async main() function
+        // This allows the server to set up __mcp_pendingRead before we send requests
+        for _ in 0..1000 {
+            if !runtime.is_job_pending() {
+                break;
+            }
+            if let Err(e) = runtime.execute_pending_job() {
+                tracing::warn!("[JS:{}] Startup job error: {:?}", config.id, e);
+                break;
+            }
+        }
+
+        // Flush any startup logs
+        context.with(|ctx| {
+            Self::flush_console_logs(&ctx, &config.id);
+        });
 
         // Message processing loop
         let rt = tokio::runtime::Handle::current();
