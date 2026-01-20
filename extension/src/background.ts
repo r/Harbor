@@ -10,7 +10,7 @@ import { initializeBridgeClient, getBridgeConnectionState, checkBridgeHealth, br
 import { getConnectionState as getNativeConnectionState } from './llm/native-bridge';
 import { initializeMcpHost, addServer, startServer, stopServer, validateAndStartServer, removeServer, listServersWithStatus, callTool } from './mcp/host';
 import { initializeRouter } from './agents/background-router';
-import { cleanupExpiredGrants } from './policy/permissions';
+import { cleanupExpiredGrants, listAllPermissions, revokePermissions } from './policy/permissions';
 import { initializeAddressBar } from './agents/addressbar';
 
 console.log('[Harbor] WASM MCP extension starting...');
@@ -577,6 +577,50 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   const state = getNativeConnectionState();
   sendResponse({ ok: true, ...state });
+  return true;
+});
+
+// =============================================================================
+// Permission Management Handlers
+// =============================================================================
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== 'list_all_permissions') {
+    return false;
+  }
+  (async () => {
+    const permissions = await listAllPermissions();
+    sendResponse({ type: 'list_all_permissions_result', permissions });
+  })().catch((error) => {
+    sendResponse({
+      type: 'list_all_permissions_result',
+      permissions: [],
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== 'revoke_origin_permissions') {
+    return false;
+  }
+  const { origin } = message as { origin?: string };
+  if (!origin) {
+    sendResponse({ ok: false, error: 'Missing origin' });
+    return true;
+  }
+  (async () => {
+    await revokePermissions(origin);
+    // Notify sidebar to refresh
+    chrome.runtime.sendMessage({ type: 'permissions_changed' }).catch(() => {});
+    sendResponse({ ok: true });
+  })().catch((error) => {
+    sendResponse({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
   return true;
 });
 
