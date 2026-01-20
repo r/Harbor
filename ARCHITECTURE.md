@@ -2,7 +2,7 @@
 
 This document describes the architecture of Harbor, an implementation of the **[Web Agent API](spec/)**.
 
-Harbor is a Firefox extension that implements the Web Agent API specification, bringing AI and MCP (Model Context Protocol) capabilities to web applications.
+Harbor is a browser extension (Firefox and Chrome) that implements the Web Agent API specification, bringing AI and MCP (Model Context Protocol) capabilities to web applications.
 
 > **Related Documentation:**
 > - [Web Agent API Spec](spec/) — The API specification Harbor implements
@@ -21,14 +21,21 @@ Harbor implements the Web Agent API, providing:
 |------------|-------------|
 | **Web Agent API** | `window.ai` and `window.agent` APIs for web pages |
 | **MCP Server Management** | Install, run, and connect to MCP servers |
+| **In-Browser MCP Execution** | Run MCP servers as WASM or JavaScript directly in the browser |
 | **LLM Integration** | Local model support (Ollama, llamafile) + cloud providers |
 | **Permission System** | Per-origin capability grants with user consent |
 | **Chat Orchestration** | Agent loop with tool calling |
+| **Address Bar Integration** | Omnibox suggestions and tool shortcuts |
 | **Bring Your Own Chatbot** | Websites can integrate with the user's AI via `agent.mcp.*` and `agent.chat.*` |
 
 ---
 
 ## System Architecture
+
+Harbor has a hybrid architecture with two execution paths:
+
+1. **In-Browser Execution** — MCP servers run as WASM or JavaScript directly in the extension (no native bridge required)
+2. **Native Bridge Execution** — LLM inference and native MCP servers via Rust bridge
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -39,73 +46,71 @@ Harbor implements the Web Agent API, providing:
 │  └── session.prompt()                ├── tools.list() / tools.call()        │
 │                                      ├── browser.activeTab.readability()    │
 │                                      ├── run({ task })                       │
+│                                      ├── addressBar.registerProvider()      │
 │                                      ├── mcp.discover/register() [BYOC]     │
 │                                      └── chat.open/close() [BYOC]           │
 └───────────────────────────────────────┬─────────────────────────────────────┘
                                         │ postMessage
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          FIREFOX EXTENSION                                   │
+│                       BROWSER EXTENSION (Chrome/Firefox)                     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────────┐   │
 │  │  Content Script   │  │   Background      │  │      Sidebar          │   │
-│  │  (provider.ts)    │  │   (background.ts) │  │      (sidebar.ts)     │   │
+│  │  (injected.ts)    │  │   (background.ts) │  │      (sidebar.ts)     │   │
 │  │                   │  │                   │  │                       │   │
-│  │  • Inject APIs    │  │  • Native msgs    │  │  • Server management  │   │
-│  │  • Route messages │  │  • Permissions    │  │  • Chat UI            │   │
-│  │  • Permission UI  │  │  • Orchestration  │  │  • Settings           │   │
+│  │  • Inject APIs    │  │  • Message router │  │  • Server management  │   │
+│  │  • Route messages │  │  • Permissions    │  │  • LLM config         │   │
+│  │                   │  │  • Orchestration  │  │  • Settings           │   │
 │  └─────────┬─────────┘  └─────────┬─────────┘  └───────────┬───────────┘   │
 │            │                      │                        │                │
 │            └──────────────────────┼────────────────────────┘                │
+│                                   │                                          │
+│  ┌────────────────────────────────┴──────────────────────────────────────┐  │
+│  │                     IN-BROWSER MCP EXECUTION                           │  │
+│  │                                                                        │  │
+│  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐    │  │
+│  │  │   WASM Runtime   │  │   JS Runtime     │  │   Address Bar    │    │  │
+│  │  │   (runtime.ts)   │  │   (sandbox.ts)   │  │   (addressbar.ts)│    │  │
+│  │  │                  │  │                  │  │                  │    │  │
+│  │  │  • WASI support  │  │  • Web Workers   │  │  • Omnibox API   │    │  │
+│  │  │  • Isolated mem  │  │  • Fetch proxy   │  │  • Suggestions   │    │  │
+│  │  │  • MCP protocol  │  │  • MCP protocol  │  │  • Tool shortcuts│    │  │
+│  │  └──────────────────┘  └──────────────────┘  └──────────────────┘    │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
 │                                   │                                          │
 └───────────────────────────────────┼──────────────────────────────────────────┘
                                     │ Native Messaging (stdin/stdout JSON)
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                            NODE.JS BRIDGE (Main Process)                     │
+│                            RUST BRIDGE (bridge-rs)                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                           MCP HOST                                     │  │
-│  │  ┌─────────────┐  ┌─────────────────┐  ┌─────────────────────────┐   │  │
-│  │  │ Permissions │  │  Tool Registry  │  │      Rate Limiter       │   │  │
-│  │  │             │  │                 │  │                         │   │  │
-│  │  │ Per-origin  │  │ Namespaced      │  │ • Max 5 calls/run       │   │  │
-│  │  │ capability  │  │ serverId/tool   │  │ • 2 concurrent/origin   │   │  │
-│  │  │ grants      │  │ registration    │  │ • 30s timeout           │   │  │
-│  │  └─────────────┘  └─────────────────┘  └─────────────────────────┘   │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                         NATIVE MESSAGING                              │   │
+│  │                        (native_messaging.rs)                          │   │
+│  │         Length-prefixed JSON frames over stdin/stdout                 │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                              │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐      │
-│  │    Installer    │  │   LLM Manager   │  │   Chat Orchestrator     │      │
+│  │    RPC Handler  │  │   LLM Manager   │  │   QuickJS Runtime      │      │
+│  │    (rpc/)       │  │   (llm/)        │  │   (js/)                 │      │
 │  │                 │  │                 │  │                         │      │
-│  │  • npx/uvx      │  │  • Ollama       │  │  • Agent loop           │      │
-│  │  • Docker       │  │  • llamafile    │  │  • Tool routing         │      │
-│  │  • Secrets      │  │  • Model select │  │  • Session management   │      │
-│  └────────┬────────┘  └────────┬────────┘  └────────────┬────────────┘      │
-│           │                    │                        │                    │
-│           │ IPC (fork)         │                        │                    │
-└───────────┼────────────────────┼────────────────────────┼────────────────────┘
-            │                    │ HTTP (OpenAI)          │
-            ▼                    ▼                        │
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    ISOLATED PROCESSES (Forked)                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐       │
-│  │ MCP Runner 1      │  │ MCP Runner 2      │  │ Catalog Worker    │       │
-│  │ (server: github)  │  │ (server: memory)  │  │ (background sync) │       │
-│  │                   │  │                   │  │                   │       │
-│  │  Crash Isolated   │  │  Crash Isolated   │  │  DB Writes Only   │       │
-│  └─────────┬─────────┘  └─────────┬─────────┘  └───────────────────┘       │
-│            │ stdio                │ stdio                                    │
-│            ▼                      ▼                                          │
-│  ┌─────────────────┐    ┌─────────────────┐                                 │
-│  │ MCP Server      │    │ MCP Server      │    ┌─────────────────────┐     │
-│  │ (npx/uvx/bin)   │    │ (npx/uvx/bin)   │    │    LLM Provider     │     │
-│  └─────────────────┘    └─────────────────┘    │  (Ollama, etc.)     │     │
-│                                                 └─────────────────────┘     │
-└─────────────────────────────────────────────────────────────────────────────┘
+│  │  • Method       │  │  • any-llm lib  │  │  • JS MCP servers      │      │
+│  │    dispatch     │  │  • Ollama       │  │  • Sandboxed execution │      │
+│  │  • Request/     │  │  • OpenAI       │  │  • Capability-based    │      │
+│  │    response     │  │  • Anthropic    │  │    permissions         │      │
+│  └─────────────────┘  └─────────────────┘  └─────────────────────────┘      │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ HTTP (OpenAI-compatible)
+                                    ▼
+                        ┌─────────────────────────┐
+                        │     LLM Providers       │
+                        │  (Ollama, OpenAI, etc.) │
+                        └─────────────────────────┘
 ```
 
 ---
@@ -178,26 +183,48 @@ User: "Find my recent GitHub PRs and summarize them"
 
 ## Components
 
-### Extension Layer
+### Extension Layer (`extension/src/`)
 
-| File | Purpose |
-|------|---------|
-| `background.ts` | Native messaging, permission management, message routing |
-| `sidebar.ts` | Main UI for server management, chat, settings |
-| `provider/*.ts` | JS AI Provider injection (`window.ai`, `window.agent`) |
-| `vscode-detector.ts` | Detects "Install in VS Code" buttons |
+| Directory/File | Purpose |
+|----------------|---------|
+| `agents/` | Web Agent API implementation |
+| `agents/injected.ts` | `window.ai` and `window.agent` API injection |
+| `agents/transport.ts` | Message passing between page and background |
+| `agents/orchestrator.ts` | Agent run loop with tool calling |
+| `agents/addressbar.ts` | Omnibox/address bar integration |
+| `agents/types.ts` | TypeScript type definitions |
+| `js-runtime/` | JavaScript MCP server sandbox |
+| `js-runtime/sandbox.ts` | Web Worker-based JS execution |
+| `js-runtime/session.ts` | JS server session management |
+| `wasm/` | WebAssembly MCP server runtime |
+| `wasm/runtime.ts` | WASI-compatible WASM execution |
+| `wasm/session.ts` | WASM server session management |
+| `llm/` | LLM communication |
+| `llm/native-bridge.ts` | Native messaging to Rust bridge |
+| `llm/bridge-client.ts` | RPC client for bridge |
+| `mcp/` | MCP protocol implementation |
+| `mcp/host.ts` | In-browser MCP host |
+| `policy/` | Permission system |
+| `policy/permissions.ts` | Permission checking and prompts |
+| `storage/` | Extension storage utilities |
+| `background.ts` | Service worker / background script |
+| `sidebar.ts` | Sidebar UI for server management |
+| `directory.ts` | MCP server directory/catalog UI |
 
-### Bridge Layer
+### Rust Bridge Layer (`bridge-rs/src/`)
 
-| Directory | Purpose |
-|-----------|---------|
-| `host/` | MCP execution environment (permissions, rate limiting, tool registry) |
-| `mcp/` | MCP protocol implementation (stdio client, connection management, process isolation) |
-| `llm/` | LLM provider abstraction (Ollama, llamafile) |
-| `chat/` | Chat orchestration (agent loop, session management, tool routing) |
-| `installer/` | Server installation (npm, pypi, docker, secrets) |
-| `catalog/` | Server directory (official registry, GitHub awesome list) |
-| `auth/` | OAuth and credential management |
+| Directory/File | Purpose |
+|----------------|---------|
+| `main.rs` | Entry point, native messaging loop |
+| `native_messaging.rs` | Length-prefixed JSON protocol |
+| `rpc/` | RPC method dispatch |
+| `llm/` | LLM provider management |
+| `llm/config.rs` | LLM configuration and model aliases |
+| `js/` | QuickJS JavaScript runtime |
+| `js/runtime.rs` | JS execution environment |
+| `js/sandbox.rs` | Capability-based sandboxing |
+| `fs/` | Filesystem utilities |
+| `any-llm-rust/` | Multi-provider LLM library (submodule) |
 
 ---
 

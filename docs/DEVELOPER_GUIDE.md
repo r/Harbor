@@ -54,42 +54,51 @@ All with user consent and local-first privacy.
 
 ## Architecture Overview
 
-Harbor consists of three main components:
+Harbor has a hybrid architecture with two execution paths:
 
 ```
 ┌─────────────────────────┐   postMessage    ┌──────────────────────────┐
 │      Web Page           │ ◄───────────────► │  Content Script          │
-│  window.ai / agent      │                   │  (provider bridge)       │
+│  window.ai / agent      │                   │  (injected.ts)           │
 └─────────────────────────┘                   └───────────┬──────────────┘
                                                           │ chrome.runtime
                                                           ▼
-┌─────────────────────────┐   Native Msg    ┌──────────────────────────┐
-│    Firefox Extension    │ ◄─────────────► │    Node.js Bridge        │
-│    (background.ts)      │   (stdio JSON)  │    (bridge-ts)           │
-└─────────────────────────┘                   └───────────┬──────────────┘
-                                                          │ IPC (fork)
-                                                          ▼
-                                              ┌──────────────────────────┐
-                                              │   MCP Runners (optional) │
-                                              │   (crash isolated)       │
-                                              └───────────┬──────────────┘
-                                                          │ MCP Protocol
-                                                          ▼
-                                              ┌──────────────────────────┐
-                                              │     MCP Servers          │
-                                              │  (stdio, HTTP, Docker)   │
-                                              └──────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Browser Extension (Chrome/Firefox)                   │
+│  ┌────────────────────────┐    ┌────────────────────────────────────┐  │
+│  │ In-Browser MCP Runtime │    │ Native Bridge Communication        │  │
+│  │ • WASM servers         │    │ • LLM requests                     │  │
+│  │ • JavaScript servers   │    │ • Native MCP servers               │  │
+│  └────────────────────────┘    └────────────────┬───────────────────┘  │
+└─────────────────────────────────────────────────┼───────────────────────┘
+                                                  │ Native Messaging (JSON)
+                                                  ▼
+                                      ┌──────────────────────────┐
+                                      │     Rust Bridge          │
+                                      │     (bridge-rs)          │
+                                      └───────────┬──────────────┘
+                                                  │
+                              ┌───────────────────┼───────────────────┐
+                              ▼                   ▼                   ▼
+                      ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+                      │ LLM Provider │    │ QuickJS      │    │ MCP Servers  │
+                      │ (Ollama...)  │    │ Runtime      │    │ (stdio)      │
+                      └──────────────┘    └──────────────┘    └──────────────┘
 ```
-
-> **Note:** MCP Runners are optional forked processes that provide crash isolation.
-> Enable with `HARBOR_MCP_ISOLATION=1`. See [MCP Host](./MCP_HOST.md) for details.
 
 ### Data Flow
 
-1. **Web Page** → Calls `window.ai` or `window.agent` APIs
-2. **Content Script** → Validates permissions, routes to background
-3. **Background Script** → Sends native message to bridge
-4. **Node.js Bridge** → Executes via MCP clients or LLM providers
+**In-Browser Path (WASM/JS MCP servers):**
+1. **Web Page** → Calls `window.agent.tools.call()`
+2. **Content Script** → Routes to background script
+3. **Background Script** → Executes via in-browser WASM or JS runtime
+4. **Response** → Flows back through the same chain
+
+**Native Bridge Path (LLM/Native MCP):**
+1. **Web Page** → Calls `window.ai.createTextSession().prompt()`
+2. **Content Script** → Routes to background script
+3. **Background Script** → Sends native message to Rust bridge
+4. **Rust Bridge** → Executes via LLM provider or native MCP server
 5. **Response** → Flows back through the same chain
 
 ---
@@ -98,10 +107,10 @@ Harbor consists of three main components:
 
 ### Prerequisites
 
-- **Node.js** 18+ and npm
-- **Firefox** 109+
-- An LLM provider (llamafile or Ollama)
-- **Docker Desktop** (for MCP servers)
+- **Node.js** 18+ and npm (for building extension)
+- **Rust** toolchain (for building bridge)
+- **Firefox** 109+ or **Chrome** 120+
+- An LLM provider (Ollama or llamafile) - optional, for AI features
 
 ### Installation Options
 
@@ -123,30 +132,35 @@ cp ../credentials.env.example ../credentials.env
 sudo installer -pkg build/Harbor-*.pkg -target /
 ```
 
-See [Installer Documentation](../installer/README.md) for full details including:
-- Setting up `credentials.env` (required for extension ID and signing)
-- Build options (`--clean`, `--fast`, `--sign-extension`, etc.)
-- Troubleshooting connection issues
+See [Installer Documentation](../installer/README.md) for full details.
 
 #### Option B: Development Setup
 
 For contributing to Harbor or local development:
 
 ```bash
-# 1. Build the extension
+# 1. Clone with submodules
+git clone --recurse-submodules https://github.com/anthropics/harbor.git
+cd harbor
+
+# 2. Build the extension
 cd extension
 npm install && npm run build
+cd ..
 
-# 2. Build the bridge
-cd ../bridge-ts
-npm install && npm run build
+# 3. Build the Rust bridge
+cd bridge-rs
+cargo build --release
+cd ..
 
-# 3. Install native messaging manifest
-cd scripts
-./install_native_manifest_macos.sh  # or linux version
+# 4. Install native messaging manifest
+cd bridge-rs
+./install.sh
+cd ..
 
-# 4. Load extension in Firefox
-# Go to about:debugging → Load Temporary Add-on → select extension/dist/manifest.json
+# 5. Load extension in browser
+# Firefox: about:debugging → Load Temporary Add-on → extension/dist/manifest.json
+# Chrome: chrome://extensions → Developer mode → Load unpacked → extension/dist/
 ```
 
 ### Quick Test

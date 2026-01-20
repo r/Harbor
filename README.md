@@ -4,7 +4,7 @@
   <strong>An implementation of the Web Agent API</strong>
 </p>
 
-Harbor is a Firefox browser extension that implements the **[Web Agent API](spec/)** — a proposed standard for bringing AI agent capabilities to web applications.
+Harbor is a browser extension (Firefox and Chrome) that implements the **[Web Agent API](spec/)** — a proposed standard for bringing AI agent capabilities to web applications.
 
 ## What is the Web Agent API?
 
@@ -13,20 +13,26 @@ The **Web Agent API** is a specification that defines how web pages can access A
 - **`window.ai`** — Text generation (Chrome Prompt API compatible)
 - **`window.agent`** — Tool calling, browser access, and autonomous agent tasks via [MCP](https://modelcontextprotocol.io/)
 
-**Harbor** implements this specification as a Firefox extension with a native Node.js bridge. It connects web pages to local AI models (Ollama, llamafile) or cloud providers — with user consent and local-first privacy.
+**Harbor** implements this specification with two execution modes:
+1. **In-Browser** — MCP servers run as WASM or JavaScript directly in the extension
+2. **Native Bridge** — LLM inference via a Rust native messaging bridge
 
 ```
-┌──────────────────┐                              ┌──────────────────┐
-│ Firefox Extension│  ◄── stdin/stdout JSON ──►  │ Node.js Bridge   │
-│   (sidebar UI)   │                              │  (auto-started)  │
-└──────────────────┘                              └────────┬─────────┘
-                                                           │
-                                    ┌──────────────────────┼──────────────────────┐
-                                    │                      │                      │
-                              ┌─────▼─────┐         ┌──────▼──────┐        ┌──────▼──────┐
-                              │ LLM       │         │ MCP Servers │        │ MCP Servers │
-                              │ (Ollama)  │         │  (stdio)    │        │  (Docker)   │
-                              └───────────┘         └─────────────┘        └─────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                     Browser Extension                             │
+│                                                                   │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌──────────────┐ │
+│  │ Web Agent API   │    │ In-Browser MCP  │    │ Native Bridge│ │
+│  │ window.ai/agent │    │ WASM + JS       │    │ (Rust)       │ │
+│  └────────┬────────┘    └────────┬────────┘    └──────┬───────┘ │
+└───────────┼─────────────────────┼─────────────────────┼─────────┘
+            │                     │                     │
+            ▼                     ▼                     ▼
+    ┌───────────────┐    ┌───────────────┐    ┌───────────────┐
+    │  Web Pages    │    │  MCP Servers  │    │  LLM Providers│
+    │  (permission  │    │  (time, echo) │    │  (Ollama,     │
+    │   required)   │    │               │    │   OpenAI...)  │
+    └───────────────┘    └───────────────┘    └───────────────┘
 ```
 
 ## ✨ Features
@@ -87,16 +93,17 @@ The **Web Agent API** is a specification that defines how web pages can access A
 
 ### Prerequisites
 
-- **Firefox** 109+
-- **Node.js** 18+ (for development)
-- **Ollama** or **llamafile** (for LLM)
+- **Firefox** 109+ or **Chrome** 120+
+- **Rust** (for building the bridge)
+- **Node.js** 18+ (for building the extension)
+- **Ollama** or **llamafile** (for LLM - optional, needed for AI features)
 
 ### Installation
 
 **Option 1: macOS Installer**
 ```bash
 # Download and run Harbor-x.x.x.pkg
-# Restart Firefox after installation
+# Restart your browser after installation
 ```
 
 **Option 2: Build from Source**
@@ -108,16 +115,15 @@ cd harbor
 # Build extension
 cd extension && npm install && npm run build && cd ..
 
-# Build bridge (including submodule)
-cd bridge-ts/src/any-llm-ts && npm install && npm run build && cd ../..
-npm install && npm run build && cd ..
+# Build Rust bridge
+cd bridge-rs && cargo build --release && cd ..
 
 # Install native messaging manifest
-cd bridge-ts/scripts && ./install_native_manifest_macos.sh && cd ../..
+cd bridge-rs && ./install.sh && cd ..
 
-# Load extension in Firefox
-# Go to: about:debugging#/runtime/this-firefox
-# Click "Load Temporary Add-on" → select extension/dist/manifest.json
+# Load extension in browser
+# Firefox: about:debugging#/runtime/this-firefox → Load Temporary Add-on → extension/dist/manifest.json
+# Chrome: chrome://extensions → Developer mode → Load unpacked → extension/dist/
 ```
 
 ### Verify Installation
@@ -167,18 +173,23 @@ if (window.agent) {
 
 ```
 harbor/
-├── extension/          # Firefox Extension (TypeScript, Vite)
-├── bridge-ts/          # Node.js Native Messaging Bridge
+├── extension/          # Browser Extension (TypeScript, esbuild)
+│   └── src/
+│       ├── agents/     # Web Agent API (injected.ts, orchestrator.ts)
+│       ├── js-runtime/ # In-browser JS MCP runtime
+│       ├── wasm/       # In-browser WASM MCP runtime
+│       ├── llm/        # Native bridge client
+│       ├── mcp/        # MCP protocol & host
+│       └── policy/     # Permission system
+├── bridge-rs/          # Rust Native Messaging Bridge
 │   ├── src/
-│   │   ├── host/       # MCP execution environment
-│   │   ├── mcp/        # MCP protocol client
-│   │   ├── chat/       # Chat orchestration
-│   │   ├── llm/        # LLM providers
-│   │   ├── installer/  # Server installation
-│   │   └── catalog/    # Server directory
-│   └── scripts/        # Native manifest installers
+│   │   ├── js/         # QuickJS runtime for JS MCP servers
+│   │   ├── llm/        # LLM provider configuration
+│   │   └── rpc/        # RPC method handlers
+│   └── any-llm-rust/   # Multi-provider LLM library (submodule)
 ├── demo/               # Example web pages
 ├── docs/               # Documentation
+├── spec/               # Web Agent API specification
 └── installer/          # Distributable packages
 ```
 
@@ -187,15 +198,17 @@ harbor/
 ## 🛠 Development
 
 ```bash
-# Watch mode (bridge)
-cd bridge-ts && npm run dev
-
 # Watch mode (extension)
 cd extension && npm run dev
 
-# Run tests
-cd bridge-ts && npm test
-cd extension && npm test
+# Build Rust bridge (release)
+cd bridge-rs && cargo build --release
+
+# Run Rust tests
+cd bridge-rs && cargo test
+
+# TypeScript type check
+cd extension && npx tsc --noEmit
 ```
 
 See [Contributing Guide](CONTRIBUTING.md) for detailed development instructions.

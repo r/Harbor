@@ -22,10 +22,10 @@ Before installing Harbor, make sure you have:
 
 | Requirement | Details |
 |-------------|---------|
-| **Firefox** | Version 109 or later (required) |
-| **LLM Provider** | Ollama or llamafile (at least one) |
+| **Firefox or Chrome** | Firefox 109+ or Chrome 120+ |
+| **LLM Provider** | Ollama or llamafile (optional, for AI features) |
+| **Rust** | For building from source (not needed for pkg install) |
 | **Node.js** | Version 18+ (for development/manual install only) |
-| **Docker** | Optional, for isolated MCP server execution |
 
 ### Setting up an LLM Provider
 
@@ -71,7 +71,7 @@ chmod +x ./your-model.llamafile
 If you're building from source:
 
 ```bash
-# 1. Clone the repository
+# 1. Clone the repository with submodules
 git clone --recurse-submodules https://github.com/anthropics/harbor.git
 cd harbor
 
@@ -81,23 +81,19 @@ npm install
 npm run build
 cd ..
 
-# 3. Build the bridge
-cd bridge-ts
-npm install
-npm run build
+# 3. Build the Rust bridge
+cd bridge-rs
+cargo build --release
 cd ..
 
 # 4. Install the native messaging manifest
-cd bridge-ts/scripts
-./install_native_manifest_macos.sh   # macOS
-# OR
-./install_native_manifest_linux.sh   # Linux
-cd ../..
+cd bridge-rs
+./install.sh
+cd ..
 
-# 5. Load the extension in Firefox
-# Go to: about:debugging#/runtime/this-firefox
-# Click "Load Temporary Add-on..."
-# Select: extension/dist/manifest.json
+# 5. Load the extension in your browser
+# Firefox: about:debugging#/runtime/this-firefox → Load Temporary Add-on → extension/dist/manifest.json
+# Chrome: chrome://extensions → Developer mode → Load unpacked → extension/dist/
 ```
 
 ---
@@ -231,16 +227,20 @@ Some MCP servers require API keys (e.g., GitHub, Brave Search):
 
 2. **Check the native messaging manifest**:
    ```bash
-   cat "/Library/Application Support/Mozilla/NativeMessagingHosts/harbor_bridge_host.json"
+   # Firefox
+   cat "/Library/Application Support/Mozilla/NativeMessagingHosts/harbor_bridge.json"
+   # Chrome
+   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
    ```
 
 3. **Rebuild the bridge** (if manual install):
    ```bash
-   cd bridge-ts
-   npm run build
+   cd bridge-rs
+   cargo build --release
+   ./install.sh
    ```
 
-4. **Check Firefox Browser Console** (`Cmd+Shift+J`) for errors
+4. **Check Browser Console** (`Cmd+Shift+J` in Firefox, `Cmd+Option+J` in Chrome) for errors
 
 ### "No LLM Provider Found"
 
