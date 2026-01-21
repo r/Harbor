@@ -3,8 +3,35 @@
 use super::sandbox::Capabilities;
 use crate::native_messaging::{get_console_log_sender, ConsoleLogMessage};
 use rquickjs::{Context, Object, Runtime};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
+
+/// A pending fetch request from JS
+#[derive(Debug, Deserialize)]
+struct FetchRequest {
+    id: u64,
+    url: String,
+    options: FetchOptions,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct FetchOptions {
+    method: Option<String>,
+    headers: Option<HashMap<String, String>>,
+    body: Option<String>,
+}
+
+/// Response to inject back into JS
+#[derive(Debug, Serialize)]
+struct FetchResponse {
+    status: u16,
+    #[serde(rename = "statusText")]
+    status_text: String,
+    headers: HashMap<String, String>,
+    body: String,
+    error: Option<String>,
+}
 
 /// Configuration for starting a JS server
 pub struct JsServerConfig {
@@ -141,7 +168,7 @@ impl JsServer {
             }) {
                 Some(request) => {
                     let response = Self::handle_mcp_request_with_jobs(
-                        &context, &runtime, request.payload, &config.id
+                        &context, &runtime, &rt, request.payload, &config.id
                     );
                     let _ = request.response_tx.send(response);
                 }
@@ -220,6 +247,79 @@ impl JsServer {
         // Remove dangerous globals
         ctx.eval::<(), _>(r#"
             delete globalThis.eval;
+        "#).map_err(|e| e.to_string())?;
+
+        // Add setTimeout/setInterval polyfills (QuickJS doesn't have these by default)
+        ctx.eval::<(), _>(r#"
+            globalThis.__timers = [];
+            globalThis.__timer_id = 0;
+            
+            globalThis.setTimeout = function(callback, delay) {
+                const id = ++globalThis.__timer_id;
+                globalThis.__timers.push({
+                    id: id,
+                    callback: callback,
+                    delay: delay || 0,
+                    scheduled: Date.now(),
+                    type: 'timeout'
+                });
+                return id;
+            };
+            
+            globalThis.clearTimeout = function(id) {
+                const idx = globalThis.__timers.findIndex(t => t.id === id);
+                if (idx !== -1) {
+                    globalThis.__timers.splice(idx, 1);
+                }
+            };
+            
+            globalThis.setInterval = function(callback, delay) {
+                const id = ++globalThis.__timer_id;
+                globalThis.__timers.push({
+                    id: id,
+                    callback: callback,
+                    delay: delay || 0,
+                    scheduled: Date.now(),
+                    type: 'interval'
+                });
+                return id;
+            };
+            
+            globalThis.clearInterval = globalThis.clearTimeout;
+            
+            // Process timers (called by Rust in the event loop)
+            globalThis.__processTimers = function() {
+                const now = Date.now();
+                const ready = [];
+                const keep = [];
+                
+                for (const timer of globalThis.__timers) {
+                    if (now >= timer.scheduled + timer.delay) {
+                        ready.push(timer);
+                        if (timer.type === 'interval') {
+                            // Reschedule interval
+                            keep.push({
+                                ...timer,
+                                scheduled: now
+                            });
+                        }
+                    } else {
+                        keep.push(timer);
+                    }
+                }
+                
+                globalThis.__timers = keep;
+                
+                for (const timer of ready) {
+                    try {
+                        timer.callback();
+                    } catch (e) {
+                        console.error('Timer callback error:', e);
+                    }
+                }
+                
+                return ready.length;
+            };
         "#).map_err(|e| e.to_string())?;
 
         // Set up fetch if network access is allowed
@@ -315,6 +415,7 @@ impl JsServer {
     fn handle_mcp_request_with_jobs(
         context: &Context,
         runtime: &Runtime,
+        rt: &tokio::runtime::Handle,
         request: serde_json::Value,
         server_id: &str,
     ) -> Result<serde_json::Value, String> {
@@ -387,6 +488,14 @@ impl JsServer {
                 tracing::info!("[JS:{}] First iteration: executed {} jobs", server_id, jobs_this_round);
             }
             
+            // Process timers (setTimeout callbacks)
+            context.with(|ctx| {
+                let _: Result<i32, _> = ctx.eval("globalThis.__processTimers()");
+            });
+            
+            // Process pending fetch requests
+            Self::process_fetch_requests(&context, &rt, server_id);
+            
             // Check for response INSIDE context lock
             let response_result: Result<Option<String>, String> = context.with(|ctx| {
                 // Get responses as JSON string to avoid type conversion issues
@@ -436,5 +545,133 @@ impl JsServer {
             server_id, total_jobs, has_pending, response_count);
         
         Err("Timeout waiting for server response".to_string())
+    }
+
+    /// Process any pending fetch requests from JS
+    fn process_fetch_requests(context: &Context, rt: &tokio::runtime::Handle, server_id: &str) {
+        // Extract pending fetch requests from JS
+        let requests_json: Option<String> = context.with(|ctx| {
+            ctx.eval(r#"
+                JSON.stringify(globalThis.__fetch_requests ? globalThis.__fetch_requests.splice(0) : [])
+            "#).ok()
+        });
+
+        let requests_json = match requests_json {
+            Some(json) => json,
+            None => return,
+        };
+
+        let requests: Vec<FetchRequest> = match serde_json::from_str(&requests_json) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        if requests.is_empty() {
+            return;
+        }
+
+        tracing::info!("[JS:{}] Processing {} fetch requests", server_id, requests.len());
+
+        // Process each request
+        for request in requests {
+            let response = rt.block_on(async {
+                Self::execute_fetch(&request).await
+            });
+
+            // Inject response back into JS
+            let response_json = serde_json::to_string(&response).unwrap_or_else(|_| {
+                r#"{"error":"Failed to serialize response"}"#.to_string()
+            });
+
+            context.with(|ctx| {
+                let code = format!(
+                    "globalThis.__fetch_responses[{}] = {};",
+                    request.id,
+                    response_json
+                );
+                let _: Result<(), _> = ctx.eval(code.as_str());
+            });
+        }
+    }
+
+    /// Execute a single fetch request
+    async fn execute_fetch(request: &FetchRequest) -> FetchResponse {
+        let client = reqwest::Client::new();
+        
+        let method = request.options.method
+            .as_deref()
+            .unwrap_or("GET")
+            .to_uppercase();
+
+        tracing::info!("[Fetch] {} {}", method, request.url);
+
+        let mut req_builder = match method.as_str() {
+            "GET" => client.get(&request.url),
+            "POST" => client.post(&request.url),
+            "PUT" => client.put(&request.url),
+            "DELETE" => client.delete(&request.url),
+            "PATCH" => client.patch(&request.url),
+            "HEAD" => client.head(&request.url),
+            _ => {
+                return FetchResponse {
+                    status: 0,
+                    status_text: String::new(),
+                    headers: HashMap::new(),
+                    body: String::new(),
+                    error: Some(format!("Unsupported method: {}", method)),
+                };
+            }
+        };
+
+        // Add headers
+        if let Some(headers) = &request.options.headers {
+            for (key, value) in headers {
+                req_builder = req_builder.header(key.as_str(), value.as_str());
+            }
+        }
+
+        // Add body
+        if let Some(body) = &request.options.body {
+            req_builder = req_builder.body(body.clone());
+        }
+
+        // Execute request
+        match req_builder.send().await {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                let status_text = response.status().canonical_reason()
+                    .unwrap_or("")
+                    .to_string();
+                
+                let mut headers = HashMap::new();
+                for (key, value) in response.headers() {
+                    if let Ok(v) = value.to_str() {
+                        headers.insert(key.to_string(), v.to_string());
+                    }
+                }
+
+                let body = response.text().await.unwrap_or_default();
+
+                tracing::info!("[Fetch] Response: {} {} ({} bytes)", status, status_text, body.len());
+
+                FetchResponse {
+                    status,
+                    status_text,
+                    headers,
+                    body,
+                    error: None,
+                }
+            }
+            Err(e) => {
+                tracing::error!("[Fetch] Error: {}", e);
+                FetchResponse {
+                    status: 0,
+                    status_text: String::new(),
+                    headers: HashMap::new(),
+                    body: String::new(),
+                    error: Some(e.to_string()),
+                }
+            }
+        }
     }
 }
