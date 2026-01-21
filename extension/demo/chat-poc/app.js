@@ -197,13 +197,16 @@ function renderToolsList() {
         ? JSON.stringify(tool.inputSchema, null, 2)
         : '{}';
       
+      // Format the full name as server/tool
+      const fullName = server !== 'default' ? `${server}/${tool.shortName}` : tool.shortName;
+      
       html += `
         <div class="tool-item" onclick="this.classList.toggle('expanded')">
           <div class="tool-item-header">
-            <span class="tool-item-name">${escapeHtml(tool.shortName)}</span>
-            <span class="tool-item-server">${escapeHtml(server)}</span>
+            <span class="tool-item-name">${escapeHtml(fullName)}</span>
           </div>
           <div class="tool-item-description">${escapeHtml(description)}</div>
+          <div class="tool-item-expand-hint">Click to show schema</div>
           <div class="tool-item-schema">${escapeHtml(schemaStr)}</div>
         </div>
       `;
