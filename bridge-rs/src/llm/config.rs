@@ -48,6 +48,7 @@ impl ProviderInstance {
     }
 
     /// Create a new provider instance with a specific ID
+    #[allow(dead_code)]
     pub fn with_id(id: &str, provider_type: &str, name: &str) -> Self {
         Self {
             id: id.to_string(),
@@ -278,6 +279,7 @@ impl LlmConfig {
     }
 
     /// Get the global default provider instance.
+    #[allow(dead_code)]
     pub fn get_global_default(&self) -> Option<&ProviderInstance> {
         self.default_provider
             .as_ref()
@@ -363,16 +365,19 @@ impl LlmConfig {
     // =========================================================================
 
     /// Get all configured models.
+    #[allow(dead_code)]
     pub fn get_models(&self) -> &[ModelAlias] {
         &self.models
     }
 
     /// Get a model by name.
+    #[allow(dead_code)]
     pub fn get_model(&self, name: &str) -> Option<&ModelAlias> {
         self.models.iter().find(|m| m.name == name)
     }
 
     /// Get the default model.
+    #[allow(dead_code)]
     pub fn get_default_model(&self) -> Option<&ModelAlias> {
         self.models.iter().find(|m| m.is_default)
             .or_else(|| self.models.first())
@@ -443,6 +448,7 @@ impl LlmConfig {
 
     /// Resolve a model reference to an actual model ID.
     /// Accepts either a configured model name or a raw model ID.
+    #[allow(dead_code)]
     pub fn resolve_model(&self, model_ref: &str) -> Option<String> {
         // First try as a configured model name
         if let Some(alias) = self.get_model(model_ref) {

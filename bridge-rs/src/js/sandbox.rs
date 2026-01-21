@@ -37,6 +37,7 @@ pub struct FilesystemCapabilities {
 
 impl NetworkCapabilities {
     /// Check if a URL's host is allowed
+    #[allow(dead_code)]
     pub fn is_host_allowed(&self, url: &str) -> bool {
         if self.allowed_hosts.is_empty() {
             return false;
@@ -74,15 +75,18 @@ impl NetworkCapabilities {
 
 impl FilesystemCapabilities {
     /// Check if a path is allowed for reading
+    #[allow(dead_code)]
     pub fn can_read(&self, path: &Path) -> bool {
         self.is_path_allowed(path, &self.read_paths)
     }
 
     /// Check if a path is allowed for writing
+    #[allow(dead_code)]
     pub fn can_write(&self, path: &Path) -> bool {
         self.is_path_allowed(path, &self.write_paths)
     }
 
+    #[allow(dead_code)]
     fn is_path_allowed(&self, path: &Path, allowed: &[String]) -> bool {
         if allowed.is_empty() {
             return false;
