@@ -41,10 +41,11 @@ GRANTS: granted-always | granted-once | denied | not-granted
 ## window.ai - Text Generation
 
 ```js
-// Create session
+// Create session (auto-selects best available provider)
 const session = await window.ai.createTextSession({
   systemPrompt: 'You are helpful.',  // optional
-  temperature: 0.7                    // optional, 0.0-2.0
+  temperature: 0.7,                   // optional, 0.0-2.0
+  provider: 'firefox-wllama'          // optional: explicit provider
 });
 
 // Simple prompt
@@ -196,10 +197,48 @@ Node.js Bridge (bridge-ts/)
     ↓ MCP Protocol
 MCP Servers (stdio/HTTP/Docker)
 
-## Supported LLM Providers
+## LLM Providers
 
-- llamafile: localhost:8080 (default)
-- Ollama: localhost:11434 (requires 0.3.0+ for tools)
+### Native Browser Providers (no bridge required)
+- firefox-wllama: Firefox 142+ local LLM (wllama/llama.cpp)
+- firefox-transformers: Firefox 134+ embeddings (Transformers.js)
+- chrome: Chrome 131+ built-in AI
+
+### Bridge Providers
+- llamafile: localhost:8080
+- ollama: localhost:11434 (requires 0.3.0+ for tools)
+- openai: OpenAI API (requires API key)
+- anthropic: Anthropic Claude API (requires API key)
+
+### Provider Selection
+```js
+// Use specific provider
+const session = await window.ai.createTextSession({
+  provider: 'firefox-wllama',  // or 'ollama', 'openai', etc.
+  model: 'llama-3.2-1b'
+});
+
+// Check available providers
+const providers = await window.ai.providers.list();
+// Returns: [{ id, type, name, available, isNative, supportsTools, ... }]
+
+// Get best runtime
+const best = await window.ai.runtime.getBest();  // 'firefox' | 'chrome' | 'harbor' | null
+```
+
+### Split Routing
+Use native browser AI for chat, bridge for tools:
+```js
+// Chat with Firefox local AI
+const session = await window.ai.createTextSession({ provider: 'firefox-wllama' });
+await session.prompt('Hello');
+
+// Agent with bridge provider (full tool support)
+for await (const e of window.agent.run({
+  task: 'Search and summarize',
+  provider: 'openai'  // Use bridge provider for tools
+})) { ... }
+```
 
 ## Tool Router Keywords
 
@@ -249,6 +288,22 @@ interface MCPRegistrationResult { success: boolean; serverId?: string; error?: {
 type ChatAvailability = 'readily' | 'no';
 interface ChatOpenOptions { systemPrompt?: string; tools?: string[]; style?: { theme?: string; accentColor?: string; }; }
 interface ChatOpenResult { success: boolean; chatId?: string; error?: { code: string; message: string; }; }
+
+// Provider Types
+interface LLMProviderInfo {
+  id: string; type: string; name: string; available: boolean;
+  isDefault: boolean; isTypeDefault: boolean; supportsTools?: boolean;
+  isNative?: boolean;  // true for browser-native (firefox, chrome)
+  runtime?: 'firefox' | 'chrome' | 'bridge';
+  downloadRequired?: boolean; downloadProgress?: number;
+}
+
+// Runtime Types
+interface RuntimeCapabilities {
+  firefox: { available: boolean; hasWllama: boolean; hasTransformers: boolean; supportsTools: boolean; } | null;
+  chrome: { available: boolean; supportsTools: boolean; } | null;
+  harbor: { available: boolean; bridgeConnected: boolean; providers: string[]; };
+}
 ```
 
 ## Complete Example

@@ -738,17 +738,34 @@ ai.providers.list(): Promise<LLMProviderInfo[]>
 **Returns:**
 ```typescript
 interface LLMProviderInfo {
-  id: string;              // Unique instance ID (e.g., 'openai-work', 'openai-personal')
-  type: string;            // Provider type: 'openai', 'anthropic', 'ollama', etc.
-  name: string;            // User-defined display name
+  id: string;              // Unique instance ID (e.g., 'openai-work', 'firefox-wllama')
+  type: string;            // Provider type: 'openai', 'anthropic', 'ollama', 'firefox', 'chrome'
+  name: string;            // User-defined or native display name
   available: boolean;      // Whether the provider is currently accessible
-  baseUrl?: string;        // Custom API endpoint
+  baseUrl?: string;        // Custom API endpoint (bridge providers only)
   models?: string[];       // Available model IDs
   isDefault: boolean;      // Whether this is the global default provider
   isTypeDefault: boolean;  // Whether this is the default for its provider type
   supportsTools?: boolean; // Whether it supports tool calling
+  
+  // Native provider fields (Firefox ML, Chrome AI)
+  isNative?: boolean;      // true for browser-native providers
+  runtime?: 'firefox' | 'chrome' | 'bridge';  // Which runtime provides this
+  downloadRequired?: boolean;  // true if model needs download first
+  downloadProgress?: number;   // 0-100 if currently downloading
 }
 ```
+
+**Provider Types:**
+
+| Type | Runtime | Description |
+|------|---------|-------------|
+| `openai` | bridge | OpenAI API (cloud) |
+| `anthropic` | bridge | Anthropic Claude API (cloud) |
+| `ollama` | bridge | Ollama local server |
+| `llamafile` | bridge | llamafile local server |
+| `firefox` | firefox | Firefox native ML (local) |
+| `chrome` | chrome | Chrome built-in AI (local) |
 
 **Provider Selection Logic:**
 - If you specify `provider: 'openai-work'` (an instance ID), that specific instance is used
@@ -903,6 +920,213 @@ await window.ai.providers.setTypeDefault('openai-personal');
 
 // Now this will use 'openai-personal':
 const session = await window.ai.createTextSession({ provider: 'openai' });
+```
+
+---
+
+## Native Browser AI Providers
+
+Harbor supports native browser AI capabilities when available. These run inference directly in the browser without requiring external services.
+
+### Supported Native Providers
+
+| Browser | Provider ID | Min Version | Capabilities |
+|---------|-------------|-------------|--------------|
+| Firefox | `firefox-wllama` | 142+ | Chat, streaming, tool calling |
+| Firefox | `firefox-transformers` | 134+ | Embeddings, classification |
+| Chrome | `chrome` | 131+ | Chat, streaming |
+
+### ai.runtime
+
+The `ai.runtime` namespace provides direct access to specific AI backends.
+
+**Properties:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `harbor` | `AIApi` | Direct access to Harbor's bridge API |
+| `firefox` | `object \| null` | Firefox's `browser.trial.ml` API (if available) |
+| `chrome` | `object \| null` | Chrome's built-in AI API (if available) |
+
+---
+
+### ai.runtime.getBest()
+
+Get the best available AI backend. Respects user preferences when configured.
+
+**Signature:**
+```typescript
+ai.runtime.getBest(): Promise<'firefox' | 'chrome' | 'harbor' | null>
+```
+
+**Selection Priority:**
+1. User's configured default (if set)
+2. Firefox wllama (if available, for privacy-first local inference)
+3. Chrome AI (if available)
+4. Harbor bridge (if connected)
+
+**Example:**
+```javascript
+const best = await window.ai.runtime.getBest();
+console.log('Best available backend:', best);
+
+switch (best) {
+  case 'firefox':
+    console.log('Using Firefox local AI');
+    break;
+  case 'chrome':
+    console.log('Using Chrome on-device AI');
+    break;
+  case 'harbor':
+    console.log('Using Harbor bridge');
+    break;
+}
+```
+
+---
+
+### ai.runtime.getCapabilities()
+
+Get detailed capabilities of each available runtime.
+
+**Signature:**
+```typescript
+ai.runtime.getCapabilities(): Promise<RuntimeCapabilities>
+```
+
+**Returns:**
+```typescript
+interface RuntimeCapabilities {
+  firefox: {
+    available: boolean;
+    hasWllama: boolean;       // Firefox 142+ LLM support
+    hasTransformers: boolean; // Firefox 134+ embeddings
+    supportsTools: boolean;
+    models: string[];
+  } | null;
+  chrome: {
+    available: boolean;
+    supportsTools: boolean;
+  } | null;
+  harbor: {
+    available: boolean;
+    bridgeConnected: boolean;
+    providers: string[];      // Connected bridge providers
+  };
+}
+```
+
+**Example:**
+```javascript
+const caps = await window.ai.runtime.getCapabilities();
+
+if (caps.firefox?.hasWllama) {
+  console.log('Firefox wllama available with models:', caps.firefox.models);
+}
+
+if (caps.chrome?.available) {
+  console.log('Chrome AI available');
+}
+
+if (caps.harbor.bridgeConnected) {
+  console.log('Bridge providers:', caps.harbor.providers);
+}
+```
+
+---
+
+### Using Native Providers
+
+**Firefox wllama (Firefox 142+):**
+```javascript
+// Use Firefox's native LLM
+const session = await window.ai.createTextSession({
+  provider: 'firefox-wllama',
+  model: 'llama-3.2-1b',
+  systemPrompt: 'You are a helpful assistant.'
+});
+
+const response = await session.prompt('Hello!');
+
+// Or access Firefox ML API directly
+if (window.ai.runtime.firefox) {
+  const engine = await window.ai.runtime.firefox.createEngine({
+    modelId: 'llama-3.2-1b'
+  });
+}
+```
+
+**Chrome AI (Chrome 131+):**
+```javascript
+// Use Chrome's native AI
+const session = await window.ai.createTextSession({
+  provider: 'chrome',
+  systemPrompt: 'Be helpful and concise.'
+});
+
+// Or access Chrome API directly
+if (window.ai.runtime.chrome) {
+  const chromeSession = await window.ai.runtime.chrome.languageModel.create({
+    systemPrompt: 'You are helpful.'
+  });
+}
+```
+
+---
+
+### Split Routing
+
+Harbor supports routing different operations to different providers. Use native browser AI for simple chat while using bridge providers for tool-enabled operations.
+
+```javascript
+// Chat uses Firefox's local AI (private, fast)
+const session = await window.ai.createTextSession({
+  provider: 'firefox-wllama'
+});
+const response = await session.prompt('Hello!');
+
+// Agent tasks use bridge provider with full tool support
+for await (const event of window.agent.run({
+  task: 'Search for recent AI news and summarize',
+  provider: 'openai',  // Use OpenAI for tool-enabled tasks
+  maxToolCalls: 5
+})) {
+  if (event.type === 'final') {
+    console.log(event.output);
+  }
+}
+```
+
+---
+
+### Graceful Degradation
+
+Harbor automatically handles cases where native AI is unavailable:
+
+| Scenario | Detection | Fallback |
+|----------|-----------|----------|
+| Firefox < 134 | `firefox: null` in capabilities | Use bridge |
+| Firefox 134-141 | `hasWllama: false` | Transformers.js for embeddings, bridge for chat |
+| Model not downloaded | `downloadRequired: true` | Show prompt or use bridge |
+| Native doesn't support tools | `supportsTools: false` | Route `agent.run()` to bridge |
+
+```javascript
+// Check before using native provider
+const providers = await window.ai.providers.list();
+const wllama = providers.find(p => p.id === 'firefox-wllama');
+
+if (wllama?.available && !wllama?.downloadRequired) {
+  // Ready to use
+  const session = await window.ai.createTextSession({ provider: 'firefox-wllama' });
+} else if (wllama?.downloadRequired) {
+  // Model needs to be downloaded first
+  console.log('Firefox AI requires model download');
+  // Fall back to bridge
+  const session = await window.ai.createTextSession({ provider: 'ollama' });
+} else {
+  // Not available, use bridge
+  const session = await window.ai.createTextSession();
+}
 ```
 
 ---
@@ -1237,6 +1461,13 @@ declare global {
         setDefault(instanceId: string): Promise<void>;
         setTypeDefault(instanceId: string): Promise<void>;
       };
+      runtime: {
+        harbor: AIApi;
+        firefox: object | null;  // Firefox browser.trial.ml API
+        chrome: object | null;   // Chrome built-in AI API
+        getBest(): Promise<'firefox' | 'chrome' | 'harbor' | null>;
+        getCapabilities(): Promise<RuntimeCapabilities>;
+      };
     };
     agent: {
       requestPermissions(options: {
@@ -1447,20 +1678,51 @@ interface TextSessionOptions {
 }
 
 interface LLMProviderInfo {
-  id: string;              // Unique instance ID (e.g., 'openai-work')
-  type: string;            // Provider type: 'openai', 'anthropic', etc.
-  name: string;            // User-defined display name
+  id: string;              // Unique instance ID (e.g., 'openai-work', 'firefox-wllama')
+  type: string;            // Provider type: 'openai', 'anthropic', 'firefox', 'chrome', etc.
+  name: string;            // User-defined or native display name
   available: boolean;
   baseUrl?: string;
   models?: string[];
   isDefault: boolean;      // Is global default?
   isTypeDefault: boolean;  // Is default for its type?
   supportsTools?: boolean;
+  // Native provider fields
+  isNative?: boolean;      // true for browser-native providers
+  runtime?: 'firefox' | 'chrome' | 'bridge';
+  downloadRequired?: boolean;
+  downloadProgress?: number;
 }
 
 interface ActiveLLMConfig {
   provider: string | null;  // Instance ID of active provider
   model: string | null;
+}
+
+// Runtime capabilities
+interface RuntimeCapabilities {
+  firefox: FirefoxCapabilities | null;
+  chrome: ChromeCapabilities | null;
+  harbor: HarborCapabilities;
+}
+
+interface FirefoxCapabilities {
+  available: boolean;
+  hasWllama: boolean;       // Firefox 142+ LLM support
+  hasTransformers: boolean; // Firefox 134+ embeddings
+  supportsTools: boolean;
+  models: string[];
+}
+
+interface ChromeCapabilities {
+  available: boolean;
+  supportsTools: boolean;
+}
+
+interface HarborCapabilities {
+  available: boolean;
+  bridgeConnected: boolean;
+  providers: string[];      // Connected bridge providers
 }
 
 interface AddProviderOptions {
@@ -2139,9 +2401,10 @@ initAddressBarIntegration();
 
 ## Version
 
-This document describes **Web Agent API v1.2** as implemented by **Harbor v1**.
+This document describes **Web Agent API v1.3** as implemented by **Harbor v1**.
 
-**v1.1 additions:** BYOC APIs (`agent.mcp.*`, `agent.chat.*`)
+**v1.3 additions:** Native Browser AI Providers (`ai.runtime.*`, Firefox ML, Chrome AI), split routing
 
 **v1.2 additions:** Address Bar API (`agent.addressBar.*`, `agent.commandBar.*`)
 
+**v1.1 additions:** BYOC APIs (`agent.mcp.*`, `agent.chat.*`)
