@@ -15,12 +15,10 @@ const common = {
 
 const entryPoints = [
   'src/background.ts',
-  'src/agents/content-script.ts',
-  'src/agents/injected.ts',
+  'src/discovery.ts',
   'src/page-chat.ts',
   'src/directory.ts',
   'src/sidebar.ts',
-  'src/permission-prompt.ts',
   'src/demo-bootstrap.ts',
   'src/js-runtime/worker-loader.ts',
 ];

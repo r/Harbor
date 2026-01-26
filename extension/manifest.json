@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Harbor (WASM MCP)",
+  "name": "Harbor",
   "version": "0.1.0",
-  "description": "WASM MCP extension with Web Agents API.",
+  "description": "Infrastructure extension for AI and MCP capabilities. Provides LLM access and tool execution for other extensions.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "harbor@anthropic.com"
+      "id": "harbor@mozilla.org"
     }
   },
   "background": {
@@ -31,17 +31,14 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["dist/agents/content-script.js"],
+      "js": ["dist/discovery.js"],
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
       "resources": [
-        "dist/agents/injected.js",
         "dist/page-chat.js",
-        "dist/permission-prompt.html",
-        "dist/permission-prompt.js",
         "dist/design-tokens.css",
         "dist/demo-bootstrap.js",
         "dist/js-runtime/builtin-echo-worker.js",
@@ -69,7 +66,12 @@
   },
   "sidebar_action": {
     "default_title": "Harbor",
-    "default_panel": "dist/sidebar.html"
+    "default_panel": "dist/sidebar.html",
+    "default_icon": {
+      "16": "assets/icon.svg",
+      "32": "assets/icon.svg",
+      "48": "assets/icon.svg"
+    }
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
