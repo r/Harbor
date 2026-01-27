@@ -619,6 +619,15 @@ function createBrowserApi() {
         : featureDisabledAsync('browserInteraction'),
 
       /**
+       * Select an option from a dropdown.
+       */
+      select: FEATURE_FLAGS.browserInteraction
+        ? async function(ref: string, value: string): Promise<{ success: boolean }> {
+            return sendRequest('agent.browser.activeTab.select', { ref, value });
+          }
+        : featureDisabledAsync('browserInteraction'),
+
+      /**
        * Take a screenshot.
        */
       screenshot: FEATURE_FLAGS.browserInteraction
