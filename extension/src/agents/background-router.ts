@@ -5,6 +5,7 @@
  * Handles the Web Agent API (window.ai/window.agent) requests from web pages.
  */
 
+import { browserAPI } from '../browser-compat';
 import type {
   MessageType,
   TransportResponse,
@@ -2111,7 +2112,7 @@ function handleAgentsRegisterMessageHandler(ctx: RequestContext, sender: Respons
   registerMessageHandler(agentId, (message) => {
     // Forward message to the page
     if (ctx.tabId) {
-      chrome.tabs.sendMessage(ctx.tabId, {
+      browserAPI.tabs.sendMessage(ctx.tabId, {
         type: 'harbor_agent_message',
         message,
       }).catch(() => {});
@@ -2434,7 +2435,7 @@ async function handleChatOpen(ctx: RequestContext, sender: ResponseSender): Prom
 
   try {
     // Inject config first
-    await chrome.scripting.executeScript({
+    await browserAPI.scripting.executeScript({
       target: { tabId },
       func: (config: unknown) => {
         (window as unknown as { __harborPageChatConfig: unknown }).__harborPageChatConfig = config;
@@ -2449,7 +2450,7 @@ async function handleChatOpen(ctx: RequestContext, sender: ResponseSender): Prom
     });
 
     // Then inject page-chat.js
-    await chrome.scripting.executeScript({
+    await browserAPI.scripting.executeScript({
       target: { tabId },
       files: ['dist/page-chat.js'],
     });
@@ -2484,7 +2485,7 @@ async function handleChatClose(ctx: RequestContext, sender: ResponseSender): Pro
     const chat = activeChats.get(chatId);
     if (chat) {
       try {
-        await chrome.tabs.sendMessage(chat.tabId, {
+        await browserAPI.tabs.sendMessage(chat.tabId, {
           type: 'harbor_chat_close',
           chatId,
         });
@@ -2498,7 +2499,7 @@ async function handleChatClose(ctx: RequestContext, sender: ResponseSender): Pro
     for (const [id, chat] of activeChats) {
       if (chat.origin === ctx.origin) {
         try {
-          await chrome.tabs.sendMessage(chat.tabId, {
+          await browserAPI.tabs.sendMessage(chat.tabId, {
             type: 'harbor_chat_close',
             chatId: id,
           });
@@ -2748,7 +2749,7 @@ async function routeMessage(ctx: RequestContext, sender: ResponseSender): Promis
 // Port Connection Handler
 // =============================================================================
 
-function handlePortConnection(port: chrome.runtime.Port): void {
+function handlePortConnection(port: ReturnType<typeof browserAPI.runtime.connect>): void {
   if (port.name !== 'web-agent-transport') {
     return;
   }
@@ -2828,7 +2829,7 @@ function handlePermissionPromptMessage(
       allowedTools?: string[];
     };
   },
-  _sender: chrome.runtime.MessageSender,
+  _sender: { id?: string; url?: string; tab?: { id?: number } },
   sendResponse: (response?: unknown) => void,
 ): boolean {
   if (message?.type !== 'permission_prompt_response') {
@@ -2860,10 +2861,10 @@ export function initializeRouter(): void {
   initializeAgentRegistry();
 
   // Listen for port connections from content scripts
-  chrome.runtime.onConnect.addListener(handlePortConnection);
+  browserAPI.runtime.onConnect.addListener(handlePortConnection);
 
   // Listen for permission prompt responses
-  chrome.runtime.onMessage.addListener(handlePermissionPromptMessage);
+  browserAPI.runtime.onMessage.addListener(handlePermissionPromptMessage);
 
   log('Router initialized');
 }

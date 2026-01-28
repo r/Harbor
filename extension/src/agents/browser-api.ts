@@ -9,6 +9,7 @@
  * - This prevents malicious pages from controlling other tabs
  */
 
+import { browserAPI } from '../browser-compat';
 import type { ActiveTabReadability } from './types';
 
 const MAX_TEXT_LENGTH = 50000;
@@ -32,8 +33,8 @@ const PRIVILEGED_PROTOCOLS = [
  * Get and validate tab info for the requesting tab.
  * This ensures we only operate on the tab that made the request.
  */
-async function getRequestingTab(tabId: number): Promise<chrome.tabs.Tab> {
-  const tab = await chrome.tabs.get(tabId);
+async function getRequestingTab(tabId: number): Promise<ReturnType<typeof browserAPI.tabs.get> extends Promise<infer T> ? T : never> {
+  const tab = await browserAPI.tabs.get(tabId);
 
   if (!tab || !tab.url) {
     throw Object.assign(
@@ -69,7 +70,7 @@ export async function getTabReadability(tabId: number): Promise<ActiveTabReadabi
 
   // Execute content extraction script in the requesting tab
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await browserAPI.scripting.executeScript({
       target: { tabId },
       func: extractReadableContent,
     });
@@ -139,7 +140,7 @@ export interface ElementInfo {
 export async function clickElement(tabId: number, selector: string, options?: ClickOptions): Promise<void> {
   await getRequestingTab(tabId);
 
-  const results = await chrome.scripting.executeScript({
+  const results = await browserAPI.scripting.executeScript({
     target: { tabId },
     func: (sel: string, opts: ClickOptions | undefined) => {
       const element = document.querySelector(sel) as HTMLElement | null;
@@ -195,7 +196,7 @@ export async function clickElement(tabId: number, selector: string, options?: Cl
 export async function fillInput(tabId: number, selector: string, value: string): Promise<void> {
   await getRequestingTab(tabId);
 
-  const results = await chrome.scripting.executeScript({
+  const results = await browserAPI.scripting.executeScript({
     target: { tabId },
     func: (sel: string, val: string) => {
       const element = document.querySelector(sel) as HTMLInputElement | HTMLTextAreaElement | null;
@@ -243,7 +244,7 @@ export async function fillInput(tabId: number, selector: string, value: string):
 export async function selectOption(tabId: number, selector: string, value: string): Promise<void> {
   await getRequestingTab(tabId);
 
-  const results = await chrome.scripting.executeScript({
+  const results = await browserAPI.scripting.executeScript({
     target: { tabId },
     func: (sel: string, val: string) => {
       const element = document.querySelector(sel) as HTMLSelectElement | null;
@@ -291,7 +292,7 @@ export async function scrollPage(
 ): Promise<void> {
   await getRequestingTab(tabId);
 
-  await chrome.scripting.executeScript({
+  await browserAPI.scripting.executeScript({
     target: { tabId },
     func: (opts: { x?: number; y?: number; selector?: string; behavior?: 'auto' | 'smooth' }) => {
       if (opts.selector) {
@@ -318,7 +319,7 @@ export async function scrollPage(
 export async function getElementInfo(tabId: number, selector: string): Promise<ElementInfo | null> {
   await getRequestingTab(tabId);
 
-  const results = await chrome.scripting.executeScript({
+  const results = await browserAPI.scripting.executeScript({
     target: { tabId },
     func: (sel: string): ElementInfo | null => {
       const element = document.querySelector(sel) as HTMLElement | null;
@@ -364,7 +365,7 @@ export async function waitForSelector(
   const checkVisible = options?.visible ?? false;
 
   // Inject a script that uses MutationObserver to efficiently wait for the element
-  const results = await chrome.scripting.executeScript({
+  const results = await browserAPI.scripting.executeScript({
     target: { tabId },
     func: (sel: string, timeoutMs: number, mustBeVisible: boolean) => {
       return new Promise<{
@@ -470,10 +471,10 @@ export async function takeScreenshot(tabId: number, options?: {
   await getRequestingTab(tabId);
 
   // Make sure the tab is active for screenshot
-  const tab = await chrome.tabs.get(tabId);
+  const tab = await browserAPI.tabs.get(tabId);
   
   // captureVisibleTab requires the tab to be in the current window
-  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+  const dataUrl = await browserAPI.tabs.captureVisibleTab(tab.windowId, {
     format: options?.format || 'png',
     quality: options?.quality,
   });

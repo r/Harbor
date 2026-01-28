@@ -6,6 +6,7 @@
  * Falls back to in-browser worker for built-in servers when bridge unavailable.
  */
 
+import { browserAPI } from '../browser-compat';
 import type { StdioEndpoint } from '../mcp/stdio-transport';
 import type { McpServerManifest } from '../wasm/types';
 import { bridgeRequest, getBridgeConnectionState } from '../llm/bridge-client';
@@ -244,7 +245,7 @@ async function createBuiltinWorkerSession(
   manifest: McpServerManifest,
   workerPath: string,
 ): Promise<JsSession> {
-  const workerUrl = chrome.runtime.getURL(workerPath);
+  const workerUrl = browserAPI.runtime.getURL(workerPath);
   const worker = new Worker(workerUrl);
 
   const { endpoint, attachWorker, close: closeEndpoint } = createWorkerStdioEndpoint();

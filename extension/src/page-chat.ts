@@ -10,6 +10,8 @@
  * - Page context extraction
  */
 
+import { browserAPI } from './browser-compat';
+
 // Configuration interface for BYOC mode
 interface PageChatConfig {
   chatId?: string;
@@ -112,7 +114,7 @@ function initPageChat() {
   
   // Listen for close messages from background script
   if (byocConfig.chatId) {
-    chrome.runtime.onMessage.addListener((message: { type: string; chatId?: string }) => {
+    browserAPI.runtime.onMessage.addListener((message: { type: string; chatId?: string }) => {
       if (message.type === 'harbor_chat_close' && message.chatId === byocConfig.chatId) {
         console.log('[Harbor Page Chat] Closing via API request');
         container.remove();
@@ -228,7 +230,7 @@ ${pageContext}
         // BYOC mode - send via background script
         console.log('[Harbor Page Chat] BYOC mode - sending via background');
         
-        const response = await chrome.runtime.sendMessage({
+        const response = await browserAPI.runtime.sendMessage({
           type: 'page_chat_message',
           chatId: byocConfig.chatId,
           message: content,

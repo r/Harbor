@@ -8,6 +8,8 @@
 // Make this a module to avoid global scope conflicts
 export {};
 
+import { browserAPI } from './browser-compat';
+
 // Types
 interface TextSession {
   sessionId: string;
@@ -25,8 +27,8 @@ interface ToolDescriptor {
 
 // Bridge RPC helper - goes through extension message passing
 async function bridgeRequest<T>(method: string, params?: unknown): Promise<T> {
-  // Use chrome.runtime.sendMessage to go through the background script
-  const response = await chrome.runtime.sendMessage({
+  // Use browserAPI.runtime.sendMessage to go through the background script
+  const response = await browserAPI.runtime.sendMessage({
     type: 'bridge_rpc',
     method,
     params,
@@ -278,8 +280,8 @@ const agent = {
   tools: {
     async list(): Promise<ToolDescriptor[]> {
       try {
-        // Get servers from the background script via chrome.runtime
-        const response = await chrome.runtime.sendMessage({ type: 'sidebar_get_servers' }) as {
+        // Get servers from the background script via browserAPI.runtime
+        const response = await browserAPI.runtime.sendMessage({ type: 'sidebar_get_servers' }) as {
           ok: boolean;
           servers?: Array<{ id: string; name: string; running: boolean; tools?: Array<{ name: string; description?: string; inputSchema?: unknown }> }>;
         };
@@ -315,7 +317,7 @@ const agent = {
         throw new Error('Invalid tool name format. Expected: serverId/toolName');
       }
       
-      const response = await chrome.runtime.sendMessage({
+      const response = await browserAPI.runtime.sendMessage({
         type: 'sidebar_call_tool',
         serverId,
         toolName,
@@ -334,7 +336,7 @@ const agent = {
     activeTab: {
       async readability(): Promise<{ url: string; title: string; text: string }> {
         // Get active tab content
-        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tabs = await browserAPI.tabs.query({ active: true, currentWindow: true });
         const tab = tabs[0];
         
         if (!tab?.id || !tab.url) {
@@ -345,7 +347,7 @@ const agent = {
           throw new Error('Cannot read from this type of page');
         }
         
-        const results = await chrome.scripting.executeScript({
+        const results = await browserAPI.scripting.executeScript({
           target: { tabId: tab.id },
           func: () => {
             const clone = document.cloneNode(true) as Document;

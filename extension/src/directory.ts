@@ -8,6 +8,7 @@
  * - File upload (drag-drop or file picker)
  */
 
+import { browserAPI } from './browser-compat';
 import { loadFromUrl, loadFromFile, type LoadResult } from './storage/package-loader';
 import { getFeatureFlags, setFeatureFlags, type FeatureFlags } from './policy/feature-flags';
 
@@ -236,7 +237,7 @@ function renderServerCard(server: BundledServer): HTMLElement {
 
 async function loadInstalledServers(): Promise<void> {
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'sidebar_get_servers' });
+    const response = await browserAPI.runtime.sendMessage({ type: 'sidebar_get_servers' });
     console.log('[Directory] Got servers response:', response);
     if (response?.ok && response.servers) {
       const serverIds = response.servers.map((s: InstalledServer) => s.id);
@@ -244,7 +245,7 @@ async function loadInstalledServers(): Promise<void> {
       installedServerIds = new Set(serverIds);
     } else {
       // Also check storage directly for WASM servers
-      const result = await chrome.storage.local.get(STORAGE_KEY);
+      const result = await browserAPI.storage.local.get(STORAGE_KEY);
       const servers = (result[STORAGE_KEY] as Array<{ id: string }>) || [];
       const serverIds = servers.map((s) => s.id);
       console.log('[Directory] Storage server IDs:', serverIds);
@@ -266,7 +267,7 @@ async function installServer(server: BundledServer): Promise<void> {
   try {
     if (server.runtime === 'wasm' && server.wasmUrl) {
       // Load WASM module
-      const wasmResponse = await fetch(chrome.runtime.getURL(server.wasmUrl));
+      const wasmResponse = await fetch(browserAPI.runtime.getURL(server.wasmUrl));
       const wasmBytes = await wasmResponse.arrayBuffer();
       
       const manifest = {
@@ -280,7 +281,7 @@ async function installServer(server: BundledServer): Promise<void> {
         tools: server.tools,
       };
 
-      const response = await chrome.runtime.sendMessage({
+      const response = await browserAPI.runtime.sendMessage({
         type: 'sidebar_install_server',
         manifest,
       });
@@ -290,13 +291,13 @@ async function installServer(server: BundledServer): Promise<void> {
       }
 
       // Start the server
-      await chrome.runtime.sendMessage({
+      await browserAPI.runtime.sendMessage({
         type: 'sidebar_validate_server',
         serverId: server.id,
       });
     } else if (server.runtime === 'js' && server.manifestUrl) {
       // Load JS manifest
-      const manifestResponse = await fetch(chrome.runtime.getURL(server.manifestUrl));
+      const manifestResponse = await fetch(browserAPI.runtime.getURL(server.manifestUrl));
       const manifest = await manifestResponse.json();
 
       // Check if OAuth is required
@@ -305,7 +306,7 @@ async function installServer(server: BundledServer): Promise<void> {
         if (btn) btn.textContent = 'Authenticating...';
         
         // Check if already authenticated
-        const statusResponse = await chrome.runtime.sendMessage({
+        const statusResponse = await browserAPI.runtime.sendMessage({
           type: 'oauth_status',
           server_id: server.id,
         });
@@ -314,7 +315,7 @@ async function installServer(server: BundledServer): Promise<void> {
         if (!statusResponse?.ok || !statusResponse.authenticated) {
           // Need to do OAuth - start the flow
           console.log('[Directory] Starting OAuth flow...');
-          const flowResponse = await chrome.runtime.sendMessage({
+          const flowResponse = await browserAPI.runtime.sendMessage({
             type: 'oauth_start_flow',
             provider: manifest.oauth.provider,
             server_id: server.id,
@@ -343,7 +344,7 @@ async function installServer(server: BundledServer): Promise<void> {
       }
 
       // Load the script
-      const scriptUrl = new URL(manifest.scriptUrl, chrome.runtime.getURL(server.manifestUrl)).href;
+      const scriptUrl = new URL(manifest.scriptUrl, browserAPI.runtime.getURL(server.manifestUrl)).href;
       const scriptResponse = await fetch(scriptUrl);
       const scriptText = await scriptResponse.text();
       
@@ -354,7 +355,7 @@ async function installServer(server: BundledServer): Promise<void> {
         scriptBase64: btoa(unescape(encodeURIComponent(scriptText))),
       };
 
-      const response = await chrome.runtime.sendMessage({
+      const response = await browserAPI.runtime.sendMessage({
         type: 'sidebar_install_server',
         manifest: fullManifest,
       });
@@ -364,7 +365,7 @@ async function installServer(server: BundledServer): Promise<void> {
       }
 
       // Start the server
-      await chrome.runtime.sendMessage({
+      await browserAPI.runtime.sendMessage({
         type: 'sidebar_validate_server',
         serverId: server.id,
       });
@@ -397,7 +398,7 @@ async function waitForOAuthCompletion(serverId: string, timeoutMs = 300000): Pro
     attempts++;
     
     try {
-      const response = await chrome.runtime.sendMessage({
+      const response = await browserAPI.runtime.sendMessage({
         type: 'oauth_status',
         server_id: serverId,
       });
@@ -428,7 +429,7 @@ async function uninstallServer(server: BundledServer): Promise<void> {
   }
 
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = await browserAPI.runtime.sendMessage({
       type: 'sidebar_remove_server',
       serverId: server.id,
     });
@@ -561,7 +562,7 @@ async function handleLoadResult(result: LoadResult): Promise<void> {
   if (manifest.oauth) {
     // Check OAuth status
     try {
-      const response = await chrome.runtime.sendMessage({
+      const response = await browserAPI.runtime.sendMessage({
         type: 'oauth_status',
         server_id: manifest.id,
       });
@@ -577,7 +578,7 @@ async function handleLoadResult(result: LoadResult): Promise<void> {
 
   // Install the server
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = await browserAPI.runtime.sendMessage({
       type: 'sidebar_install_server',
       manifest,
     });
@@ -587,7 +588,7 @@ async function handleLoadResult(result: LoadResult): Promise<void> {
     }
 
     // Start the server to validate it
-    await chrome.runtime.sendMessage({
+    await browserAPI.runtime.sendMessage({
       type: 'sidebar_validate_server',
       serverId: manifest.id,
     });

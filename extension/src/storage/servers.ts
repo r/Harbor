@@ -1,3 +1,4 @@
+import { browserAPI } from '../browser-compat';
 import type { McpServerManifest } from '../wasm/types';
 
 // New storage key for unified MCP servers
@@ -10,7 +11,7 @@ const LEGACY_STORAGE_KEY = 'harbor_wasm_servers';
  * Also ensures all servers have a runtime field.
  */
 async function migrateIfNeeded(): Promise<void> {
-  const result = await chrome.storage.local.get([STORAGE_KEY, LEGACY_STORAGE_KEY]);
+  const result = await browserAPI.storage.local.get([STORAGE_KEY, LEGACY_STORAGE_KEY]);
   
   // Check if we have data in new key already
   if (result[STORAGE_KEY]) {
@@ -27,8 +28,8 @@ async function migrateIfNeeded(): Promise<void> {
     }));
     
     // Save to new key and remove legacy key
-    await chrome.storage.local.set({ [STORAGE_KEY]: migratedServers });
-    await chrome.storage.local.remove(LEGACY_STORAGE_KEY);
+    await browserAPI.storage.local.set({ [STORAGE_KEY]: migratedServers });
+    await browserAPI.storage.local.remove(LEGACY_STORAGE_KEY);
     
     console.log('[Harbor] Migrated', migratedServers.length, 'servers to new storage format');
   }
@@ -36,14 +37,14 @@ async function migrateIfNeeded(): Promise<void> {
 
 export async function loadInstalledServers(): Promise<McpServerManifest[]> {
   await migrateIfNeeded();
-  const result = await chrome.storage.local.get(STORAGE_KEY);
+  const result = await browserAPI.storage.local.get(STORAGE_KEY);
   const servers = (result[STORAGE_KEY] as McpServerManifest[]) || [];
   console.log('[Harbor] Loaded servers:', servers.length);
   return servers;
 }
 
 export async function saveInstalledServers(servers: McpServerManifest[]): Promise<void> {
-  await chrome.storage.local.set({ [STORAGE_KEY]: servers });
+  await browserAPI.storage.local.set({ [STORAGE_KEY]: servers });
 }
 
 export async function addInstalledServer(server: McpServerManifest): Promise<void> {
@@ -197,7 +198,7 @@ export async function ensureBuiltinServers(): Promise<McpServerManifest[]> {
       version: '0.1.0',
       runtime: 'wasm',
       entrypoint: 'mcp-time.wasm',
-      moduleUrl: chrome.runtime.getURL('assets/mcp-time.wasm'),
+      moduleUrl: browserAPI.runtime.getURL('assets/mcp-time.wasm'),
       permissions: [],
       tools: [
         {

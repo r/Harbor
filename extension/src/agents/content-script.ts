@@ -6,6 +6,7 @@
  * - Background script (extension context)
  */
 
+import { browserAPI } from '../browser-compat';
 import type {
   TransportRequest,
   TransportResponse,
@@ -14,7 +15,7 @@ import type {
 
 const CHANNEL = 'harbor_web_agent';
 
-type RuntimePort = chrome.runtime.Port;
+type RuntimePort = ReturnType<typeof browserAPI.runtime.connect>;
 
 let backgroundPort: RuntimePort | null = null;
 
@@ -32,7 +33,7 @@ const activeStreams = new Map<string, {
  */
 function getBackgroundPort(): RuntimePort {
   if (!backgroundPort || !backgroundPort.name) {
-    backgroundPort = chrome.runtime.connect({ name: 'web-agent-transport' });
+    backgroundPort = browserAPI.runtime.connect({ name: 'web-agent-transport' });
 
     // Handle messages from background
     backgroundPort.onMessage.addListener((message: TransportResponse | TransportStreamEvent) => {
@@ -93,8 +94,8 @@ async function getFeatureFlags(): Promise<{
   multiAgent: boolean;
 }> {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: 'getFeatureFlags' }, (response) => {
-      if (chrome.runtime.lastError || !response) {
+    browserAPI.runtime.sendMessage({ type: 'getFeatureFlags' }, (response) => {
+      if (browserAPI.runtime.lastError || !response) {
         // Default to safe mode if we can't get flags
         resolve({
           browserInteraction: false,
@@ -133,7 +134,7 @@ function appendInjectedScripts(flags: {
   root.appendChild(flagsScript);
 
   const script = document.createElement('script');
-  script.src = chrome.runtime.getURL('dist/agents/injected.js');
+  script.src = browserAPI.runtime.getURL('dist/agents/injected.js');
   script.async = false;
   script.onload = () => {
     script.remove();

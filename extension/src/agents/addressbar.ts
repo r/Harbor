@@ -9,6 +9,7 @@
  * - Site-specific providers
  */
 
+import { browserAPI } from '../browser-compat';
 import type {
   AddressBarTrigger,
   AddressBarQueryContext,
@@ -53,7 +54,7 @@ const pendingQueries = new Map<string, {
  */
 export async function initializeAddressBar(): Promise<void> {
   // Load stored providers
-  const result = await chrome.storage.local.get([STORAGE_KEY, DEFAULT_PROVIDER_KEY]);
+  const result = await browserAPI.storage.local.get([STORAGE_KEY, DEFAULT_PROVIDER_KEY]);
   const stored = (result[STORAGE_KEY] || []) as StoredAddressBarProvider[];
   defaultProviderId = (result[DEFAULT_PROVIDER_KEY] as string | undefined) || null;
 
@@ -72,12 +73,12 @@ export async function initializeAddressBar(): Promise<void> {
  */
 function setupOmniboxListeners(): void {
   // Input started
-  chrome.omnibox.onInputStarted.addListener(() => {
+  browserAPI.omnibox.onInputStarted.addListener(() => {
     console.log('[Harbor] Omnibox input started');
   });
 
   // Input changed - provide suggestions
-  chrome.omnibox.onInputChanged.addListener(async (text, suggest) => {
+  browserAPI.omnibox.onInputChanged.addListener(async (text, suggest) => {
     try {
       const suggestions = await getSuggestions(text);
       suggest(suggestions.map(toOmniboxSuggestion));
@@ -88,16 +89,16 @@ function setupOmniboxListeners(): void {
   });
 
   // Input entered - execute action
-  chrome.omnibox.onInputEntered.addListener(async (text, disposition) => {
+  browserAPI.omnibox.onInputEntered.addListener(async (text, disposition) => {
     try {
-      await handleSelection(text, disposition as chrome.omnibox.OnInputEnteredDisposition);
+      await handleSelection(text, disposition as Parameters<Parameters<typeof browserAPI.omnibox.onInputEntered.addListener>[0]>[1]);
     } catch (error) {
       console.error('[Harbor] Omnibox action error:', error);
     }
   });
 
   // Input cancelled
-  chrome.omnibox.onInputCancelled.addListener(() => {
+  browserAPI.omnibox.onInputCancelled.addListener(() => {
     console.log('[Harbor] Omnibox input cancelled');
   });
 }
@@ -111,7 +112,7 @@ function setupOmniboxListeners(): void {
  */
 export function canProvide(): 'readily' | 'no' {
   // Check if omnibox API is available
-  return chrome.omnibox ? 'readily' : 'no';
+  return browserAPI.omnibox ? 'readily' : 'no';
 }
 
 /**
@@ -234,7 +235,7 @@ export async function unregisterProvider(providerId: string): Promise<void> {
 
   if (defaultProviderId === providerId) {
     defaultProviderId = null;
-    await chrome.storage.local.remove(DEFAULT_PROVIDER_KEY);
+    await browserAPI.storage.local.remove(DEFAULT_PROVIDER_KEY);
   }
 
   await saveProviders();
@@ -250,7 +251,7 @@ export async function setDefaultProvider(providerId: string): Promise<void> {
   }
 
   defaultProviderId = providerId;
-  await chrome.storage.local.set({ [DEFAULT_PROVIDER_KEY]: providerId });
+  await browserAPI.storage.local.set({ [DEFAULT_PROVIDER_KEY]: providerId });
   updateOmniboxDefaultSuggestion();
 }
 
@@ -495,7 +496,7 @@ const recentSuggestions = new Map<string, AddressBarSuggestion>();
  */
 async function handleSelection(
   text: string,
-  disposition: chrome.omnibox.OnInputEnteredDisposition,
+  disposition: Parameters<Parameters<typeof browserAPI.omnibox.onInputEntered.addListener>[0]>[1],
 ): Promise<void> {
   // Check if this matches a recent suggestion
   const suggestion = recentSuggestions.get(text);
@@ -514,7 +515,7 @@ async function handleSelection(
  */
 async function executeSuggestionAction(
   suggestion: AddressBarSuggestion,
-  disposition: chrome.omnibox.OnInputEnteredDisposition,
+  disposition: Parameters<Parameters<typeof browserAPI.omnibox.onInputEntered.addListener>[0]>[1],
 ): Promise<void> {
   switch (suggestion.type) {
     case 'url':
@@ -555,7 +556,7 @@ async function executeSuggestionAction(
  */
 async function executeAction(
   action: AddressBarAction,
-  disposition: chrome.omnibox.OnInputEnteredDisposition,
+  disposition: Parameters<Parameters<typeof browserAPI.omnibox.onInputEntered.addListener>[0]>[1],
 ): Promise<void> {
   switch (action.type) {
     case 'navigate':
@@ -640,7 +641,7 @@ async function handleToolResult(
     case 'navigate':
       // If result is a URL, navigate to it
       if (typeof result === 'string' && result.startsWith('http')) {
-        await navigateTo(result, 'currentTab' as chrome.omnibox.OnInputEnteredDisposition);
+        await navigateTo(result, 'currentTab' as Parameters<Parameters<typeof browserAPI.omnibox.onInputEntered.addListener>[0]>[1]);
       }
       break;
 
@@ -662,17 +663,17 @@ async function handleToolResult(
  */
 async function navigateTo(
   url: string,
-  disposition: chrome.omnibox.OnInputEnteredDisposition,
+  disposition: Parameters<Parameters<typeof browserAPI.omnibox.onInputEntered.addListener>[0]>[1],
 ): Promise<void> {
   switch (disposition) {
     case 'currentTab':
-      await chrome.tabs.update({ url });
+      await browserAPI.tabs.update({ url });
       break;
     case 'newForegroundTab':
-      await chrome.tabs.create({ url });
+      await browserAPI.tabs.create({ url });
       break;
     case 'newBackgroundTab':
-      await chrome.tabs.create({ url, active: false });
+      await browserAPI.tabs.create({ url, active: false });
       break;
   }
 }
@@ -711,7 +712,7 @@ async function copyToClipboard(text: string): Promise<void> {
  */
 function toOmniboxSuggestion(
   suggestion: AddressBarSuggestion,
-): chrome.omnibox.SuggestResult {
+): { content: string; description: string } {
   // Store for later lookup
   const key = suggestion.url || suggestion.title;
   recentSuggestions.set(key, suggestion);
@@ -745,7 +746,7 @@ function escapeXml(text: string): string {
  */
 async function saveProviders(): Promise<void> {
   const stored = Array.from(providers.values());
-  await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+  await browserAPI.storage.local.set({ [STORAGE_KEY]: stored });
 }
 
 /**
@@ -769,7 +770,7 @@ function updateOmniboxDefaultSuggestion(): void {
     ? `Try: ${hints.slice(0, 3).join(', ')}`
     : 'Type to search with Harbor AI';
 
-  chrome.omnibox.setDefaultSuggestion({
+  browserAPI.omnibox.setDefaultSuggestion({
     description: `<dim>${escapeXml(description)}</dim>`,
   });
 }
@@ -790,10 +791,10 @@ async function executeAgentTask(
 
   try {
     // Get active tab for context - use its origin for permissions
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [activeTab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
     const origin = activeTab?.url
       ? new URL(activeTab.url).origin
-      : 'chrome-extension://' + chrome.runtime.id;
+      : 'chrome-extension://' + browserAPI.runtime.id;
 
     // Run the agent with the task
     const events = runAgent(origin, {
@@ -857,5 +858,5 @@ async function handleAgentResult(output: string): Promise<void> {
   console.log('[Harbor] Agent result copied to clipboard:', output.slice(0, 100) + '...');
 
   // TODO: Show in a popup or panel for better UX
-  // Could use chrome.notifications or open a results page
+  // Could use browser notifications or open a results page
 }

@@ -30,6 +30,8 @@
  * - Screenshots via `screenshots`
  */
 
+import { browserAPI } from '../browser-compat';
+
 const STORAGE_KEY = 'harbor_feature_flags';
 
 export interface FeatureFlags {
@@ -113,7 +115,7 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
   }
 
   try {
-    const result = await chrome.storage.local.get(STORAGE_KEY);
+    const result = await browserAPI.storage.local.get(STORAGE_KEY);
     cachedFlags = { ...DEFAULT_FLAGS, ...result[STORAGE_KEY] };
     return cachedFlags;
   } catch {
@@ -128,7 +130,7 @@ export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<voi
   const current = await getFeatureFlags();
   const updated = { ...current, ...flags };
   
-  await chrome.storage.local.set({ [STORAGE_KEY]: updated });
+  await browserAPI.storage.local.set({ [STORAGE_KEY]: updated });
   cachedFlags = updated;
 }
 
@@ -144,12 +146,12 @@ export async function isFeatureEnabled(feature: keyof FeatureFlags): Promise<boo
  * Reset all flags to defaults.
  */
 export async function resetFeatureFlags(): Promise<void> {
-  await chrome.storage.local.remove(STORAGE_KEY);
+  await browserAPI.storage.local.remove(STORAGE_KEY);
   cachedFlags = null;
 }
 
 // Listen for storage changes to invalidate cache
-chrome.storage.onChanged.addListener((changes, areaName) => {
+browserAPI.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' && changes[STORAGE_KEY]) {
     cachedFlags = null;
   }

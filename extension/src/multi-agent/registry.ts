@@ -10,6 +10,7 @@
  * - Cross-origin discovery requires agents:crossOrigin permission
  */
 
+import { browserAPI } from '../browser-compat';
 import type {
   AgentId,
   RegisteredAgent,
@@ -384,12 +385,12 @@ export function recordInvocationReceived(agentId: AgentId): void {
  */
 export function initializeAgentRegistry(): void {
   // Clean up agents when tabs are closed
-  chrome.tabs.onRemoved.addListener((tabId) => {
+  browserAPI.tabs.onRemoved.addListener((tabId) => {
     cleanupTabAgents(tabId);
   });
 
   // Clean up agents when tabs are refreshed (navigated)
-  chrome.webNavigation?.onCommitted?.addListener((details) => {
+  browserAPI.webNavigation?.onCommitted?.addListener((details) => {
     // Only clean up on top-level navigation (not iframes)
     if (details.frameId === 0 && details.transitionType !== 'auto_subframe') {
       cleanupTabAgents(details.tabId);

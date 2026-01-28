@@ -4,6 +4,7 @@
  * Handles permission enforcement, grants, and prompt logic.
  */
 
+import { browserAPI } from '../browser-compat';
 import type {
   PermissionScope,
   PermissionGrant,
@@ -24,20 +25,20 @@ const ONCE_GRANT_DURATION_MS = 10 * 60 * 1000; // 10 minutes
 // =============================================================================
 
 async function loadOriginPermissions(origin: string): Promise<StoredOriginPermissions | null> {
-  const result = await chrome.storage.local.get(PERMISSIONS_STORAGE_KEY);
+  const result = await browserAPI.storage.local.get(PERMISSIONS_STORAGE_KEY);
   const allPermissions = (result[PERMISSIONS_STORAGE_KEY] || {}) as Record<string, StoredOriginPermissions>;
   return allPermissions[origin] || null;
 }
 
 async function saveOriginPermissions(permissions: StoredOriginPermissions): Promise<void> {
-  const result = await chrome.storage.local.get(PERMISSIONS_STORAGE_KEY);
+  const result = await browserAPI.storage.local.get(PERMISSIONS_STORAGE_KEY);
   const allPermissions = (result[PERMISSIONS_STORAGE_KEY] || {}) as Record<string, StoredOriginPermissions>;
   allPermissions[permissions.origin] = permissions;
-  await chrome.storage.local.set({ [PERMISSIONS_STORAGE_KEY]: allPermissions });
+  await browserAPI.storage.local.set({ [PERMISSIONS_STORAGE_KEY]: allPermissions });
 }
 
 async function getAllOriginPermissions(): Promise<Record<string, StoredOriginPermissions>> {
-  const result = await chrome.storage.local.get(PERMISSIONS_STORAGE_KEY);
+  const result = await browserAPI.storage.local.get(PERMISSIONS_STORAGE_KEY);
   return (result[PERMISSIONS_STORAGE_KEY] || {}) as Record<string, StoredOriginPermissions>;
 }
 
@@ -226,7 +227,7 @@ export async function grantPermissions(
   console.log('[Permissions] Saved permissions for', origin);
 
   // Notify sidebar to refresh
-  chrome.runtime.sendMessage({ type: 'permissions_changed' }).catch(() => {
+  browserAPI.runtime.sendMessage({ type: 'permissions_changed' }).catch(() => {
     // Sidebar may not be open
   });
 
@@ -287,10 +288,10 @@ export async function denyPermissions(
  * Revoke all permissions for an origin.
  */
 export async function revokePermissions(origin: string): Promise<void> {
-  const result = await chrome.storage.local.get(PERMISSIONS_STORAGE_KEY);
+  const result = await browserAPI.storage.local.get(PERMISSIONS_STORAGE_KEY);
   const allPermissions = (result[PERMISSIONS_STORAGE_KEY] || {}) as Record<string, StoredOriginPermissions>;
   delete allPermissions[origin];
-  await chrome.storage.local.set({ [PERMISSIONS_STORAGE_KEY]: allPermissions });
+  await browserAPI.storage.local.set({ [PERMISSIONS_STORAGE_KEY]: allPermissions });
 }
 
 /**
@@ -314,7 +315,7 @@ export async function cleanupExpiredGrants(): Promise<void> {
   }
 
   if (changed) {
-    await chrome.storage.local.set({ [PERMISSIONS_STORAGE_KEY]: allPermissions });
+    await browserAPI.storage.local.set({ [PERMISSIONS_STORAGE_KEY]: allPermissions });
   }
 }
 
@@ -436,7 +437,7 @@ export async function showPermissionPrompt(
   // Close any existing prompt
   if (promptWindowId !== null) {
     try {
-      await chrome.windows.remove(promptWindowId);
+      await browserAPI.windows.remove(promptWindowId);
     } catch {
       // Window may already be closed
     }
@@ -470,14 +471,14 @@ export async function showPermissionPrompt(
     }
   }
 
-  const promptUrl = chrome.runtime.getURL(`dist/permission-prompt.html?${params.toString()}`);
+  const promptUrl = browserAPI.runtime.getURL(`dist/permission-prompt.html?${params.toString()}`);
   console.log('[Permissions] Opening prompt URL:', promptUrl);
 
   return new Promise((resolve) => {
     pendingPromptResolve = resolve;
 
     // Use promise-based API (works in both Chrome and Firefox)
-    const createPromise = chrome.windows.create({
+    const createPromise = browserAPI.windows.create({
       url: promptUrl,
       type: 'popup',
       width: 450,
@@ -522,13 +523,13 @@ export function handlePermissionPromptResponse(response: {
   }
 
   if (promptWindowId !== null) {
-    chrome.windows.remove(promptWindowId).catch(() => {});
+    browserAPI.windows.remove(promptWindowId).catch(() => {});
     promptWindowId = null;
   }
 }
 
 // Listen for window close to handle user dismissing the prompt
-chrome.windows?.onRemoved?.addListener((windowId) => {
+browserAPI.windows?.onRemoved?.addListener((windowId) => {
   if (windowId === promptWindowId) {
     promptWindowId = null;
     if (pendingPromptResolve) {

@@ -1,6 +1,8 @@
 // Make this a module to avoid global scope conflicts
 export {};
 
+import { browserAPI } from './browser-compat';
+
 type ServerStatus = {
   id: string;
   name: string;
@@ -220,7 +222,7 @@ function updateBridgeStatusUI(connected: boolean, error?: string | null): void {
 
 async function checkBridgeStatus(): Promise<void> {
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'bridge_check_health' }) as BridgeStatus;
+    const response = await browserAPI.runtime.sendMessage({ type: 'bridge_check_health' }) as BridgeStatus;
     updateBridgeStatusUI(response.connected, response.error);
   } catch (err) {
     console.error('[Sidebar] Failed to check bridge status:', err);
@@ -277,7 +279,7 @@ function renderServer(server: ServerStatus): HTMLElement {
     startButton.textContent = 'Start';
     startButton.addEventListener('click', async () => {
       startButton.disabled = true;
-      const response = await chrome.runtime.sendMessage({
+      const response = await browserAPI.runtime.sendMessage({
         type: 'sidebar_validate_server',
         serverId: server.id,
       });
@@ -294,7 +296,7 @@ function renderServer(server: ServerStatus): HTMLElement {
     stopButton.textContent = 'Stop';
     stopButton.addEventListener('click', async () => {
       stopButton.disabled = true;
-      const response = await chrome.runtime.sendMessage({
+      const response = await browserAPI.runtime.sendMessage({
         type: 'sidebar_stop_server',
         serverId: server.id,
       });
@@ -312,7 +314,7 @@ function renderServer(server: ServerStatus): HTMLElement {
   removeButton.textContent = 'Unload';
   removeButton.addEventListener('click', async () => {
     removeButton.disabled = true;
-    const response = await chrome.runtime.sendMessage({
+    const response = await browserAPI.runtime.sendMessage({
       type: 'sidebar_remove_server',
       serverId: server.id,
     });
@@ -363,7 +365,7 @@ async function loadServers(): Promise<void> {
   
   try {
     serversEl.innerHTML = '';
-    const response = await chrome.runtime.sendMessage({ type: 'sidebar_get_servers' });
+    const response = await browserAPI.runtime.sendMessage({ type: 'sidebar_get_servers' });
     if (!response?.ok) {
       serversEl.textContent = response?.error || 'Failed to load servers';
       return;
@@ -447,7 +449,7 @@ fileInput.addEventListener('change', async () => {
     showToast(`Loading WASM server: ${manifest.name}`);
   }
 
-  const response = await chrome.runtime.sendMessage({
+  const response = await browserAPI.runtime.sendMessage({
     type: 'sidebar_install_server',
     manifest,
   });
@@ -456,7 +458,7 @@ fileInput.addEventListener('change', async () => {
     showToast('Failed to install server');
   }
   fileInput.value = '';
-  const validate = await chrome.runtime.sendMessage({
+  const validate = await browserAPI.runtime.sendMessage({
     type: 'sidebar_validate_server',
     serverId: manifest.id,
   });
@@ -474,7 +476,7 @@ loadServers().catch((error) => {
 });
 
 // Auto-refresh servers when storage changes (e.g., from Directory page)
-chrome.storage.onChanged.addListener((changes, area) => {
+browserAPI.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.harbor_mcp_servers) {
     console.log('[Sidebar] Server storage changed, refreshing...');
     loadServers();
@@ -543,7 +545,7 @@ apiKeySaveBtn.addEventListener('click', async () => {
   apiKeySaveBtn.textContent = 'Saving...';
 
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = await browserAPI.runtime.sendMessage({
       type: 'llm_configure_provider',
       provider: configuringProviderId,
       name: capitalizeFirst(configuringProviderId),
@@ -576,17 +578,17 @@ async function loadLlmProviders(): Promise<void> {
   try {
     // Load configured models, available models, and providers in parallel
     const [configuredModelsRes, modelsRes, providersRes] = await Promise.all([
-      chrome.runtime.sendMessage({ type: 'llm_list_configured_models' }) as Promise<{
+      browserAPI.runtime.sendMessage({ type: 'llm_list_configured_models' }) as Promise<{
         ok: boolean;
         models?: ConfiguredModel[];
         error?: string;
       }>,
-      chrome.runtime.sendMessage({ type: 'llm_list_models' }) as Promise<{
+      browserAPI.runtime.sendMessage({ type: 'llm_list_models' }) as Promise<{
         ok: boolean;
         models?: ModelInfo[];
         error?: string;
       }>,
-      chrome.runtime.sendMessage({ type: 'llm_list_providers' }) as Promise<{
+      browserAPI.runtime.sendMessage({ type: 'llm_list_providers' }) as Promise<{
         ok: boolean;
         providers?: ProviderInfo[];
         error?: string;
@@ -675,7 +677,7 @@ function renderConfiguredModels(models: ConfiguredModel[]): void {
       (btn as HTMLButtonElement).disabled = true;
       
       try {
-        const result = await chrome.runtime.sendMessage({ 
+        const result = await browserAPI.runtime.sendMessage({ 
           type: 'llm_test_model', 
           model: modelId 
         }) as { ok: boolean; response?: string; error?: string };
@@ -698,7 +700,7 @@ function renderConfiguredModels(models: ConfiguredModel[]): void {
     btn.addEventListener('click', async () => {
       const name = (btn as HTMLElement).dataset.name;
       if (!name) return;
-      await chrome.runtime.sendMessage({ type: 'llm_set_configured_model_default', name });
+      await browserAPI.runtime.sendMessage({ type: 'llm_set_configured_model_default', name });
       await loadLlmProviders();
     });
   });
@@ -707,7 +709,7 @@ function renderConfiguredModels(models: ConfiguredModel[]): void {
     btn.addEventListener('click', async () => {
       const name = (btn as HTMLElement).dataset.name;
       if (!name) return;
-      await chrome.runtime.sendMessage({ type: 'llm_remove_configured_model', name });
+      await browserAPI.runtime.sendMessage({ type: 'llm_remove_configured_model', name });
       await loadLlmProviders();
       showToast(`Removed "${name}"`);
     });
@@ -804,7 +806,7 @@ addModelBtn.addEventListener('click', async () => {
   
   addModelBtn.disabled = true;
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = await browserAPI.runtime.sendMessage({
       type: 'llm_add_configured_model',
       model_id: modelId,
     }) as { ok: boolean; name?: string; error?: string };
@@ -844,7 +846,7 @@ type PermissionStatusEntry = {
 
 async function loadPermissions(): Promise<void> {
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'list_all_permissions' }) as {
+    const response = await browserAPI.runtime.sendMessage({ type: 'list_all_permissions' }) as {
       type: string;
       permissions?: PermissionStatusEntry[];
     };
@@ -936,7 +938,7 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
       if (!confirm(`Revoke all permissions for ${origin}?`)) return;
 
       try {
-        await chrome.runtime.sendMessage({ type: 'revoke_origin_permissions', origin, source });
+        await browserAPI.runtime.sendMessage({ type: 'revoke_origin_permissions', origin, source });
         await loadPermissions();
         showToast('Permissions revoked');
       } catch (err) {
@@ -959,7 +961,7 @@ refreshPermissionsBtn?.addEventListener('click', async (e) => {
 });
 
 // Listen for permission changes from background
-chrome.runtime.onMessage.addListener((message) => {
+browserAPI.runtime.onMessage.addListener((message) => {
   if (message?.type === 'permissions_changed') {
     loadPermissions();
   }
@@ -990,7 +992,7 @@ const oauthProviderConfigs: Array<{ id: string; name: string; icon: string; help
 
 async function loadOAuthCredentialsStatus(): Promise<void> {
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'oauth_get_credentials_status' }) as {
+    const response = await browserAPI.runtime.sendMessage({ type: 'oauth_get_credentials_status' }) as {
       ok: boolean;
       providers?: Record<string, { configured: boolean; client_id_preview?: string }>;
       error?: string;
@@ -1073,7 +1075,7 @@ function renderOAuthProviders(providers: Record<string, { configured: boolean; c
       
       (btn as HTMLButtonElement).disabled = true;
       try {
-        const response = await chrome.runtime.sendMessage({
+        const response = await browserAPI.runtime.sendMessage({
           type: 'oauth_remove_credentials',
           provider,
         }) as { ok: boolean; error?: string };
@@ -1128,7 +1130,7 @@ oauthConfigSaveBtn?.addEventListener('click', async () => {
   oauthConfigSaveBtn.textContent = 'Saving...';
   
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = await browserAPI.runtime.sendMessage({
       type: 'oauth_set_credentials',
       provider: configuringOAuthProvider,
       client_id: clientId,
@@ -1164,7 +1166,7 @@ setupPanelToggle(oauthPanelHeader, oauthPanelToggle, oauthPanelBody);
   
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'oauth_get_credentials_status' }) as {
+      const response = await browserAPI.runtime.sendMessage({ type: 'oauth_get_credentials_status' }) as {
         ok: boolean;
         providers?: Record<string, { configured: boolean; client_id_preview?: string }>;
       };
@@ -1212,9 +1214,9 @@ setupPanelToggle(quickActionsHeader, quickActionsToggle, quickActionsBody);
 // Open Directory button - opens the MCP server directory
 openDirectoryBtn.addEventListener('click', async () => {
   try {
-    const directoryUrl = chrome.runtime.getURL('dist/directory.html');
+    const directoryUrl = browserAPI.runtime.getURL('dist/directory.html');
     console.log('[Sidebar] Opening directory at:', directoryUrl);
-    await chrome.tabs.create({ url: directoryUrl });
+    await browserAPI.tabs.create({ url: directoryUrl });
   } catch (err) {
     console.error('[Sidebar] Failed to open directory:', err);
     showToast('Failed to open directory');
@@ -1225,9 +1227,9 @@ openDirectoryBtn.addEventListener('click', async () => {
 openChatBtn.addEventListener('click', async () => {
   try {
     // The demo is at the extension root level
-    const chatUrl = chrome.runtime.getURL('demo/chat-poc/index.html');
+    const chatUrl = browserAPI.runtime.getURL('demo/chat-poc/index.html');
     console.log('[Sidebar] Opening chat at:', chatUrl);
-    await chrome.tabs.create({ url: chatUrl });
+    await browserAPI.tabs.create({ url: chatUrl });
   } catch (err) {
     console.error('[Sidebar] Failed to open chat:', err);
     showToast('Failed to open chat');
@@ -1237,7 +1239,7 @@ openChatBtn.addEventListener('click', async () => {
 // Reload Extension button
 reloadExtensionBtn.addEventListener('click', async () => {
   try {
-    await chrome.runtime.reload();
+    await browserAPI.runtime.reload();
   } catch (err) {
     console.error('[Sidebar] Failed to reload:', err);
     showToast('Failed to reload extension');
@@ -1281,7 +1283,7 @@ setupPanelToggle(toolTesterHeader, toolTesterToggle, toolTesterBody);
 // Load servers into the dropdown when panel opens
 async function loadToolTesterServers(): Promise<void> {
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'sidebar_get_servers' });
+    const response = await browserAPI.runtime.sendMessage({ type: 'sidebar_get_servers' });
     console.log('[Tool Tester] Got servers response:', response);
     if (!response?.ok) return;
     
@@ -1332,7 +1334,7 @@ toolTesterServerSelect.addEventListener('change', async () => {
   if (tools.length === 0) {
     console.log('[Tool Tester] No cached tools, fetching via MCP...');
     try {
-      const listResponse = await chrome.runtime.sendMessage({
+      const listResponse = await browserAPI.runtime.sendMessage({
         type: 'mcp_call_method',
         serverId,
         method: 'tools/list',
@@ -1441,7 +1443,7 @@ toolTesterRunBtn.addEventListener('click', async () => {
   
   try {
     console.log(`[Tool Tester] Calling ${serverId}/${toolName} with:`, args);
-    const response = await chrome.runtime.sendMessage({
+    const response = await browserAPI.runtime.sendMessage({
       type: 'sidebar_call_tool',
       serverId,
       toolName,
@@ -1506,7 +1508,7 @@ const refreshSessionsBtn = document.getElementById('refresh-sessions-btn') as HT
 
 async function loadSessions(): Promise<void> {
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'session.list' }) as {
+    const response = await browserAPI.runtime.sendMessage({ type: 'session.list' }) as {
       ok: boolean;
       sessions?: SessionSummary[];
       error?: string;
@@ -1620,7 +1622,7 @@ function renderSessions(sessions: SessionSummary[]): void {
       (btn as HTMLButtonElement).textContent = '...';
       
       try {
-        await chrome.runtime.sendMessage({
+        await browserAPI.runtime.sendMessage({
           type: 'session.terminate',
           sessionId,
           origin,
@@ -1647,7 +1649,7 @@ refreshSessionsBtn?.addEventListener('click', async (e) => {
 });
 
 // Listen for session changes from background
-chrome.runtime.onMessage.addListener((message) => {
+browserAPI.runtime.onMessage.addListener((message) => {
   if (message?.type === 'session_created' || 
       message?.type === 'session_terminated' || 
       message?.type === 'session_updated') {

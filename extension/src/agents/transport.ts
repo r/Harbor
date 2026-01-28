@@ -8,6 +8,7 @@
  * Supports both request/response and streaming patterns.
  */
 
+import { browserAPI } from '../browser-compat';
 import type {
   TransportRequest,
   TransportResponse,
@@ -186,7 +187,7 @@ export function createStreamIterable<T extends RunEvent | StreamToken>(
 // Content Script Transport (Content Script <-> Background)
 // =============================================================================
 
-type RuntimePort = chrome.runtime.Port;
+type RuntimePort = ReturnType<typeof browserAPI.runtime.connect>;
 
 let backgroundPort: RuntimePort | null = null;
 const pendingBackgroundRequests = new Map<string, {
@@ -202,7 +203,7 @@ const activeStreams = new Map<string, {
  */
 export function initContentScriptTransport(): void {
   // Connect to background script
-  backgroundPort = chrome.runtime.connect({ name: 'web-agent-transport' });
+  backgroundPort = browserAPI.runtime.connect({ name: 'web-agent-transport' });
 
   // Handle messages from background
   backgroundPort.onMessage.addListener((message: TransportResponse | TransportStreamEvent) => {
@@ -265,7 +266,7 @@ export function initContentScriptTransport(): void {
 
     if (!backgroundPort) {
       // Try to reconnect
-      backgroundPort = chrome.runtime.connect({ name: 'web-agent-transport' });
+      backgroundPort = browserAPI.runtime.connect({ name: 'web-agent-transport' });
     }
 
     if (isStreamingRequest) {

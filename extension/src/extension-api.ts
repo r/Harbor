@@ -8,6 +8,7 @@
  *   chrome.runtime.sendMessage(HARBOR_EXTENSION_ID, { type: '...', payload: {...} })
  */
 
+import { browserAPI } from './browser-compat';
 import { bridgeRequest, bridgeStreamRequest, getBridgeConnectionState, checkBridgeHealth } from './llm/bridge-client';
 import { listServersWithStatus, callTool, startServer, stopServer, listTools } from './mcp/host';
 import { isNativeBridgeReady } from './llm/native-bridge';
@@ -347,7 +348,7 @@ async function handleSystemGetCapabilities(): Promise<ExtensionApiResponse> {
 function handleSystemGetVersion(): ExtensionApiResponse {
   return success({
     version: '0.1.0',
-    extensionId: chrome.runtime.id,
+    extensionId: browserAPI.runtime.id,
   });
 }
 
@@ -578,7 +579,7 @@ function sessionToResponse(session: ReturnType<typeof SessionRegistry.getSession
 
 async function routeMessage(
   message: ExtensionApiRequest,
-  sender: chrome.runtime.MessageSender,
+  sender: { id?: string; url?: string; tab?: { id?: number } },
 ): Promise<ExtensionApiResponse> {
   const { type, payload } = message;
   
@@ -644,8 +645,8 @@ async function routeMessage(
 
 async function handleStreamingChat(
   message: ExtensionApiRequest,
-  sender: chrome.runtime.MessageSender,
-  port: chrome.runtime.Port,
+  sender: { id?: string; url?: string; tab?: { id?: number } },
+  port: ReturnType<typeof browserAPI.runtime.connect>,
 ): Promise<void> {
   const { payload, requestId } = message;
   const { messages, model, max_tokens, temperature, system } = (payload || {}) as {
@@ -693,7 +694,7 @@ export function initializeExtensionApi(): void {
   SessionRegistry.subscribe((event) => {
     log('Session event:', event.type);
     // Broadcast to all extension pages (sidebar, etc.)
-    chrome.runtime.sendMessage({
+    browserAPI.runtime.sendMessage({
       type: event.type,
       ...(event.type === 'session_created' ? { session: event.session } : {}),
       ...(event.type === 'session_updated' ? { session: event.session } : {}),
@@ -704,13 +705,13 @@ export function initializeExtensionApi(): void {
   });
 
   // Handle one-shot messages from other extensions
-  chrome.runtime.onMessageExternal.addListener(
+  browserAPI.runtime.onMessageExternal.addListener(
     (message: ExtensionApiRequest, sender, sendResponse) => {
       log('External message:', message.type, 'from', sender.id);
 
       // Streaming requests need a port connection, not sendMessage
       if (message.type === 'llm.chatStream') {
-        sendResponse(failure('Use chrome.runtime.connect for streaming requests'));
+        sendResponse(failure('Use browser.runtime.connect for streaming requests'));
         return false;
       }
 
@@ -724,7 +725,7 @@ export function initializeExtensionApi(): void {
   );
 
   // Handle port connections for streaming
-  chrome.runtime.onConnectExternal.addListener((port) => {
+  browserAPI.runtime.onConnectExternal.addListener((port) => {
     log('External port connection from:', port.sender?.id);
 
     port.onMessage.addListener((message: ExtensionApiRequest) => {

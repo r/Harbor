@@ -5,6 +5,7 @@
  * Uses the same design tokens as the sidebar for consistency.
  */
 
+import { browserAPI } from './browser-compat';
 import { SCOPE_DESCRIPTIONS } from './policy/permissions';
 import type { PermissionScope } from './agents/types';
 
@@ -226,7 +227,7 @@ function sendResponse(response: {
   explicitDeny?: boolean;
 }): void {
   console.log('[Permission Prompt] Sending response:', response);
-  chrome.runtime.sendMessage({
+  browserAPI.runtime.sendMessage({
     type: 'permission_prompt_response',
     response,
   });

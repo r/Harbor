@@ -5,6 +5,7 @@
  * Initializes all modules and sets up message routing.
  */
 
+import { browserAPI, getBrowserName, isServiceWorker, serviceWorkerLifecycle, getFeatureSummary } from './browser-compat';
 import { initializePolicyStore } from './policy/store';
 import { initializeBridgeClient, getBridgeConnectionState, checkBridgeHealth, bridgeRequest } from './llm/bridge-client';
 import { getConnectionState as getNativeConnectionState } from './llm/native-bridge';
@@ -15,7 +16,37 @@ import { initializeExtensionApi } from './extension-api';
 import { SessionRegistry } from './sessions';
 import { initializeRouter } from './agents/background-router';
 
-console.log('[Harbor] Extension starting...');
+console.log(`[Harbor] Extension starting on ${getBrowserName()}...`);
+console.log('[Harbor] Browser features:', getFeatureSummary());
+
+// =============================================================================
+// Service Worker Lifecycle (Chrome MV3)
+// =============================================================================
+
+// Handle extension startup (Chrome MV3 service worker restart)
+serviceWorkerLifecycle.onStartup(() => {
+  console.log('[Harbor] Service worker startup - restoring state...');
+  // Re-initialize connections that may have been lost
+  initializeBridgeClient();
+});
+
+// Handle extension install/update
+serviceWorkerLifecycle.onInstalled((details) => {
+  console.log(`[Harbor] Extension ${details.reason}${details.previousVersion ? ` from ${details.previousVersion}` : ''}`);
+  if (details.reason === 'install') {
+    // First-time setup
+    console.log('[Harbor] First install - initializing...');
+  } else if (details.reason === 'update') {
+    // Handle migration if needed
+    console.log('[Harbor] Extension updated');
+  }
+});
+
+// Handle service worker suspend (Chrome MV3)
+serviceWorkerLifecycle.onSuspend(() => {
+  console.log('[Harbor] Service worker suspending - saving state...');
+  // Save any in-memory state that needs to persist
+});
 
 // Initialize modules
 initializePolicyStore();
@@ -38,7 +69,7 @@ cleanupExpiredGrants();
 // =============================================================================
 
 // Debug: log all incoming messages
-chrome.runtime.onMessage.addListener((message) => {
+browserAPI.runtime.onMessage.addListener((message) => {
   console.log('[Harbor] Incoming message:', message?.type, message);
   return false; // Don't handle, let other listeners process
 });
@@ -46,7 +77,7 @@ chrome.runtime.onMessage.addListener((message) => {
 // Debug: expose callTool for console testing
 (globalThis as Record<string, unknown>).debugCallTool = callTool;
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'sidebar_get_servers') {
     return false;
   }
@@ -62,7 +93,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'sidebar_start_server') {
     return false;
   }
@@ -83,7 +114,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'sidebar_stop_server') {
     return false;
   }
@@ -104,7 +135,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'sidebar_install_server') {
     return false;
   }
@@ -125,7 +156,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'sidebar_validate_server') {
     return false;
   }
@@ -146,7 +177,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'sidebar_remove_server') {
     return false;
   }
@@ -171,7 +202,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // Bridge Status Handlers
 // =============================================================================
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'bridge_get_status') {
     return false;
   }
@@ -180,7 +211,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'bridge_check_health') {
     return false;
   }
@@ -202,7 +233,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // LLM Configuration Handlers
 // =============================================================================
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_list_providers') {
     return false;
   }
@@ -218,7 +249,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_list_provider_types') {
     return false;
   }
@@ -234,7 +265,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_get_config') {
     return false;
   }
@@ -250,7 +281,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_configure_provider') {
     return false;
   }
@@ -285,7 +316,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_set_default_provider') {
     return false;
   }
@@ -306,7 +337,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_remove_provider') {
     return false;
   }
@@ -327,7 +358,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_check_provider') {
     return false;
   }
@@ -348,7 +379,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_list_models') {
     return false;
   }
@@ -364,7 +395,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_set_default_model') {
     return false;
   }
@@ -389,7 +420,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // Configured Models Handlers
 // =============================================================================
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_list_configured_models') {
     return false;
   }
@@ -405,7 +436,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_add_configured_model') {
     return false;
   }
@@ -426,7 +457,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_remove_configured_model') {
     return false;
   }
@@ -447,7 +478,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_set_configured_model_default') {
     return false;
   }
@@ -468,7 +499,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_test_model') {
     return false;
   }
@@ -498,7 +529,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 // Generic bridge RPC passthrough (used by demo-bootstrap)
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'bridge_rpc') {
     return false;
   }
@@ -521,7 +552,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'sidebar_call_tool') {
     return false;
   }
@@ -547,7 +578,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 // Handler for calling MCP methods directly (e.g., tools/list)
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'mcp_call_method') {
     return false;
   }
@@ -576,7 +607,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'llm_chat') {
     return false;
   }
@@ -607,7 +638,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // Native Bridge Status Handler
 // =============================================================================
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'native_bridge_status') {
     return false;
   }
@@ -631,7 +662,7 @@ type ExternalPermissionStatusEntry = {
 
 async function fetchWebAgentsPermissions(): Promise<ExternalPermissionStatusEntry[]> {
   try {
-    const response = await chrome.runtime.sendMessage(WEB_AGENTS_API_EXTENSION_ID, {
+    const response = await browserAPI.runtime.sendMessage(WEB_AGENTS_API_EXTENSION_ID, {
       type: 'web_agents_permissions.list_all',
     }) as { ok?: boolean; permissions?: ExternalPermissionStatusEntry[] };
 
@@ -648,7 +679,7 @@ async function fetchWebAgentsPermissions(): Promise<ExternalPermissionStatusEntr
   }
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'list_all_permissions') {
     return false;
   }
@@ -670,7 +701,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'revoke_origin_permissions') {
     return false;
   }
@@ -681,7 +712,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   (async () => {
     if (source === 'web-agents-api') {
-      await chrome.runtime.sendMessage(WEB_AGENTS_API_EXTENSION_ID, {
+      await browserAPI.runtime.sendMessage(WEB_AGENTS_API_EXTENSION_ID, {
         type: 'web_agents_permissions.revoke_origin',
         origin,
       });
@@ -690,7 +721,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
 
     // Notify sidebar to refresh
-    chrome.runtime.sendMessage({ type: 'permissions_changed' }).catch(() => {});
+    browserAPI.runtime.sendMessage({ type: 'permissions_changed' }).catch(() => {});
     sendResponse({ ok: true });
   })().catch((error) => {
     sendResponse({
@@ -705,7 +736,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // OAuth Handlers
 // =============================================================================
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'oauth_start_flow') {
     return false;
   }
@@ -725,7 +756,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       scopes,
     });
     // Open the auth URL in a new tab
-    chrome.tabs.create({ url: result.auth_url });
+    browserAPI.tabs.create({ url: result.auth_url });
     sendResponse({ ok: true, state: result.state });
   })().catch((error) => {
     sendResponse({
@@ -736,7 +767,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'oauth_status') {
     return false;
   }
@@ -764,7 +795,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'oauth_get_tokens') {
     return false;
   }
@@ -791,7 +822,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'oauth_revoke') {
     return false;
   }
@@ -812,7 +843,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'oauth_list_providers') {
     return false;
   }
@@ -836,7 +867,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 // OAuth Credentials Management
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'oauth_get_credentials_status') {
     return false;
   }
@@ -857,7 +888,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'oauth_set_credentials') {
     return false;
   }
@@ -885,7 +916,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'oauth_remove_credentials') {
     return false;
   }
@@ -913,7 +944,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // Feature Flags Handlers
 // =============================================================================
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'getFeatureFlags') {
     return false;
   }
@@ -934,7 +965,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'setFeatureFlags') {
     return false;
   }
@@ -960,7 +991,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // Session Handlers (for sidebar)
 // =============================================================================
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'session.list') {
     return false;
   }
@@ -982,7 +1013,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'session.terminate') {
     return false;
   }
@@ -1003,7 +1034,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'session.get') {
     return false;
   }
@@ -1032,7 +1063,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // Page Chat Message Handler
 // =============================================================================
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'page_chat_message') {
     return false;
   }
@@ -1103,7 +1134,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // Open Page Chat Handler (for sidebar button)
 // =============================================================================
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'open_page_chat') {
     return false;
   }
@@ -1115,7 +1146,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     try {
       // Inject page-chat.js into the tab
-      await chrome.scripting.executeScript({
+      await browserAPI.scripting.executeScript({
         target: { tabId },
         files: ['dist/page-chat.js'],
       });

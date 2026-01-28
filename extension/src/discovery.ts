@@ -8,6 +8,8 @@
  * This does NOT expose any callable API to web pages.
  */
 
+import { browserAPI } from './browser-compat';
+
 // Inject discovery info into the page context
 function injectDiscoveryInfo(): void {
   const script = document.createElement('script');
@@ -19,7 +21,7 @@ function injectDiscoveryInfo(): void {
       Object.defineProperty(window, '__harbor', {
         value: Object.freeze({
           version: '0.1.0',
-          extensionId: '${chrome.runtime.id}',
+          extensionId: '${browserAPI.runtime.id}',
           installed: true
         }),
         writable: false,
@@ -29,7 +31,7 @@ function injectDiscoveryInfo(): void {
       
       // Dispatch event for extensions waiting for Harbor
       window.dispatchEvent(new CustomEvent('harbor-discovered', {
-        detail: { version: '0.1.0', extensionId: '${chrome.runtime.id}' }
+        detail: { version: '0.1.0', extensionId: '${browserAPI.runtime.id}' }
       }));
     })();
   `;

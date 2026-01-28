@@ -10,6 +10,8 @@
  * - Origins CANNOT control tabs they didn't spawn (only read metadata)
  */
 
+import { browserAPI } from '../browser-compat';
+
 // Track which tabs were spawned by which origin
 interface SpawnedTabInfo {
   tabId: number;
@@ -131,7 +133,7 @@ export function cleanupOriginTabs(origin: string): void {
  * the origin can interact with.
  */
 export async function listTabs(origin: string): Promise<TabMetadata[]> {
-  const tabs = await chrome.tabs.query({});
+  const tabs = await browserAPI.tabs.query({});
   
   return tabs.map((tab) => ({
     id: tab.id!,
@@ -151,7 +153,7 @@ export async function listTabs(origin: string): Promise<TabMetadata[]> {
  */
 export async function getTab(origin: string, tabId: number): Promise<TabMetadata | null> {
   try {
-    const tab = await chrome.tabs.get(tabId);
+    const tab = await browserAPI.tabs.get(tabId);
     return {
       id: tab.id!,
       url: tab.url || '',
@@ -176,7 +178,7 @@ export async function createTab(
   options: CreateTabOptions,
   parentTabId?: number,
 ): Promise<TabMetadata> {
-  const tab = await chrome.tabs.create({
+  const tab = await browserAPI.tabs.create({
     url: options.url,
     active: options.active ?? false,  // Default to background
     index: options.index,
@@ -208,7 +210,7 @@ export async function closeTab(origin: string, tabId: number): Promise<boolean> 
   }
   
   try {
-    await chrome.tabs.remove(tabId);
+    await browserAPI.tabs.remove(tabId);
     unregisterTab(tabId);
     return true;
   } catch {
@@ -232,7 +234,7 @@ export async function navigateTab(
     throw new Error('Cannot navigate tab: origin did not spawn this tab');
   }
   
-  await chrome.tabs.update(tabId, { url });
+  await browserAPI.tabs.update(tabId, { url });
   
   // Update the URL in our records if it's a spawned tab
   const info = spawnedTabs.get(tabId);
@@ -250,22 +252,22 @@ export function waitForNavigation(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
+      browserAPI.tabs.onUpdated.removeListener(listener);
       reject(new Error('Navigation timeout'));
     }, timeoutMs);
     
     const listener = (
       updatedTabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo,
+      changeInfo: browserAPI.tabs.TabChangeInfo,
     ) => {
       if (updatedTabId === tabId && changeInfo.status === 'complete') {
         clearTimeout(timeout);
-        chrome.tabs.onUpdated.removeListener(listener);
+        browserAPI.tabs.onUpdated.removeListener(listener);
         resolve();
       }
     };
     
-    chrome.tabs.onUpdated.addListener(listener);
+    browserAPI.tabs.onUpdated.addListener(listener);
   });
 }
 
@@ -279,7 +281,7 @@ export function waitForNavigation(
  */
 export function initializeTabManager(): void {
   // Clean up when tabs are closed
-  chrome.tabs.onRemoved.addListener((tabId) => {
+  browserAPI.tabs.onRemoved.addListener((tabId) => {
     unregisterTab(tabId);
   });
   
