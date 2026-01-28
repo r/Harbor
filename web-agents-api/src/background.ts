@@ -880,6 +880,480 @@ async function handleSessionsTerminate(ctx: RequestContext): HandlerResponse {
 }
 
 // =============================================================================
+// Multi-Agent Handlers
+// =============================================================================
+
+// Track registered agents from this extension
+const registeredAgents = new Map<string, {
+  agentId: string;
+  origin: string;
+  tabId: number;
+  name: string;
+  capabilities: string[];
+}>();
+
+// Track pending invocations waiting for responses
+const pendingInvocations = new Map<string, {
+  resolve: (response: unknown) => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}>();
+
+/**
+ * Register an agent.
+ */
+async function handleAgentsRegister(ctx: RequestContext): HandlerResponse {
+  const options = ctx.payload as {
+    name: string;
+    description?: string;
+    capabilities?: string[];
+    tags?: string[];
+    acceptsInvocations?: boolean;
+    acceptsMessages?: boolean;
+  };
+
+  if (!options.name) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing name' },
+    };
+  }
+
+  try {
+    const result = await harborRequest<{
+      id: string;
+      name: string;
+      description?: string;
+      capabilities: string[];
+      tags: string[];
+      status: string;
+      origin: string;
+      acceptsInvocations: boolean;
+      acceptsMessages: boolean;
+      registeredAt: number;
+      lastActiveAt: number;
+    }>('agents.register', {
+      ...options,
+      origin: ctx.origin,
+      tabId: ctx.tabId,
+    });
+
+    // Track locally
+    if (ctx.tabId) {
+      registeredAgents.set(result.id, {
+        agentId: result.id,
+        origin: ctx.origin,
+        tabId: ctx.tabId,
+        name: result.name,
+        capabilities: result.capabilities,
+      });
+    }
+
+    return { id: ctx.id, ok: true, result };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Registration failed' },
+    };
+  }
+}
+
+/**
+ * Unregister an agent.
+ */
+async function handleAgentsUnregister(ctx: RequestContext): HandlerResponse {
+  const { agentId } = ctx.payload as { agentId: string };
+
+  if (!agentId) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing agentId' },
+    };
+  }
+
+  try {
+    await harborRequest('agents.unregister', { agentId, origin: ctx.origin });
+    registeredAgents.delete(agentId);
+    return { id: ctx.id, ok: true, result: null };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Unregistration failed' },
+    };
+  }
+}
+
+/**
+ * Get agent info.
+ */
+async function handleAgentsGetInfo(ctx: RequestContext): HandlerResponse {
+  const { agentId } = ctx.payload as { agentId: string };
+
+  if (!agentId) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing agentId' },
+    };
+  }
+
+  try {
+    const result = await harborRequest('agents.getInfo', { agentId, origin: ctx.origin });
+    return { id: ctx.id, ok: true, result };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_AGENT_NOT_FOUND', message: e instanceof Error ? e.message : 'Agent not found' },
+    };
+  }
+}
+
+/**
+ * Discover agents.
+ */
+async function handleAgentsDiscover(ctx: RequestContext): HandlerResponse {
+  const query = ctx.payload as {
+    name?: string;
+    capabilities?: string[];
+    tags?: string[];
+    includeSameOrigin?: boolean;
+    includeCrossOrigin?: boolean;
+  };
+
+  try {
+    const result = await harborRequest<{ agents: unknown[]; total: number }>('agents.discover', {
+      ...query,
+      origin: ctx.origin,
+    });
+    return { id: ctx.id, ok: true, result };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Discovery failed' },
+    };
+  }
+}
+
+/**
+ * List all agents.
+ */
+async function handleAgentsList(ctx: RequestContext): HandlerResponse {
+  try {
+    const result = await harborRequest<{ agents: unknown[] }>('agents.list', { origin: ctx.origin });
+    return { id: ctx.id, ok: true, result };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'List failed' },
+    };
+  }
+}
+
+/**
+ * Invoke an agent.
+ */
+async function handleAgentsInvoke(ctx: RequestContext): HandlerResponse {
+  const { agentId, request } = ctx.payload as {
+    agentId: string;
+    request: { task: string; input?: unknown; timeout?: number };
+  };
+
+  if (!agentId || !request) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing agentId or request' },
+    };
+  }
+
+  try {
+    const result = await harborRequest<{
+      success: boolean;
+      result?: unknown;
+      error?: { code: string; message: string };
+      executionTime?: number;
+    }>('agents.invoke', {
+      agentId,
+      request,
+      origin: ctx.origin,
+      tabId: ctx.tabId,
+    });
+
+    return { id: ctx.id, ok: true, result };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Invocation failed' },
+    };
+  }
+}
+
+/**
+ * Send a message to an agent.
+ */
+async function handleAgentsSend(ctx: RequestContext): HandlerResponse {
+  const { agentId, payload } = ctx.payload as { agentId: string; payload: unknown };
+
+  if (!agentId) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing agentId' },
+    };
+  }
+
+  try {
+    const result = await harborRequest<{ delivered: boolean }>('agents.send', {
+      agentId,
+      payload,
+      origin: ctx.origin,
+      tabId: ctx.tabId,
+    });
+
+    return { id: ctx.id, ok: true, result };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Send failed' },
+    };
+  }
+}
+
+/**
+ * Subscribe to events.
+ */
+async function handleAgentsSubscribe(ctx: RequestContext): HandlerResponse {
+  const { eventType } = ctx.payload as { eventType: string };
+
+  if (!eventType) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing eventType' },
+    };
+  }
+
+  try {
+    await harborRequest('agents.subscribe', {
+      eventType,
+      origin: ctx.origin,
+      tabId: ctx.tabId,
+    });
+
+    return { id: ctx.id, ok: true, result: null };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Subscribe failed' },
+    };
+  }
+}
+
+/**
+ * Unsubscribe from events.
+ */
+async function handleAgentsUnsubscribe(ctx: RequestContext): HandlerResponse {
+  const { eventType } = ctx.payload as { eventType: string };
+
+  if (!eventType) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing eventType' },
+    };
+  }
+
+  try {
+    await harborRequest('agents.unsubscribe', {
+      eventType,
+      origin: ctx.origin,
+      tabId: ctx.tabId,
+    });
+
+    return { id: ctx.id, ok: true, result: null };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Unsubscribe failed' },
+    };
+  }
+}
+
+/**
+ * Broadcast an event.
+ */
+async function handleAgentsBroadcast(ctx: RequestContext): HandlerResponse {
+  const { eventType, data } = ctx.payload as { eventType: string; data: unknown };
+
+  if (!eventType) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing eventType' },
+    };
+  }
+
+  try {
+    const result = await harborRequest<{ delivered: number }>('agents.broadcast', {
+      eventType,
+      data,
+      origin: ctx.origin,
+      tabId: ctx.tabId,
+    });
+
+    return { id: ctx.id, ok: true, result };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Broadcast failed' },
+    };
+  }
+}
+
+/**
+ * Execute a pipeline.
+ */
+async function handleAgentsPipeline(ctx: RequestContext): HandlerResponse {
+  const { config, initialInput } = ctx.payload as {
+    config: { steps: Array<{ agentId: string; task: string; inputTransform?: string; outputTransform?: string }> };
+    initialInput: unknown;
+  };
+
+  if (!config?.steps?.length) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing pipeline steps' },
+    };
+  }
+
+  try {
+    const result = await harborRequest<{
+      success: boolean;
+      result: unknown;
+      stepResults: unknown[];
+    }>('agents.orchestrate.pipeline', {
+      config,
+      initialInput,
+      origin: ctx.origin,
+    });
+
+    return { id: ctx.id, ok: true, result };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Pipeline failed' },
+    };
+  }
+}
+
+/**
+ * Execute parallel tasks.
+ */
+async function handleAgentsParallel(ctx: RequestContext): HandlerResponse {
+  const { config } = ctx.payload as {
+    config: {
+      tasks: Array<{ agentId: string; task: string; input?: unknown }>;
+      combineStrategy?: 'array' | 'merge' | 'first';
+    };
+  };
+
+  if (!config?.tasks?.length) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing parallel tasks' },
+    };
+  }
+
+  try {
+    const result = await harborRequest<{
+      success: boolean;
+      results: unknown[];
+      combined: unknown;
+    }>('agents.orchestrate.parallel', {
+      config,
+      origin: ctx.origin,
+    });
+
+    return { id: ctx.id, ok: true, result };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Parallel execution failed' },
+    };
+  }
+}
+
+/**
+ * Route to an agent.
+ */
+async function handleAgentsRoute(ctx: RequestContext): HandlerResponse {
+  const { config, input, task } = ctx.payload as {
+    config: {
+      routes: Array<{ condition: string; agentId: string }>;
+      defaultAgentId?: string;
+    };
+    input: unknown;
+    task: string;
+  };
+
+  if (!config?.routes?.length) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing routes' },
+    };
+  }
+
+  try {
+    const result = await harborRequest<{
+      success: boolean;
+      result?: unknown;
+      error?: { code: string; message: string };
+    }>('agents.orchestrate.route', {
+      config,
+      input,
+      task,
+      origin: ctx.origin,
+    });
+
+    return { id: ctx.id, ok: true, result };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Routing failed' },
+    };
+  }
+}
+
+// Clean up agents when tabs close
+chrome.tabs.onRemoved.addListener((tabId) => {
+  for (const [agentId, agent] of registeredAgents.entries()) {
+    if (agent.tabId === tabId) {
+      registeredAgents.delete(agentId);
+      // Notify Harbor of cleanup
+      harborRequest('agents.unregister', { agentId, origin: agent.origin }).catch(() => {});
+    }
+  }
+});
+
+// =============================================================================
 // Agent Run Handler (Agentic Loop)
 // =============================================================================
 
@@ -1947,6 +2421,71 @@ async function handleSpawnedTabGetHtml(ctx: RequestContext): HandlerResponse {
   }
 }
 
+/**
+ * Wait for a spawned tab to finish loading.
+ */
+async function handleSpawnedTabWaitForLoad(ctx: RequestContext): HandlerResponse {
+  if (!await hasPermission(ctx.origin, 'browser:tabs.create')) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_PERMISSION_DENIED', message: 'Permission browser:tabs.create required' },
+    };
+  }
+
+  const { tabId, timeout = 30000 } = ctx.payload as { tabId: number; timeout?: number };
+  
+  if (typeof tabId !== 'number') {
+    return { id: ctx.id, ok: false, error: { code: 'ERR_INVALID_REQUEST', message: 'Missing tabId parameter' } };
+  }
+
+  // Only allow waiting for tabs that this origin created
+  if (!isSpawnedTab(ctx.origin, tabId)) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_PERMISSION_DENIED', message: 'Can only wait for tabs created by this origin' },
+    };
+  }
+
+  try {
+    // Check if tab is already complete
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.status === 'complete') {
+      return { id: ctx.id, ok: true, result: undefined };
+    }
+
+    // Wait for the tab to finish loading
+    await new Promise<void>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener);
+        reject(new Error('Navigation timeout'));
+      }, timeout);
+
+      const listener = (
+        updatedTabId: number,
+        changeInfo: chrome.tabs.TabChangeInfo,
+      ) => {
+        if (updatedTabId === tabId && changeInfo.status === 'complete') {
+          clearTimeout(timeoutId);
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve();
+        }
+      };
+
+      chrome.tabs.onUpdated.addListener(listener);
+    });
+
+    return { id: ctx.id, ok: true, result: undefined };
+  } catch (e) {
+    return {
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Wait for load failed' },
+    };
+  }
+}
+
 // =============================================================================
 // Message Router
 // =============================================================================
@@ -2021,6 +2560,36 @@ async function routeMessage(ctx: RequestContext): HandlerResponse {
       return handleSpawnedTabReadability(ctx);
     case 'agent.browser.tab.getHtml':
       return handleSpawnedTabGetHtml(ctx);
+    case 'agent.browser.tab.waitForLoad':
+      return handleSpawnedTabWaitForLoad(ctx);
+
+    // Multi-agent operations
+    case 'agent.agents.register':
+      return handleAgentsRegister(ctx);
+    case 'agent.agents.unregister':
+      return handleAgentsUnregister(ctx);
+    case 'agent.agents.getInfo':
+      return handleAgentsGetInfo(ctx);
+    case 'agent.agents.discover':
+      return handleAgentsDiscover(ctx);
+    case 'agent.agents.list':
+      return handleAgentsList(ctx);
+    case 'agent.agents.invoke':
+      return handleAgentsInvoke(ctx);
+    case 'agent.agents.send':
+      return handleAgentsSend(ctx);
+    case 'agent.agents.subscribe':
+      return handleAgentsSubscribe(ctx);
+    case 'agent.agents.unsubscribe':
+      return handleAgentsUnsubscribe(ctx);
+    case 'agent.agents.broadcast':
+      return handleAgentsBroadcast(ctx);
+    case 'agent.agents.orchestrate.pipeline':
+      return handleAgentsPipeline(ctx);
+    case 'agent.agents.orchestrate.parallel':
+      return handleAgentsParallel(ctx);
+    case 'agent.agents.orchestrate.route':
+      return handleAgentsRoute(ctx);
 
     default:
       return {

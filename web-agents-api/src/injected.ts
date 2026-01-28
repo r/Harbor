@@ -3,7 +3,7 @@
  *
  * This script is injected into web pages to expose:
  * - window.ai - Text generation API (Chrome Prompt API compatible)
- * - window.agent - Tools, browser access, and autonomous agent capabilities
+ * - window.agent - Tools, browser access, and tool calling capabilities
  *
  * APIs are gated by feature flags configured in the Web Agents API sidebar.
  */
@@ -17,10 +17,10 @@ export {};
 
 interface FeatureFlags {
   textGeneration: boolean;
+  toolCalling: boolean;
   toolAccess: boolean;
   browserInteraction: boolean;
   browserControl: boolean;
-  autonomousAgents: boolean;
   multiAgent: boolean;
 }
 
@@ -28,10 +28,10 @@ interface FeatureFlags {
 function getFeatureFlags(): FeatureFlags {
   const defaults: FeatureFlags = {
     textGeneration: true,
+    toolCalling: false,
     toolAccess: true,
     browserInteraction: false,
     browserControl: false,
-    autonomousAgents: false,
     multiAgent: false,
   };
 
@@ -729,11 +729,409 @@ function createBrowserApi() {
           }> {
             return sendRequest('agent.browser.tab.getHtml', { tabId, selector });
           },
+
+          /**
+           * Wait for a tab to finish loading.
+           * @param tabId - The tab ID
+           * @param options - Optional timeout in milliseconds (default 30000)
+           */
+          async waitForLoad(tabId: number, options?: { timeout?: number }): Promise<void> {
+            return sendRequest('agent.browser.tab.waitForLoad', { tabId, ...options });
+          },
         })
       : {
           readability: featureDisabledAsync('browserControl'),
           getHtml: featureDisabledAsync('browserControl'),
+          waitForLoad: featureDisabledAsync('browserControl'),
         },
+  });
+}
+
+// =============================================================================
+// Multi-Agent Types (for injected script)
+// =============================================================================
+
+interface AgentRegisterOptions {
+  name: string;
+  description?: string;
+  capabilities?: string[];
+  tags?: string[];
+  acceptsInvocations?: boolean;
+  acceptsMessages?: boolean;
+}
+
+interface RegisteredAgent {
+  id: string;
+  name: string;
+  description?: string;
+  capabilities: string[];
+  tags: string[];
+  status: 'active' | 'suspended' | 'terminated';
+  origin: string;
+  acceptsInvocations: boolean;
+  acceptsMessages: boolean;
+  registeredAt: number;
+  lastActiveAt: number;
+}
+
+interface AgentSummary {
+  id: string;
+  name: string;
+  description?: string;
+  capabilities: string[];
+  tags: string[];
+  status: 'active' | 'suspended' | 'terminated';
+  sameOrigin: boolean;
+  isRemote: boolean;
+}
+
+interface AgentDiscoveryQuery {
+  name?: string;
+  capabilities?: string[];
+  tags?: string[];
+  includeSameOrigin?: boolean;
+  includeCrossOrigin?: boolean;
+}
+
+interface AgentInvocationRequest {
+  task: string;
+  input?: unknown;
+  timeout?: number;
+}
+
+interface AgentInvocationResponse {
+  success: boolean;
+  result?: unknown;
+  error?: { code: string; message: string };
+  executionTime?: number;
+}
+
+interface AgentMessage {
+  id: string;
+  from: string;
+  to: string;
+  type: 'request' | 'response' | 'event' | 'error';
+  payload: unknown;
+  correlationId?: string;
+  timestamp: number;
+}
+
+interface PipelineStep {
+  agentId: string;
+  task: string;
+  inputTransform?: string;
+  outputTransform?: string;
+}
+
+interface ParallelTask {
+  agentId: string;
+  task: string;
+  input?: unknown;
+}
+
+// Store for message and invocation handlers
+const agentMessageHandlers: Array<(message: AgentMessage) => void> = [];
+const agentInvocationHandlers: Array<(request: AgentInvocationRequest & { from: string }) => Promise<unknown>> = [];
+const agentEventSubscriptions = new Map<string, Array<(event: { type: string; data: unknown; source: string }) => void>>();
+
+// Current agent ID (set after registration)
+let currentAgentId: string | null = null;
+
+/**
+ * Create the multi-agent API object.
+ */
+function createMultiAgentApi() {
+  return Object.freeze({
+    /**
+     * Register this page as an agent.
+     * 
+     * @example
+     * const agent = await window.agent.agents.register({
+     *   name: 'Researcher',
+     *   capabilities: ['search', 'summarize'],
+     *   acceptsInvocations: true,
+     * });
+     */
+    async register(options: AgentRegisterOptions): Promise<RegisteredAgent> {
+      const result = await sendRequest<RegisteredAgent>('agent.agents.register', options);
+      currentAgentId = result.id;
+      
+      // Set up event listener for incoming messages/invocations
+      setupAgentEventListener();
+      
+      return result;
+    },
+
+    /**
+     * Unregister this agent.
+     */
+    async unregister(): Promise<void> {
+      if (!currentAgentId) {
+        throw new Error('Agent not registered');
+      }
+      await sendRequest('agent.agents.unregister', { agentId: currentAgentId });
+      currentAgentId = null;
+    },
+
+    /**
+     * Get information about an agent by ID.
+     */
+    async getInfo(agentId: string): Promise<RegisteredAgent | null> {
+      return sendRequest<RegisteredAgent | null>('agent.agents.getInfo', { agentId });
+    },
+
+    /**
+     * Discover agents matching a query.
+     * 
+     * @example
+     * const result = await window.agent.agents.discover({
+     *   capabilities: ['search'],
+     *   includeSameOrigin: true,
+     * });
+     * console.log('Found agents:', result.agents);
+     */
+    async discover(query: AgentDiscoveryQuery = {}): Promise<{ agents: AgentSummary[]; total: number }> {
+      return sendRequest('agent.agents.discover', query);
+    },
+
+    /**
+     * List all registered agents visible to this origin.
+     */
+    async list(): Promise<AgentSummary[]> {
+      const result = await sendRequest<{ agents: AgentSummary[] }>('agent.agents.list');
+      return result.agents;
+    },
+
+    /**
+     * Invoke another agent to perform a task.
+     * 
+     * @example
+     * const response = await window.agent.agents.invoke(researcherId, {
+     *   task: 'research',
+     *   input: { topic: 'AI safety' },
+     *   timeout: 30000,
+     * });
+     */
+    async invoke(agentId: string, request: AgentInvocationRequest): Promise<AgentInvocationResponse> {
+      return sendRequest('agent.agents.invoke', { agentId, request });
+    },
+
+    /**
+     * Send a message to another agent.
+     */
+    async send(agentId: string, payload: unknown): Promise<{ delivered: boolean }> {
+      return sendRequest('agent.agents.send', { agentId, payload });
+    },
+
+    /**
+     * Register a handler for incoming messages.
+     * 
+     * @example
+     * window.agent.agents.onMessage((message) => {
+     *   console.log('Received from', message.from, ':', message.payload);
+     * });
+     */
+    onMessage(handler: (message: AgentMessage) => void): () => void {
+      agentMessageHandlers.push(handler);
+      return () => {
+        const index = agentMessageHandlers.indexOf(handler);
+        if (index >= 0) agentMessageHandlers.splice(index, 1);
+      };
+    },
+
+    /**
+     * Register a handler for incoming invocations.
+     * 
+     * @example
+     * window.agent.agents.onInvoke(async (request) => {
+     *   if (request.task === 'research') {
+     *     return { findings: ['...'] };
+     *   }
+     *   throw new Error('Unknown task');
+     * });
+     */
+    onInvoke(handler: (request: AgentInvocationRequest & { from: string }) => Promise<unknown>): () => void {
+      agentInvocationHandlers.push(handler);
+      return () => {
+        const index = agentInvocationHandlers.indexOf(handler);
+        if (index >= 0) agentInvocationHandlers.splice(index, 1);
+      };
+    },
+
+    /**
+     * Subscribe to events of a specific type.
+     */
+    async subscribe(eventType: string, handler: (event: { type: string; data: unknown; source: string }) => void): Promise<void> {
+      if (!agentEventSubscriptions.has(eventType)) {
+        agentEventSubscriptions.set(eventType, []);
+        // Tell background we're subscribing to this event type
+        await sendRequest('agent.agents.subscribe', { eventType });
+      }
+      agentEventSubscriptions.get(eventType)!.push(handler);
+    },
+
+    /**
+     * Unsubscribe from events of a specific type.
+     */
+    async unsubscribe(eventType: string, handler?: (event: { type: string; data: unknown; source: string }) => void): Promise<void> {
+      const handlers = agentEventSubscriptions.get(eventType);
+      if (!handlers) return;
+      
+      if (handler) {
+        const index = handlers.indexOf(handler);
+        if (index >= 0) handlers.splice(index, 1);
+      } else {
+        handlers.length = 0;
+      }
+      
+      if (handlers.length === 0) {
+        agentEventSubscriptions.delete(eventType);
+        await sendRequest('agent.agents.unsubscribe', { eventType });
+      }
+    },
+
+    /**
+     * Broadcast an event to all subscribed agents.
+     */
+    async broadcast(eventType: string, data: unknown): Promise<{ delivered: number }> {
+      return sendRequest('agent.agents.broadcast', { eventType, data });
+    },
+
+    /**
+     * Orchestration patterns for multi-agent workflows.
+     */
+    orchestrate: Object.freeze({
+      /**
+       * Execute a pipeline of agents sequentially.
+       * Each step's output becomes the next step's input.
+       * 
+       * @example
+       * const result = await window.agent.agents.orchestrate.pipeline({
+       *   steps: [
+       *     { agentId: researcherId, task: 'research' },
+       *     { agentId: writerId, task: 'write' },
+       *   ],
+       * }, { topic: 'AI' });
+       */
+      async pipeline(
+        config: { steps: PipelineStep[] },
+        initialInput: unknown,
+      ): Promise<{ success: boolean; result: unknown; stepResults: unknown[] }> {
+        return sendRequest('agent.agents.orchestrate.pipeline', { config, initialInput });
+      },
+
+      /**
+       * Execute multiple agents in parallel.
+       * 
+       * @example
+       * const result = await window.agent.agents.orchestrate.parallel({
+       *   tasks: [
+       *     { agentId: agent1, task: 'analyze', input: data },
+       *     { agentId: agent2, task: 'validate', input: data },
+       *   ],
+       *   combineStrategy: 'array',
+       * });
+       */
+      async parallel(
+        config: { tasks: ParallelTask[]; combineStrategy?: 'array' | 'merge' | 'first' },
+      ): Promise<{ success: boolean; results: unknown[]; combined: unknown }> {
+        return sendRequest('agent.agents.orchestrate.parallel', { config });
+      },
+
+      /**
+       * Route input to an agent based on conditions.
+       * 
+       * @example
+       * const result = await window.agent.agents.orchestrate.route({
+       *   routes: [
+       *     { condition: 'type:technical', agentId: techAgent },
+       *     { condition: 'type:creative', agentId: creativeAgent },
+       *   ],
+       *   defaultAgentId: generalAgent,
+       * }, input, 'process');
+       */
+      async route(
+        config: { routes: Array<{ condition: string; agentId: string }>; defaultAgentId?: string },
+        input: unknown,
+        task: string,
+      ): Promise<AgentInvocationResponse> {
+        return sendRequest('agent.agents.orchestrate.route', { config, input, task });
+      },
+    }),
+  });
+}
+
+/**
+ * Set up listener for agent events (messages, invocations, broadcasts).
+ */
+function setupAgentEventListener() {
+  // Listen for agent events from the content script
+  window.addEventListener('message', async (event: MessageEvent) => {
+    if (event.source !== window) return;
+    
+    const data = event.data as {
+      channel?: string;
+      agentEvent?: {
+        type: 'message' | 'invocation' | 'broadcast';
+        message?: AgentMessage;
+        invocation?: AgentInvocationRequest & { from: string; invocationId: string };
+        broadcast?: { type: string; data: unknown; source: string };
+      };
+    };
+    
+    if (data?.channel !== 'web_agents_api' || !data.agentEvent) return;
+    
+    const { type, message, invocation, broadcast } = data.agentEvent;
+    
+    if (type === 'message' && message) {
+      // Dispatch to message handlers
+      for (const handler of agentMessageHandlers) {
+        try {
+          handler(message);
+        } catch (e) {
+          console.error('[Web Agents API] Message handler error:', e);
+        }
+      }
+    } else if (type === 'invocation' && invocation) {
+      // Dispatch to invocation handlers and send response
+      let result: unknown;
+      let error: { code: string; message: string } | undefined;
+      
+      for (const handler of agentInvocationHandlers) {
+        try {
+          result = await handler(invocation);
+          break; // Use first handler's result
+        } catch (e) {
+          error = {
+            code: 'ERR_HANDLER_FAILED',
+            message: e instanceof Error ? e.message : 'Handler failed',
+          };
+        }
+      }
+      
+      // Send response back
+      window.postMessage({
+        channel: 'web_agents_api',
+        agentInvocationResponse: {
+          invocationId: invocation.invocationId,
+          success: !error,
+          result,
+          error,
+        },
+      }, '*');
+    } else if (type === 'broadcast' && broadcast) {
+      // Dispatch to event subscribers
+      const handlers = agentEventSubscriptions.get(broadcast.type);
+      if (handlers) {
+        for (const handler of handlers) {
+          try {
+            handler(broadcast);
+          } catch (e) {
+            console.error('[Web Agents API] Event handler error:', e);
+          }
+        }
+      }
+    }
   });
 }
 
@@ -789,7 +1187,7 @@ const agentApi = Object.freeze({
    *   }
    * }
    */
-  run: FEATURE_FLAGS.autonomousAgents
+  run: FEATURE_FLAGS.toolCalling
     ? function(options: {
         task: string;
         maxToolCalls?: number;
@@ -857,7 +1255,7 @@ const agentApi = Object.freeze({
           },
         };
       }
-    : featureDisabled('autonomousAgents'),
+    : featureDisabled('toolCalling'),
 
   // Session management API (explicit sessions)
   sessions: Object.freeze({
@@ -909,6 +1307,28 @@ const agentApi = Object.freeze({
       return result.terminated;
     },
   }),
+
+  // Multi-agent API (Extension 3)
+  agents: FEATURE_FLAGS.multiAgent
+    ? createMultiAgentApi()
+    : {
+        register: featureDisabledAsync('multiAgent'),
+        unregister: featureDisabledAsync('multiAgent'),
+        getInfo: featureDisabledAsync('multiAgent'),
+        discover: featureDisabledAsync('multiAgent'),
+        list: featureDisabledAsync('multiAgent'),
+        invoke: featureDisabledAsync('multiAgent'),
+        send: featureDisabledAsync('multiAgent'),
+        onMessage: featureDisabled('multiAgent'),
+        onInvoke: featureDisabled('multiAgent'),
+        subscribe: featureDisabledAsync('multiAgent'),
+        unsubscribe: featureDisabledAsync('multiAgent'),
+        orchestrate: {
+          pipeline: featureDisabledAsync('multiAgent'),
+          parallel: featureDisabledAsync('multiAgent'),
+          route: featureDisabledAsync('multiAgent'),
+        },
+      },
 });
 
 // =============================================================================
@@ -970,10 +1390,10 @@ try {
         chromeAiDetected,
         features: {
           textGeneration: FEATURE_FLAGS.textGeneration,
+          toolCalling: FEATURE_FLAGS.toolCalling,
           toolAccess: FEATURE_FLAGS.toolAccess,
           browserInteraction: FEATURE_FLAGS.browserInteraction,
           browserControl: FEATURE_FLAGS.browserControl,
-          autonomousAgents: FEATURE_FLAGS.autonomousAgents,
           multiAgent: FEATURE_FLAGS.multiAgent,
         },
       },

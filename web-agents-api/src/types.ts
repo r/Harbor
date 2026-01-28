@@ -320,4 +320,198 @@ export const ErrorCodes = {
   HARBOR_NOT_FOUND: 'ERR_HARBOR_NOT_FOUND',
   TIMEOUT: 'ERR_TIMEOUT',
   INTERNAL: 'ERR_INTERNAL',
+  AGENT_NOT_FOUND: 'ERR_AGENT_NOT_FOUND',
+  AGENT_NOT_ACCEPTING: 'ERR_AGENT_NOT_ACCEPTING',
 } as const;
+
+// =============================================================================
+// Multi-Agent Types
+// =============================================================================
+
+/**
+ * Unique identifier for an agent.
+ */
+export type AgentId = string;
+
+/**
+ * Agent status.
+ */
+export type AgentStatus = 'active' | 'suspended' | 'terminated';
+
+/**
+ * Agent type - where the agent runs.
+ */
+export type AgentType = 'page' | 'worker' | 'remote';
+
+/**
+ * Options for registering an agent.
+ */
+export interface AgentRegisterOptions {
+  /** Human-readable name for the agent */
+  name: string;
+  /** Description of what the agent does */
+  description?: string;
+  /** List of capabilities the agent provides */
+  capabilities?: string[];
+  /** Tags for discovery */
+  tags?: string[];
+  /** Whether the agent accepts invocations */
+  acceptsInvocations?: boolean;
+  /** Whether the agent accepts direct messages */
+  acceptsMessages?: boolean;
+}
+
+/**
+ * Registered agent information.
+ */
+export interface RegisteredAgent {
+  id: AgentId;
+  name: string;
+  description?: string;
+  capabilities: string[];
+  tags: string[];
+  status: AgentStatus;
+  type: AgentType;
+  origin: string;
+  tabId?: number;
+  acceptsInvocations: boolean;
+  acceptsMessages: boolean;
+  registeredAt: number;
+  lastActiveAt: number;
+}
+
+/**
+ * Summary of an agent for discovery (less detailed).
+ */
+export interface AgentSummary {
+  id: AgentId;
+  name: string;
+  description?: string;
+  capabilities: string[];
+  tags: string[];
+  status: AgentStatus;
+  sameOrigin: boolean;
+  isRemote: boolean;
+}
+
+/**
+ * Query options for discovering agents.
+ */
+export interface AgentDiscoveryQuery {
+  /** Filter by name (substring match) */
+  name?: string;
+  /** Filter by capabilities (must have all) */
+  capabilities?: string[];
+  /** Filter by tags (must have any) */
+  tags?: string[];
+  /** Include same-origin agents (default: true) */
+  includeSameOrigin?: boolean;
+  /** Include cross-origin agents (default: false, requires permission) */
+  includeCrossOrigin?: boolean;
+}
+
+/**
+ * Result of agent discovery.
+ */
+export interface AgentDiscoveryResult {
+  agents: AgentSummary[];
+  total: number;
+}
+
+/**
+ * Request to invoke an agent.
+ */
+export interface AgentInvocationRequest {
+  /** The task or action to perform */
+  task: string;
+  /** Input data for the task */
+  input?: unknown;
+  /** Timeout in milliseconds (default: 30000) */
+  timeout?: number;
+}
+
+/**
+ * Response from invoking an agent.
+ */
+export interface AgentInvocationResponse {
+  success: boolean;
+  result?: unknown;
+  error?: {
+    code: string;
+    message: string;
+  };
+  executionTime?: number;
+}
+
+/**
+ * Message sent between agents.
+ */
+export interface AgentMessage {
+  id: string;
+  from: AgentId;
+  to: AgentId;
+  type: 'request' | 'response' | 'event' | 'error';
+  payload: unknown;
+  correlationId?: string;
+  timestamp: number;
+}
+
+/**
+ * Event broadcast by an agent.
+ */
+export interface AgentEvent {
+  type: string;
+  data: unknown;
+  source: AgentId;
+  timestamp: number;
+}
+
+/**
+ * Pipeline step configuration.
+ */
+export interface PipelineStep {
+  agentId: AgentId;
+  task: string;
+  inputTransform?: string;
+  outputTransform?: string;
+}
+
+/**
+ * Pipeline configuration.
+ */
+export interface PipelineConfig {
+  steps: PipelineStep[];
+}
+
+/**
+ * Parallel task configuration.
+ */
+export interface ParallelTask {
+  agentId: AgentId;
+  task: string;
+  input?: unknown;
+}
+
+/**
+ * Parallel execution configuration.
+ */
+export interface ParallelConfig {
+  tasks: ParallelTask[];
+  combineStrategy?: 'array' | 'merge' | 'first';
+}
+
+/**
+ * Route configuration for routing.
+ */
+export interface RouteConfig {
+  condition: string;
+  agentId: AgentId;
+}
+
+/**
+ * Router configuration.
+ */
+export interface RouterConfig {
+  routes: RouteConfig[];
+  defaultAgentId?: AgentId;
+}

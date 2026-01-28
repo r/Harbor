@@ -27,6 +27,9 @@ const activeStreams = new Map<string, {
   sendEvent: (event: TransportStreamEvent) => void;
 }>();
 
+// Track if agent event forwarding is set up
+let agentEventForwardingSetup = false;
+
 /**
  * Get or create connection to background script.
  */
@@ -85,19 +88,19 @@ function getBackgroundPort(): RuntimePort {
 // Feature flags type
 interface FeatureFlags {
   textGeneration: boolean;
+  toolCalling: boolean;
   toolAccess: boolean;
   browserInteraction: boolean;
   browserControl: boolean;
-  autonomousAgents: boolean;
   multiAgent: boolean;
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
   textGeneration: true,
+  toolCalling: false,
   toolAccess: true,
   browserInteraction: false,
   browserControl: false,
-  autonomousAgents: false,
   multiAgent: false,
 };
 
@@ -237,5 +240,50 @@ window.addEventListener('message', async (event: MessageEvent) => {
   });
 });
 
+/**
+ * Set up forwarding of agent events from background to the page.
+ * This enables the multi-agent messaging system.
+ */
+function setupAgentEventForwarding() {
+  if (agentEventForwardingSetup) return;
+  agentEventForwardingSetup = true;
+
+  // Listen for agent events from background
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === 'agentEvent') {
+      // Forward to the page
+      window.postMessage({
+        channel: CHANNEL,
+        agentEvent: message.event,
+      }, '*');
+    }
+    return false;
+  });
+}
+
+// Listen for agent invocation responses from the page
+window.addEventListener('message', (event: MessageEvent) => {
+  if (event.source !== window) return;
+
+  const data = event.data as {
+    channel?: string;
+    agentInvocationResponse?: {
+      invocationId: string;
+      success: boolean;
+      result?: unknown;
+      error?: { code: string; message: string };
+    };
+  };
+
+  if (data?.channel !== CHANNEL || !data.agentInvocationResponse) return;
+
+  // Forward to background
+  chrome.runtime.sendMessage({
+    type: 'agentInvocationResponse',
+    response: data.agentInvocationResponse,
+  });
+});
+
 // Initialize
 injectAgentsAPI().catch(console.error);
+setupAgentEventForwarding();
