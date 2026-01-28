@@ -7,7 +7,11 @@
   "scripts": {
     "build": "node build.mjs",
     "build:chrome": "node build.mjs --chrome",
-    "dev": "node build.mjs --watch"
+    "build:safari": "node build.mjs --safari",
+    "build:all": "npm run build && npm run build:chrome && npm run build:safari",
+    "dev": "node build.mjs --watch",
+    "dev:chrome": "node build.mjs --watch --chrome",
+    "dev:safari": "node build.mjs --watch --safari"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.35",

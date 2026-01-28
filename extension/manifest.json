@@ -33,6 +33,11 @@
       "matches": ["<all_urls>"],
       "js": ["dist/discovery.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/agents/content-script.js"],
+      "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
@@ -42,6 +47,7 @@
         "dist/design-tokens.css",
         "dist/demo-bootstrap.js",
         "dist/js-runtime/builtin-echo-worker.js",
+        "dist/agents/injected.js",
         "demo/*",
         "assets/*",
         "bundled/*"

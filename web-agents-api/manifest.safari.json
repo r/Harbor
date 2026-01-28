@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "Web Agents API",
+  "version": "0.1.0",
+  "description": "Exposes AI capabilities to web pages. Requires Harbor extension.",
+  "browser_specific_settings": {
+    "safari": {
+      "strict_min_version": "16.0"
+    }
+  },
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "https://*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content-script.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "dist/injected.js",
+        "dist/permission-prompt.html",
+        "dist/permission-prompt.js",
+        "dist/design-tokens.css"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "assets/icon.svg",
+    "32": "assets/icon.svg",
+    "48": "assets/icon.svg",
+    "128": "assets/icon.svg"
+  },
+  "action": {
+    "default_title": "Web Agents API",
+    "default_popup": "dist/sidebar.html",
+    "default_icon": {
+      "16": "assets/icon.svg",
+      "32": "assets/icon.svg",
+      "48": "assets/icon.svg"
+    }
+  }
+}

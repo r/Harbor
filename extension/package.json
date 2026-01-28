@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "dev": "node build.mjs --watch"
+    "build:chrome": "node build.mjs --chrome",
+    "build:safari": "node build.mjs --safari",
+    "dev": "node build.mjs --watch",
+    "dev:chrome": "node build.mjs --watch --chrome",
+    "dev:safari": "node build.mjs --watch --safari"
   },
   "dependencies": {
     "@wasmer/wasi": "latest",

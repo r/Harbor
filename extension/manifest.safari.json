@@ -3,8 +3,10 @@
   "name": "Harbor",
   "version": "0.1.0",
   "description": "Infrastructure extension for AI and MCP capabilities. Provides LLM access and tool execution for other extensions.",
-  "externally_connectable": {
-    "ids": ["*"]
+  "browser_specific_settings": {
+    "safari": {
+      "strict_min_version": "16.0"
+    }
   },
   "background": {
     "service_worker": "dist/background.js",
