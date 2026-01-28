@@ -9,8 +9,11 @@
  * **Text Generation (textGeneration):**
  * - window.ai - LLM prompts and text sessions
  * 
+ * **Tool Calling (toolCalling):**
+ * - agent.run() - LLM-driven tool calling loops
+ * 
  * **Tool Access (toolAccess):**
- * - agent.tools.list() / agent.tools.call() - MCP tool access
+ * - agent.tools.list() / agent.tools.call() - Manual MCP tool access
  * 
  * **Browser Interaction (browserInteraction):**
  * - agent.browser.activeTab.click/fill/scroll/select
@@ -19,9 +22,6 @@
  * **Browser Control (browserControl):**
  * - agent.browser.navigate/tabs/fetch
  * - Multi-tab control and web fetch
- * 
- * **Autonomous Agents (autonomousAgents):**
- * - agent.run() - Automated tool calling loops
  * 
  * **Multi-Agent (multiAgent):**
  * - agent.agents.* - Agent-to-agent communication
@@ -37,7 +37,14 @@ export interface FeatureFlags {
   textGeneration: boolean;
 
   /**
-   * Enable MCP tool access (agent.tools.*).
+   * Enable tool calling APIs (agent.run).
+   * LLM-driven tool calling loops.
+   * Default: false
+   */
+  toolCalling: boolean;
+
+  /**
+   * Enable manual MCP tool access (agent.tools.*).
    * Default: true
    */
   toolAccess: boolean;
@@ -57,13 +64,6 @@ export interface FeatureFlags {
   browserControl: boolean;
 
   /**
-   * Enable autonomous agent APIs (agent.run).
-   * Automated tool calling with LLM.
-   * Default: false
-   */
-  autonomousAgents: boolean;
-
-  /**
    * Enable multi-agent APIs (agent.agents.*).
    * Agent-to-agent communication and orchestration.
    * Default: false
@@ -73,10 +73,10 @@ export interface FeatureFlags {
 
 export const DEFAULT_FLAGS: FeatureFlags = {
   textGeneration: true,
+  toolCalling: false,
   toolAccess: true,
   browserInteraction: false,
   browserControl: false,
-  autonomousAgents: false,
   multiAgent: false,
 };
 

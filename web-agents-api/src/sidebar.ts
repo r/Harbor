@@ -12,10 +12,10 @@ export {};
 
 interface FeatureFlags {
   textGeneration: boolean;
+  toolCalling: boolean;
   toolAccess: boolean;
   browserInteraction: boolean;
   browserControl: boolean;
-  autonomousAgents: boolean;
   multiAgent: boolean;
 }
 
@@ -44,10 +44,10 @@ const currentSitePermissions = document.getElementById('current-site-permissions
 
 // API toggles
 const flagTextGeneration = document.getElementById('flag-textGeneration') as HTMLInputElement;
+const flagToolCalling = document.getElementById('flag-toolCalling') as HTMLInputElement;
 const flagToolAccess = document.getElementById('flag-toolAccess') as HTMLInputElement;
 const flagBrowserInteraction = document.getElementById('flag-browserInteraction') as HTMLInputElement;
 const flagBrowserControl = document.getElementById('flag-browserControl') as HTMLInputElement;
-const flagAutonomousAgents = document.getElementById('flag-autonomousAgents') as HTMLInputElement;
 const flagMultiAgent = document.getElementById('flag-multiAgent') as HTMLInputElement;
 const featureFlagReloadHint = document.getElementById('feature-flag-reload-hint') as HTMLDivElement;
 
@@ -172,10 +172,10 @@ async function checkHarborConnection(): Promise<void> {
 
 const DEFAULT_FLAGS: FeatureFlags = {
   textGeneration: true,
+  toolCalling: false,
   toolAccess: true,
   browserInteraction: false,
   browserControl: false,
-  autonomousAgents: false,
   multiAgent: false,
 };
 
@@ -194,20 +194,20 @@ async function initFeatureFlags(): Promise<void> {
   const flags = await loadFeatureFlags();
   
   flagTextGeneration.checked = flags.textGeneration;
+  flagToolCalling.checked = flags.toolCalling;
   flagToolAccess.checked = flags.toolAccess;
   flagBrowserInteraction.checked = flags.browserInteraction;
   flagBrowserControl.checked = flags.browserControl;
-  flagAutonomousAgents.checked = flags.autonomousAgents;
   flagMultiAgent.checked = flags.multiAgent;
 }
 
 function setupFeatureFlagListeners(): void {
   const inputs = [
     { el: flagTextGeneration, key: 'textGeneration' },
+    { el: flagToolCalling, key: 'toolCalling' },
     { el: flagToolAccess, key: 'toolAccess' },
     { el: flagBrowserInteraction, key: 'browserInteraction' },
     { el: flagBrowserControl, key: 'browserControl' },
-    { el: flagAutonomousAgents, key: 'autonomousAgents' },
     { el: flagMultiAgent, key: 'multiAgent' },
   ];
 

@@ -511,8 +511,18 @@
         </div>
         <div class="feature-flag-item">
           <div class="feature-flag-info">
+            <div class="feature-flag-name">Tool Calling</div>
+            <div class="feature-flag-desc">agent.run — LLM tool loops</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-toolCalling" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
             <div class="feature-flag-name">Tool Access</div>
-            <div class="feature-flag-desc">agent.tools — MCP tools</div>
+            <div class="feature-flag-desc">agent.tools — manual MCP tools</div>
           </div>
           <label class="toggle-switch">
             <input type="checkbox" id="flag-toolAccess" checked />
@@ -536,16 +546,6 @@
           </div>
           <label class="toggle-switch">
             <input type="checkbox" id="flag-browserControl" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="feature-flag-item">
-          <div class="feature-flag-info">
-            <div class="feature-flag-name">Autonomous Agents</div>
-            <div class="feature-flag-desc">agent.run — auto tool loops</div>
-          </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="flag-autonomousAgents" />
             <span class="toggle-slider"></span>
           </label>
         </div>
