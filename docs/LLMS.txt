@@ -1,210 +1,251 @@
-# Web Agent API - AI Agent Reference
+# Harbor Web Agents API - Reference for AI Coding Assistants
 
-> This document is optimized for AI coding assistants. For human-readable documentation, see DEVELOPER_GUIDE.md, WEB_AGENTS_API.md, and JS_AI_PROVIDER_API.md.
+> **WHAT THIS IS**: A compact, token-efficient reference for Claude, Cursor, Copilot, or any AI assistant building web apps with the Web Agents API. This document is designed to give you everything you need to write working code quickly.
+>
+> **HUMAN DOCS**: For detailed explanations and examples, see WEB_AGENTS_API.md, JS_AI_PROVIDER_API.md, and DEVELOPER_GUIDE.md.
 
-The Web Agent API is a proposed specification for AI agent capabilities in web pages. Harbor is an implementation (Firefox extension + Node.js bridge).
+---
 
-## Key Concepts
+## TL;DR - Copy This to Start
 
-1. Web Agent API exposes `window.ai` and `window.agent` to web pages
-2. All API calls require user permission (per-origin)
-3. MCP tools are namespaced as `serverId/toolName`
-4. Harbor implements this via extension + native messaging bridge
-5. The bridge manages MCP servers, LLM providers, and chat orchestration
-6. APIs are gated by feature flags (see web-agents-api/src/policy/feature-flags.ts)
+```javascript
+// 1. Check availability
+if (!window.agent) throw new Error('Web Agents API not available');
 
-## Feature Flags (Web Agents API Extension)
-
-| Flag | Default | APIs Enabled |
-|------|---------|--------------|
-| textGeneration | ON | window.ai.* |
-| toolAccess | ON | agent.tools.list/call |
-| toolCalling | OFF | agent.run() |
-| browserInteraction | OFF | agent.browser.activeTab.click/fill/scroll |
-| browserControl | OFF | agent.browser.navigate/tabs/fetch |
-| multiAgent | OFF | agent.agents.* |
-
-When disabled, APIs throw ERR_FEATURE_DISABLED.
-
-## Quick Start
-
-```js
-// Check availability
-if (window.agent) { /* Web Agent API available */ }
-
-// Request permissions (required before any API use)
-await window.agent.requestPermissions({
+// 2. Request permissions (REQUIRED before any API use)
+const { granted } = await window.agent.requestPermissions({
   scopes: ['model:prompt', 'model:tools', 'mcp:tools.list', 'mcp:tools.call'],
-  reason: 'Why your app needs AI'
+  reason: 'Enable AI features'
+});
+if (!granted) throw new Error('Permissions denied');
+
+// 3. Use text generation
+const session = await window.ai.createTextSession({ systemPrompt: 'Be helpful.' });
+const response = await session.prompt('Hello!');
+session.destroy();
+
+// 4. Or run an autonomous agent
+for await (const event of window.agent.run({ task: 'Search for AI news' })) {
+  if (event.type === 'final') console.log(event.output);
+}
+```
+
+---
+
+## Global Objects
+
+The API exposes two globals to every web page:
+
+| Object | Purpose |
+|--------|---------|
+| `window.ai` | Text generation (Chrome Prompt API compatible) |
+| `window.agent` | Tools, browser control, sessions, multi-agent |
+
+Harbor also exposes `window.harbor.ai` and `window.harbor.agent` which are always available regardless of Chrome AI presence.
+
+---
+
+## Detection
+
+```javascript
+// Basic check
+if (window.agent && window.ai) { /* ready */ }
+
+// Wait for ready event (recommended)
+window.addEventListener('agent-ready', (e) => {
+  console.log('Version:', e.detail.version);
+  console.log('Features:', e.detail.features);
 });
 ```
 
-## Permissions
+---
 
-### Permission Flow
-1. Page calls `agent.requestPermissions({ scopes, reason, tools })`
-2. Prompt popup shows: origin, reason, scope list (with risk badges), tool checkboxes
-3. User chooses "This time only" (10min TTL) or "Always allow" (persistent)
-4. User clicks Allow/Deny → grants stored in extension storage keyed by origin
-5. All API calls check permissions before executing
+## Permissions (MUST REQUEST FIRST)
 
-### Scopes
-| Scope | Risk | Description |
-|-------|------|-------------|
-| model:prompt | Low | Text generation |
-| model:tools | Medium | AI with tool calling |
-| model:list | Low | List providers/models |
-| mcp:tools.list | Low | List MCP tools |
-| mcp:tools.call | Medium | Execute MCP tools |
-| mcp:servers.register | Medium | Register BYOC servers |
-| browser:activeTab.read | Medium | Read page content |
-| browser:activeTab.interact | High | Click/fill/scroll |
-| browser:activeTab.screenshot | Medium | Capture screenshots |
-| browser:tabs.read | Medium | List tabs |
-| browser:tabs.create | High | Create/control tabs |
-| chat:open | Low | Open chat sidebar |
-| web:fetch | High | CORS-bypassing fetch |
+All APIs require permission. Request once per origin.
 
-### Grants
-- `granted-always` → Persistent until revoked
-- `granted-once` → 10 minutes or until tab closes
-- `denied` → User explicitly rejected (persistent)
-- `not-granted` → Never requested or expired
+### Request Permissions
 
-### Tool Allowlisting
-```js
-await agent.requestPermissions({
-  scopes: ['mcp:tools.call'],
-  tools: ['time-wasm/time.now', 'memory/save'],  // Shows checkboxes in prompt
-  reason: 'To check time and save notes'
+```javascript
+const result = await window.agent.requestPermissions({
+  scopes: ['model:prompt', 'mcp:tools.call'],  // Required scopes
+  reason: 'To help with your task',             // Shown to user
+  tools: ['time-wasm/time.now']                 // Optional: allowlist specific tools
 });
-// User can uncheck tools they don't want to allow
+
+if (result.granted) {
+  // All scopes granted
+} else {
+  // Check individual: result.scopes['model:prompt'] === 'granted-always'
+}
 ```
 
-### Check Permissions
-```js
-const { scopes, allowedTools } = await agent.permissions.list();
-if (scopes['model:prompt'] === 'granted-always') { /* ... */ }
+### Permission Scopes
+
+| Scope | Risk | What It Enables |
+|-------|------|-----------------|
+| `model:prompt` | Low | `ai.createTextSession()`, `session.prompt()` |
+| `model:tools` | Medium | `agent.run()` autonomous agent |
+| `model:list` | Low | `ai.providers.list()` |
+| `mcp:tools.list` | Low | `agent.tools.list()` |
+| `mcp:tools.call` | Medium | `agent.tools.call()` |
+| `mcp:servers.register` | Medium | `agent.mcp.register()` BYOC |
+| `browser:activeTab.read` | Medium | `agent.browser.activeTab.readability()` |
+| `browser:activeTab.interact` | High | Click, fill, scroll on active tab |
+| `browser:activeTab.screenshot` | Medium | Screenshots |
+| `browser:tabs.read` | Medium | `agent.browser.tabs.list()` |
+| `browser:tabs.create` | High | Create/control new tabs |
+| `web:fetch` | High | CORS-bypassing fetch |
+| `chat:open` | Low | Open browser chat UI |
+| `agents:register` | Medium | Multi-agent registration |
+| `agents:invoke` | Medium | Call other agents |
+
+### Grant Types
+
+| Grant | Meaning |
+|-------|---------|
+| `granted-always` | Persistent |
+| `granted-once` | 10 min or until tab closes |
+| `denied` | User said no |
+| `not-granted` | Never requested |
+
+### Check Current Permissions
+
+```javascript
+const { scopes, allowedTools } = await window.agent.permissions.list();
 ```
+
+---
 
 ## window.ai - Text Generation
 
-```js
-// Create session (auto-selects best available provider)
+### Create Session & Prompt
+
+```javascript
 const session = await window.ai.createTextSession({
-  systemPrompt: 'You are helpful.',  // optional
-  temperature: 0.7,                   // optional, 0.0-2.0
-  provider: 'firefox-wllama'          // optional: explicit provider
+  systemPrompt: 'You are helpful.',  // Optional
+  temperature: 0.7,                   // Optional: 0.0-2.0
+  provider: 'ollama',                 // Optional: specific provider
+  model: 'llama3.2'                   // Optional: specific model
 });
 
 // Simple prompt
-const response = await session.prompt('Hello');
+const response = await session.prompt('What is 2+2?');
 
 // Streaming
-for await (const e of session.promptStreaming('Tell me a story')) {
-  if (e.type === 'token') console.log(e.token);
-  if (e.type === 'done') break;
-  if (e.type === 'error') throw e.error;
+for await (const event of session.promptStreaming('Tell me a story')) {
+  if (event.type === 'token') process.stdout.write(event.token);
+  if (event.type === 'done') break;
+  if (event.type === 'error') throw new Error(event.error.message);
 }
 
-// Cleanup
-await session.destroy();
+// Cleanup (important!)
+session.destroy();
 ```
+
+### List Providers
+
+```javascript
+const providers = await window.ai.providers.list();
+// Returns: [{ id, type, name, available, isDefault, supportsTools, ... }]
+
+const { provider, model } = await window.ai.providers.getActive();
+```
+
+### Native Browser AI (Firefox 142+, Chrome 131+)
+
+```javascript
+const best = await window.ai.runtime.getBest();  // 'firefox' | 'chrome' | 'harbor' | null
+const caps = await window.ai.runtime.getCapabilities();
+
+// Use Firefox native AI
+const session = await window.ai.createTextSession({ provider: 'firefox-wllama' });
+```
+
+---
 
 ## window.agent - Tools & Agent
 
-### List/Call Tools
+### List Tools
 
-```js
-// List all tools (requires mcp:tools.list)
+```javascript
 const tools = await window.agent.tools.list();
-// Returns: [{ name: 'serverId/toolName', description, inputSchema }, ...]
+// Returns: [{ name: 'serverId/toolName', description, inputSchema, serverId }]
+```
 
-// Call a tool (requires mcp:tools.call)
+### Call Tool Directly
+
+```javascript
 const result = await window.agent.tools.call({
-  tool: 'memory-server/save_memory',
-  args: { content: 'Remember this' }
+  tool: 'time-wasm/time.now',
+  args: { timezone: 'America/New_York' }
 });
 ```
 
-### Read Active Tab
+### Run Autonomous Agent
 
-```js
-// Requires browser:activeTab.read
-const tab = await window.agent.browser.activeTab.readability();
-// Returns: { url, title, text }
-```
+The most powerful API. Runs an agentic loop that can call tools.
 
-### Agent Run (Autonomous Tasks)
-
-Built-in tool router auto-selects relevant tools based on keywords (e.g., "GitHub" → GitHub tools only).
-
-```js
+```javascript
 for await (const event of window.agent.run({
-  task: 'Research AI news and summarize',
-  tools: ['search/web_search'],  // optional filter (overrides router)
-  useAllTools: false,            // true = disable router
-  maxToolCalls: 5,               // default: 5
-  requireCitations: true         // optional
+  task: 'What time is it in Tokyo?',
+  maxToolCalls: 5,        // Default: 5
+  tools: ['time-wasm/*'], // Optional: filter tools
+  useAllTools: false,     // Set true to disable smart routing
+  provider: 'openai'      // Optional: specific LLM
 })) {
   switch (event.type) {
-    case 'status':      // { message: string }
-    case 'tool_call':   // { tool: string, args: any }
-    case 'tool_result': // { tool: string, result: any, error?: ApiError }
-    case 'token':       // { token: string }
-    case 'final':       // { output: string, citations?: [...] }
-    case 'error':       // { error: ApiError }
+    case 'status':      console.log('Status:', event.message); break;
+    case 'tool_call':   console.log('Calling:', event.tool, event.args); break;
+    case 'tool_result': console.log('Result:', event.result); break;
+    case 'token':       process.stdout.write(event.token); break;
+    case 'final':       console.log('Answer:', event.output); break;
+    case 'error':       throw new Error(event.error.message);
   }
 }
 ```
 
-## BYOC (Bring Your Own Chatbot)
+---
 
-Websites can integrate with user's AI via MCP servers and browser chat UI.
+## Browser APIs
 
-### Declarative Discovery (HTML)
-```html
-<link rel="mcp-server" href="https://shop.example/mcp" 
-      title="Shop" data-tools="search,add_to_cart">
+### Read Active Tab (browserInteraction flag)
+
+```javascript
+const { url, title, text } = await window.agent.browser.activeTab.readability();
 ```
 
-### API Methods
-```js
-// Discover link-declared servers
-const servers = await window.agent.mcp.discover();
-// Returns: [{ url, title, description, tools }]
+### Interact with Active Tab
 
-// Register website's MCP server
-const reg = await window.agent.mcp.register({
-  url: 'https://shop.example/mcp',
-  name: 'Shop Assistant',
-  tools: ['search', 'add_to_cart']
-});
-if (reg.success) console.log('Registered:', reg.serverId);
-
-// Check chat availability
-const avail = await window.agent.chat.canOpen(); // 'readily' | 'no'
-
-// Open browser chat
-const chat = await window.agent.chat.open({
-  systemPrompt: 'Shopping assistant',
-  tools: ['search', 'add_to_cart'],
-  style: { theme: 'light', accentColor: '#ff9900' }
-});
-
-// Close chat
-await window.agent.chat.close(chat.chatId);
-
-// Unregister server
-await window.agent.mcp.unregister(reg.serverId);
+```javascript
+await window.agent.browser.activeTab.click('ref-123');
+await window.agent.browser.activeTab.fill('ref-456', 'Hello');
+await window.agent.browser.activeTab.select('ref-789', 'option-value');
+await window.agent.browser.activeTab.scroll('down', 500);
+const { dataUrl } = await window.agent.browser.activeTab.screenshot();
 ```
+
+### Navigate & Tabs (browserControl flag)
+
+```javascript
+await window.agent.browser.navigate('https://example.com');
+const tabs = await window.agent.browser.tabs.list();
+const newTab = await window.agent.browser.tabs.create({ url: '...', active: false });
+await window.agent.browser.tab.waitForLoad(newTab.id);
+const { html } = await window.agent.browser.tab.getHtml(newTab.id, 'main');
+await window.agent.browser.tabs.close(newTab.id);
+
+// CORS-bypassing fetch
+const response = await window.agent.fetch('https://api.example.com/data');
+```
+
+---
 
 ## Sessions API
 
-Create explicit sessions with defined capabilities and limits.
+Create sessions with specific capabilities and limits.
 
-```js
-// Create session
+```javascript
 const session = await window.agent.sessions.create({
   name: 'Research Assistant',
   capabilities: {
@@ -215,22 +256,18 @@ const session = await window.agent.sessions.create({
   limits: { maxToolCalls: 20, ttlMinutes: 30 }
 });
 
-// Use session
-const response = await session.prompt('Search for AI news');
+const response = await session.prompt('Find AI news');
 const result = await session.callTool('web-search/search', { query: 'AI' });
-for await (const token of session.promptStreaming('Summarize')) { ... }
-
-// Session management
-const sessions = await window.agent.sessions.list();
-await window.agent.sessions.terminate(sessionId);
+await session.terminate();
 ```
 
-## Multi-Agent API (agent.agents.*)
+---
 
-Agent-to-agent communication and orchestration.
+## Multi-Agent API
 
-```js
-// Register as agent
+### Register as Agent
+
+```javascript
 const agent = await window.agent.agents.register({
   name: 'Research Agent',
   capabilities: ['search', 'summarize'],
@@ -238,308 +275,349 @@ const agent = await window.agent.agents.register({
   acceptsMessages: true
 });
 
-// Handle invocations
+// Handle invocations from other agents
 window.agent.agents.onInvoke(async (req) => {
   if (req.task === 'search') return { results: [...] };
   throw new Error('Unknown task');
 });
+```
 
-// Discover & invoke other agents
+### Discover & Invoke Agents
+
+```javascript
 const { agents } = await window.agent.agents.discover({ capabilities: ['analyze'] });
-const response = await window.agent.agents.invoke(agentId, { task: 'analyze', input: data });
-
-// Orchestration patterns
-await window.agent.agents.orchestrate.pipeline({ steps: [...] }, input);
-await window.agent.agents.orchestrate.parallel({ tasks: [...], combineStrategy: 'merge' });
-await window.agent.agents.orchestrate.route({ routes: [...], defaultAgentId }, input, task);
-
-// Event broadcasting
-await window.agent.agents.subscribe('event-type', handler);
-await window.agent.agents.broadcast('event-type', data);
-
-// Cleanup
-await window.agent.agents.unregister();
+const response = await window.agent.agents.invoke(agentId, {
+  task: 'analyze',
+  input: data,
+  timeout: 30000
+});
 ```
 
-## Browser APIs
+### Orchestration Patterns
 
-### browserInteraction (agent.browser.activeTab.*)
-```js
-const content = await window.agent.browser.activeTab.readability();
-const elements = await window.agent.browser.activeTab.getElements();
-await window.agent.browser.activeTab.click('ref-123');
-await window.agent.browser.activeTab.fill('ref-456', 'text');
-await window.agent.browser.activeTab.scroll('down', 500);
-const { dataUrl } = await window.agent.browser.activeTab.screenshot();
+```javascript
+// Pipeline: sequential
+await window.agent.agents.orchestrate.pipeline({
+  steps: [
+    { agentId: 'researcher', task: 'research' },
+    { agentId: 'writer', task: 'write' }
+  ]
+}, initialInput);
+
+// Parallel: concurrent
+await window.agent.agents.orchestrate.parallel({
+  tasks: [{ agentId: 'a1', task: 'analyze', input: data }, ...],
+  combineStrategy: 'merge'  // 'array' | 'merge' | 'first'
+});
+
+// Route: conditional
+await window.agent.agents.orchestrate.route({
+  routes: [{ condition: 'type:technical', agentId: 'tech-agent' }],
+  defaultAgentId: 'general-agent'
+}, input, task);
 ```
 
-### browserControl
-```js
-await window.agent.browser.navigate('https://example.com');
-const tabs = await window.agent.browser.tabs.list();
-const newTab = await window.agent.browser.tabs.create({ url: '...', active: false });
-await window.agent.browser.tab.waitForLoad(newTab.id);
-const html = await window.agent.browser.tab.getHtml(tabId, 'main');
-await window.agent.browser.tabs.close(tabId);
-const response = await window.agent.browser.fetch(url, { method: 'GET' });
+---
+
+## BYOC (Bring Your Own Chatbot)
+
+Let websites use the user's AI while providing site-specific tools.
+
+### HTML Declaration
+
+```html
+<link rel="mcp-server" href="https://shop.example/mcp" 
+      title="Shop" data-tools="search,add_to_cart">
 ```
+
+### API
+
+```javascript
+// Discover link-declared servers
+const servers = await window.agent.mcp.discover();
+
+// Register website's MCP server
+const reg = await window.agent.mcp.register({
+  url: 'https://shop.example/mcp',
+  name: 'Shop Assistant',
+  tools: ['search', 'add_to_cart']
+});
+
+// Open browser chat
+const chat = await window.agent.chat.open({
+  systemPrompt: 'Shopping assistant',
+  tools: ['search', 'add_to_cart'],
+  style: { theme: 'light', accentColor: '#ff9900' }
+});
+
+await window.agent.chat.close(chat.chatId);
+await window.agent.mcp.unregister(reg.serverId);
+```
+
+---
 
 ## Error Codes
 
-ERR_FEATURE_DISABLED    → Feature flag is off
-ERR_NOT_INSTALLED       → Extension not installed
-ERR_PERMISSION_DENIED   → User denied
-ERR_SCOPE_REQUIRED      → Missing permission scope
-ERR_TOOL_NOT_ALLOWED    → Tool not in allowlist
-ERR_TOOL_NOT_FOUND      → Tool doesn't exist
-ERR_TOOL_FAILED         → Tool execution failed
-ERR_TOOL_TIMEOUT        → Tool call timed out
-ERR_MODEL_FAILED        → LLM error
-ERR_SESSION_NOT_FOUND   → Session destroyed
-ERR_TIMEOUT             → Request timed out
-ERR_RATE_LIMITED        → Rate limit exceeded
-ERR_SERVER_UNAVAILABLE  → MCP server unavailable
-ERR_INTERNAL            → Internal error
+| Code | Meaning |
+|------|---------|
+| `ERR_FEATURE_DISABLED` | Feature flag is off |
+| `ERR_NOT_INSTALLED` | Extension not installed |
+| `ERR_PERMISSION_DENIED` | User denied |
+| `ERR_SCOPE_REQUIRED` | Missing permission scope |
+| `ERR_TOOL_NOT_ALLOWED` | Tool not in allowlist |
+| `ERR_TOOL_NOT_FOUND` | Tool doesn't exist |
+| `ERR_TOOL_FAILED` | Tool execution failed |
+| `ERR_TOOL_TIMEOUT` | Tool call timed out |
+| `ERR_MODEL_FAILED` | LLM error |
+| `ERR_SESSION_NOT_FOUND` | Session destroyed |
+| `ERR_TIMEOUT` | Request timed out |
+| `ERR_AGENT_NOT_FOUND` | Agent not registered |
+| `ERR_INTERNAL` | Internal error |
 
-## Bridge Message Types (for extension development)
+### Error Handling Pattern
 
-### Server Management
-add_server, remove_server, list_servers, connect_server, disconnect_server
+```javascript
+try {
+  await window.agent.tools.list();
+} catch (err) {
+  if (err.code === 'ERR_SCOPE_REQUIRED') {
+    await window.agent.requestPermissions({ scopes: ['mcp:tools.list'] });
+  } else if (err.code === 'ERR_PERMISSION_DENIED') {
+    // User denied, show fallback UI
+  }
+}
+```
 
-### MCP Operations
-mcp_connect, mcp_disconnect, mcp_list_connections, mcp_list_tools,
-mcp_list_resources, mcp_list_prompts, mcp_call_tool, mcp_read_resource
+---
 
-### Catalog
-catalog_get, catalog_refresh, catalog_search
+## Feature Flags
 
-### Installer
-check_runtimes, install_server, uninstall_server, list_installed,
-start_installed, stop_installed, set_server_secrets, get_server_status
+APIs are gated by feature flags. Users toggle these in the extension sidebar.
 
-### LLM
-llm_detect, llm_list_providers, llm_set_active, llm_list_models, llm_chat
+| Flag | Default | APIs |
+|------|---------|------|
+| `textGeneration` | ON | `window.ai.*` |
+| `toolAccess` | ON | `agent.tools.list/call` |
+| `toolCalling` | OFF | `agent.run()` |
+| `browserInteraction` | OFF | `agent.browser.activeTab.click/fill/scroll` |
+| `browserControl` | OFF | `agent.browser.navigate/tabs/fetch` |
+| `multiAgent` | OFF | `agent.agents.*` |
 
-### Chat Orchestration
-chat_create_session, chat_send_message, chat_get_session, chat_list_sessions,
-chat_delete_session, chat_update_session, chat_clear_messages
+Check features at runtime:
 
-## Architecture (Harbor Implementation)
-
-Web Page (window.ai/agent) ←postMessage→ Content Script ←runtime→ Background
-    ↓ native messaging (stdio JSON)
-Rust Bridge (bridge-rs/)
-    ↓ MCP Protocol
-MCP Servers (stdio/HTTP/Docker)
-
-## LLM Providers
-
-### Native Browser Providers (no bridge required)
-- firefox-wllama: Firefox 142+ local LLM (wllama/llama.cpp)
-- firefox-transformers: Firefox 134+ embeddings (Transformers.js)
-- chrome: Chrome 131+ built-in AI
-
-### Bridge Providers
-- llamafile: localhost:8080
-- ollama: localhost:11434 (requires 0.3.0+ for tools)
-- openai: OpenAI API (requires API key)
-- anthropic: Anthropic Claude API (requires API key)
-
-### Provider Selection
-```js
-// Use specific provider
-const session = await window.ai.createTextSession({
-  provider: 'firefox-wllama',  // or 'ollama', 'openai', etc.
-  model: 'llama-3.2-1b'
+```javascript
+window.addEventListener('agent-ready', (e) => {
+  const { features } = e.detail;
+  if (!features.toolCalling) {
+    // agent.run() won't work, use tools.call() instead
+  }
 });
-
-// Check available providers
-const providers = await window.ai.providers.list();
-// Returns: [{ id, type, name, available, isNative, supportsTools, ... }]
-
-// Get best runtime
-const best = await window.ai.runtime.getBest();  // 'firefox' | 'chrome' | 'harbor' | null
 ```
 
-### Split Routing
-Use native browser AI for chat, bridge for tools:
-```js
-// Chat with Firefox local AI
-const session = await window.ai.createTextSession({ provider: 'firefox-wllama' });
-await session.prompt('Hello');
+---
 
-// Agent with bridge provider (full tool support)
-for await (const e of window.agent.run({
-  task: 'Search and summarize',
-  provider: 'openai'  // Use bridge provider for tools
-})) { ... }
+## TypeScript Types (Quick Reference)
+
+```typescript
+// Permissions
+type PermissionScope = 'model:prompt' | 'model:tools' | 'model:list' |
+  'mcp:tools.list' | 'mcp:tools.call' | 'mcp:servers.register' |
+  'browser:activeTab.read' | 'browser:activeTab.interact' | 'browser:activeTab.screenshot' |
+  'browser:tabs.read' | 'browser:tabs.create' | 'web:fetch' | 'chat:open' |
+  'agents:register' | 'agents:discover' | 'agents:invoke' | 'agents:message';
+type PermissionGrant = 'granted-once' | 'granted-always' | 'denied' | 'not-granted';
+
+// Tools
+interface ToolDescriptor { name: string; description?: string; inputSchema?: object; serverId?: string; }
+
+// Agent run events
+type RunEvent =
+  | { type: 'status'; message: string }
+  | { type: 'tool_call'; tool: string; args: unknown }
+  | { type: 'tool_result'; tool: string; result?: unknown; error?: ApiError }
+  | { type: 'token'; token: string }
+  | { type: 'final'; output: string; citations?: Citation[] }
+  | { type: 'error'; error: ApiError };
+
+// Session
+interface TextSession {
+  sessionId: string;
+  prompt(input: string): Promise<string>;
+  promptStreaming(input: string): AsyncIterable<StreamToken>;
+  destroy(): void;
+}
+
+interface StreamToken {
+  type: 'token' | 'done' | 'error';
+  token?: string;
+  error?: { code: string; message: string };
+}
+
+// Browser
+interface ActiveTabReadability { url: string; title: string; text: string; }
+interface TabInfo { id: number; url: string; title: string; active: boolean; canControl: boolean; }
+
+// Multi-agent
+interface AgentInvocationResponse {
+  success: boolean;
+  result?: unknown;
+  error?: { code: string; message: string };
+  executionTime?: number;
+}
 ```
+
+---
+
+## Common Patterns
+
+### Initialize App with Permissions
+
+```javascript
+async function init() {
+  if (!window.agent) {
+    showError('Install Harbor extension');
+    return false;
+  }
+  
+  const { granted } = await window.agent.requestPermissions({
+    scopes: ['model:prompt', 'mcp:tools.list', 'mcp:tools.call'],
+    reason: 'Enable AI features'
+  });
+  
+  return granted;
+}
+```
+
+### Chat Interface
+
+```javascript
+let session;
+
+async function sendMessage(text) {
+  if (!session) {
+    session = await window.ai.createTextSession({
+      systemPrompt: 'You are a helpful assistant.'
+    });
+  }
+  return await session.prompt(text);
+}
+
+// Streaming version
+async function sendMessageStreaming(text, onToken) {
+  if (!session) {
+    session = await window.ai.createTextSession();
+  }
+  
+  for await (const e of session.promptStreaming(text)) {
+    if (e.type === 'token') onToken(e.token);
+  }
+}
+```
+
+### Page Summarizer
+
+```javascript
+async function summarizePage() {
+  const { text, title } = await window.agent.browser.activeTab.readability();
+  const session = await window.ai.createTextSession({
+    systemPrompt: 'Summarize in 2-3 sentences.'
+  });
+  const summary = await session.prompt(text.slice(0, 10000));
+  session.destroy();
+  return { title, summary };
+}
+```
+
+### Tool-Calling Agent
+
+```javascript
+async function runAgent(task) {
+  const events = [];
+  
+  for await (const event of window.agent.run({ task, maxToolCalls: 5 })) {
+    events.push(event);
+    
+    if (event.type === 'final') {
+      return { output: event.output, events };
+    }
+    if (event.type === 'error') {
+      throw new Error(event.error.message);
+    }
+  }
+}
+```
+
+### Graceful Degradation
+
+```javascript
+async function getAIResponse(prompt) {
+  // Try Web Agents API first
+  if (window.agent) {
+    try {
+      const { granted } = await window.agent.requestPermissions({
+        scopes: ['model:prompt']
+      });
+      if (granted) {
+        const session = await window.ai.createTextSession();
+        const response = await session.prompt(prompt);
+        session.destroy();
+        return response;
+      }
+    } catch (e) {
+      console.warn('Web Agents API failed:', e);
+    }
+  }
+  
+  // Fallback to your own API
+  return await fetch('/api/ai', {
+    method: 'POST',
+    body: JSON.stringify({ prompt })
+  }).then(r => r.json());
+}
+```
+
+---
 
 ## Tool Router Keywords
+
+`agent.run()` automatically selects relevant tools based on keywords:
 
 | Keywords | Servers Selected |
 |----------|------------------|
 | github, repo, commit, PR, issue | github |
 | file, folder, directory, read, write | filesystem |
-| remember, memory, recall, knowledge | memory |
+| remember, memory, recall | memory |
 | slack, channel, message | slack |
 | database, SQL, query, postgres | database, postgres, mysql |
 | web, browser, scrape, url | web, browser |
 | search, find, google, brave | search, brave |
 
-## Data Storage (~/.harbor/)
+Override with `tools: [...]` or disable with `useAllTools: true`.
 
-harbor.db              → Server configs (SQLite)
-catalog.db             → Catalog cache (SQLite)
-installed_servers.json → Installed servers
-secrets/credentials.json → API keys
-sessions/*.json        → Chat history
+---
 
-## Types Reference
-
-```ts
-type PermissionScope = 'model:prompt' | 'model:tools' | 'mcp:tools.list' | 'mcp:tools.call' 
-  | 'mcp:servers.register' | 'browser:activeTab.read' | 'chat:open';
-type PermissionGrant = 'granted-once' | 'granted-always' | 'denied' | 'not-granted';
-
-interface ToolDescriptor { name: string; description?: string; inputSchema?: object; serverId?: string; }
-interface ActiveTabReadability { url: string; title: string; text: string; }
-interface StreamToken { type: 'token' | 'done' | 'error'; token?: string; error?: ApiError; }
-interface ApiError { code: string; message: string; details?: unknown; }
-
-type RunEvent =
-  | { type: 'status'; message: string }
-  | { type: 'tool_call'; tool: string; args: unknown }
-  | { type: 'tool_result'; tool: string; result: unknown; error?: ApiError }
-  | { type: 'token'; token: string }
-  | { type: 'final'; output: string; citations?: Citation[] }
-  | { type: 'error'; error: ApiError };
-
-interface Citation { source: 'tab' | 'tool'; ref: string; excerpt: string; }
-
-// BYOC Types
-interface MCPServerRegistration { url: string; name: string; description?: string; tools?: string[]; }
-interface MCPRegistrationResult { success: boolean; serverId?: string; error?: { code: string; message: string; }; }
-type ChatAvailability = 'readily' | 'no';
-interface ChatOpenOptions { systemPrompt?: string; tools?: string[]; style?: { theme?: string; accentColor?: string; }; }
-interface ChatOpenResult { success: boolean; chatId?: string; error?: { code: string; message: string; }; }
-
-// Provider Types
-interface LLMProviderInfo {
-  id: string; type: string; name: string; available: boolean;
-  isDefault: boolean; isTypeDefault: boolean; supportsTools?: boolean;
-  isNative?: boolean;  // true for browser-native (firefox, chrome)
-  runtime?: 'firefox' | 'chrome' | 'bridge';
-  downloadRequired?: boolean; downloadProgress?: number;
-}
-
-// Runtime Types
-interface RuntimeCapabilities {
-  firefox: { available: boolean; hasWllama: boolean; hasTransformers: boolean; supportsTools: boolean; } | null;
-  chrome: { available: boolean; supportsTools: boolean; } | null;
-  harbor: { available: boolean; bridgeConnected: boolean; providers: string[]; };
-}
-```
-
-## Complete Example
-
-```js
-async function main() {
-  // 1. Check availability
-  if (!window.agent) throw new Error('Web Agent API not available');
-
-  // 2. Request permissions
-  const perm = await window.agent.requestPermissions({
-    scopes: ['model:prompt', 'model:tools', 'mcp:tools.list', 'mcp:tools.call'],
-    reason: 'AI assistant features'
-  });
-  if (!perm.granted) throw new Error('Permissions denied');
-
-  // 3. List available tools
-  const tools = await window.agent.tools.list();
-  console.log('Tools:', tools.map(t => t.name));
-
-  // 4. Run agent task
-  let output = '';
-  for await (const e of window.agent.run({ task: 'What tools are available?' })) {
-    if (e.type === 'token') output += e.token;
-    if (e.type === 'final') output = e.output;
-    if (e.type === 'error') throw new Error(e.error.message);
-  }
-  console.log('Result:', output);
-
-  // 5. Direct tool call
-  await window.agent.tools.call({
-    tool: 'memory-server/save_memory',
-    args: { content: output }
-  });
-}
-```
-
-## Project File Reference
-
-Key source files for understanding Harbor:
+## Key Files (for Harbor development)
 
 ```
 extension/src/
-├── background.ts        # Native messaging, permission handling
-├── sidebar.ts           # UI for server management
-├── provider/
-│   ├── types.ts         # API type definitions
-│   ├── provider-bridge.ts # Message routing to extension
-│   └── provider-injected.ts # window.ai/agent injection
+├── agents/
+│   ├── injected.ts         # window.ai/agent injection
+│   ├── content-script.ts   # Message relay
+│   └── api.ts              # API implementation
+├── llm/                    # LLM provider management
+├── mcp/                    # MCP client
+└── multi-agent/            # Agent orchestration
 
 bridge-rs/src/
-├── main.rs              # Bridge entry point
-├── native_messaging.rs  # Stdin/stdout JSON framing
-├── rpc/                 # RPC method handlers
-├── llm/                 # LLM provider configuration
-├── js/                  # QuickJS runtime for JS MCP servers
-├── oauth/               # OAuth flow handling
-└── fs/                  # Filesystem utilities
-├── host/
-│   ├── permissions.ts   # Permission system
-│   ├── tool-registry.ts # Tool namespacing
-│   └── rate-limiter.ts  # Rate limiting
-├── chat/
-│   ├── orchestrator.ts  # Agent loop
-│   └── tool-router.ts   # Intelligent tool selection
-├── llm/
-│   ├── manager.ts       # LLM provider abstraction
-│   ├── ollama.ts        # Ollama provider
-│   └── llamafile.ts     # llamafile provider
-├── mcp/
-│   ├── manager.ts       # MCP connection management
-│   └── stdio-client.ts  # stdio transport
-└── installer/
-    ├── manager.ts       # Server installation
-    └── secrets.ts       # Credential storage
+├── main.rs                 # Native messaging entry
+├── llm/                    # LLM providers (ollama, openai, etc.)
+├── rpc/                    # RPC handlers
+└── js/                     # QuickJS for JS MCP servers
 ```
 
-## Common Patterns
+---
 
-```js
-// Check if Web Agent API is available
-if (typeof window.agent === 'undefined') {
-  // Web Agent API not available
-}
+## Version
 
-// Handle permission denial
-try {
-  await window.agent.tools.list();
-} catch (e) {
-  if (e.code === 'ERR_SCOPE_REQUIRED') {
-    await window.agent.requestPermissions({ scopes: ['mcp:tools.list'] });
-  }
-}
-
-// Streaming with abort
-const controller = new AbortController();
-for await (const e of window.agent.run({ task: '...', signal: controller.signal })) {
-  // controller.abort() to cancel
-}
-
-// Read page content
-const { url, title, text } = await window.agent.browser.activeTab.readability();
-```
+Web Agents API v1.3 / Harbor v1
 
