@@ -303,6 +303,8 @@ Websites receive the AI's responses (they made the request), but:
 
 **Read the spec:** [Full Explainer](explainer.md)
 
+**Using an AI coding assistant?** Point it to [docs/LLMS.txt](../docs/LLMS.txt) — a compact reference designed for AI tools to quickly build with the API.
+
 ---
 
 *This specification is a draft proposal. Feedback welcome via [GitHub Issues](https://github.com/anthropics/harbor/issues).*

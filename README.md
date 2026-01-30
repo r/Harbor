@@ -116,8 +116,11 @@ The Web Agent API gives your web pages access to:
 | **[API Quickstart](QUICKSTART.md)** | Get from zero to working code in 15 minutes |
 | **[Web Agents API Reference](docs/WEB_AGENTS_API.md)** | Complete API docs with examples |
 | **[JS API Reference](docs/JS_AI_PROVIDER_API.md)** | Detailed `window.ai` and `window.agent` reference |
+| **[LLMS.txt](docs/LLMS.txt)** | AI-optimized reference for Claude, Cursor, Copilot |
 | **[Working Examples](spec/examples/)** | Copy-paste ready code |
 | **[Demo Source Code](demo/)** | Full demo implementations |
+
+> **Using an AI coding assistant?** Point it to **[docs/LLMS.txt](docs/LLMS.txt)** — it's designed for AI tools to quickly understand and build with the Web Agents API.
 
 ### Create Custom Tools (MCP Servers)
 

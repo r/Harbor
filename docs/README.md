@@ -62,9 +62,11 @@
 
 ### For AI Coding Assistants
 
+> **Building with Claude, Cursor, Copilot, or another AI assistant?** Point your AI to **[LLMS.txt](LLMS.txt)** — it's specifically designed for AI tools to quickly understand and build with the Web Agents API.
+
 | Document | Description |
 |----------|-------------|
-| [LLMS.txt](LLMS.txt) | Token-efficient reference for AI tools |
+| **[LLMS.txt](LLMS.txt)** | Compact, token-efficient API reference for AI coding assistants |
 
 ### The Specification
 

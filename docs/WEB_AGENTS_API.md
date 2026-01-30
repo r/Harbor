@@ -9,6 +9,8 @@ The Web Agents API extension injects two global objects into every web page:
 
 These APIs are gated by feature flags configured in the extension's sidebar.
 
+> **Building with an AI coding assistant?** See **[LLMS.txt](./LLMS.txt)** — a compact, token-efficient reference designed specifically for Claude, Cursor, Copilot, and other AI tools. It contains everything an AI assistant needs to write working code quickly.
+
 ---
 
 ## Table of Contents

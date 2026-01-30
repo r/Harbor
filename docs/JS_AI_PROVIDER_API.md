@@ -4,7 +4,7 @@ This document is a detailed reference for the **[Web Agent API](../spec/)** — 
 
 Harbor is an implementation of this proposal. For the full specification, see [spec/explainer.md](../spec/explainer.md).
 
-> **For AI Agents:** See [LLMS.txt](./LLMS.txt) for a compact, token-efficient version of this documentation.
+> **Building with an AI coding assistant?** See **[LLMS.txt](./LLMS.txt)** — a compact, token-efficient reference designed specifically for Claude, Cursor, Copilot, and other AI tools. It contains everything an AI assistant needs to write working code quickly.
 
 ## Overview
 

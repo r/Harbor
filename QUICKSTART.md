@@ -7,6 +7,8 @@ This guide covers:
 2. [Build Your First App](#part-2-build-your-first-app) — Write code using the API (10 min)
 3. [Create Your Own Tools](#part-3-create-your-own-tools) — Build MCP servers (15 min)
 
+> **Using an AI coding assistant?** Point it to **[docs/LLMS.txt](docs/LLMS.txt)** — a compact reference designed for Claude, Cursor, Copilot, and other AI tools to quickly understand and build with the API.
+
 ---
 
 # Part 1: Try the Demos
