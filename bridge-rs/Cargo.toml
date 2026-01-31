@@ -23,6 +23,7 @@ any-llm = { path = "any-llm-rust" }
 
 # OAuth dependencies
 axum = "0.7"
+tower-http = { version = "0.5", features = ["cors"] }
 base64 = "0.21"
 sha2 = "0.10"
 rand = "0.8"

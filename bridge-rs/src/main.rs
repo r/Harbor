@@ -1,4 +1,5 @@
 mod fs;
+mod http_server;
 mod js;
 mod llm;
 mod native_messaging;
@@ -11,6 +12,15 @@ use std::env;
 async fn main() {
   // Check if running in native messaging mode (launched by browser extension)
   let native_mode = env::args().any(|arg| arg == "--native-messaging");
+  // Check if running in HTTP server mode (for Safari)
+  let http_mode = env::args().any(|arg| arg == "--http-server");
+  
+  // Get HTTP port from args or use default
+  let http_port = env::args()
+    .skip_while(|arg| arg != "--port")
+    .nth(1)
+    .and_then(|p| p.parse().ok())
+    .unwrap_or(http_server::DEFAULT_PORT);
   
   // Set up logging - in native mode, log to file (stderr is used for protocol in some cases)
   if native_mode {
@@ -46,8 +56,15 @@ async fn main() {
   // Initialize OAuth module (loads credentials and stored tokens)
   oauth::init().await;
 
-  tracing::info!("Harbor bridge starting (native_mode={})", native_mode);
-
-  // Run native messaging handler (handles all RPC over stdio)
-  native_messaging::run_native_messaging().await;
+  if http_mode {
+    // HTTP server mode for Safari
+    tracing::info!("Harbor bridge starting in HTTP server mode on port {}", http_port);
+    if let Err(e) = http_server::run_http_server(http_port).await {
+      tracing::error!("HTTP server error: {}", e);
+    }
+  } else {
+    // Native messaging mode for Firefox/Chrome
+    tracing::info!("Harbor bridge starting (native_mode={})", native_mode);
+    native_messaging::run_native_messaging().await;
+  }
 }
