@@ -54,12 +54,13 @@ function applyTheme(theme: Theme): void {
 }
 
 function initTheme(): void {
-  const saved = localStorage.getItem('web-agents-theme') as Theme | null;
+  // Use same key as Harbor for theme sync between extensions
+  const saved = localStorage.getItem('harbor-theme') as Theme | null;
   const theme = saved || 'system';
   applyTheme(theme);
 
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const current = localStorage.getItem('web-agents-theme') as Theme | null;
+    const current = localStorage.getItem('harbor-theme') as Theme | null;
     if (current === 'system' || !current) {
       applyTheme('system');
     }

@@ -74,6 +74,19 @@ async function copyStatic() {
   await copyFile('src/sidebar.html', `${outDir}/sidebar.html`);
   await copyFile('src/design-tokens.css', `${outDir}/design-tokens.css`);
   
+  // Safari: Add browser compatibility shim (Safari uses `browser` not `chrome`)
+  if (isSafari) {
+    const shim = `if (typeof chrome === 'undefined' && typeof browser !== 'undefined') { globalThis.chrome = browser; }\n`;
+    for (const file of ['content-script.js', 'background.js', 'injected.js']) {
+      const filePath = `${outDir}/${file}`;
+      if (existsSync(filePath)) {
+        const content = await readFile(filePath, 'utf-8');
+        await writeFile(filePath, shim + content);
+      }
+    }
+    console.log('[Web Agents API] ✓ Added Safari browser compatibility shim');
+  }
+  
   // Print load instructions
   console.log('');
   console.log(`[Web Agents API] ✓ Built for ${targetBrowser.charAt(0).toUpperCase() + targetBrowser.slice(1)}`);

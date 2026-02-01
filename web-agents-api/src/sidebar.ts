@@ -74,7 +74,8 @@ function getSystemTheme(): 'light' | 'dark' {
 function applyTheme(theme: Theme): void {
   const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
   document.documentElement.setAttribute('data-theme', effectiveTheme);
-  localStorage.setItem('web-agents-api-theme', theme);
+  // Use same key as Harbor for theme sync between extensions
+  localStorage.setItem('harbor-theme', theme);
   updateThemeToggle(theme);
 }
 
@@ -85,20 +86,47 @@ function updateThemeToggle(theme: Theme): void {
 }
 
 function initTheme(): void {
-  const saved = localStorage.getItem('web-agents-api-theme') as Theme | null;
+  // Safari: Always use system theme and hide the toggle button
+  const isSafariBrowser = typeof browser !== 'undefined' && 
+    navigator.userAgent.includes('Safari') && 
+    !navigator.userAgent.includes('Chrome');
+  
+  if (isSafariBrowser) {
+    // Hide theme toggle button in Safari
+    if (themeToggle) themeToggle.style.display = 'none';
+    
+    // Always follow system theme
+    applyTheme('system');
+    
+    // Listen for system theme changes
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      applyTheme('system');
+    });
+    return;
+  }
+  
+  // Chrome/Firefox: Use saved theme with manual toggle
+  const saved = localStorage.getItem('harbor-theme') as Theme | null;
   const theme = saved || 'system';
   applyTheme(theme);
   
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const current = localStorage.getItem('web-agents-api-theme') as Theme | null;
+    const current = localStorage.getItem('harbor-theme') as Theme | null;
     if (current === 'system' || !current) {
       applyTheme('system');
+    }
+  });
+  
+  // Listen for theme changes from Harbor extension
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'harbor-theme' && e.newValue) {
+      applyTheme(e.newValue as Theme);
     }
   });
 }
 
 function cycleTheme(): void {
-  const current = localStorage.getItem('web-agents-api-theme') as Theme | null || 'system';
+  const current = localStorage.getItem('harbor-theme') as Theme | null || 'system';
   const order: Theme[] = ['system', 'light', 'dark'];
   const next = order[(order.indexOf(current) + 1) % order.length];
   applyTheme(next);

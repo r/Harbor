@@ -3,6 +3,9 @@
  * 
  * Client for communicating with the Harbor extension.
  * Uses chrome.runtime.sendMessage to call Harbor's extension API.
+ * 
+ * Safari: Uses HTTP to communicate with harbor-bridge directly,
+ * since Safari doesn't support cross-extension messaging.
  */
 
 import { ErrorCodes, type ApiError } from './types';
@@ -18,11 +21,16 @@ const KNOWN_HARBOR_IDS = [
   // Chrome stable dev ID (generated from key in manifest.chrome.json)
   // All developers loading from the repo will get this same ID
   'ljnciidcajlichemnbohopnlaonhkpgm',
+  // Safari extension bundle identifier
+  'org.harbor.Extension',
   // Add Chrome Web Store ID here when published (will be different)
 ];
 
 // Timeout for requests (ms)
 const REQUEST_TIMEOUT = 30000;
+
+// Safari HTTP bridge URL
+const SAFARI_HTTP_BASE = 'http://127.0.0.1:8766';
 
 // =============================================================================
 // State
@@ -62,6 +70,8 @@ export interface StreamEvent {
 /**
  * Discover the Harbor extension by trying known extension IDs.
  * Returns the extension ID if found, null otherwise.
+ * 
+ * Safari: Uses HTTP to communicate with harbor-bridge directly.
  */
 export async function discoverHarbor(): Promise<string | null> {
   console.log('[Web Agents API] Starting Harbor discovery...');
@@ -72,7 +82,27 @@ export async function discoverHarbor(): Promise<string | null> {
     return harborExtensionId;
   }
 
-  // Try each known ID
+  // Safari: Try HTTP connection to harbor-bridge
+  if (isSafari()) {
+    console.log('[Web Agents API] Safari detected, trying HTTP connection to bridge...');
+    try {
+      const response = await fetch(`${SAFARI_HTTP_BASE}/health`, { method: 'GET' });
+      if (response.ok) {
+        // Bridge is available - consider Harbor "connected" via bridge
+        harborExtensionId = 'safari-bridge';
+        connectionState = 'connected';
+        console.log('[Web Agents API] Safari: Harbor bridge available via HTTP');
+        return harborExtensionId;
+      }
+    } catch (e) {
+      console.log('[Web Agents API] Safari HTTP connection failed:', e);
+    }
+    console.log('[Web Agents API] Safari: Harbor bridge not found');
+    connectionState = 'not-found';
+    return null;
+  }
+
+  // Chrome/Firefox: Try each known ID
   for (const id of KNOWN_HARBOR_IDS) {
     console.log('[Web Agents API] Trying known ID:', id);
     try {
@@ -145,14 +175,24 @@ export function setHarborExtensionId(id: string): void {
 // =============================================================================
 
 /**
+ * Detect Safari browser.
+ */
+function isSafari(): boolean {
+  return typeof browser !== 'undefined' && 
+         navigator.userAgent.includes('Safari') && 
+         !navigator.userAgent.includes('Chrome');
+}
+
+/**
  * Send a message to a specific extension.
  * Uses Promise-based API for Firefox compatibility.
+ * Safari requires special handling for cross-extension messaging.
  */
 async function sendMessageToExtension(
   extensionId: string,
   message: HarborRequest,
 ): Promise<HarborResponse> {
-  console.log('[Web Agents API] sendMessageToExtension:', extensionId, message.type);
+  console.log('[Web Agents API] sendMessageToExtension:', extensionId, message.type, 'safari:', isSafari());
   
   // Create a timeout promise
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -164,6 +204,21 @@ async function sendMessageToExtension(
   // Create the message promise
   const messagePromise = new Promise<HarborResponse>((resolve, reject) => {
     try {
+      // Safari: Use browser API if available
+      if (isSafari() && typeof browser !== 'undefined' && browser.runtime?.sendMessage) {
+        console.log('[Web Agents API] Using Safari/browser API for cross-extension message');
+        browser.runtime.sendMessage(extensionId, message)
+          .then((response: unknown) => {
+            console.log('[Web Agents API] Safari sendMessage response:', response);
+            resolve(response as HarborResponse);
+          })
+          .catch((e: unknown) => {
+            console.log('[Web Agents API] Safari sendMessage error:', e);
+            reject(e);
+          });
+        return;
+      }
+      
       // In Firefox, chrome.runtime.sendMessage returns a Promise
       // In Chrome, it uses a callback
       const result = chrome.runtime.sendMessage(extensionId, message, (response) => {
@@ -200,8 +255,35 @@ async function sendMessageToExtension(
 }
 
 /**
+ * Safari: Send RPC request via HTTP to harbor-bridge.
+ */
+async function safariHttpRequest<T>(method: string, params: unknown = {}): Promise<T> {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  console.log('[Web Agents API:Safari] HTTP RPC:', method);
+  
+  const response = await fetch(`${SAFARI_HTTP_BASE}/rpc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, method, params }),
+  });
+  
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  if (data?.error) {
+    throw new Error(data.error.message || JSON.stringify(data.error));
+  }
+  
+  return (data?.result ?? null) as T;
+}
+
+/**
  * Send a request to Harbor.
  * Throws if Harbor is not connected.
+ * 
+ * Safari: Routes to harbor-bridge via HTTP.
  */
 export async function harborRequest<T = unknown>(
   type: string,
@@ -213,6 +295,33 @@ export async function harborRequest<T = unknown>(
     if (!id) {
       throw createError(ErrorCodes.HARBOR_NOT_FOUND, 'Harbor extension not found. Please install Harbor.');
     }
+  }
+
+  // Safari: Use HTTP to bridge
+  if (isSafari()) {
+    // Map Web Agents API calls to bridge RPC methods where possible
+    // Note: Some features may not be available in Safari (agent control, etc.)
+    const methodMap: Record<string, string> = {
+      'system.health': 'system.health',
+      'system.getVersion': 'system.health', // No version on bridge, use health
+      'system.getCapabilities': 'system.health', // Simplified
+      'llm.listProviders': 'llm.list_providers',
+      'llm.chat': 'llm.chat',
+      'mcp.listServers': 'js.list_servers',
+      'mcp.listTools': 'mcp.list_tools', // Tools synced from Harbor
+      'mcp.callTool': 'mcp.call_tool', // Tool execution via bridge
+    };
+    
+    const bridgeMethod = methodMap[type];
+    if (bridgeMethod) {
+      // Bridge returns { result: ... }, return just the result to match Chrome/Firefox behavior
+      const result = await safariHttpRequest<T>(bridgeMethod, payload);
+      return result;
+    }
+    
+    // For unmapped methods, return a "not supported" response
+    console.log('[Web Agents API:Safari] Method not supported via bridge:', type);
+    return { supported: false } as unknown as T;
   }
 
   const response = await sendMessageToExtension(harborExtensionId!, { type, payload });
