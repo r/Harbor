@@ -147,9 +147,18 @@ build_extension() {
     # Build for Firefox (default)
     TARGET_BROWSER=firefox npm run build
     
-    # Create XPI (unsigned)
-    cd dist
-    zip -r "$BUILD_DIR/harbor-unsigned.xpi" . -x "*.map"
+    # Create XPI (unsigned) from extension root
+    # Include: manifest.json, dist/, assets/, demo/, bundled/ (if exists)
+    # Exclude: node_modules, src/, *.map files, build files
+    zip -r "$BUILD_DIR/harbor-unsigned.xpi" \
+        manifest.json \
+        dist/ \
+        assets/ \
+        -x "dist/*.map" "dist/**/*.map"
+    
+    # Add demo and bundled folders if they exist
+    [ -d "demo" ] && zip -r "$BUILD_DIR/harbor-unsigned.xpi" demo/
+    [ -d "bundled" ] && zip -r "$BUILD_DIR/harbor-unsigned.xpi" bundled/
     
     echo_success "Firefox extension built: $BUILD_DIR/harbor-unsigned.xpi"
 }
@@ -167,17 +176,26 @@ build_chrome_extension() {
     echo "  Setting version to $VERSION..."
     sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" manifest.chrome.json
     
-    # Build for Chrome
-    TARGET_BROWSER=chrome npm run build
+    # Build for Chrome (uses --chrome flag)
+    npm run build:chrome
     
-    # Copy unpacked extension (for dev mode loading)
+    # Create Chrome extension folder with correct structure
+    # Chrome manifest expects files in dist/ subfolder
     mkdir -p "$BUILD_DIR/chrome-extension"
-    cp -r dist/* "$BUILD_DIR/chrome-extension/"
     
-    # Create a zip for Chrome Web Store upload
-    cd dist
-    zip -r "$BUILD_DIR/harbor-chrome.zip" . -x "*.map"
-    cd ..
+    # Copy manifest to root
+    cp manifest.chrome.json "$BUILD_DIR/chrome-extension/manifest.json"
+    
+    # Copy dist folder (preserving structure)
+    cp -r dist "$BUILD_DIR/chrome-extension/"
+    
+    # Copy assets folder
+    cp -r assets "$BUILD_DIR/chrome-extension/"
+    
+    # Create a zip for Chrome Web Store upload (same structure)
+    cd "$BUILD_DIR/chrome-extension"
+    zip -r "$BUILD_DIR/harbor-chrome.zip" . -x "dist/*.map" "dist/**/*.map"
+    cd "$EXTENSION_DIR"
     
     echo_success "Chrome extension built:"
     echo "  - Unpacked: $BUILD_DIR/chrome-extension/ (for dev mode)"
@@ -206,7 +224,7 @@ sign_extension() {
     
     echo_step "Signing extension with Mozilla Add-ons..."
     
-    cd "$EXTENSION_DIR/dist"
+    cd "$EXTENSION_DIR"
     
     # Install web-ext if needed
     if ! command -v web-ext &> /dev/null; then
@@ -215,13 +233,17 @@ sign_extension() {
     fi
     
     # Sign the extension
-    # This creates a signed XPI in web-ext-artifacts/
+    # web-ext signs from the extension root (where manifest.json is)
+    # Ignore source files and node_modules
     web-ext sign \
         --api-key="$AMO_JWT_ISSUER" \
         --api-secret="$AMO_JWT_SECRET" \
         --channel=unlisted \
         --artifacts-dir="$BUILD_DIR/signed" \
-        --source-dir="$EXTENSION_DIR/dist" \
+        --source-dir="$EXTENSION_DIR" \
+        --ignore-files="src/**" --ignore-files="node_modules/**" \
+        --ignore-files="*.mjs" --ignore-files="*.json" --ignore-files="!manifest.json" \
+        --ignore-files="*.md" --ignore-files="*.map" --ignore-files="dist/*.map" \
         2>&1 || {
             echo_warn "Extension signing failed, using unsigned XPI"
             cp "$BUILD_DIR/harbor-unsigned.xpi" "$BUILD_DIR/harbor.xpi"
