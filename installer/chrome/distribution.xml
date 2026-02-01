@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>Harbor for Chrome</title>
+    <organization>com.harbor</organization>
+    <domains enable_localSystem="true"/>
+    
+    <!-- Minimum OS version: macOS 12 Monterey -->
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="12.0"/>
+        </allowed-os-versions>
+    </volume-check>
+    
+    <!-- Welcome, License, Conclusion pages -->
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="license.html" mime-type="text/html"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    
+    <!-- Installation choices -->
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.harbor.bridge"/>
+            <line choice="com.harbor.browsers">
+                <line choice="com.harbor.chrome"/>
+                <line choice="com.harbor.chromium"/>
+                <line choice="com.harbor.edge"/>
+                <line choice="com.harbor.brave"/>
+            </line>
+        </line>
+    </choices-outline>
+    
+    <choice id="default"/>
+    
+    <!-- Main Harbor Bridge component (always installed) -->
+    <choice id="com.harbor.bridge" 
+            visible="false" 
+            title="Harbor Bridge"
+            description="Harbor native bridge for AI agents with MCP tools">
+        <pkg-ref id="com.harbor.chrome"/>
+    </choice>
+    
+    <!-- Browser Support (container for Chromium browser choices) -->
+    <choice id="com.harbor.browsers"
+            title="Browser Support"
+            description="Choose which Chromium-based browsers to configure for Harbor">
+    </choice>
+    
+    <!-- Google Chrome -->
+    <choice id="com.harbor.chrome" 
+            visible="true"
+            selected="true"
+            title="Google Chrome"
+            description="Configure native messaging for Google Chrome. The extension provides AI tools and MCP server access.">
+    </choice>
+    
+    <!-- Chromium -->
+    <choice id="com.harbor.chromium" 
+            visible="true"
+            selected="true"
+            title="Chromium"
+            description="Configure native messaging for Chromium browser.">
+    </choice>
+    
+    <!-- Microsoft Edge -->
+    <choice id="com.harbor.edge" 
+            visible="true"
+            selected="true"
+            title="Microsoft Edge"
+            description="Configure native messaging for Microsoft Edge (Chromium-based).">
+    </choice>
+    
+    <!-- Brave -->
+    <choice id="com.harbor.brave" 
+            visible="true"
+            selected="true"
+            title="Brave"
+            description="Configure native messaging for Brave browser.">
+    </choice>
+    
+    <pkg-ref id="com.harbor.chrome" 
+             version="1.0.0" 
+             onConclusion="none">harbor-bridge.pkg</pkg-ref>
+    
+    <!-- JavaScript to pass browser choices to postinstall -->
+    <script>
+        function installationCheck() {
+            return true;
+        }
+        
+        // This runs before postinstall - set env vars for browser choices
+        function volumeCheck() {
+            return true;
+        }
+    </script>
+    
+</installer-gui-script>

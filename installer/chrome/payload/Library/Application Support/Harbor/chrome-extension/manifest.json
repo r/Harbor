@@ -1,0 +1,68 @@
+{
+  "manifest_version": 3,
+  "name": "Harbor",
+  "version": "0.260131.2130",
+  "description": "Infrastructure extension for AI and MCP capabilities. Provides LLM access and tool execution for other extensions.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoEnMSnvC8KBGkwY84OZX3ourJC63t+ONy4YeQe0Zvmdloae0UOR4ZW1QaY8F7SbMU5VqyfL2tyyi31lMTf66b27vk2Ia2VMuIa0aDbj1bVdPSeEKwVcsmzKfrTYW2eJhzfDmqRE7qVhcGGvgY5ODx5Ksaj7UM2XtyUrIEQcC9KW1Z8UduCE/B6HWH0Hy3cnak5oF8CNYQDefu3XWV5rCASNExUe3/DcYq5YBMx4EAiX6MryLKvCEuF9pGFlItRi3yrstdZ08W+pau5YrixyP9EeuivsNeFs2VzKwg4umMwBh/vvcG8g3LEnL9xSwQUHa2CixtC5jL08D0/wXicsmMQIDAQAB",
+  "externally_connectable": {
+    "ids": ["*"]
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab",
+    "tabs",
+    "nativeMessaging"
+  ],
+  "omnibox": {
+    "keyword": "h"
+  },
+  "host_permissions": [
+    "http://localhost/*",
+    "https://*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*", "file://*/*"],
+      "js": ["discovery.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "discovery-injected.js",
+        "page-chat.js",
+        "design-tokens.css",
+        "demo-bootstrap.js",
+        "js-runtime/builtin-echo-worker.js",
+        "demo/*",
+        "assets/*",
+        "bundled/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "assets/icon-16.png",
+    "32": "assets/icon-32.png",
+    "48": "assets/icon-48.png",
+    "128": "assets/icon-128.png"
+  },
+  "action": {
+    "default_title": "Harbor",
+    "default_popup": "sidebar.html",
+    "default_icon": {
+      "16": "assets/icon-16.png",
+      "32": "assets/icon-32.png",
+      "48": "assets/icon-48.png"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Web Agents API",
+  "version": "0.260131.2130",
+  "description": "Exposes AI capabilities to web pages. Requires Harbor extension.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2dKajWIgyf0ueZjl9ap9FlO+vNcj0Iu19IzmvGqKfT3RmENS6gHEeHM3pQNJDgcC2Dk1rCG6+1/LLOez2Vok8lLBJgqYv6qwbuPoe63+9/AJNbdYBvL0Je8Irjj+iF/sQ+0RexChElm+8RZeqQmlWQaoN/1vOHiRLzUTT2PegFfELCiZ4Sm2kgaLDNucJvtTPh13cm+ICK9T2dgW6Wt3qrf3nIxyQWtwk+X0UiLo254phTtlADpvMYeFvCHQ5TSMv43v4EMnqbldAYKw1bwF6oZjk0QZxV4CLMzrpl89gKRPzxo7SLnusseavAaQRuIGnMYd4Oh03dyPrt76Ia47uwIDAQAB",
+  "externally_connectable": {
+    "ids": ["*"]
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "https://*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*", "file://*/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "injected.js",
+        "permission-prompt.html",
+        "permission-prompt.js",
+        "design-tokens.css"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "assets/icon-16.png",
+    "32": "assets/icon-32.png",
+    "48": "assets/icon-48.png",
+    "128": "assets/icon-128.png"
+  },
+  "action": {
+    "default_title": "Web Agents API",
+    "default_popup": "sidebar.html",
+    "default_icon": {
+      "16": "assets/icon-16.png",
+      "32": "assets/icon-32.png",
+      "48": "assets/icon-48.png"
+    }
+  }
+}

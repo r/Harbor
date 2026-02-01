@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        :root {
+            --bg-gradient-start: #11998e;
+            --bg-gradient-end: #38ef7d;
+            --container-bg: rgba(255, 255, 255, 0.95);
+            --text-primary: #1a1a2e;
+            --text-secondary: #333;
+            --text-muted: #666;
+            --steps-bg: #f8faf8;
+            --step-number-bg: #4285f4;
+            --tip-bg: #fff9e6;
+            --tip-border: #f4c430;
+            --tip-strong: #8b6914;
+            --shadow: rgba(0,0,0,0.2);
+            --link-color: #4285f4;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-gradient-start: #1a2e2c;
+                --bg-gradient-end: #1e3d2f;
+                --container-bg: rgba(40, 40, 50, 0.95);
+                --text-primary: #ececec;
+                --text-secondary: #d0d0d0;
+                --text-muted: #a0a0a0;
+                --steps-bg: #252538;
+                --step-number-bg: #4285f4;
+                --tip-bg: rgba(244, 196, 48, 0.15);
+                --tip-border: #f4c430;
+                --tip-strong: #f4c430;
+                --shadow: rgba(0,0,0,0.4);
+                --link-color: #8ab4f8;
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+            padding: 20px;
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: var(--container-bg);
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 500px;
+            margin: 0 auto;
+            box-shadow: 0 10px 40px var(--shadow);
+        }
+        .success-icon {
+            font-size: 48px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0 0 20px 0;
+            text-align: center;
+            color: var(--text-primary);
+        }
+        h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 25px 0 15px 0;
+        }
+        p {
+            color: var(--text-secondary);
+        }
+        a {
+            color: var(--link-color);
+        }
+        .steps {
+            background: var(--steps-bg);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .step {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+        .step:last-child {
+            margin-bottom: 0;
+        }
+        .step-number {
+            background: var(--step-number-bg);
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 12px;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+        .step-text {
+            padding-top: 2px;
+            color: var(--text-secondary);
+        }
+        .step-text strong {
+            color: var(--text-primary);
+        }
+        .step-hint {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        .step-code {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 11px;
+            background: rgba(0,0,0,0.05);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .tip {
+            background: var(--tip-bg);
+            border-left: 4px solid var(--tip-border);
+            padding: 12px 15px;
+            margin-top: 20px;
+            border-radius: 0 8px 8px 0;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .tip strong {
+            color: var(--tip-strong);
+        }
+        .footer {
+            text-align: center;
+            margin-top: 25px;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">✅</div>
+        <h1>Installation Complete!</h1>
+        
+        <p>
+            Harbor has been successfully installed on your Mac. 
+            Follow these steps to get started:
+        </p>
+        
+        <div class="steps">
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-text">
+                    <strong>Install the Chrome extension</strong><br>
+                    <span class="step-hint">If the Web Store opened, click "Add to Chrome"</span><br>
+                    <span class="step-hint">For dev mode: Go to <span class="step-code">chrome://extensions</span></span>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-text">
+                    <strong>Click the Harbor icon</strong><br>
+                    <span class="step-hint">Look for the ⚓ icon in the toolbar extensions area</span>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-text">
+                    <strong>Open the side panel</strong><br>
+                    <span class="step-hint">Click the extension icon to open Harbor in the side panel</span>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">4</div>
+                <div class="step-text">
+                    <strong>Follow the welcome guide</strong><br>
+                    <span class="step-hint">Configure your LLM and install the Time server to test</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="tip">
+            <strong>💡 Dev Mode:</strong> If you loaded the extension manually, 
+            run <span class="step-code">/Library/Application Support/Harbor/configure-extension-id.sh</span>
+            to set up native messaging with your extension ID.
+        </div>
+        
+        <h2>Need Help?</h2>
+        <p>
+            Visit our documentation at 
+            <a href="https://github.com/ArcadeLabsInc/Harbor">github.com/ArcadeLabsInc/Harbor</a>
+            for guides, troubleshooting, and more.
+        </p>
+        
+        <div class="footer">
+            Thank you for installing Harbor! 🎉
+        </div>
+    </div>
+</body>
+</html>

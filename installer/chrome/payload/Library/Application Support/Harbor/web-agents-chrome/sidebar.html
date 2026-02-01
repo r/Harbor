@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Web Agents API</title>
+    <link rel="stylesheet" href="./design-tokens.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: var(--font-sans);
+        font-size: var(--text-sm);
+        background: var(--color-bg-base);
+        color: var(--color-text-primary);
+        margin: 0;
+        min-height: 100vh;
+        padding: var(--space-3);
+      }
+      
+      /* Header */
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--space-3);
+        padding-bottom: var(--space-2);
+        border-bottom: 1px solid var(--color-border-subtle);
+      }
+      .header-brand {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .header-logo {
+        width: 24px;
+        height: 24px;
+        background: var(--color-accent-primary);
+        border-radius: var(--radius-sm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--color-text-inverse);
+        font-weight: var(--weight-bold);
+        font-size: var(--text-xs);
+      }
+      .header-title {
+        font-size: var(--text-sm);
+        font-weight: var(--weight-semibold);
+        color: var(--color-text-primary);
+      }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
+      }
+
+      /* Buttons */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--space-1) var(--space-2);
+        font-size: var(--text-xs);
+        font-weight: var(--weight-medium);
+        border-radius: var(--radius-sm);
+        border: none;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .btn-ghost {
+        background: transparent;
+        color: var(--color-text-muted);
+      }
+      .btn-ghost:hover {
+        background: var(--color-surface-secondary);
+        color: var(--color-text-primary);
+      }
+      .btn-primary {
+        background: var(--color-accent-primary);
+        color: white;
+      }
+      .btn-primary:hover {
+        background: var(--color-accent-primary-hover);
+      }
+      .btn-danger {
+        background: var(--color-error);
+        color: white;
+      }
+      .btn-danger:hover {
+        opacity: 0.9;
+      }
+      .btn-sm {
+        padding: 4px 8px;
+        font-size: var(--text-xs);
+      }
+
+      /* Status indicators */
+      .status-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: var(--radius-full);
+        flex-shrink: 0;
+      }
+      .status-indicator.connected {
+        background: var(--color-success);
+      }
+      .status-indicator.disconnected {
+        background: var(--color-error);
+      }
+      .status-indicator.connecting {
+        background: var(--color-warning);
+        animation: pulse 1.5s infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+      }
+
+      /* Harbor Connection Panel */
+      .harbor-status {
+        background: var(--color-surface-primary);
+        border: 1px solid var(--color-border-default);
+        border-radius: var(--radius-md);
+        padding: var(--space-3);
+        margin-bottom: var(--space-3);
+      }
+      .harbor-status.connected {
+        border-color: var(--color-success);
+        border-left: 3px solid var(--color-success);
+      }
+      .harbor-status.disconnected {
+        border-color: var(--color-error);
+        border-left: 3px solid var(--color-error);
+      }
+      .harbor-status-header {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        margin-bottom: var(--space-2);
+      }
+      .harbor-status-title {
+        font-size: var(--text-sm);
+        font-weight: var(--weight-semibold);
+      }
+      .harbor-status-text {
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+      }
+      .harbor-status-text.connected {
+        color: var(--color-success);
+      }
+      .harbor-status-text.disconnected {
+        color: var(--color-error);
+      }
+      .harbor-install-hint {
+        margin-top: var(--space-2);
+        padding: var(--space-2);
+        background: var(--color-warning-subtle);
+        border-radius: var(--radius-sm);
+        font-size: var(--text-xs);
+        color: var(--color-warning);
+      }
+
+      /* Panel */
+      .panel {
+        background: var(--color-surface-primary);
+        border: 1px solid var(--color-border-default);
+        border-radius: var(--radius-md);
+        margin-bottom: var(--space-3);
+      }
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--space-2) var(--space-3);
+        border-bottom: 1px solid var(--color-border-subtle);
+        cursor: pointer;
+        user-select: none;
+      }
+      .panel-header:hover {
+        background: var(--color-surface-secondary);
+      }
+      .panel-header-left {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .panel-title {
+        font-size: var(--text-xs);
+        font-weight: var(--weight-semibold);
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: var(--tracking-wide);
+      }
+      .panel-collapse-icon {
+        color: var(--color-text-muted);
+        font-size: 10px;
+        transition: transform 0.2s;
+      }
+      .panel-collapse-icon.collapsed {
+        transform: rotate(-90deg);
+      }
+      .panel-body {
+        padding: var(--space-3);
+      }
+      .panel-body.collapsed {
+        display: none;
+      }
+
+      /* Toggle switch */
+      .toggle-switch {
+        position: relative;
+        width: 40px;
+        height: 22px;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+      .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: var(--color-surface-tertiary);
+        transition: 0.2s;
+        border-radius: 22px;
+        border: 1px solid var(--color-border-default);
+      }
+      .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 16px;
+        width: 16px;
+        left: 2px;
+        bottom: 2px;
+        background-color: var(--color-text-muted);
+        transition: 0.2s;
+        border-radius: 50%;
+      }
+      .toggle-switch input:checked + .toggle-slider {
+        background-color: var(--color-accent-primary);
+        border-color: var(--color-accent-primary);
+      }
+      .toggle-switch input:checked + .toggle-slider:before {
+        transform: translateX(18px);
+        background-color: white;
+      }
+      .toggle-switch input:disabled + .toggle-slider {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      /* Feature flag items */
+      .feature-flag-item {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--space-2);
+        padding: var(--space-2);
+        background: var(--color-surface-secondary);
+        border-radius: var(--radius-sm);
+        margin-bottom: var(--space-2);
+      }
+      .feature-flag-item:last-child {
+        margin-bottom: 0;
+      }
+      .feature-flag-info {
+        flex: 1;
+      }
+      .feature-flag-name {
+        font-size: var(--text-sm);
+        font-weight: var(--weight-medium);
+        color: var(--color-text-primary);
+        margin-bottom: 4px;
+      }
+      .feature-flag-desc {
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+        line-height: 1.4;
+      }
+      .feature-flag-api {
+        margin-top: 6px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .feature-flag-api code {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        background: var(--color-surface-tertiary);
+        padding: 2px 6px;
+        border-radius: var(--radius-sm);
+        color: var(--color-accent-primary);
+      }
+      .feature-flag-reload-hint {
+        font-size: var(--text-xs);
+        color: var(--color-warning);
+        text-align: center;
+        padding: var(--space-2);
+        background: var(--color-warning-bg);
+        border-radius: var(--radius-sm);
+        margin-top: var(--space-2);
+        display: none;
+      }
+      .feature-flag-reload-hint.visible {
+        display: block;
+      }
+
+      /* Permissions list */
+      .permissions-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+      }
+      .permission-item {
+        background: var(--color-surface-secondary);
+        border-radius: var(--radius-sm);
+        padding: var(--space-2);
+        border: 1px solid var(--color-border-subtle);
+      }
+      .permission-origin {
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--color-accent-primary);
+        word-break: break-all;
+        margin-bottom: var(--space-1);
+      }
+      .permission-origin.current {
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
+      }
+      .permission-origin .current-badge {
+        font-size: 9px;
+        padding: 1px 4px;
+        background: var(--color-accent-bg);
+        color: var(--color-accent-primary);
+        border-radius: var(--radius-sm);
+        font-family: var(--font-sans);
+      }
+      .permission-scopes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: var(--space-2);
+      }
+      .permission-scope-badge {
+        font-size: 9px;
+        padding: 2px 6px;
+        border-radius: var(--radius-sm);
+        background: var(--color-success-bg);
+        color: var(--color-success);
+      }
+      .permission-scope-badge.temporary {
+        background: var(--color-warning-bg);
+        color: var(--color-warning);
+      }
+      .permission-tools {
+        margin-top: var(--space-1);
+        padding-top: var(--space-1);
+        border-top: 1px solid var(--color-border-subtle);
+      }
+      .permission-tools-title {
+        font-size: 9px;
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        margin-bottom: var(--space-1);
+      }
+      .permission-tools-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .permission-tool-badge {
+        font-size: 9px;
+        padding: 2px 6px;
+        border-radius: var(--radius-sm);
+        background: var(--color-surface-tertiary);
+        color: var(--color-text-secondary);
+        font-family: var(--font-mono);
+      }
+      .permission-actions {
+        display: flex;
+        gap: var(--space-1);
+        margin-top: var(--space-2);
+      }
+
+      /* Current site section */
+      .current-site-section {
+        background: var(--color-accent-primary-subtle);
+        border: 1px solid var(--color-accent-primary);
+        border-radius: var(--radius-md);
+        padding: var(--space-3);
+        margin-bottom: var(--space-3);
+      }
+      .current-site-header {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        margin-bottom: var(--space-2);
+      }
+      .current-site-title {
+        font-size: var(--text-xs);
+        font-weight: var(--weight-semibold);
+        color: var(--color-accent-primary);
+        text-transform: uppercase;
+        letter-spacing: var(--tracking-wide);
+      }
+      .current-site-origin {
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--color-text-secondary);
+        word-break: break-all;
+      }
+      .current-site-no-permissions {
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+        font-style: italic;
+      }
+
+      /* Empty state */
+      .empty-state {
+        text-align: center;
+        color: var(--color-text-muted);
+        padding: var(--space-4);
+        font-size: var(--text-xs);
+      }
+
+      /* Toast notification */
+      .toast {
+        position: fixed;
+        bottom: var(--space-4);
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--color-text-primary);
+        color: var(--color-bg-base);
+        padding: var(--space-2) var(--space-3);
+        border-radius: var(--radius-md);
+        font-size: var(--text-xs);
+        font-weight: var(--weight-medium);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 1000;
+        animation: toast-in 0.2s ease-out;
+      }
+      .toast.error {
+        background: var(--color-error);
+        color: white;
+      }
+      .toast.success {
+        background: var(--color-success);
+        color: white;
+      }
+      @keyframes toast-in {
+        from {
+          opacity: 0;
+          transform: translateX(-50%) translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="header-brand">
+        <div class="header-logo">W</div>
+        <span class="header-title">Web Agents API</span>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-ghost btn-sm" id="refresh-btn" title="Refresh">↻</button>
+        <button class="btn btn-ghost btn-sm" id="theme-toggle" title="Toggle theme">🖥️</button>
+      </div>
+    </div>
+
+    <!-- Harbor Connection Status -->
+    <div class="harbor-status disconnected" id="harbor-status">
+      <div class="harbor-status-header">
+        <div class="status-indicator disconnected" id="harbor-status-indicator"></div>
+        <div class="harbor-status-title">Harbor Extension</div>
+      </div>
+      <div class="harbor-status-text disconnected" id="harbor-status-text">
+        Checking connection...
+      </div>
+      <div class="harbor-install-hint" id="harbor-install-hint" style="display: none;">
+        Harbor extension is required for AI and tool capabilities. 
+        <a href="https://github.com/anthropics/harbor" target="_blank">Install Harbor</a>
+      </div>
+    </div>
+
+    <!-- Current Site Permissions -->
+    <div class="current-site-section" id="current-site-section">
+      <div class="current-site-header">
+        <span class="current-site-title">Current Site</span>
+      </div>
+      <div class="current-site-origin" id="current-site-origin">—</div>
+      <div id="current-site-permissions">
+        <div class="current-site-no-permissions">No permissions granted for this site</div>
+      </div>
+    </div>
+
+    <!-- API Exposure Toggles -->
+    <div class="panel" id="api-toggles-panel">
+      <div class="panel-header" id="api-toggles-header">
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon" id="api-toggles-toggle">▼</span>
+          <div class="panel-title">Browser Agent Capabilities</div>
+        </div>
+      </div>
+      <div class="panel-body" id="api-toggles-body">
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Text Generation</div>
+            <div class="feature-flag-desc">Sites can send prompts to an AI and get responses back. This is the basic building block for any AI-powered feature.</div>
+            <div class="feature-flag-api"><code>window.ai.prompt()</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-textGeneration" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Tool Access</div>
+            <div class="feature-flag-desc">The site's code can call specific tools directly—e.g., "call the Gmail tool to fetch inbox." The developer decides exactly which tools run and when.</div>
+            <div class="feature-flag-api"><code>agent.tools.list()</code> <code>agent.tools.call()</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-toolAccess" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Agentic Tool Use</div>
+            <div class="feature-flag-desc">The AI autonomously decides which tools to call. Give it a task like "summarize my unread emails" and it figures out the steps itself. More powerful, but the AI has more control.</div>
+            <div class="feature-flag-api"><code>agent.run()</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-toolCalling" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Browser Interaction</div>
+            <div class="feature-flag-desc">The AI can click buttons, fill out forms, and scroll on the current page. Useful for automating tasks within a single site.</div>
+            <div class="feature-flag-api"><code>agent.browser.click()</code> <code>agent.browser.fill()</code> <code>agent.browser.scroll()</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-browserInteraction" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Browser Control</div>
+            <div class="feature-flag-desc">The AI can open new tabs, navigate to URLs, and fetch content from other websites. Enables research and multi-site workflows.</div>
+            <div class="feature-flag-api"><code>agent.browser.tabs</code> <code>agent.browser.navigate()</code> <code>agent.browser.fetch()</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-browserControl" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Multi-Agent</div>
+            <div class="feature-flag-desc">Multiple AI agents can work together and coordinate. Enables complex workflows where specialized agents collaborate on tasks.</div>
+            <div class="feature-flag-api"><code>agent.a2a</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-multiAgent" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-reload-hint" id="feature-flag-reload-hint">
+          ⚠️ Reload pages to apply changes
+        </div>
+      </div>
+    </div>
+
+    <!-- All Site Permissions -->
+    <div class="panel" id="permissions-panel">
+      <div class="panel-header" id="permissions-header">
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon collapsed" id="permissions-toggle">▼</span>
+          <div class="panel-title">All Site Permissions</div>
+        </div>
+      </div>
+      <div class="panel-body collapsed" id="permissions-body">
+        <div id="permissions-list" class="permissions-list">
+          <div class="empty-state">No permissions granted yet</div>
+        </div>
+        <button class="btn btn-danger btn-sm" id="revoke-all-btn" style="width: 100%; margin-top: var(--space-3); display: none;">
+          Revoke All Permissions
+        </button>
+      </div>
+    </div>
+
+    <script type="module" src="./sidebar.js"></script>
+  </body>
+</html>

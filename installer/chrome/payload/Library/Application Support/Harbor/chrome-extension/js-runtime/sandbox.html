@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>JS MCP Sandbox</title>
+</head>
+<body>
+<script>
+// Sandboxed page for executing JS MCP server code
+// This page can use eval/Function because it's listed in manifest sandbox.pages
+
+window.addEventListener('message', function(event) {
+  const data = event.data;
+  if (!data || !data.type) return;
+
+  if (data.type === 'load-code') {
+    try {
+      // Execute the code using Function constructor (allowed in sandbox)
+      const fn = new Function(data.code);
+      fn();
+    } catch (e) {
+      window.parent.postMessage({ 
+        type: 'error', 
+        message: e instanceof Error ? e.message : String(e) 
+      }, '*');
+    }
+  }
+});
+
+// Signal ready to receive code
+window.parent.postMessage({ type: 'sandbox-ready' }, '*');
+</script>
+</body>
+</html>

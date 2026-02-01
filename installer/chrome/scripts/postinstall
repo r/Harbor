@@ -1,0 +1,596 @@
+#!/bin/bash
+# Harbor Chrome Installer - Post-install setup
+# This script runs after files are copied to set up native messaging and Chrome extension
+
+set -e
+
+LOG_FILE="/tmp/harbor-chrome-install.log"
+echo "Harbor Chrome post-install started at $(date)" >> "$LOG_FILE"
+
+# Installation paths
+HARBOR_DIR="/Library/Application Support/Harbor"
+HARBOR_BIN="$HARBOR_DIR/harbor-bridge"
+CHROME_EXTENSION_DIR="$HARBOR_DIR/chrome-extension"
+WEB_AGENTS_EXTENSION_DIR="$HARBOR_DIR/web-agents-chrome"
+
+# =============================================================================
+# Select correct binary for current architecture
+# =============================================================================
+select_binary() {
+    echo "Selecting binary for current architecture..."
+    
+    # Use sysctl to detect native architecture (works even under Rosetta)
+    if sysctl -n hw.optional.arm64 2>/dev/null | grep -q "1"; then
+        ARCH="arm64"
+    else
+        ARCH=$(uname -m)
+    fi
+    echo "  Detected architecture: $ARCH" >> "$LOG_FILE"
+    
+    if [ "$ARCH" = "arm64" ]; then
+        BINARY_SOURCE="$HARBOR_DIR/harbor-bridge-arm64"
+    else
+        BINARY_SOURCE="$HARBOR_DIR/harbor-bridge-x64"
+    fi
+    
+    if [ -f "$BINARY_SOURCE" ]; then
+        # Copy the correct binary
+        cp "$BINARY_SOURCE" "$HARBOR_BIN"
+        chmod +x "$HARBOR_BIN"
+        echo "  ✓ Selected $ARCH binary"
+        echo "  Selected binary: $BINARY_SOURCE -> $HARBOR_BIN" >> "$LOG_FILE"
+        
+        # Clean up both architecture-specific binaries
+        rm -f "$HARBOR_DIR/harbor-bridge-arm64" 2>/dev/null || true
+        rm -f "$HARBOR_DIR/harbor-bridge-x64" 2>/dev/null || true
+    elif [ -f "$HARBOR_BIN" ]; then
+        # Single-arch build already has the binary in place
+        echo "  ✓ Using pre-built binary"
+        echo "  Using pre-built binary at: $HARBOR_BIN" >> "$LOG_FILE"
+    else
+        echo "  ✗ ERROR: No suitable binary found for $ARCH!" | tee -a "$LOG_FILE"
+        exit 1
+    fi
+}
+
+# Native messaging paths for Chromium-based browsers
+CHROME_NATIVE_HOSTS="/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+CHROMIUM_NATIVE_HOSTS="/Library/Application Support/Chromium/NativeMessagingHosts"
+EDGE_NATIVE_HOSTS="/Library/Application Support/Microsoft Edge/NativeMessagingHosts"
+BRAVE_NATIVE_HOSTS="/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"
+ARC_NATIVE_HOSTS="/Library/Application Support/Arc/User Data/NativeMessagingHosts"
+VIVALDI_NATIVE_HOSTS="/Library/Application Support/Vivaldi/NativeMessagingHosts"
+MANIFEST_NAME="harbor_bridge_host"
+
+# Extension IDs (stamped by build-pkg.sh from credentials.env)
+# Chrome extension IDs (32-char string from Web Store or generated on first load)
+CHROME_EXTENSION_ID="__CHROME_EXTENSION_ID__"
+CHROME_WEB_AGENTS_EXTENSION_ID="__CHROME_WEB_AGENTS_EXTENSION_ID__"
+
+# Web Store URLs
+CHROME_WEBSTORE_URL="__CHROME_WEBSTORE_URL__"
+CHROME_WEB_AGENTS_WEBSTORE_URL="__CHROME_WEB_AGENTS_WEBSTORE_URL__"
+
+# =============================================================================
+# Create launcher script
+# =============================================================================
+create_launcher() {
+    echo "Creating launcher script..."
+    
+    LAUNCHER_SCRIPT="$HARBOR_DIR/harbor-bridge-launcher"
+    
+    cat > "$LAUNCHER_SCRIPT" << 'LAUNCHER_EOF'
+#!/bin/bash
+# Harbor Bridge Launcher
+# Wrapper script for native messaging
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Suppress Node.js warnings that could corrupt the native messaging protocol
+export NODE_NO_WARNINGS=1
+
+# Tell pkg where to find native modules (better-sqlite3)
+export PKG_EXECPATH="$SCRIPT_DIR/harbor-bridge"
+
+# Log file for debugging
+LOG_FILE="$HOME/.harbor/bridge.log"
+mkdir -p "$(dirname "$LOG_FILE")"
+
+# Execute the bridge, redirecting stderr to log file
+exec "$SCRIPT_DIR/harbor-bridge" 2>>"$LOG_FILE"
+LAUNCHER_EOF
+
+    chmod +x "$LAUNCHER_SCRIPT"
+    echo "Launcher script created at: $LAUNCHER_SCRIPT" >> "$LOG_FILE"
+}
+
+# =============================================================================
+# Install native messaging manifest for a Chromium-based browser
+# =============================================================================
+install_chrome_native_manifest_for_browser() {
+    local BROWSER_NAME="$1"
+    local HOSTS_DIR="$2"
+    
+    echo "  Installing native messaging manifest for $BROWSER_NAME..."
+    
+    LAUNCHER_PATH="$HARBOR_DIR/harbor-bridge-launcher"
+    
+    # Create directory if it doesn't exist
+    mkdir -p "$HOSTS_DIR"
+    
+    MANIFEST_FILE="$HOSTS_DIR/${MANIFEST_NAME}.json"
+    
+    # Build allowed_origins array based on configured extension IDs
+    ORIGINS="[]"
+    
+    if [ -n "$CHROME_EXTENSION_ID" ] && [ "$CHROME_EXTENSION_ID" != "__CHROME_EXTENSION_ID__" ]; then
+        # Published extension - use specific ID
+        if [ -n "$CHROME_WEB_AGENTS_EXTENSION_ID" ] && [ "$CHROME_WEB_AGENTS_EXTENSION_ID" != "__CHROME_WEB_AGENTS_EXTENSION_ID__" ]; then
+            ORIGINS="[\"chrome-extension://$CHROME_EXTENSION_ID/\", \"chrome-extension://$CHROME_WEB_AGENTS_EXTENSION_ID/\"]"
+        else
+            ORIGINS="[\"chrome-extension://$CHROME_EXTENSION_ID/\"]"
+        fi
+    else
+        # Dev mode - we need to allow any extension loaded in dev mode
+        # Chrome generates a unique ID when you load an unpacked extension
+        # We'll add a placeholder and update it later, or use a wildcard approach
+        # Note: Chrome doesn't support wildcards, so we'll need the user to update this
+        # For now, leave empty and provide instructions
+        ORIGINS="[]"
+    fi
+    
+    cat > "$MANIFEST_FILE" << EOF
+{
+  "name": "$MANIFEST_NAME",
+  "description": "Harbor Bridge - AI Agent Platform with MCP Tools",
+  "path": "$LAUNCHER_PATH",
+  "type": "stdio",
+  "allowed_origins": $ORIGINS
+}
+EOF
+
+    echo "$BROWSER_NAME native manifest installed at: $MANIFEST_FILE" >> "$LOG_FILE"
+    echo "    ✓ $BROWSER_NAME: $MANIFEST_FILE"
+}
+
+# =============================================================================
+# Install native messaging manifests for all Chromium browsers
+# =============================================================================
+install_chrome_native_manifests() {
+    echo "Installing Chrome native messaging manifests..."
+    
+    # Install for Google Chrome
+    if [ -d "/Applications/Google Chrome.app" ]; then
+        install_chrome_native_manifest_for_browser "Chrome" "$CHROME_NATIVE_HOSTS"
+    fi
+    
+    # Install for Chromium
+    if [ -d "/Applications/Chromium.app" ]; then
+        install_chrome_native_manifest_for_browser "Chromium" "$CHROMIUM_NATIVE_HOSTS"
+    fi
+    
+    # Install for Microsoft Edge
+    if [ -d "/Applications/Microsoft Edge.app" ]; then
+        install_chrome_native_manifest_for_browser "Edge" "$EDGE_NATIVE_HOSTS"
+    fi
+    
+    # Install for Brave
+    if [ -d "/Applications/Brave Browser.app" ]; then
+        install_chrome_native_manifest_for_browser "Brave" "$BRAVE_NATIVE_HOSTS"
+    fi
+    
+    # Install for Arc
+    if [ -d "/Applications/Arc.app" ]; then
+        install_chrome_native_manifest_for_browser "Arc" "$ARC_NATIVE_HOSTS"
+    fi
+    
+    # Install for Vivaldi
+    if [ -d "/Applications/Vivaldi.app" ]; then
+        install_chrome_native_manifest_for_browser "Vivaldi" "$VIVALDI_NATIVE_HOSTS"
+    fi
+    
+    # Also update user-level manifests if they exist
+    update_user_chrome_manifests
+}
+
+# =============================================================================
+# Update user-level Chrome native messaging manifests
+# =============================================================================
+update_user_chrome_manifests() {
+    ACTUAL_USER="${SUDO_USER:-}"
+    if [ -z "$ACTUAL_USER" ]; then
+        ACTUAL_USER=$(stat -f '%Su' /dev/console 2>/dev/null || echo "")
+    fi
+    
+    if [ -z "$ACTUAL_USER" ] || [ "$ACTUAL_USER" = "root" ]; then
+        return 0
+    fi
+    
+    USER_HOME=$(eval echo "~$ACTUAL_USER")
+    LAUNCHER_PATH="$HARBOR_DIR/harbor-bridge-launcher"
+    
+    # Build allowed_origins
+    if [ -n "$CHROME_EXTENSION_ID" ] && [ "$CHROME_EXTENSION_ID" != "__CHROME_EXTENSION_ID__" ]; then
+        if [ -n "$CHROME_WEB_AGENTS_EXTENSION_ID" ] && [ "$CHROME_WEB_AGENTS_EXTENSION_ID" != "__CHROME_WEB_AGENTS_EXTENSION_ID__" ]; then
+            ORIGINS="[\"chrome-extension://$CHROME_EXTENSION_ID/\", \"chrome-extension://$CHROME_WEB_AGENTS_EXTENSION_ID/\"]"
+        else
+            ORIGINS="[\"chrome-extension://$CHROME_EXTENSION_ID/\"]"
+        fi
+    else
+        ORIGINS="[]"
+    fi
+    
+    # Check and update user Chrome manifest
+    USER_CHROME_DIR="$USER_HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+    if [ -d "$USER_CHROME_DIR" ]; then
+        cat > "$USER_CHROME_DIR/${MANIFEST_NAME}.json" << EOF
+{
+  "name": "$MANIFEST_NAME",
+  "description": "Harbor Bridge - AI Agent Platform with MCP Tools",
+  "path": "$LAUNCHER_PATH",
+  "type": "stdio",
+  "allowed_origins": $ORIGINS
+}
+EOF
+        chown "$ACTUAL_USER" "$USER_CHROME_DIR/${MANIFEST_NAME}.json"
+        echo "    ✓ Updated user Chrome manifest"
+    fi
+}
+
+# =============================================================================
+# Install Chrome extension via Web Store or dev mode
+# =============================================================================
+install_chrome_extension() {
+    echo "Setting up Chrome extension..."
+    
+    # Get the actual user
+    ACTUAL_USER="${SUDO_USER:-}"
+    if [ -z "$ACTUAL_USER" ]; then
+        ACTUAL_USER=$(stat -f '%Su' /dev/console 2>/dev/null || echo "")
+    fi
+    
+    # Check if Web Store URL is configured
+    if [ -n "$CHROME_WEBSTORE_URL" ] && [ "$CHROME_WEBSTORE_URL" != "__CHROME_WEBSTORE_URL__" ]; then
+        echo "  Opening Chrome Web Store..."
+        echo "Chrome Web Store URL: $CHROME_WEBSTORE_URL" >> "$LOG_FILE"
+        
+        if [ -n "$ACTUAL_USER" ] && [ "$ACTUAL_USER" != "root" ]; then
+            # Open Chrome Web Store page
+            su "$ACTUAL_USER" -c "open '$CHROME_WEBSTORE_URL'" 2>> "$LOG_FILE" &
+            echo "  ✓ Chrome Web Store opened"
+            echo "  Click 'Add to Chrome' to install the extension"
+            
+            # Also open Web Agents if configured
+            if [ -n "$CHROME_WEB_AGENTS_WEBSTORE_URL" ] && [ "$CHROME_WEB_AGENTS_WEBSTORE_URL" != "__CHROME_WEB_AGENTS_WEBSTORE_URL__" ]; then
+                sleep 2
+                su "$ACTUAL_USER" -c "open '$CHROME_WEB_AGENTS_WEBSTORE_URL'" 2>> "$LOG_FILE" &
+                echo "  ✓ Web Agents Chrome Web Store opened"
+            fi
+        else
+            echo "  ⚠ Could not determine user, please install manually:"
+            echo "    $CHROME_WEBSTORE_URL"
+        fi
+    else
+        # Dev mode instructions
+        echo "  ⚠ Chrome Web Store URL not configured (dev mode)"
+        echo ""
+        echo "  To load the extension manually:"
+        echo "    1. Open Chrome → chrome://extensions/"
+        echo "    2. Enable 'Developer mode' (top right toggle)"
+        echo "    3. Click 'Load unpacked'"
+        echo "    4. Select: $CHROME_EXTENSION_DIR"
+        echo ""
+        
+        if [ -d "$WEB_AGENTS_EXTENSION_DIR" ]; then
+            echo "  For Web Agents extension, also load:"
+            echo "    $WEB_AGENTS_EXTENSION_DIR"
+            echo ""
+        fi
+        
+        # Create a helper script to update the native messaging manifest with the dev extension ID
+        create_dev_mode_helper
+    fi
+}
+
+# =============================================================================
+# Create helper script for dev mode extension ID configuration
+# =============================================================================
+create_dev_mode_helper() {
+    HELPER_SCRIPT="$HARBOR_DIR/configure-extension-id.sh"
+    
+    cat > "$HELPER_SCRIPT" << 'HELPER_EOF'
+#!/bin/bash
+# Harbor - Configure Extension ID for Native Messaging
+# Run this after loading the extension in developer mode
+
+echo ""
+echo "Harbor - Configure Extension ID"
+echo "================================"
+echo ""
+echo "After loading the extension in Chrome developer mode, you need to"
+echo "configure the native messaging manifest with the extension ID."
+echo ""
+echo "To find your extension ID:"
+echo "  1. Go to chrome://extensions/"
+echo "  2. Find 'Harbor' in the list"
+echo "  3. Copy the ID (32-character string like 'abcdefghijklmnopabcdefghijklmnop')"
+echo ""
+
+read -p "Enter your Harbor extension ID: " EXT_ID
+
+if [ -z "$EXT_ID" ]; then
+    echo "No extension ID provided. Exiting."
+    exit 1
+fi
+
+# Validate format (32 lowercase letters)
+if ! [[ "$EXT_ID" =~ ^[a-p]{32}$ ]]; then
+    echo "Warning: Extension ID format looks unusual (expected 32 lowercase letters a-p)"
+    read -p "Continue anyway? (y/N): " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
+echo ""
+echo "Updating native messaging manifests..."
+
+# Find all native messaging manifest files
+MANIFEST_LOCATIONS=(
+    "/Library/Application Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json"
+    "/Library/Application Support/Chromium/NativeMessagingHosts/harbor_bridge_host.json"
+    "/Library/Application Support/Microsoft Edge/NativeMessagingHosts/harbor_bridge_host.json"
+    "/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/harbor_bridge_host.json"
+    "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json"
+)
+
+UPDATED=0
+for MANIFEST in "${MANIFEST_LOCATIONS[@]}"; do
+    if [ -f "$MANIFEST" ]; then
+        # Update allowed_origins to include the extension ID
+        # Use Python for JSON manipulation (more reliable than sed)
+        python3 -c "
+import json
+import sys
+
+try:
+    with open('$MANIFEST', 'r') as f:
+        data = json.load(f)
+    
+    origin = 'chrome-extension://$EXT_ID/'
+    if 'allowed_origins' not in data:
+        data['allowed_origins'] = []
+    
+    if origin not in data['allowed_origins']:
+        data['allowed_origins'].append(origin)
+    
+    with open('$MANIFEST', 'w') as f:
+        json.dump(data, f, indent=2)
+    
+    print(f'  ✓ Updated: $MANIFEST')
+except Exception as e:
+    print(f'  ✗ Failed: $MANIFEST - {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null && UPDATED=$((UPDATED + 1)) || echo "  ⚠ Could not update $MANIFEST"
+    fi
+done
+
+if [ $UPDATED -gt 0 ]; then
+    echo ""
+    echo "✓ Updated $UPDATED manifest(s)"
+    echo ""
+    echo "Please restart Chrome for changes to take effect."
+else
+    echo ""
+    echo "⚠ No manifests were updated. You may need to run this with sudo:"
+    echo "  sudo $0"
+fi
+HELPER_EOF
+
+    chmod +x "$HELPER_SCRIPT"
+    echo "  Helper script created: $HELPER_SCRIPT"
+    echo "  Run this after loading the extension to configure native messaging"
+}
+
+# =============================================================================
+# Set permissions
+# =============================================================================
+set_permissions() {
+    echo "Setting permissions..."
+    
+    # Make the bridge executable
+    chmod +x "$HARBOR_BIN"
+    
+    # Make the uninstall script executable
+    if [ -f "$HARBOR_DIR/uninstall.sh" ]; then
+        chmod +x "$HARBOR_DIR/uninstall.sh"
+    fi
+    
+    echo "Permissions set" >> "$LOG_FILE"
+}
+
+# =============================================================================
+# Install uninstaller
+# =============================================================================
+install_uninstaller() {
+    echo "Installing uninstaller..."
+    
+    # Create CLI symlink
+    if [ -d "/usr/local/bin" ]; then
+        ln -sf "$HARBOR_DIR/uninstall.sh" "/usr/local/bin/harbor-uninstall"
+        echo "  ✓ CLI uninstaller: harbor-uninstall"
+    fi
+    
+    # Create uninstaller app from AppleScript
+    if [ -d "$HARBOR_DIR/Uninstall Harbor.app" ]; then
+        cp -R "$HARBOR_DIR/Uninstall Harbor.app" "/Applications/"
+        echo "  ✓ Uninstaller app: /Applications/Uninstall Harbor.app"
+    fi
+    
+    echo "Uninstaller installed" >> "$LOG_FILE"
+}
+
+# =============================================================================
+# Install Ollama (for Local LLM support)
+# =============================================================================
+install_ollama() {
+    echo "Setting up Ollama for Local LLM..."
+    
+    # Check if Ollama is already installed
+    if command -v ollama &> /dev/null; then
+        OLLAMA_VERSION=$(ollama --version 2>/dev/null | head -1 || echo "installed")
+        echo "  ✓ Ollama already installed: $OLLAMA_VERSION"
+        echo "Ollama already installed: $OLLAMA_VERSION" >> "$LOG_FILE"
+        return 0
+    fi
+    
+    # Check if we can install (need network)
+    if ! ping -c 1 ollama.com &> /dev/null; then
+        echo "  ⚠ Cannot reach ollama.com - skipping Ollama installation"
+        echo "    Install Ollama later with: brew install ollama"
+        echo "    Or download from: https://ollama.com"
+        echo "Cannot reach ollama.com, skipping Ollama install" >> "$LOG_FILE"
+        return 0
+    fi
+    
+    # Get the actual user
+    ACTUAL_USER="${SUDO_USER:-}"
+    if [ -z "$ACTUAL_USER" ]; then
+        ACTUAL_USER=$(stat -f '%Su' /dev/console 2>/dev/null || echo "")
+    fi
+    
+    echo "  Downloading Ollama..."
+    echo "Downloading Ollama for user: $ACTUAL_USER" >> "$LOG_FILE"
+    
+    # Create temp directory
+    OLLAMA_TEMP="/tmp/harbor-ollama-install"
+    mkdir -p "$OLLAMA_TEMP"
+    
+    # Download Ollama
+    OLLAMA_URL="https://ollama.com/download/Ollama-darwin.zip"
+    OLLAMA_ZIP="$OLLAMA_TEMP/Ollama.zip"
+    
+    if curl -sL "$OLLAMA_URL" -o "$OLLAMA_ZIP" 2>> "$LOG_FILE"; then
+        echo "  Extracting Ollama..."
+        
+        cd "$OLLAMA_TEMP"
+        unzip -q "$OLLAMA_ZIP" -d "$OLLAMA_TEMP" 2>> "$LOG_FILE"
+        
+        if [ -d "$OLLAMA_TEMP/Ollama.app" ]; then
+            rm -rf "/Applications/Ollama.app" 2>/dev/null || true
+            mv "$OLLAMA_TEMP/Ollama.app" "/Applications/"
+            
+            echo "  ✓ Ollama installed to /Applications/Ollama.app"
+            echo "Ollama installed to /Applications" >> "$LOG_FILE"
+            
+            if [ -n "$ACTUAL_USER" ] && [ "$ACTUAL_USER" != "root" ]; then
+                echo "  Starting Ollama..."
+                su "$ACTUAL_USER" -c "open -a Ollama" 2>> "$LOG_FILE" &
+                echo "  ✓ Ollama started"
+            fi
+        else
+            echo "  ⚠ Ollama extraction failed - install manually"
+            echo "Ollama extraction failed" >> "$LOG_FILE"
+        fi
+        
+        rm -rf "$OLLAMA_TEMP"
+    else
+        echo "  ⚠ Ollama download failed - install manually"
+        echo "    Run: brew install ollama"
+        echo "Ollama download failed" >> "$LOG_FILE"
+        rm -rf "$OLLAMA_TEMP"
+    fi
+}
+
+# =============================================================================
+# Create first-run marker
+# =============================================================================
+create_first_run_marker() {
+    ACTUAL_USER="${SUDO_USER:-}"
+    if [ -z "$ACTUAL_USER" ]; then
+        ACTUAL_USER=$(stat -f '%Su' /dev/console 2>/dev/null || echo "")
+    fi
+    
+    if [ -z "$ACTUAL_USER" ] || [ "$ACTUAL_USER" = "root" ]; then
+        echo "Could not determine actual user for marker, skipping" >> "$LOG_FILE"
+        return 0
+    fi
+    
+    USER_HOME=$(eval echo "~$ACTUAL_USER")
+    MARKER_DIR="$USER_HOME/.harbor"
+    
+    su "$ACTUAL_USER" -c "mkdir -p '$MARKER_DIR'"
+    
+    if [ ! -f "$MARKER_DIR/.installed" ]; then
+        su "$ACTUAL_USER" -c "cat > '$MARKER_DIR/.installed'" << EOF
+first_install=$(date +%s)
+show_welcome=true
+browser=chrome
+EOF
+        echo "First-run marker created for $ACTUAL_USER" >> "$LOG_FILE"
+    else
+        echo "Upgrade marker exists for $ACTUAL_USER" >> "$LOG_FILE"
+    fi
+}
+
+# =============================================================================
+# Main installation
+# =============================================================================
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "  Harbor Chrome - Post-Installation Setup"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Run installation steps
+select_binary
+set_permissions
+create_launcher
+install_chrome_native_manifests
+install_ollama
+install_chrome_extension
+install_uninstaller
+create_first_run_marker
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+echo "✓ Harbor has been installed successfully!"
+echo ""
+
+if [ -n "$CHROME_WEBSTORE_URL" ] && [ "$CHROME_WEBSTORE_URL" != "__CHROME_WEBSTORE_URL__" ]; then
+    echo "CHROME WEB STORE:"
+    echo "  The Chrome Web Store page should have opened."
+    echo "  Click 'Add to Chrome' to install the extension."
+    echo ""
+    echo "  After installation, click the Harbor icon in the toolbar"
+    echo "  to open the side panel."
+else
+    echo "CHROME (Developer Mode):"
+    echo "  1. Open Chrome → chrome://extensions/"
+    echo "  2. Enable 'Developer mode' (top right toggle)"
+    echo "  3. Click 'Load unpacked'"
+    echo "  4. Select: $CHROME_EXTENSION_DIR"
+    echo "  5. Note the extension ID (32-character string)"
+    echo "  6. Run: $HARBOR_DIR/configure-extension-id.sh"
+    echo "     to configure native messaging"
+    echo ""
+fi
+echo "LOCAL LLM:"
+echo "  Ollama provides fast, local AI using your Mac's GPU."
+echo "  If Ollama wasn't installed, run: brew install ollama"
+echo ""
+echo "MCP SERVERS:"
+echo "  Some MCP servers may require Docker Desktop."
+echo ""
+echo "To uninstall Harbor later:"
+echo "  • Double-click 'Uninstall Harbor' in /Applications"
+echo "  • Or run: harbor-uninstall"
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+
+echo "Post-install completed successfully at $(date)" >> "$LOG_FILE"
+exit 0
