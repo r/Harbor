@@ -58,7 +58,7 @@ select_binary() {
 FIREFOX_NATIVE_HOSTS="/Library/Application Support/Mozilla/NativeMessagingHosts"
 CHROME_NATIVE_HOSTS="/Library/Application Support/Google/Chrome/NativeMessagingHosts"
 CHROMIUM_NATIVE_HOSTS="/Library/Application Support/Chromium/NativeMessagingHosts"
-MANIFEST_NAME="harbor_bridge_host"
+MANIFEST_NAME="harbor_bridge"
 
 # Extension IDs (stamped by build-pkg.sh from credentials.env)
 # Firefox extension IDs (email format, e.g., "harbor@krikorian.co")
@@ -349,9 +349,12 @@ EOF
         su "$ACTUAL_USER" -c "open -a Firefox '$HARBOR_XPI'" 2>> "$LOG_FILE" &
         echo "  ✓ Harbor extension install prompt triggered"
         
-        # Wait a moment, then open Web Agents extension if it exists
+        # Wait for user to install first extension, then open Web Agents extension if it exists
         if [ -f "$WEB_AGENTS_XPI" ]; then
-            sleep 2
+            # Show a dialog asking the user to confirm they've installed Harbor
+            # This runs as the actual user so it appears in their GUI session
+            su "$ACTUAL_USER" -c "osascript -e 'display dialog \"Click OK after you have installed the Harbor extension in Firefox.\" with title \"Harbor Installer\" buttons {\"OK\"} default button \"OK\"'" 2>> "$LOG_FILE"
+            
             su "$ACTUAL_USER" -c "open -a Firefox '$WEB_AGENTS_XPI'" 2>> "$LOG_FILE" &
             echo "  ✓ Web Agents extension install prompt triggered"
         fi
