@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Basic Actions — Web Agent API</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../shared/styles.css" />
+  <script src="../shared/agent.js"></script>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: var(--demo-space-10) 0;
+    }
+
+    .field-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--demo-space-4);
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--demo-space-2);
+    }
+
+    label {
+      font-size: var(--demo-text-sm);
+      color: var(--demo-text-secondary);
+    }
+
+    select.demo-input {
+      appearance: none;
+      background-image: linear-gradient(45deg, transparent 50%, var(--demo-text-muted) 50%),
+        linear-gradient(135deg, var(--demo-text-muted) 50%, transparent 50%);
+      background-position: calc(100% - 18px) calc(1rem + 2px), calc(100% - 13px) calc(1rem + 2px);
+      background-size: 5px 5px, 5px 5px;
+      background-repeat: no-repeat;
+    }
+
+    .summary {
+      background: var(--demo-bg-base);
+      border: 1px solid var(--demo-border-subtle);
+      border-radius: var(--demo-radius-lg);
+      padding: var(--demo-space-4);
+      display: grid;
+      gap: var(--demo-space-3);
+      font-size: var(--demo-text-sm);
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--demo-text-secondary);
+    }
+
+    .summary-row span {
+      color: var(--demo-text-primary);
+      font-weight: var(--demo-weight-semibold);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--demo-space-2);
+      padding: var(--demo-space-2) var(--demo-space-3);
+      border-radius: var(--demo-radius-full);
+      font-size: var(--demo-text-xs);
+      font-weight: var(--demo-weight-semibold);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status-ready {
+      background: var(--demo-success-dim);
+      color: var(--demo-success);
+    }
+
+    .status-blocked {
+      background: var(--demo-warning-dim);
+      color: var(--demo-warning);
+    }
+
+    .actions-row {
+      display: flex;
+      gap: var(--demo-space-3);
+      flex-wrap: wrap;
+    }
+
+    .walkthrough-card {
+      margin-bottom: var(--demo-space-6);
+    }
+
+    .requirements {
+      font-size: var(--demo-text-sm);
+      color: var(--demo-text-secondary);
+    }
+
+    .requirements strong {
+      color: var(--demo-text-primary);
+    }
+
+  </style>
+</head>
+<body class="demo-bg-grid">
+  <main class="page-container">
+    <header class="demo-header">
+      <div class="header-badge">
+        <span class="dot"></span>
+        <span>Interactive Walkthrough</span>
+      </div>
+      <h1 class="demo-title demo-text-gradient">Basic Actions</h1>
+      <p class="demo-subtitle">Practice <code>click</code>, <code>fill</code>, and <code>select</code> on a simple form.</p>
+    </header>
+
+    <div class="demo-flex demo-flex-col demo-gap-6">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+      </div>
+      <div class="checklist" id="walkthrough-steps"></div>
+      <div class="walkthrough-controls">
+        <button id="walkthrough-reset" class="demo-btn demo-btn-secondary" type="button" style="display: none;">
+          ↺ Start Over
+        </button>
+        <button id="walkthrough-next" class="demo-btn demo-btn-primary" type="button">Run Step 1 →</button>
+      </div>
+
+      <section class="demo-card">
+        <div class="demo-card-header">
+          <div class="demo-card-icon">📝</div>
+          <div>
+            <div class="demo-card-title">Action Playground</div>
+            <p class="demo-text-sm">Fill the form, toggle the checkbox, and submit.</p>
+          </div>
+        </div>
+
+        <form id="demo-form" class="demo-flex demo-flex-col demo-gap-4" autocomplete="off">
+          <div class="field-group">
+            <div class="field">
+              <label for="name-input">Full name</label>
+              <input id="name-input" class="demo-input" type="text" placeholder="Ada Lovelace" />
+            </div>
+            <div class="field">
+              <label for="email-input">Work email</label>
+              <input id="email-input" class="demo-input" type="email" placeholder="ada@harbor.dev" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="plan-select">Select plan</label>
+            <select id="plan-select" class="demo-input">
+              <option value="starter">Starter</option>
+              <option value="team">Team</option>
+              <option value="enterprise">Enterprise</option>
+            </select>
+          </div>
+
+          <label class="demo-flex demo-items-center demo-gap-2" for="agree-check">
+            <input id="agree-check" type="checkbox" />
+            I agree to the pilot terms
+          </label>
+
+          <div class="actions-row">
+            <button id="submit-btn" class="demo-btn demo-btn-primary" type="submit" disabled>Submit request</button>
+            <button id="reset-btn" class="demo-btn demo-btn-secondary" type="button">Reset</button>
+          </div>
+        </form>
+
+        <div class="demo-mt-6">
+          <div class="demo-text-sm demo-text-muted">Current state</div>
+          <div class="summary" id="summary">
+            <div class="summary-row">Name <span id="summary-name">—</span></div>
+            <div class="summary-row">Email <span id="summary-email">—</span></div>
+            <div class="summary-row">Plan <span id="summary-plan">Starter</span></div>
+            <div class="summary-row">Agreement <span id="summary-agree">Not accepted</span></div>
+            <div class="summary-row">Form status <span id="summary-status" class="status-pill status-blocked">Blocked</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="demo-card">
+        <div class="demo-card-header">
+          <div class="demo-card-icon">🔐</div>
+          <div>
+            <div class="demo-card-title">Permissions</div>
+            <p class="demo-text-sm">Required for this page.</p>
+          </div>
+        </div>
+        <div class="requirements">
+          <p><strong>Scopes:</strong> <code>browser:activeTab.interact</code></p>
+          <p><strong>Feature flag:</strong> "Browser Interaction" must be enabled in Harbor.</p>
+        </div>
+      </section>
+    </div>
+
+    <footer class="demo-footer">
+      <a href="../../">← Back to Demos</a>
+    </footer>
+  </main>
+
+  <script>
+    const form = document.getElementById('demo-form');
+    const nameInput = document.getElementById('name-input');
+    const emailInput = document.getElementById('email-input');
+    const planSelect = document.getElementById('plan-select');
+    const agreeCheck = document.getElementById('agree-check');
+    const submitBtn = document.getElementById('submit-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const summaryName = document.getElementById('summary-name');
+    const summaryEmail = document.getElementById('summary-email');
+    const summaryPlan = document.getElementById('summary-plan');
+    const summaryAgree = document.getElementById('summary-agree');
+    const summaryStatus = document.getElementById('summary-status');
+    const walkthroughStepsEl = document.getElementById('walkthrough-steps');
+    const walkthroughNextBtn = document.getElementById('walkthrough-next');
+    const walkthroughResetBtn = document.getElementById('walkthrough-reset');
+    const walkthroughProgressFill = document.getElementById('progress-fill');
+    // getWebAgent() provided by ../shared/agent.js
+    const walkthroughSteps = [
+      {
+        title: 'Detect Web Agent API',
+        description: 'Confirm the Web Agent API is available in this page.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nif (!agent) {\n  throw new Error('Web Agent API not detected');\n}`,
+        run: async () => {
+          const agent = getWebAgent();
+          if (!agent) {
+            throw new Error('Web Agent API not detected');
+          }
+          return '✓ Web Agent API detected';
+        }
+      },
+      {
+        title: 'Request permission',
+        description: 'Ask for access to active-tab interactions.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nconst result = await agent.requestPermissions({\n  scopes: ['browser:activeTab.interact'],\n  reason: 'Basic actions demo'\n});\nif (!result.granted) throw new Error('Permission denied');`,
+        run: async () => {
+          const agent = getWebAgent();
+          if (!agent?.requestPermissions) {
+            return 'Permission API not available (skipping)';
+          }
+          const result = await agent.requestPermissions({
+            scopes: ['browser:activeTab.interact'],
+            reason: 'Basic actions demo'
+          });
+          if (!result.granted) {
+            throw new Error('Permission denied');
+          }
+          return '✓ Permission granted';
+        }
+      },
+      {
+        title: 'Confirm browser control',
+        description: 'Verify browser control is available after permissions.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nif (!agent?.browser?.activeTab) {\n  throw new Error('Browser control not available. Enable Browser Control and reload this page.');\n}`,
+        run: async () => {
+          const agent = getWebAgent();
+          if (!agent?.browser?.activeTab) {
+            throw new Error('Browser control not available. Enable Browser Control and reload this page.');
+          }
+          return '✓ Browser control detected';
+        }
+      },
+      {
+        title: 'Interact: fill inputs',
+        description: 'Use fill() to populate text fields.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.fill('#name-input', 'Ada Lovelace');\nawait agent.browser.activeTab.fill('#email-input', 'ada@harbor.dev');`,
+        run: async () => {
+          const agent = getWebAgent();
+          await agent.browser.activeTab.fill('#name-input', 'Ada Lovelace');
+          await agent.browser.activeTab.fill('#email-input', 'ada@harbor.dev');
+          return '✓ Inputs filled';
+        }
+      },
+      {
+        title: 'Interact: select plan',
+        description: 'Use select() to change a dropdown value.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.select('#plan-select', 'team');`,
+        run: async () => {
+          const agent = getWebAgent();
+          await agent.browser.activeTab.select('#plan-select', 'team');
+          return '✓ Plan selected';
+        }
+      },
+      {
+        title: 'Interact: toggle checkbox',
+        description: 'Use click() to toggle a checkbox.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.click('#agree-check');`,
+        run: async () => {
+          const agent = getWebAgent();
+          await agent.browser.activeTab.click('#agree-check');
+          return '✓ Terms accepted';
+        }
+      },
+      {
+        title: 'Interact: submit',
+        description: 'Click the primary button to submit.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.click('#submit-btn');`,
+        run: async () => {
+          const agent = getWebAgent();
+          await agent.browser.activeTab.click('#submit-btn');
+          return '✓ Form submitted';
+        }
+      }
+    ];
+
+    let walkthroughIndex = -1;
+
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function renderWalkthroughSteps() {
+      walkthroughStepsEl.innerHTML = '';
+      walkthroughSteps.forEach((step, index) => {
+        const stepEl = document.createElement('div');
+        stepEl.className = 'step waiting';
+        stepEl.dataset.step = String(index);
+        stepEl.innerHTML = `
+          <div class="step-icon">${index + 1}</div>
+          <div class="step-content">
+            <div class="step-title">${step.title}</div>
+            <div class="step-description">${step.description}</div>
+            <pre class="step-code">${escapeHtml(step.code)}</pre>
+            <div class="output-label" style="display: none;">→ Output</div>
+            <div class="step-output" style="display: none;"></div>
+          </div>
+        `;
+        walkthroughStepsEl.appendChild(stepEl);
+      });
+    }
+
+    function setWalkthroughState(index, state, outputText, outputKind) {
+      const stepEl = walkthroughStepsEl.querySelector(`[data-step="${index}"]`);
+      if (!stepEl) return;
+      stepEl.className = `step ${state}`;
+      const icon = stepEl.querySelector('.step-icon');
+      if (icon) {
+        if (state === 'completed') {
+          icon.textContent = '✓';
+        } else if (state === 'error') {
+          icon.textContent = '✗';
+        } else if (state === 'active') {
+          icon.innerHTML = '<div class="spinner"></div>';
+        } else {
+          icon.textContent = index + 1;
+        }
+      }
+      const outputLabel = stepEl.querySelector('.output-label');
+      const outputEl = stepEl.querySelector('.step-output');
+      if (outputLabel && outputEl) {
+        if (outputText) {
+          outputLabel.style.display = 'block';
+          outputEl.style.display = 'block';
+          outputLabel.textContent = outputKind === 'error' ? '✗ Error' : '→ Output';
+          outputEl.className = `step-output ${outputKind || 'success'}`;
+          outputEl.textContent = outputText;
+        } else {
+          outputLabel.style.display = 'none';
+          outputEl.style.display = 'none';
+          outputEl.textContent = '';
+        }
+      }
+    }
+
+    function updateProgress() {
+      const percent = Math.max(0, (walkthroughIndex + 1) / walkthroughSteps.length) * 100;
+      walkthroughProgressFill.style.width = `${percent}%`;
+    }
+
+    async function runWalkthroughStep() {
+      if (walkthroughIndex >= walkthroughSteps.length - 1) return;
+      walkthroughIndex += 1;
+      updateProgress();
+      const current = walkthroughSteps[walkthroughIndex];
+      setWalkthroughState(walkthroughIndex, 'active', 'Running...', 'success');
+      walkthroughNextBtn.disabled = true;
+      walkthroughNextBtn.innerHTML = '<div class="spinner"></div> Running...';
+
+      try {
+        const result = await current.run();
+        setWalkthroughState(walkthroughIndex, 'completed', result || '✓ Done', 'success');
+      } catch (error) {
+        setWalkthroughState(walkthroughIndex, 'error', error.message || 'Step failed', 'error');
+        walkthroughIndex -= 1;
+        walkthroughNextBtn.disabled = false;
+        walkthroughNextBtn.textContent = 'Retry →';
+        walkthroughResetBtn.style.display = 'inline-flex';
+        updateProgress();
+        return;
+      }
+
+      updateProgress();
+      const nextLabel = walkthroughIndex + 2;
+      if (walkthroughIndex >= walkthroughSteps.length - 1) {
+        walkthroughNextBtn.disabled = true;
+        walkthroughNextBtn.textContent = 'Complete! ✓';
+        walkthroughNextBtn.style.background = 'var(--demo-success)';
+        walkthroughResetBtn.style.display = 'inline-flex';
+      } else {
+        walkthroughNextBtn.disabled = false;
+        walkthroughNextBtn.textContent = `Run Step ${nextLabel} →`;
+        walkthroughNextBtn.style.background = '';
+      }
+    }
+
+    function resetWalkthrough() {
+      walkthroughIndex = -1;
+      walkthroughSteps.forEach((_, index) => setWalkthroughState(index, 'waiting'));
+      walkthroughNextBtn.disabled = false;
+      walkthroughNextBtn.textContent = 'Run Step 1 →';
+      walkthroughNextBtn.style.background = '';
+      walkthroughResetBtn.style.display = 'none';
+      updateProgress();
+      resetForm();
+    }
+
+    function isReady() {
+      return nameInput.value.trim() && emailInput.value.trim() && agreeCheck.checked;
+    }
+
+    function updateSummary() {
+      summaryName.textContent = nameInput.value.trim() || '—';
+      summaryEmail.textContent = emailInput.value.trim() || '—';
+      summaryPlan.textContent = planSelect.options[planSelect.selectedIndex].text;
+      summaryAgree.textContent = agreeCheck.checked ? 'Accepted' : 'Not accepted';
+
+      if (isReady()) {
+        summaryStatus.textContent = 'Ready';
+        summaryStatus.classList.add('status-ready');
+        summaryStatus.classList.remove('status-blocked');
+      } else {
+        summaryStatus.textContent = 'Blocked';
+        summaryStatus.classList.add('status-blocked');
+        summaryStatus.classList.remove('status-ready');
+      }
+
+      submitBtn.disabled = !isReady();
+    }
+
+    function resetForm() {
+      form.reset();
+      planSelect.value = 'starter';
+      updateSummary();
+    }
+
+    form.addEventListener('input', updateSummary);
+    form.addEventListener('change', updateSummary);
+    resetBtn.addEventListener('click', resetForm);
+    walkthroughNextBtn.addEventListener('click', runWalkthroughStep);
+    walkthroughResetBtn.addEventListener('click', resetWalkthrough);
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!isReady()) return;
+      summaryStatus.textContent = 'Submitted';
+      summaryStatus.classList.add('status-ready');
+      summaryStatus.classList.remove('status-blocked');
+    });
+
+    renderWalkthroughSteps();
+    resetWalkthrough();
+  </script>
+</body>
+</html>

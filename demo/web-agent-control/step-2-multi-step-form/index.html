@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multi-step Form — Web Agent API</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../shared/styles.css" />
+  <script src="../shared/agent.js"></script>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: var(--demo-space-10) 0;
+    }
+
+    .wizard-steps {
+      display: flex;
+      gap: var(--demo-space-3);
+      margin-bottom: var(--demo-space-6);
+    }
+
+    .wizard-step-dot {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: var(--demo-weight-semibold);
+      background: var(--demo-bg-elevated);
+      border: 1px solid var(--demo-border-default);
+      color: var(--demo-text-secondary);
+    }
+
+    .wizard-step-dot.active {
+      background: var(--demo-accent-primary);
+      border-color: var(--demo-accent-primary);
+      color: white;
+      box-shadow: var(--demo-shadow-glow);
+    }
+
+    .wizard-step-dot.complete {
+      background: var(--demo-success);
+      border-color: var(--demo-success);
+      color: white;
+    }
+
+    .wizard-panel {
+      display: none;
+      flex-direction: column;
+      gap: var(--demo-space-4);
+      animation: demo-fadeIn 0.2s ease;
+    }
+
+    .wizard-panel.is-visible {
+      display: flex;
+    }
+
+    .wizard-loading {
+      display: none;
+      align-items: center;
+      gap: var(--demo-space-3);
+      padding: var(--demo-space-4);
+      border-radius: var(--demo-radius-lg);
+      background: var(--demo-bg-base);
+      border: 1px solid var(--demo-border-subtle);
+      color: var(--demo-text-secondary);
+    }
+
+    .wizard-loading.is-visible {
+      display: flex;
+    }
+
+    .wizard-summary {
+      background: var(--demo-bg-base);
+      border: 1px solid var(--demo-border-subtle);
+      border-radius: var(--demo-radius-lg);
+      padding: var(--demo-space-4);
+      display: grid;
+      gap: var(--demo-space-3);
+      font-size: var(--demo-text-sm);
+    }
+
+    .wizard-summary-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--demo-text-secondary);
+    }
+
+    .wizard-summary-row span {
+      color: var(--demo-text-primary);
+      font-weight: var(--demo-weight-semibold);
+    }
+
+    .wizard-actions {
+      display: flex;
+      gap: var(--demo-space-3);
+      flex-wrap: wrap;
+    }
+
+    .wizard-note {
+      font-size: var(--demo-text-sm);
+      color: var(--demo-text-secondary);
+    }
+
+  </style>
+</head>
+<body class="demo-bg-glow">
+  <main class="page-container">
+    <header class="demo-header">
+      <div class="header-badge">
+        <span class="dot"></span>
+        <span>Interactive Walkthrough</span>
+      </div>
+      <h1 class="demo-title demo-text-gradient">Multi-step Form</h1>
+      <p class="demo-subtitle">Navigate a multi-step wizard with validation and delayed transitions.</p>
+    </header>
+
+    <div class="demo-flex demo-flex-col demo-gap-6">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+      </div>
+      <div class="checklist" id="walkthrough-steps"></div>
+      <div class="walkthrough-controls">
+        <button id="walkthrough-reset" class="demo-btn demo-btn-secondary" type="button" style="display: none;">
+          ↺ Start Over
+        </button>
+        <button id="walkthrough-next" class="demo-btn demo-btn-primary" type="button">Run Step 1 →</button>
+      </div>
+
+      <section class="demo-card">
+        <div class="wizard-steps" id="wizard-steps">
+          <div class="wizard-step-dot active" data-step-dot="1">1</div>
+          <div class="wizard-step-dot" data-step-dot="2">2</div>
+          <div class="wizard-step-dot" data-step-dot="3">3</div>
+        </div>
+
+        <div class="wizard-loading" id="wizard-loading">
+          <div class="demo-spinner"></div>
+          <span>Loading next step...</span>
+        </div>
+
+        <div class="wizard-panel is-visible" id="step-1" data-step="1">
+          <h3>Step 1: Profile</h3>
+          <label for="project-input">Project codename</label>
+          <input id="project-input" class="demo-input" type="text" placeholder="Project Atlas" />
+
+          <label for="role-select">Role</label>
+          <select id="role-select" class="demo-input">
+            <option value="">Select role</option>
+            <option value="engineer">Engineer</option>
+            <option value="designer">Designer</option>
+            <option value="pm">Product Manager</option>
+          </select>
+
+          <div class="wizard-actions">
+            <button id="step-1-next" class="demo-btn demo-btn-primary" disabled>Continue</button>
+            <button id="wizard-reset" class="demo-btn demo-btn-secondary" type="button">Reset</button>
+          </div>
+        </div>
+
+        <div class="wizard-panel" id="step-2" data-step="2">
+          <h3>Step 2: Preferences</h3>
+          <label for="stack-select">Preferred stack</label>
+          <select id="stack-select" class="demo-input">
+            <option value="">Select stack</option>
+            <option value="typescript">TypeScript</option>
+            <option value="rust">Rust</option>
+            <option value="python">Python</option>
+          </select>
+
+          <label class="demo-flex demo-items-center demo-gap-2" for="notify-check">
+            <input id="notify-check" type="checkbox" />
+            Enable pilot notifications
+          </label>
+
+          <div class="wizard-actions">
+            <button id="step-2-back" class="demo-btn demo-btn-secondary" type="button">Back</button>
+            <button id="step-2-next" class="demo-btn demo-btn-primary" disabled>Review</button>
+          </div>
+        </div>
+
+        <div class="wizard-panel" id="step-3" data-step="3">
+          <h3>Step 3: Review</h3>
+          <div class="wizard-summary" id="wizard-summary">
+            <div class="wizard-summary-row">Project <span id="summary-project">—</span></div>
+            <div class="wizard-summary-row">Role <span id="summary-role">—</span></div>
+            <div class="wizard-summary-row">Stack <span id="summary-stack">—</span></div>
+            <div class="wizard-summary-row">Notifications <span id="summary-notify">—</span></div>
+          </div>
+          <div class="wizard-actions">
+            <button id="step-3-back" class="demo-btn demo-btn-secondary" type="button">Back</button>
+            <button id="step-3-confirm" class="demo-btn demo-btn-primary" disabled>Confirm</button>
+          </div>
+          <p class="wizard-note" id="confirm-note">Complete the prior steps to enable confirmation.</p>
+        </div>
+      </section>
+
+      <section class="demo-card">
+        <div class="demo-card-header">
+          <div class="demo-card-icon">🔐</div>
+          <div>
+            <div class="demo-card-title">Permissions</div>
+            <p class="demo-text-sm">Required for this page.</p>
+          </div>
+        </div>
+        <div class="wizard-note">
+          <p><strong>Scopes:</strong> <code>browser:activeTab.interact</code>, <code>browser:activeTab.read</code></p>
+          <p><strong>Feature flag:</strong> "Browser Interaction"</p>
+        </div>
+      </section>
+    </div>
+
+    <footer class="demo-footer">
+      <a href="../../">← Back to Demos</a>
+    </footer>
+  </main>
+
+  <script>
+    const steps = Array.from(document.querySelectorAll('.wizard-panel'));
+    const stepDots = Array.from(document.querySelectorAll('.wizard-step-dot'));
+    const loadingEl = document.getElementById('wizard-loading');
+    const resetBtn = document.getElementById('wizard-reset');
+    const projectInput = document.getElementById('project-input');
+    const roleSelect = document.getElementById('role-select');
+    const stackSelect = document.getElementById('stack-select');
+    const notifyCheck = document.getElementById('notify-check');
+    const step1Next = document.getElementById('step-1-next');
+    const step2Back = document.getElementById('step-2-back');
+    const step2Next = document.getElementById('step-2-next');
+    const step3Back = document.getElementById('step-3-back');
+    const step3Confirm = document.getElementById('step-3-confirm');
+    const confirmNote = document.getElementById('confirm-note');
+
+    const summaryProject = document.getElementById('summary-project');
+    const summaryRole = document.getElementById('summary-role');
+    const summaryStack = document.getElementById('summary-stack');
+    const summaryNotify = document.getElementById('summary-notify');
+    const walkthroughStepsEl = document.getElementById('walkthrough-steps');
+    const walkthroughNextBtn = document.getElementById('walkthrough-next');
+    const walkthroughResetBtn = document.getElementById('walkthrough-reset');
+    const walkthroughProgressFill = document.getElementById('progress-fill');
+    // getWebAgent() provided by ../shared/agent.js
+    let currentStep = 1;
+    let busy = false;
+    let walkthroughIndex = -1;
+
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    const walkthroughSteps = [
+      {
+        title: 'Detect Web Agent API',
+        description: 'Confirm the Web Agent API is available in this page.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nif (!agent) {\n  throw new Error('Web Agent API not detected');\n}`,
+        run: async () => {
+          const agent = getWebAgent();
+          if (!agent) {
+            throw new Error('Web Agent API not detected');
+          }
+          return '✓ Web Agent API detected';
+        }
+      },
+      {
+        title: 'Request permission',
+        description: 'Ask for active-tab read + interact access.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nconst result = await agent.requestPermissions({\n  scopes: ['browser:activeTab.interact', 'browser:activeTab.read'],\n  reason: 'Multi-step form demo'\n});`,
+        run: async () => {
+          const agent = getWebAgent();
+          if (!agent?.requestPermissions) {
+            return 'Permission API not available (skipping)';
+          }
+          const result = await agent.requestPermissions({
+            scopes: ['browser:activeTab.interact', 'browser:activeTab.read'],
+            reason: 'Multi-step form demo'
+          });
+          if (!result.granted) {
+            throw new Error('Permission denied');
+          }
+          return '✓ Permission granted';
+        }
+      },
+      {
+        title: 'Confirm browser control',
+        description: 'Verify browser control is available after permissions.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nif (!agent?.browser?.activeTab) {\n  throw new Error('Browser control not available. Enable Browser Control and reload this page.');\n}`,
+        run: async () => {
+          const agent = getWebAgent();
+          if (!agent?.browser?.activeTab) {
+            throw new Error('Browser control not available. Enable Browser Control and reload this page.');
+          }
+          return '✓ Browser control detected';
+        }
+      },
+      {
+        title: 'Interact: complete step 1',
+        description: 'Fill the profile form and continue.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.fill('#project-input', 'Project Atlas');\nawait agent.browser.activeTab.select('#role-select', 'engineer');\nawait agent.browser.activeTab.click('#step-1-next');`,
+        run: async () => {
+          const agent = getWebAgent();
+          await agent.browser.activeTab.fill('#project-input', 'Project Atlas');
+          await agent.browser.activeTab.select('#role-select', 'engineer');
+          await agent.browser.activeTab.click('#step-1-next');
+          return '✓ Step 1 submitted';
+        }
+      },
+      {
+        title: 'Wait for step 2',
+        description: 'Wait for the next panel to appear.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.waitForSelector('#step-2.is-visible');`,
+        run: async () => {
+          const agent = getWebAgent();
+          await agent.browser.activeTab.waitForSelector('#step-2.is-visible');
+          return '✓ Step 2 is visible';
+        }
+      },
+      {
+        title: 'Interact: complete step 2',
+        description: 'Choose a stack, enable notifications, and continue.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.select('#stack-select', 'typescript');\nawait agent.browser.activeTab.click('#notify-check');\nawait agent.browser.activeTab.click('#step-2-next');`,
+        run: async () => {
+          const agent = getWebAgent();
+          await agent.browser.activeTab.select('#stack-select', 'typescript');
+          await agent.browser.activeTab.click('#notify-check');
+          await agent.browser.activeTab.click('#step-2-next');
+          return '✓ Step 2 submitted';
+        }
+      },
+      {
+        title: 'Wait for step 3',
+        description: 'Wait for the review panel to appear.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.waitForSelector('#step-3.is-visible');`,
+        run: async () => {
+          const agent = getWebAgent();
+          await agent.browser.activeTab.waitForSelector('#step-3.is-visible');
+          return '✓ Step 3 is visible';
+        }
+      },
+      {
+        title: 'Interact: confirm',
+        description: 'Click the final confirmation button.',
+        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.click('#step-3-confirm');`,
+        run: async () => {
+          const agent = getWebAgent();
+          await agent.browser.activeTab.click('#step-3-confirm');
+          return '✓ Confirmed';
+        }
+      }
+    ];
+
+    function renderWalkthroughSteps() {
+      walkthroughStepsEl.innerHTML = '';
+      walkthroughSteps.forEach((step, index) => {
+        const stepEl = document.createElement('div');
+        stepEl.className = 'step waiting';
+        stepEl.dataset.step = String(index);
+        stepEl.innerHTML = `
+          <div class="step-icon">${index + 1}</div>
+          <div class="step-content">
+            <div class="step-title">${step.title}</div>
+            <div class="step-description">${step.description}</div>
+            <pre class="step-code">${escapeHtml(step.code)}</pre>
+            <div class="output-label" style="display: none;">→ Output</div>
+            <div class="step-output" style="display: none;"></div>
+          </div>
+        `;
+        walkthroughStepsEl.appendChild(stepEl);
+      });
+    }
+
+    function setWalkthroughState(index, state, outputText, outputKind) {
+      const stepEl = walkthroughStepsEl.querySelector(`[data-step="${index}"]`);
+      if (!stepEl) return;
+      stepEl.className = `step ${state}`;
+      const icon = stepEl.querySelector('.step-icon');
+      if (icon) {
+        if (state === 'completed') {
+          icon.textContent = '✓';
+        } else if (state === 'error') {
+          icon.textContent = '✗';
+        } else if (state === 'active') {
+          icon.innerHTML = '<div class="spinner"></div>';
+        } else {
+          icon.textContent = index + 1;
+        }
+      }
+      const outputLabel = stepEl.querySelector('.output-label');
+      const outputEl = stepEl.querySelector('.step-output');
+      if (outputLabel && outputEl) {
+        if (outputText) {
+          outputLabel.style.display = 'block';
+          outputEl.style.display = 'block';
+          outputLabel.textContent = outputKind === 'error' ? '✗ Error' : '→ Output';
+          outputEl.className = `step-output ${outputKind || 'success'}`;
+          outputEl.textContent = outputText;
+        } else {
+          outputLabel.style.display = 'none';
+          outputEl.style.display = 'none';
+          outputEl.textContent = '';
+        }
+      }
+    }
+
+    function updateWalkthroughProgress() {
+      const percent = Math.max(0, (walkthroughIndex + 1) / walkthroughSteps.length) * 100;
+      walkthroughProgressFill.style.width = `${percent}%`;
+    }
+
+    async function runWalkthroughStep() {
+      if (walkthroughIndex >= walkthroughSteps.length - 1) return;
+      walkthroughIndex += 1;
+      updateWalkthroughProgress();
+      const current = walkthroughSteps[walkthroughIndex];
+      setWalkthroughState(walkthroughIndex, 'active', 'Running...', 'success');
+      walkthroughNextBtn.disabled = true;
+      walkthroughNextBtn.innerHTML = '<div class="spinner"></div> Running...';
+
+      try {
+        const result = await current.run();
+        setWalkthroughState(walkthroughIndex, 'completed', result || '✓ Done', 'success');
+      } catch (error) {
+        setWalkthroughState(walkthroughIndex, 'error', error.message || 'Step failed', 'error');
+        walkthroughIndex -= 1;
+        walkthroughNextBtn.disabled = false;
+        walkthroughNextBtn.textContent = 'Retry →';
+        walkthroughResetBtn.style.display = 'inline-flex';
+        updateWalkthroughProgress();
+        return;
+      }
+
+      updateWalkthroughProgress();
+      const nextLabel = walkthroughIndex + 2;
+      if (walkthroughIndex >= walkthroughSteps.length - 1) {
+        walkthroughNextBtn.disabled = true;
+        walkthroughNextBtn.textContent = 'Complete! ✓';
+        walkthroughNextBtn.style.background = 'var(--demo-success)';
+        walkthroughResetBtn.style.display = 'inline-flex';
+      } else {
+        walkthroughNextBtn.disabled = false;
+        walkthroughNextBtn.textContent = `Run Step ${nextLabel} →`;
+        walkthroughNextBtn.style.background = '';
+      }
+    }
+
+    function resetWalkthrough() {
+      walkthroughIndex = -1;
+      walkthroughSteps.forEach((_, index) => setWalkthroughState(index, 'waiting'));
+      walkthroughNextBtn.disabled = false;
+      walkthroughNextBtn.textContent = 'Run Step 1 →';
+      walkthroughNextBtn.style.background = '';
+      walkthroughResetBtn.style.display = 'none';
+      updateWalkthroughProgress();
+      resetWizard();
+    }
+
+    function updateButtons() {
+      const step1Ready = projectInput.value.trim() && roleSelect.value;
+      const step2Ready = stackSelect.value && notifyCheck.checked;
+      step1Next.disabled = !step1Ready;
+      step2Next.disabled = !step2Ready;
+
+      const canConfirm = step1Ready && step2Ready;
+      step3Confirm.disabled = !canConfirm;
+      confirmNote.textContent = canConfirm ? 'Ready to confirm.' : 'Complete the prior steps to enable confirmation.';
+    }
+
+    function updateSummary() {
+      summaryProject.textContent = projectInput.value.trim() || '—';
+      summaryRole.textContent = roleSelect.value || '—';
+      summaryStack.textContent = stackSelect.value || '—';
+      summaryNotify.textContent = notifyCheck.checked ? 'Enabled' : 'Disabled';
+    }
+
+    function setStep(step) {
+      currentStep = step;
+      steps.forEach((panel) => {
+        panel.classList.toggle('is-visible', Number(panel.dataset.step) === step);
+      });
+      stepDots.forEach((dot) => {
+        const dotStep = Number(dot.dataset.stepDot);
+        dot.classList.toggle('active', dotStep === step);
+        dot.classList.toggle('complete', dotStep < step);
+      });
+    }
+
+    function showLoading(nextStep) {
+      if (busy) return;
+      busy = true;
+      loadingEl.classList.add('is-visible');
+      setTimeout(() => {
+        loadingEl.classList.remove('is-visible');
+        setStep(nextStep);
+        busy = false;
+      }, 700);
+    }
+
+    function resetWizard() {
+      projectInput.value = '';
+      roleSelect.value = '';
+      stackSelect.value = '';
+      notifyCheck.checked = false;
+      updateSummary();
+      updateButtons();
+      setStep(1);
+    }
+
+    projectInput.addEventListener('input', () => {
+      updateButtons();
+      updateSummary();
+    });
+    roleSelect.addEventListener('change', () => {
+      updateButtons();
+      updateSummary();
+    });
+    stackSelect.addEventListener('change', () => {
+      updateButtons();
+      updateSummary();
+    });
+    notifyCheck.addEventListener('change', () => {
+      updateButtons();
+      updateSummary();
+    });
+
+    step1Next.addEventListener('click', () => {
+      if (step1Next.disabled) return;
+      showLoading(2);
+    });
+    step2Back.addEventListener('click', () => setStep(1));
+    step2Next.addEventListener('click', () => {
+      if (step2Next.disabled) return;
+      showLoading(3);
+    });
+    step3Back.addEventListener('click', () => setStep(2));
+    step3Confirm.addEventListener('click', () => {
+      if (step3Confirm.disabled) return;
+      confirmNote.textContent = 'Confirmed! You can reset or go back to edit.';
+    });
+    resetBtn.addEventListener('click', resetWizard);
+    walkthroughNextBtn.addEventListener('click', runWalkthroughStep);
+    walkthroughResetBtn.addEventListener('click', resetWalkthrough);
+
+    updateSummary();
+    updateButtons();
+    renderWalkthroughSteps();
+    resetWalkthrough();
+  </script>
+</body>
+</html>

@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Research Agent — Web Agent API</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../shared/styles.css" />
+  <script src="../shared/agent.js"></script>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: var(--demo-space-10) 0;
+    }
+
+    .search-form {
+      display: flex;
+      gap: var(--demo-space-3);
+      margin-bottom: var(--demo-space-6);
+    }
+
+    .search-form input {
+      flex: 1;
+      min-width: 280px;
+    }
+
+    .results-section {
+      margin-top: var(--demo-space-6);
+    }
+
+    .result-card {
+      background: var(--demo-bg-surface);
+      border: 1px solid var(--demo-border-default);
+      border-radius: var(--demo-radius-lg);
+      padding: var(--demo-space-5);
+      margin-bottom: var(--demo-space-4);
+    }
+
+    .result-card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--demo-space-3);
+      margin-bottom: var(--demo-space-3);
+    }
+
+    .result-card-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-tertiary));
+      border-radius: var(--demo-radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .result-card-title {
+      font-size: var(--demo-text-sm);
+      font-weight: var(--demo-weight-semibold);
+      color: var(--demo-text-primary);
+      margin-bottom: var(--demo-space-1);
+    }
+
+    .result-card-url {
+      font-size: var(--demo-text-xs);
+      color: var(--demo-text-muted);
+      word-break: break-all;
+    }
+
+    .result-card-content {
+      font-size: var(--demo-text-sm);
+      color: var(--demo-text-secondary);
+      line-height: var(--demo-leading-relaxed);
+    }
+
+    .consolidated-result {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(236, 72, 153, 0.05));
+      border: 1px solid var(--demo-accent-primary);
+    }
+
+    .consolidated-result .result-card-icon {
+      background: linear-gradient(135deg, var(--demo-success), #10b981);
+    }
+
+    .references-list {
+      margin-top: var(--demo-space-4);
+      padding-top: var(--demo-space-4);
+      border-top: 1px solid var(--demo-border-subtle);
+    }
+
+    .references-list-title {
+      font-size: var(--demo-text-xs);
+      font-weight: var(--demo-weight-semibold);
+      color: var(--demo-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: var(--demo-space-3);
+    }
+
+    .reference-item {
+      display: flex;
+      align-items: center;
+      gap: var(--demo-space-2);
+      padding: var(--demo-space-2) 0;
+      font-size: var(--demo-text-xs);
+    }
+
+    .reference-number {
+      width: 20px;
+      height: 20px;
+      background: var(--demo-bg-elevated);
+      border-radius: var(--demo-radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: var(--demo-weight-semibold);
+      color: var(--demo-text-muted);
+      flex-shrink: 0;
+    }
+
+    .reference-link {
+      color: var(--demo-accent-primary);
+      text-decoration: none;
+      word-break: break-all;
+    }
+
+    .reference-link:hover {
+      text-decoration: underline;
+    }
+
+    .source-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--demo-space-2);
+      margin-top: var(--demo-space-4);
+    }
+
+    .source-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--demo-space-2);
+      padding: var(--demo-space-2) var(--demo-space-3);
+      background: var(--demo-bg-elevated);
+      border: 1px solid var(--demo-border-subtle);
+      border-radius: var(--demo-radius-md);
+      font-size: var(--demo-text-xs);
+      color: var(--demo-text-secondary);
+    }
+
+    .source-tab.loading {
+      border-color: var(--demo-accent-primary);
+      animation: demo-pulse 1.5s ease-in-out infinite;
+    }
+
+    .source-tab.completed {
+      border-color: var(--demo-success);
+      background: var(--demo-success-dim);
+    }
+
+    .source-tab.error {
+      border-color: var(--demo-error);
+      background: var(--demo-error-dim);
+    }
+
+    .requirements {
+      font-size: var(--demo-text-sm);
+      color: var(--demo-text-secondary);
+    }
+
+    .requirements strong {
+      color: var(--demo-text-primary);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: var(--demo-space-8);
+      color: var(--demo-text-muted);
+    }
+
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: var(--demo-space-4);
+    }
+
+    .empty-state-text {
+      font-size: var(--demo-text-sm);
+    }
+  </style>
+</head>
+<body class="demo-bg-grid">
+  <main class="page-container">
+    <header class="demo-header">
+      <div class="header-badge">
+        <span class="dot"></span>
+        <span>Interactive Walkthrough</span>
+      </div>
+      <h1 class="demo-title demo-text-gradient">Research Agent</h1>
+      <p class="demo-subtitle">Search Google, open multiple result pages, and consolidate findings with AI.</p>
+    </header>
+
+    <div class="demo-flex demo-flex-col demo-gap-6">
+      <!-- Search Input -->
+      <section class="demo-card">
+        <div class="demo-card-header">
+          <div class="demo-card-icon">🔍</div>
+          <div>
+            <div class="demo-card-title">Enter Your Research Query</div>
+            <p class="demo-text-sm">The agent will search Google, open the top results, and synthesize findings.</p>
+          </div>
+        </div>
+        <form id="search-form" class="search-form" autocomplete="off">
+          <input 
+            id="search-input" 
+            class="demo-input" 
+            type="text" 
+            placeholder="e.g., What are the benefits of TypeScript?" 
+            required
+          />
+          <button id="search-btn" class="demo-btn demo-btn-primary" type="submit">Research</button>
+        </form>
+      </section>
+
+      <!-- Progress -->
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+      </div>
+      <div class="checklist" id="walkthrough-steps"></div>
+      <div class="walkthrough-controls" id="walkthrough-controls" style="display: none;">
+        <button id="walkthrough-reset" class="demo-btn demo-btn-secondary" type="button">
+          ↺ New Search
+        </button>
+      </div>
+
+      <!-- Results -->
+      <section id="results-section" class="results-section" style="display: none;">
+        <div id="results-container"></div>
+      </section>
+
+      <!-- Permissions Info -->
+      <section class="demo-card">
+        <div class="demo-card-header">
+          <div class="demo-card-icon">🔐</div>
+          <div>
+            <div class="demo-card-title">Permissions</div>
+            <p class="demo-text-sm">Required for this demo.</p>
+          </div>
+        </div>
+        <div class="requirements">
+          <p><strong>Scopes:</strong></p>
+          <ul style="margin: var(--demo-space-2) 0 0 var(--demo-space-5); color: var(--demo-text-secondary);">
+            <li><code>browser:tabs.create</code> — Create and control tabs</li>
+            <li><code>browser:tabs.read</code> — Read tab information</li>
+            <li><code>model:prompt</code> — Use AI for synthesis</li>
+          </ul>
+          <p style="margin-top: var(--demo-space-3);"><strong>Feature flag:</strong> "Browser Control" must be enabled in Harbor.</p>
+        </div>
+      </section>
+    </div>
+
+    <footer class="demo-footer">
+      <a href="../../">← Back to Demos</a>
+    </footer>
+  </main>
+
+  <script>
+    // DOM Elements
+    const searchForm = document.getElementById('search-form');
+    const searchInput = document.getElementById('search-input');
+    const searchBtn = document.getElementById('search-btn');
+    const walkthroughStepsEl = document.getElementById('walkthrough-steps');
+    const walkthroughControls = document.getElementById('walkthrough-controls');
+    const walkthroughResetBtn = document.getElementById('walkthrough-reset');
+    const walkthroughProgressFill = document.getElementById('progress-fill');
+    const resultsSection = document.getElementById('results-section');
+    const resultsContainer = document.getElementById('results-container');
+
+    // State
+    let walkthroughIndex = -1;
+    let walkthroughSteps = [];
+    let searchQuery = '';
+    let openedTabs = [];
+    let extractedContent = [];
+
+    // Utility: Escape HTML
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    // Utility: Sleep
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Build walkthrough steps based on search query
+    function buildWalkthroughSteps(query) {
+      return [
+        {
+          title: 'Detect Web Agent API',
+          description: 'Confirm the Web Agent API is available.',
+          code: `const agent = window.harbor?.agent ?? window.agent;
+if (!agent) {
+  throw new Error('Web Agent API not detected');
+}`,
+          run: async () => {
+            const agent = getWebAgent();
+            if (!agent) {
+              throw new Error('Web Agent API not detected. Make sure Harbor is installed and enabled.');
+            }
+            return '✓ Web Agent API detected';
+          }
+        },
+        {
+          title: 'Request permissions',
+          description: 'Ask for tab control and AI model access.',
+          code: `const result = await agent.requestPermissions({
+  scopes: [
+    'browser:tabs.create',
+    'browser:tabs.read',
+    'model:prompt'
+  ],
+  reason: 'Research agent demo'
+});`,
+          run: async () => {
+            const agent = getWebAgent();
+            const result = await agent.requestPermissions({
+              scopes: ['browser:tabs.create', 'browser:tabs.read', 'model:prompt'],
+              reason: 'Research agent: search Google and synthesize results'
+            });
+            if (!result.granted) {
+              throw new Error('Permissions denied. Please grant the required permissions.');
+            }
+            return '✓ Permissions granted';
+          }
+        },
+        {
+          title: 'Open Google Search',
+          description: `Search for: "${query}"`,
+          code: `const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(query);
+const searchTab = await agent.browser.tabs.create({
+  url: searchUrl,
+  active: false
+});`,
+          run: async () => {
+            const agent = getWebAgent();
+            const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(query);
+            
+            if (!agent.browser?.tabs?.create) {
+              throw new Error('Tab creation not available. Enable the "Browser Control" feature flag.');
+            }
+            
+            const searchTab = await agent.browser.tabs.create({
+              url: searchUrl,
+              active: false
+            });
+            
+            // Store for later
+            window._researchSearchTabId = searchTab.id;
+            
+            // Wait for page to load
+            await sleep(2500);
+            
+            return `✓ Opened Google search (Tab #${searchTab.id})`;
+          }
+        },
+        {
+          title: 'Extract search results',
+          description: 'Get page HTML and use AI to find result URLs.',
+          code: `const { html } = await agent.browser.tab.getHtml(searchTabId);
+const session = await window.ai.createTextSession();
+const urls = await session.prompt('Extract URLs from: ' + html);`,
+          run: async () => {
+            const agent = getWebAgent();
+            const tabId = window._researchSearchTabId;
+            
+            if (!agent.browser?.tab?.getHtml) {
+              throw new Error('Tab getHtml not available. Enable the "Browser Control" feature flag.');
+            }
+            
+            // Get HTML from the search results page
+            let htmlResult;
+            try {
+              htmlResult = await agent.browser.tab.getHtml(tabId);
+              console.log('[Research] getHtml result:', { 
+                hasHtml: !!htmlResult?.html, 
+                htmlLength: htmlResult?.html?.length,
+                url: htmlResult?.url,
+                title: htmlResult?.title 
+              });
+            } catch (e) {
+              throw new Error(`getHtml failed: ${e.message}`);
+            }
+            
+            const { html } = htmlResult;
+            if (!html || html.length < 100) {
+              throw new Error(`getHtml returned insufficient HTML (${html?.length || 0} chars). Page may not have loaded.`);
+            }
+            
+            // First, try regex extraction (faster and more reliable for Google)
+            // Extract all href URLs and filter aggressively
+            const hrefRegex = /href="(https?:\/\/[^"]+)"/g;
+            let regexUrls = [];
+            let match;
+            while ((match = hrefRegex.exec(html)) !== null) {
+              const url = match[1];
+              try {
+                const u = new URL(url);
+                // Skip ALL Google domains (any subdomain)
+                if (u.hostname.endsWith('google.com')) continue;
+                if (u.hostname.endsWith('google.co.uk')) continue;
+                if (u.hostname.includes('.google.')) continue;
+                if (u.hostname.endsWith('gstatic.com')) continue;
+                if (u.hostname.endsWith('googleapis.com')) continue;
+                if (u.hostname.endsWith('googlesyndication.com')) continue;
+                if (u.hostname.endsWith('googleusercontent.com')) continue;
+                // Skip YouTube
+                if (u.hostname.includes('youtube.')) continue;
+                if (u.hostname.includes('youtu.be')) continue;
+                // Skip ad/tracking URLs
+                if (url.includes('/aclk?')) continue;
+                if (url.includes('googleadservices')) continue;
+                if (url.includes('doubleclick.')) continue;
+                // Skip common non-content sites
+                if (u.hostname.endsWith('facebook.com')) continue;
+                if (u.hostname.endsWith('twitter.com')) continue;
+                if (u.hostname.endsWith('instagram.com')) continue;
+                if (u.hostname.endsWith('w3.org')) continue;
+                if (u.hostname.endsWith('schema.org')) continue;
+                
+                regexUrls.push(url);
+              } catch {
+                continue;
+              }
+            }
+            
+            // Deduplicate
+            regexUrls = [...new Set(regexUrls)];
+            console.log('[Research] Regex found URLs:', regexUrls.slice(0, 10));
+            
+            let urls = regexUrls.slice(0, 3);
+            
+            // If regex didn't find enough, try AI as fallback
+            if (urls.length < 2) {
+              console.log('[Research] Regex found few URLs, trying AI...');
+              
+              const session = await window.ai.createTextSession({
+                systemPrompt: `You extract URLs from HTML. Return ONLY a JSON array of URL strings.`
+              });
+              
+              // Truncate HTML 
+              const truncatedHtml = html.slice(0, 25000);
+              
+              const extractPrompt = `Extract 3 organic search result URLs from this Google search HTML.
+Return ONLY a JSON array: ["url1", "url2", "url3"]
+Skip google.com, youtube.com, and ad URLs.
+
+HTML:
+${truncatedHtml}`;
+              
+              try {
+                const response = await session.prompt(extractPrompt);
+                console.log('[Research] AI response:', response.slice(0, 500));
+                const jsonMatch = response.match(/\[[\s\S]*?\]/);
+                if (jsonMatch) {
+                  const aiUrls = JSON.parse(jsonMatch[0]);
+                  urls = aiUrls.filter(url => {
+                    try {
+                      const u = new URL(url);
+                      return u.protocol.startsWith('http') && 
+                             !u.hostname.includes('google.') &&
+                             !u.hostname.includes('youtube.');
+                    } catch {
+                      return false;
+                    }
+                  }).slice(0, 3);
+                }
+              } catch (e) {
+                console.error('[Research] AI parsing failed:', e);
+              }
+              
+              await session.destroy();
+            }
+            
+            if (urls.length === 0) {
+              throw new Error(`Could not extract URLs. HTML length: ${html.length}. Check console for details.`);
+            }
+            
+            window._researchUrls = urls;
+            return `✓ Found ${urls.length} result URLs:\n${urls.map((u, i) => `  ${i + 1}. ${u}`).join('\n')}`;
+          }
+        },
+        {
+          title: 'Open result pages',
+          description: 'Open each search result in a new tab.',
+          code: `const tabs = [];
+for (const url of resultUrls) {
+  const tab = await agent.browser.tabs.create({ url, active: false });
+  tabs.push(tab);
+}`,
+          run: async () => {
+            const agent = getWebAgent();
+            const urls = window._researchUrls;
+            openedTabs = [];
+            
+            for (const url of urls) {
+              try {
+                const tab = await agent.browser.tabs.create({
+                  url: url,
+                  active: false
+                });
+                openedTabs.push({ id: tab.id, url: url, status: 'loading' });
+                updateSourceTabsUI();
+              } catch (e) {
+                console.error('Failed to open tab:', url, e);
+              }
+            }
+            
+            // Wait for pages to load
+            await sleep(3000);
+            
+            return `✓ Opened ${openedTabs.length} tabs`;
+          }
+        },
+        {
+          title: 'Extract content from pages',
+          description: 'Read the content from each opened tab.',
+          code: `const contents = [];
+for (const tab of tabs) {
+  const content = await agent.browser.tab.readability(tab.id);
+  contents.push({ url: tab.url, title: content.title, text: content.text });
+}`,
+          run: async () => {
+            const agent = getWebAgent();
+            extractedContent = [];
+            
+            for (let i = 0; i < openedTabs.length; i++) {
+              const tab = openedTabs[i];
+              try {
+                openedTabs[i].status = 'reading';
+                updateSourceTabsUI();
+                
+                const content = await agent.browser.tab.readability(tab.id);
+                extractedContent.push({
+                  url: tab.url,
+                  title: content.title || 'Untitled',
+                  text: content.text?.slice(0, 6000) || ''
+                });
+                
+                openedTabs[i].status = 'completed';
+                openedTabs[i].title = content.title;
+                updateSourceTabsUI();
+              } catch (e) {
+                console.error('Failed to read tab:', tab.url, e);
+                openedTabs[i].status = 'error';
+                updateSourceTabsUI();
+              }
+            }
+            
+            if (extractedContent.length === 0) {
+              throw new Error('Could not extract content from any pages.');
+            }
+            
+            return `✓ Extracted content from ${extractedContent.length} pages`;
+          }
+        },
+        {
+          title: 'Synthesize with AI',
+          description: 'Use an LLM to consolidate findings with references.',
+          code: `const session = await window.ai.createTextSession({
+  systemPrompt: 'You are a research assistant...'
+});
+const summary = await session.prompt(combinedContent);`,
+          run: async () => {
+            const session = await window.ai.createTextSession({
+              systemPrompt: `You are a research assistant that synthesizes information from multiple sources. 
+Provide a comprehensive, well-organized response that:
+1. Directly answers the query
+2. Integrates information from all sources
+3. Uses inline citations like [1], [2], [3] to reference sources
+4. Is clear and informative
+
+Format your response in clear paragraphs. Do not use markdown headers or bullet points unless necessary.`
+            });
+            
+            const sourcesText = extractedContent.map((src, i) => 
+              `[Source ${i + 1}: ${src.title}]\nURL: ${src.url}\nContent:\n${src.text}\n`
+            ).join('\n---\n');
+            
+            const prompt = `Research query: "${query}"
+
+Here are the sources:
+
+${sourcesText}
+
+Please provide a comprehensive answer to the research query, synthesizing information from these sources. Use [1], [2], [3] etc. to cite which source each piece of information comes from.`;
+            
+            const summary = await session.prompt(prompt);
+            await session.destroy();
+            
+            window._researchSummary = summary;
+            
+            displayResults(summary, extractedContent);
+            
+            return '✓ Research complete!';
+          }
+        },
+        {
+          title: 'Clean up tabs',
+          description: 'Close the tabs we opened.',
+          code: `for (const tab of tabs) {
+  await agent.browser.tabs.close(tab.id);
+}
+await agent.browser.tabs.close(searchTabId);`,
+          run: async () => {
+            const agent = getWebAgent();
+            let closed = 0;
+            
+            // Close result tabs
+            for (const tab of openedTabs) {
+              try {
+                await agent.browser.tabs.close(tab.id);
+                closed++;
+              } catch (e) {
+                console.error('Failed to close tab:', tab.id, e);
+              }
+            }
+            
+            // Close search tab
+            try {
+              await agent.browser.tabs.close(window._researchSearchTabId);
+              closed++;
+            } catch (e) {
+              console.error('Failed to close search tab:', e);
+            }
+            
+            return `✓ Closed ${closed} tabs`;
+          }
+        }
+      ];
+    }
+
+    // Update source tabs UI
+    function updateSourceTabsUI() {
+      let tabsHtml = '<div class="source-tabs">';
+      openedTabs.forEach((tab, i) => {
+        const statusClass = tab.status === 'completed' ? 'completed' : 
+                           tab.status === 'error' ? 'error' : 'loading';
+        const icon = tab.status === 'completed' ? '✓' : 
+                    tab.status === 'error' ? '✗' : '⏳';
+        const title = tab.title || new URL(tab.url).hostname;
+        tabsHtml += `<div class="source-tab ${statusClass}">${icon} ${escapeHtml(title.slice(0, 30))}</div>`;
+      });
+      tabsHtml += '</div>';
+      
+      // Add to current step output if we're on the right step
+      if (walkthroughIndex >= 4 && walkthroughIndex <= 5) {
+        const stepEl = walkthroughStepsEl.querySelector(`[data-step="${walkthroughIndex}"]`);
+        if (stepEl) {
+          let tabsContainer = stepEl.querySelector('.source-tabs-container');
+          if (!tabsContainer) {
+            tabsContainer = document.createElement('div');
+            tabsContainer.className = 'source-tabs-container';
+            stepEl.querySelector('.step-content').appendChild(tabsContainer);
+          }
+          tabsContainer.innerHTML = tabsHtml;
+        }
+      }
+    }
+
+    // Display final results
+    function displayResults(summary, sources) {
+      resultsSection.style.display = 'block';
+      
+      let html = `
+        <div class="result-card consolidated-result">
+          <div class="result-card-header">
+            <div class="result-card-icon">✨</div>
+            <div>
+              <div class="result-card-title">Research Summary</div>
+              <div class="result-card-url">Query: ${escapeHtml(searchQuery)}</div>
+            </div>
+          </div>
+          <div class="result-card-content">${escapeHtml(summary).replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</div>
+          <div class="references-list">
+            <div class="references-list-title">Sources</div>
+            ${sources.map((src, i) => `
+              <div class="reference-item">
+                <span class="reference-number">${i + 1}</span>
+                <a href="${escapeHtml(src.url)}" target="_blank" class="reference-link">${escapeHtml(src.title || src.url)}</a>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+      
+      resultsContainer.innerHTML = html;
+    }
+
+    // Render walkthrough steps
+    function renderWalkthroughSteps() {
+      walkthroughStepsEl.innerHTML = '';
+      walkthroughSteps.forEach((step, index) => {
+        const stepEl = document.createElement('div');
+        stepEl.className = 'step waiting';
+        stepEl.dataset.step = String(index);
+        stepEl.innerHTML = `
+          <div class="step-icon">${index + 1}</div>
+          <div class="step-content">
+            <div class="step-title">${step.title}</div>
+            <div class="step-description">${escapeHtml(step.description)}</div>
+            <pre class="step-code">${escapeHtml(step.code)}</pre>
+            <div class="output-label" style="display: none;">→ Output</div>
+            <div class="step-output" style="display: none;"></div>
+          </div>
+        `;
+        walkthroughStepsEl.appendChild(stepEl);
+      });
+    }
+
+    // Set step state
+    function setWalkthroughState(index, state, outputText, outputKind) {
+      const stepEl = walkthroughStepsEl.querySelector(`[data-step="${index}"]`);
+      if (!stepEl) return;
+      stepEl.className = `step ${state}`;
+      
+      const icon = stepEl.querySelector('.step-icon');
+      if (icon) {
+        if (state === 'completed') {
+          icon.textContent = '✓';
+        } else if (state === 'error') {
+          icon.textContent = '✗';
+        } else if (state === 'active') {
+          icon.innerHTML = '<div class="spinner"></div>';
+        } else {
+          icon.textContent = index + 1;
+        }
+      }
+      
+      const outputLabel = stepEl.querySelector('.output-label');
+      const outputEl = stepEl.querySelector('.step-output');
+      if (outputLabel && outputEl) {
+        if (outputText) {
+          outputLabel.style.display = 'block';
+          outputEl.style.display = 'block';
+          outputLabel.textContent = outputKind === 'error' ? '✗ Error' : '→ Output';
+          outputEl.className = `step-output ${outputKind || 'success'}`;
+          outputEl.textContent = outputText;
+        } else {
+          outputLabel.style.display = 'none';
+          outputEl.style.display = 'none';
+        }
+      }
+    }
+
+    // Update progress bar
+    function updateProgress() {
+      const percent = walkthroughSteps.length > 0 
+        ? Math.max(0, (walkthroughIndex + 1) / walkthroughSteps.length) * 100 
+        : 0;
+      walkthroughProgressFill.style.width = `${percent}%`;
+    }
+
+    // Run all steps automatically
+    async function runAllSteps() {
+      searchBtn.disabled = true;
+      searchInput.disabled = true;
+      walkthroughControls.style.display = 'none';
+      
+      for (let i = 0; i < walkthroughSteps.length; i++) {
+        walkthroughIndex = i;
+        updateProgress();
+        
+        const step = walkthroughSteps[i];
+        setWalkthroughState(i, 'active', 'Running...', 'success');
+        
+        try {
+          const result = await step.run();
+          setWalkthroughState(i, 'completed', result || '✓ Done', 'success');
+        } catch (error) {
+          setWalkthroughState(i, 'error', error.message || 'Step failed', 'error');
+          walkthroughControls.style.display = 'flex';
+          searchBtn.disabled = false;
+          searchInput.disabled = false;
+          return;
+        }
+        
+        // Small delay between steps for visibility
+        await sleep(300);
+      }
+      
+      walkthroughControls.style.display = 'flex';
+      searchBtn.disabled = false;
+      searchInput.disabled = false;
+    }
+
+    // Reset
+    function resetWalkthrough() {
+      walkthroughIndex = -1;
+      openedTabs = [];
+      extractedContent = [];
+      searchQuery = '';
+      searchInput.value = '';
+      searchInput.disabled = false;
+      searchBtn.disabled = false;
+      walkthroughSteps = [];
+      walkthroughStepsEl.innerHTML = '';
+      walkthroughControls.style.display = 'none';
+      resultsSection.style.display = 'none';
+      resultsContainer.innerHTML = '';
+      updateProgress();
+    }
+
+    // Event handlers
+    searchForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      searchQuery = searchInput.value.trim();
+      if (!searchQuery) return;
+      
+      // Build and render steps
+      walkthroughSteps = buildWalkthroughSteps(searchQuery);
+      renderWalkthroughSteps();
+      resultsSection.style.display = 'none';
+      resultsContainer.innerHTML = '';
+      
+      // Run all steps
+      await runAllSteps();
+    });
+
+    walkthroughResetBtn.addEventListener('click', resetWalkthrough);
+  </script>
+</body>
+</html>
