@@ -1,0 +1,129 @@
+/**
+ * Web Agents API Design Tokens
+ */
+
+:root {
+  /* Background */
+  --color-bg-base: #fafafa;
+  --color-bg-subtle: #f5f5f5;
+  
+  /* Surface */
+  --color-surface-primary: #ffffff;
+  --color-surface-secondary: #f9f9f9;
+  --color-surface-tertiary: #f3f3f3;
+  
+  /* Border */
+  --color-border-default: #e5e5e5;
+  --color-border-subtle: #ebebeb;
+  --color-border-strong: #d4d4d4;
+  
+  /* Text */
+  --color-text-primary: #171717;
+  --color-text-secondary: #525252;
+  --color-text-muted: #737373;
+  --color-text-inverse: #ffffff;
+  
+  /* Accent */
+  --color-accent-primary: #6366f1;
+  --color-accent-primary-hover: #4f46e5;
+  --color-accent-primary-subtle: rgba(99, 102, 241, 0.08);
+  --color-accent-bg: rgba(99, 102, 241, 0.1);
+  
+  /* Semantic */
+  --color-success: #16a34a;
+  --color-success-subtle: rgba(22, 163, 74, 0.08);
+  --color-success-bg: rgba(34, 197, 94, 0.1);
+  --color-warning: #ca8a04;
+  --color-warning-subtle: rgba(202, 138, 4, 0.08);
+  --color-warning-bg: rgba(234, 179, 8, 0.1);
+  --color-error: #dc2626;
+  --color-error-subtle: rgba(220, 38, 38, 0.08);
+  
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --text-2xs: 0.625rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg: 1rem;
+  
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-full: 9999px;
+  
+  /* Weight */
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  
+  /* Other */
+  --leading-relaxed: 1.625;
+  --tracking-wide: 0.025em;
+  --transition-fast: 100ms ease;
+}
+
+/* Dark mode */
+[data-theme="dark"] {
+  --color-bg-base: #161616;
+  --color-bg-subtle: #1c1c1c;
+  --color-surface-primary: #1e1e1e;
+  --color-surface-secondary: #252525;
+  --color-surface-tertiary: #2d2d2d;
+  --color-border-default: #333333;
+  --color-border-subtle: #2a2a2a;
+  --color-border-strong: #404040;
+  --color-text-primary: #ececec;
+  --color-text-secondary: #a3a3a3;
+  --color-text-muted: #737373;
+  --color-text-inverse: #171717;
+  --color-accent-primary: #818cf8;
+  --color-accent-primary-hover: #a5b4fc;
+  --color-accent-primary-subtle: rgba(129, 140, 248, 0.12);
+  --color-accent-bg: rgba(99, 102, 241, 0.15);
+  --color-success: #22c55e;
+  --color-success-subtle: rgba(34, 197, 94, 0.12);
+  --color-success-bg: rgba(34, 197, 94, 0.15);
+  --color-warning: #eab308;
+  --color-warning-subtle: rgba(234, 179, 8, 0.12);
+  --color-warning-bg: rgba(234, 179, 8, 0.15);
+  --color-error: #ef4444;
+  --color-error-subtle: rgba(239, 68, 68, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg-base: #161616;
+    --color-bg-subtle: #1c1c1c;
+    --color-surface-primary: #1e1e1e;
+    --color-surface-secondary: #252525;
+    --color-surface-tertiary: #2d2d2d;
+    --color-border-default: #333333;
+    --color-border-subtle: #2a2a2a;
+    --color-border-strong: #404040;
+    --color-text-primary: #ececec;
+    --color-text-secondary: #a3a3a3;
+    --color-text-muted: #737373;
+    --color-text-inverse: #171717;
+    --color-accent-primary: #818cf8;
+    --color-accent-primary-hover: #a5b4fc;
+    --color-accent-primary-subtle: rgba(129, 140, 248, 0.12);
+    --color-accent-bg: rgba(99, 102, 241, 0.15);
+    --color-success: #22c55e;
+    --color-success-subtle: rgba(34, 197, 94, 0.12);
+    --color-success-bg: rgba(34, 197, 94, 0.15);
+    --color-warning: #eab308;
+    --color-warning-subtle: rgba(234, 179, 8, 0.12);
+    --color-warning-bg: rgba(234, 179, 8, 0.15);
+    --color-error: #ef4444;
+    --color-error-subtle: rgba(239, 68, 68, 0.12);
+  }
+}

@@ -71,6 +71,10 @@ installer/chrome/build/
 installer/chrome/payload/
 installer/safari/build/
 
+# Xcode user data
+*.xcuserstate
+xcuserdata/
+
 # Signed extension artifacts
 *.xpi
 

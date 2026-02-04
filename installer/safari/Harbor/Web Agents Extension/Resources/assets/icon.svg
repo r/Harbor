@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <!-- Web Agents API logo -->
+  <rect x="4" y="4" width="120" height="120" rx="24" fill="#0066cc"/>
+  
+  <!-- Letter W -->
+  <path d="M26 32 L38 32 L48 72 L58 44 L70 44 L80 72 L90 32 L102 32 L84 96 L70 96 L64 74 L58 96 L44 96 Z" fill="white"/>
+</svg>
