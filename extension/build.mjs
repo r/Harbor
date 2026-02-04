@@ -100,9 +100,9 @@ async function copyStatic() {
     }
   }
   
-  // Copy bundled MCP servers from project root demo folder
+  // Copy bundled MCP servers from mcp-servers/examples
   await mkdir(`${outDir}/bundled/gmail-harbor`, { recursive: true });
-  await cp('../demo/gmail-mcp-server/harbor', `${outDir}/bundled/gmail-harbor`, { recursive: true }).catch(() => {});
+  await cp('../mcp-servers/examples/gmail', `${outDir}/bundled/gmail-harbor`, { recursive: true }).catch(() => {});
   
   // Safari: Patch import.meta.url and extract WASM files
   if (isSafari) {
