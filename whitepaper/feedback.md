@@ -1,220 +1,181 @@
-# Call for Feedback
+# we need your input
 
-**Help shape the future of user-controlled AI on the web**
-
----
-
-We've built something we think matters. But we don't have all the answers—and we're certain we've missed things. This page outlines specific areas where we're actively seeking input.
+**specific areas where your feedback matters most**
 
 ---
 
-## What We're Looking For
+we've built something. we think it matters. but we don't have all the answers — and we're certain we've missed things.
 
-### Use Cases We Haven't Considered
-
-We designed the Web Agent API around scenarios we understood: research assistants, page summarization, shopping helpers, SaaS integrations. But the web is vast and varied.
-
-**Questions we're asking:**
-- What would you build with this that we haven't described?
-- What capabilities are missing for your use case?
-- Are there entire categories of applications we haven't considered?
-
-### API Design Feedback
-
-The `window.ai` and `window.agent` surfaces are our first attempt. They're designed to be intuitive, but intuition varies.
-
-**Questions we're asking:**
-- Is anything confusing or awkward?
-- Are there operations that should be simpler?
-- Are there capabilities that should be more granular?
-- Should we use different patterns (ReadableStream vs AsyncIterable, etc.)?
-
-### Security Concerns
-
-We've thought about security, but security is hard and we're not infallible.
-
-**Questions we're asking:**
-- What attack vectors haven't we considered?
-- Are our mitigations sufficient?
-- Are there permission scopes that are too broad or too narrow?
-- What could a malicious website do that we haven't accounted for?
-
-### Privacy Analysis
-
-Privacy is core to this proposal, but privacy analysis requires diverse perspectives.
-
-**Questions we're asking:**
-- Are there data flows we should restrict further?
-- Are there tracking vectors we've introduced?
-- Should certain operations require stronger consent mechanisms?
-- Are there contexts where local-first should be enforced, not optional?
-
-### Implementation Alternatives
-
-Harbor is one implementation. The standard should support others.
-
-**Questions we're asking:**
-- How would this work on mobile?
-- What about embedded browsers or webviews?
-- How should this interact with OS-level AI services?
-- Are there architectures we should explicitly support or avoid?
-
-### Enterprise and Organizational Needs
-
-Individual users have different needs than organizations.
-
-**Questions we're asking:**
-- What policy controls do organizations need?
-- How should this interact with MDM and browser management?
-- Are there compliance requirements we should consider?
-- How do IT administrators want to configure this?
+Harbor is a sketch. it exists so we can have concrete conversations instead of abstract debates. point at the code. tell us what's wrong.
 
 ---
 
-## Areas of Active Debate
+## what we're looking for
 
-These are questions we're actively debating internally. Your input would help us resolve them.
+### use cases we haven't considered
 
-### Session Persistence
+we designed around scenarios we understood: research assistants, page summarization, shopping helpers, SaaS integrations.
 
-Should AI sessions be persistable across page reloads?
+the web is vast. help us see what we're missing:
 
-**Arguments for:**
-- Enables long-running conversations
-- Better UX for complex tasks
-- Matches user mental models
+- what would you build with this that we haven't described?
+- what capabilities are missing for your use case?
+- are there entire categories of applications we haven't imagined?
 
-**Arguments against:**
-- Privacy implications of persistent context
-- Complexity in permission model
-- Storage and cleanup concerns
+### API design feedback
 
-**What we'd like to know:** Would you use this? What would you build with it? What privacy controls would make you comfortable?
+the `window.ai` and `window.agent` surfaces are our first attempt.
 
-### Cross-Origin Context Sharing
+tell us what's wrong:
 
-Should there be a way for users to share context across origins?
+- is anything confusing or awkward?
+- are there operations that should be simpler?
+- are there capabilities that should be more granular?
+- should we use different patterns?
 
-**Arguments for:**
-- Enables richer personalization
-- Could reduce repetition for users
-- Supports "AI identity" concept
+### security review
 
-**Arguments against:**
-- Significant privacy risks
-- Complex consent model
-- Potential for abuse
+we've thought about security. we're not infallible.
 
-**What we'd like to know:** Is this valuable enough to take on the risks? What consent mechanisms would make it acceptable?
+break it:
 
-### Website-Provided Models
+- what attack vectors haven't we considered?
+- are our mitigations sufficient?
+- are there permission scopes that are too broad or too narrow?
+- what could a malicious website do that we haven't accounted for?
 
-Should websites be able to provide their own models (not just tools)?
+### privacy analysis
 
-**Arguments for:**
-- Enables specialized models for specific domains
-- Websites could differentiate on AI quality
-- Supports fine-tuned models
+privacy is core to this proposal.
 
-**Arguments against:**
-- Undermines "bring your own AI" principle
-- Could be used to bypass user preferences
-- Complicates the mental model
+find the holes:
 
-**What we'd like to know:** Is there a middle ground? Perhaps website-provided models only with explicit user opt-in?
+- are there data flows we should restrict further?
+- are there tracking vectors we've introduced?
+- should certain operations require stronger consent?
+- are there contexts where local-first should be enforced, not optional?
 
-### Payment and Identity Integration
+### enterprise and organizational needs
 
-Should the API support payment authorization or identity verification?
+individual users have different needs than organizations.
 
-**Arguments for:**
-- Enables AI-assisted commerce
-- Could support authentication flows
-- Matches other browser-mediated capabilities
+tell us what's missing:
 
-**Arguments against:**
-- High-risk capability with significant attack surface
-- Scope creep from core AI focus
-- Complex regulatory implications
-
-**What we'd like to know:** Is this in scope? If so, what would minimal viable integration look like?
+- what policy controls do organizations need?
+- how should this interact with MDM and browser management?
+- are there compliance requirements we should consider?
 
 ---
 
-## How to Provide Feedback
+## questions we're actively debating
+
+these are questions we don't have answers to. your input would help us decide.
+
+### session persistence
+
+should AI sessions persist across page reloads?
+
+| for | against |
+|-----|---------|
+| enables long-running conversations | privacy implications |
+| better UX for complex tasks | complexity in permission model |
+| matches user expectations | storage and cleanup concerns |
+
+**what we want to know:** would you use this? what would you build with it? what privacy controls would make you comfortable?
+
+### cross-origin context sharing
+
+should users be able to share context across origins?
+
+| for | against |
+|-----|---------|
+| richer personalization | significant privacy risks |
+| reduces repetition | complex consent model |
+| supports "AI identity" | potential for abuse |
+
+**what we want to know:** is this valuable enough to take on the risks? what consent mechanisms would make it acceptable?
+
+### website-provided models
+
+should websites provide their own models, not just tools?
+
+| for | against |
+|-----|---------|
+| specialized models for domains | undermines "bring your own AI" |
+| websites differentiate on quality | could bypass user preferences |
+| supports fine-tuned models | complicates the mental model |
+
+**what we want to know:** is there a middle ground? perhaps website-provided models only with explicit opt-in?
+
+### payment and identity integration
+
+should the API support payment authorization or identity verification?
+
+| for | against |
+|-----|---------|
+| enables AI-assisted commerce | high-risk attack surface |
+| supports authentication flows | scope creep |
+| matches other browser capabilities | complex regulatory implications |
+
+**what we want to know:** is this in scope? if so, what would minimal viable integration look like?
+
+---
+
+## how to share feedback
 
 ### GitHub Issues
 
-For specific bugs, feature requests, or concrete suggestions:
+for specific bugs, feature requests, or concrete suggestions:
 
-[Open an issue](https://github.com/anthropics/harbor/issues)
+→ [open an issue](https://github.com/anthropics/harbor/issues)
 
-Please include:
-- Clear description of the feedback
-- Use case context where relevant
-- Suggested changes if you have them
+include: clear description, use case context, suggested changes if you have them.
 
 ### GitHub Discussions
 
-For broader topics, questions, or exploration:
+for broader topics, questions, or exploration:
 
-[Start a discussion](https://github.com/anthropics/harbor/discussions)
+→ [start a discussion](https://github.com/anthropics/harbor/discussions)
 
-Good discussion topics:
-- Use cases and scenarios
-- Alternative design approaches
-- Questions about rationale
-- Comparisons with other approaches
+good topics: use cases, alternative approaches, questions about rationale.
 
 ### Pull Requests
 
-For documentation improvements, examples, or implementation changes:
+for documentation, examples, or implementation:
 
-[Contributing guide](../CONTRIBUTING.md)
+→ [contributing guide](../CONTRIBUTING.md)
 
-We especially welcome:
-- Example applications
-- Documentation improvements
-- Security improvements
-- Test coverage
+we especially welcome: example applications, security improvements, test coverage.
 
-### Direct Contact
+### direct contact
 
-For sensitive security issues or private feedback:
+for sensitive security issues:
 
-Email: [Include appropriate contact]
+→ security@mozilla.org
 
 ---
 
-## What Happens to Feedback
+## what happens to feedback
 
-We read everything. Seriously.
+we read everything.
 
-- **Issues** get triaged and either addressed, scheduled, or discussed
-- **Discussions** inform our thinking even when they don't result in immediate changes
-- **PRs** get reviewed and merged or discussed
-- **Patterns** in feedback lead to design changes
+- issues get triaged and addressed, scheduled, or discussed
+- discussions inform our thinking even when they don't result in immediate changes
+- PRs get reviewed and merged or discussed
+- patterns in feedback lead to design changes
 
-We try to respond to all feedback, though response times vary. If something is urgent, flag it clearly.
-
----
-
-## Community Guidelines
-
-We want this to be a space for constructive collaboration.
-
-**Please:**
-- Be specific and constructive
-- Explain your reasoning
-- Consider tradeoffs
-- Assume good faith
-
-**Please don't:**
-- Dismiss without explanation
-- Make demands without rationale
-- Engage in personal attacks
-- Derail discussions
+we try to respond to all feedback, though response times vary.
 
 ---
 
-*Thank you for helping us build something better.*
+## community guidelines
+
+we want this to be constructive.
+
+**please:** be specific. explain your reasoning. consider tradeoffs. assume good faith.
+
+**please don't:** dismiss without explanation. make demands without rationale. derail discussions.
+
+---
+
+*thank you for helping us build something better.*

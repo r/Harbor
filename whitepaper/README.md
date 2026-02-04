@@ -1,40 +1,36 @@
-# Web Agent API Whitepaper
+# Web Agent API
 
-This directory contains the public whitepaper for the Web Agent API proposal.
+a sketch for user-controlled AI on the web.
 
-## Documents
+## documents
 
-| Document | Description |
+| document | description |
 |----------|-------------|
-| [index.md](index.md) | Main whitepaper — problem, opportunity, proposal, and invitation to collaborate |
-| [values.md](values.md) | Detailed articulation of the values and principles guiding this work |
-| [feedback.md](feedback.md) | Specific areas where we're seeking input and how to contribute |
+| [index.md](index.md) | the proposal — values, problem, what we're building, invitation to collaborate |
+| [values.md](values.md) | the principles that guide design decisions |
+| [feedback.md](feedback.md) | specific areas where we need input |
 
-## Publishing
+## publishing
 
-These documents are designed to be published via GitHub Pages. To enable:
+these documents are designed for GitHub Pages:
 
-1. Go to repository Settings → Pages
-2. Set Source to "Deploy from a branch"
-3. Select the branch and `/whitepaper` folder
-4. Save
+1. go to repository Settings → Pages
+2. set Source to "Deploy from a branch"
+3. select the branch and `/whitepaper` folder
+4. save
 
-The whitepaper will be available at `https://<org>.github.io/<repo>/whitepaper/`
+the whitepaper will be available at `https://<org>.github.io/<repo>/`
 
-## Local Preview
-
-To preview locally with Jekyll:
+## local preview
 
 ```bash
 cd whitepaper
-bundle install  # First time only
+bundle install  # first time only
 bundle exec jekyll serve
 ```
 
-Then open http://localhost:4000
+then open http://localhost:4000
 
-## Contributing
+## contributing
 
-We welcome improvements to the whitepaper. See [feedback.md](feedback.md) for specific areas where input is valuable.
-
-For general contribution guidelines, see [CONTRIBUTING.md](../CONTRIBUTING.md).
+we welcome input. see [feedback.md](feedback.md) for specific areas where your perspective would help.

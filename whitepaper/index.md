@@ -1,338 +1,263 @@
 # The Web Agent API
 
-**A Proposal for User-Controlled AI on the Web**
+**A sketch for user-controlled AI on the web**
 
 ---
 
-> *Your AI, your context, your choices.*
+you're not an owner — you're a renter.
 
-Today, AI on the web is fragmented. Users lose control. Websites struggle to offer AI features without building expensive infrastructure. This paper proposes a different path: making AI a capability the browser mediates on behalf of users—the same way browsers already mediate access to cameras, location, and storage.
+that's the trajectory we're on with AI. renting your ability to reason. and the landlord can change the terms anytime.
 
-**This is an invitation to collaborate.** We've built a working implementation called [Harbor](../README.md). We're proposing an open standard called the Web Agent API. We want your feedback, your use cases, your criticism, and your contributions.
+today, when you use AI on the web, you use whatever model a website embedded. your preferences reset on every site. your context is scattered and inaccessible. you can't bring your own AI to a website any more than you could bring your own rendering engine.
 
----
+we don't accept that future. this document is a sketch of a different one — and an invitation to think it through together.
 
-## Contents
-
-1. [Values](#values)
-2. [The Problem](#the-problem)
-3. [The Opportunity](#the-opportunity)
-4. [What We Built](#what-we-built)
-5. [What This Enables](#what-this-enables)
-6. [How to Get Involved](#how-to-get-involved)
+this isn't a product announcement. it's not a finished standard. it's code you can run, questions we haven't answered, and a bet that it's easier to talk about these problems with something concrete in front of us.
 
 ---
 
-## Values
+## what we believe
 
-These are the principles that guide this work:
+these aren't aspirations. they're the constraints we design by.
 
-### User Agency First
+### user agency first
 
-Users should control their AI experience—which models they use, which providers they trust, what context they share, and with whom. AI capabilities should be resources users own and lend, not services websites control.
+users should control their AI experience. which models they use. which providers they trust. what context they share, and with whom. AI capabilities should be resources users own and lend — not services websites control on their behalf.
 
-### Privacy by Architecture
+for decades, the browser was your representative on the open web. there's a reason it's called a "user agent" — it was on your side. it could block ads. protect your privacy. give you choices the sites never would.
 
-The best privacy isn't a setting you toggle; it's infrastructure that makes tracking difficult by design. When AI runs locally or context stays in the browser, there's nothing to leak. When data must flow to external services, users should explicitly consent.
+now AI is becoming the new intermediary. call it "layer 8" — the intelligence layer sitting on top of everything. the question is: whose side is your agent on?
 
-### Open Standards Over Proprietary Lock-in
+### privacy by architecture
 
-No single company should own the infrastructure layer for AI on the web. We're building on open protocols (MCP) and proposing open APIs. Anyone should be able to implement this standard. Competition should happen on quality and trust, not lock-in.
+the best privacy isn't a setting you toggle. it's infrastructure that makes tracking difficult by design. when AI can run locally, data never leaves the device. when data must flow externally, users should explicitly consent — and understand what they're consenting to.
 
-### Developer Accessibility
+these systems aren't neutral. they encode values and incentives. values shape the worldview baked into their responses. incentives shape what gets optimized: engagement, cost reduction, controversy avoidance. every answer carries both the choices of the people who built it and the pressures of the system that sustains it.
 
-Building AI-powered web experiences shouldn't require deep AI expertise or significant infrastructure investment. The plumbing should be platform infrastructure, not application code—just like rendering engines and network stacks.
+when validation is purchased rather than earned, we lose something vital. and when that validation comes from a system we don't control, trained on choices we didn't make, we should pause.
 
-### Transparency and Trust
+### open standards over lock-in
 
-Users should understand what's happening with their data and AI interactions. The permission model should be clear, understandable, and auditable. Organizations building this infrastructure should be held accountable.
+no single company should own this layer.
 
----
+the LAMP stack didn't win because it was open. it won because it became easier — composable, swappable, forkable — and the economics worked. it let developers build things no platform would have built for them.
 
-## The Problem
+we need that for AI. not one stack, but many — shaped by communities and countries and companies. open interfaces. open data with provenance. open models you can tune to your values. plural. accessible. yours.
 
-### For Users: Fragmentation and Loss of Control
+owners, not renters.
 
-Your context is scattered across the internet: emails in Gmail, documents in Google Drive, purchase history on Amazon, calendar in Outlook, notes in Notion. When you want AI to help with any of it, you connect these services to third-party models directly.
-
-Those connections happen on terms you don't set:
-- **Which data gets sent** — You may not know what's being shared
-- **Which model processes it** — You're stuck with whatever the website embedded
-- **What gets retained** — Privacy policies vary wildly
-- **Your preferences** — You repeat them to every AI you encounter
-
-When switching between ChatGPT and Gemini, all accumulated context disappears. You're forced to use whatever model a website embeds rather than the models you've chosen and configured. You're a renter in someone else's AI infrastructure.
-
-### For Websites: Cost and Complexity
-
-Consider three categories of websites trying to offer AI features:
-
-**Publishers** want to offer AI-native experiences—deep research across decades of archives, intelligent summarization, contextual recommendations. But they can't absorb the inference costs of deploying their own models.
-
-**E-commerce and travel sites** want hyper-personalization based on user context ("find a hub compatible with my specific MacBook"). But they don't have access to that context, and building it means becoming a data company.
-
-**SaaS applications** want sophisticated AI experiences but don't want the operational burden of model deployment, API management, and cost tracking.
-
-Each builds the same integration from scratch—or doesn't build it at all.
-
-### For Developers: Unnecessary Barriers
-
-Building AI-driven web experiences currently requires:
-- Deep AI expertise and API spend
-- Managing model connections and authentication
-- Building tool infrastructure
-- Paying for inference—all before delivering actual value
-
-This is like requiring every website to ship its own rendering engine. The plumbing should be platform infrastructure, not application code.
-
-### Current "AI Browsers" Fall Short
-
-Existing approaches offer two models, both limited:
-
-**The sidebar model** houses an LLM that can summarize or query open tabs but doesn't unlock additional functionality within websites. The AI is bolted on, not integrated.
-
-**The agentic model** (autonomous browsing agents) takes actions for you, but consumer use cases remain limited, accuracy is inconsistent, and inference costs run 100-200x higher than text queries—economics that won't survive once subsidies end.
-
-The LLM should be integrated into the core website experience itself.
+[read our full values statement →](values.md)
 
 ---
 
-## The Opportunity
+## the problem
 
-### Context as a Resource
+### for users: fragmentation and loss of control
 
-A decade ago, browsers introduced permission prompts for cameras and microphones—sensitive resources that websites could request but not access without explicit user consent.
+your context is scattered across the internet — emails in Gmail, documents in Drive, purchase history on Amazon, calendar in Outlook. when you want AI to help with any of it, you connect these services to third-party models on terms you don't set.
 
-**We propose extending this model to AI and context.**
+you don't control which data gets sent. you're stuck with whatever model a website chose. your preferences don't travel with you. when you switch from ChatGPT to Claude, your accumulated context disappears.
 
-Your AI, your preferences, your accumulated context: these are resources the browser can manage on your behalf. Websites don't get access by default. They request it, you grant or deny, and the browser enforces your decision.
+you're renting AI infrastructure. the landlord can change the terms anytime.
 
-The browser acts as a secure repository for:
-- User identity and preferences
-- Credentials and authentication
-- Accumulated AI context
-- Tool connections and permissions
+### for websites: cost and complexity barriers
 
-When a website needs any of these, the browser mediates that access—just as it mediates camera access today. Users stay on the site, but the site is supercharged by the user's chosen AI and accumulated context.
+a news publisher wants to offer deep research across 20 years of archives — but can't absorb inference costs.
 
-### Bring Your Own AI
+an e-commerce site wants personalization based on user context — but doesn't have that context.
 
-The current model: websites embed AI, users have no choice.
+a SaaS application wants sophisticated AI features — but doesn't want to become an AI infrastructure company.
 
-**We propose flipping this.**
+each builds the same integrations from scratch. or doesn't build them at all.
 
-Websites declare their capabilities via standard mechanisms (like `<link rel="mcp-server">`). Users bring their preferred AI—Claude, GPT, local Llama, whatever they've configured and paid for. The user's AI gains new capabilities from the website's tools without the website managing any inference.
+### for developers: unnecessary friction
 
-Users keep their preferences and conversation history. Data flow stays under user control. Inference is powered by the user's existing subscription or local models—the website pays nothing for AI.
+building AI-driven web experiences requires managing model connections, handling authentication, building tool infrastructure, and paying for inference — all before delivering actual value.
 
-**What about users without AI subscriptions?** Local inference is the practical default for the majority. This is actually an argument for the browser layer—it can intelligently route between local models (for simple tasks, privacy-sensitive contexts) and cloud models (when the user has a subscription and the task warrants it). As local model quality improves, the threshold shifts.
-
-### Building on Open Standards
-
-This proposal builds on the **Model Context Protocol (MCP)**, an open standard introduced by Anthropic in late 2024 that defines how AI systems connect to external tools.
-
-Before USB, every peripheral needed its own connector. MCP is USB for AI: standardized tool definitions, structured schemas, discovery mechanisms. A growing ecosystem of MCP servers already exists—file systems, databases, search APIs, developer tools.
-
-MCP is a starting point, not an endpoint. The architecture separates the browser API surface from the underlying tool protocol. As MCP evolves or complementary standards emerge, implementations can adapt without breaking web applications.
+this is like requiring every website to ship its own rendering engine. the plumbing should be platform infrastructure.
 
 ---
 
-## What We Built
+## what we're proposing
 
-### Harbor: A Working Implementation
+### context as a browser-mediated resource
 
-Harbor is a browser extension (Firefox and Chrome) that implements what we're calling the **Web Agent API**—the specification at the heart of this proposal.
+a decade ago, browsers introduced permission prompts for cameras and microphones — sensitive resources websites could request but not access without consent.
 
-Harbor demonstrates that this model is not just theoretically sound but practically viable.
+we propose extending this model to AI and context.
 
-**Architecture:**
+your AI, your preferences, your accumulated context: these become resources the browser manages on your behalf. websites request access. you grant or deny. the browser enforces your decision.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         WEB PAGE                                 │
-│            window.ai / window.agent (injected APIs)             │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ postMessage
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    BROWSER EXTENSION                             │
-│  • Permission enforcement       • In-browser WASM/JS MCP        │
-│  • Feature flags               • Message routing                │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ Native Messaging
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      RUST BRIDGE                                 │
-│  • LLM provider abstraction    • Native MCP servers             │
-│  • Ollama/OpenAI/Anthropic     • OAuth flows                    │
-└─────────────────────────────────────────────────────────────────┘
-```
+### bring your own AI
 
-### The Web Agent API
+today: websites embed AI, users have no choice.
 
-The Web Agent API defines two JavaScript surfaces available to web pages:
+we propose flipping this.
 
-**`window.ai`** — Text generation, compatible with Chrome's emerging Prompt API
-
-```javascript
-const session = await window.ai.createTextSession({
-  systemPrompt: "You are a helpful assistant."
-});
-const response = await session.prompt("Summarize this article");
-```
-
-**`window.agent`** — Tools, browser access, and autonomous agent capabilities
-
-```javascript
-// Request permissions (user sees a prompt)
-await window.agent.requestPermissions({
-  scopes: ['model:tools', 'mcp:tools.list', 'mcp:tools.call'],
-  reason: 'Research assistant needs search access'
-});
-
-// Run an autonomous task
-for await (const event of window.agent.run({
-  task: 'Find recent news about renewable energy'
-})) {
-  if (event.type === 'token') console.log(event.token);
-  if (event.type === 'final') console.log('Done:', event.output);
-}
-```
-
-### Permission Model
-
-All operations require explicit user consent. Permissions follow the patterns established for cameras and location:
-
-| Scope | What It Allows |
-|-------|----------------|
-| `model:prompt` | Basic text generation |
-| `model:tools` | AI with autonomous tool use |
-| `mcp:tools.list` | List available tools |
-| `mcp:tools.call` | Execute specific tools |
-| `browser:activeTab.read` | Read page content |
-
-Users can grant permissions once, always, or deny them. Permissions are scoped per-origin—granting access to one site doesn't affect others.
-
-### Implementation Flexibility
-
-The Web Agent API is a standard, not a specific implementation. Harbor demonstrates one approach (browser extension with native bridge), but others are possible:
-
-- **Browser extension with WASM runtime** — Everything in-browser, no external processes
-- **Native browser integration** — Built directly into the browser engine
-- **OS-level service** — Shared across browsers and applications
-- **Cloud proxy** — For lightweight clients
-
-The architectural bet is on the pattern—browser-mediated AI with user-controlled tool access—not on any single implementation.
-
----
-
-## What This Enables
-
-### For Publishers
-
-A news site exposes an MCP server to its 20-year archive. Readers run deep research using their own AI. The publisher pays nothing for inference—they just expose the tools.
+websites declare their capabilities — tools, data access, domain expertise. users bring their preferred AI — Claude, GPT, local Llama, whatever they've configured. the user's AI gains new capabilities from the website's tools. the website pays nothing for inference.
 
 ```html
-<link rel="mcp-server"
-      href="https://news.example/mcp"
+<!-- a website declares its tools -->
+<link rel="mcp-server" 
+      href="https://news.example/mcp" 
       title="Archive Search">
 ```
 
-### For E-commerce
-
-An e-commerce site provides product search tools. Your AI brings the context ("I own a MacBook Pro M3, prefer brand-name electronics") and surfaces compatible accessories without you re-explaining your setup.
-
 ```javascript
-// User's context + website's tools
+// your AI uses those tools
 const results = await window.agent.run({
-  task: 'Find a USB-C hub compatible with my laptop'
+  task: 'find coverage of the 2008 financial crisis'
 });
 ```
 
-### For SaaS Applications
+### building on open standards
 
-A SaaS application offers sophisticated AI features—document analysis, intelligent search, workflow automation—by exposing domain tools. Developers focus on their product rather than model APIs.
+this proposal builds on the **Model Context Protocol (MCP)**, an open standard that defines how AI systems connect to external tools.
 
-### Future Possibilities
+before USB, every peripheral needed its own connector. MCP is USB for AI: standardized tool definitions, structured schemas, discovery mechanisms.
 
-The infrastructure we're proposing opens doors we haven't fully explored:
-
-- **Privacy-preserving personalized ads** where context never leaves the device
-- **Agent-to-agent coordination** for group planning and multi-party workflows
-- **Portable AI identity** that persists across model switches
-- **Enterprise policy control** where organizations govern AI usage through browser configuration
+MCP is a starting point, not an endpoint. the architecture separates the browser API surface from the underlying protocol. as standards evolve, implementations adapt.
 
 ---
 
-## How to Get Involved
+## Harbor: a sketch
 
-### We Want Your Feedback
+to test whether this model actually works, we built **Harbor** — a browser extension that implements what we're calling the Web Agent API.
 
-This is a proposal, not a finished standard. We're looking for:
+Harbor isn't a product. it's a sketch — something concrete to talk about. it's easier to have a conversation about "should this permission scope be broader?" when you can point at code than when you're debating hypotheticals.
 
-**Use cases** — What would you build with this? What's missing?
+the bet is on the pattern — browser-mediated AI with user-controlled tool access — not on any particular implementation. Harbor is where we test ideas. the conversation is what matters.
 
-**Technical feedback** — Is the API surface right? What's awkward or unclear?
+**what Harbor demonstrates:**
 
-**Security review** — What threats haven't we considered? What mitigations are we missing?
-
-**Privacy analysis** — Are there data flows we should restrict? Permissions we should add?
-
-**Implementation ideas** — How would this work in your browser, your platform, your context?
-
-### Try Harbor
-
-The best way to understand the proposal is to use it:
-
-1. **Install Harbor** — [Quick start guide](../QUICKSTART.md)
-2. **Run the demos** — See it in action with real examples
-3. **Build something** — [Developer documentation](../docs/DEVELOPER_GUIDE.md)
-4. **Read the spec** — [Full explainer](../spec/explainer.md)
-
-### Contribute
-
-- **GitHub Issues** — Report bugs, request features, ask questions
-- **Pull Requests** — Fix bugs, improve docs, add features
-- **Discussions** — Talk about use cases, architecture, standards
-
-### Implement the Standard
-
-Harbor is one implementation. We'd love to see others:
-
-- Other browser extensions
-- Native browser integrations
-- OS-level implementations
-- Alternative architectures
-
-The specification is designed to be implementable independently. If you build something, let us know.
-
-### Join the Conversation
-
-We're not trying to own this space—we're trying to establish patterns that make user-controlled AI possible. That requires collaboration across browsers, platforms, and organizations.
-
-If you're working on related problems, reach out. If you have concerns about the approach, share them. If you think we're solving the wrong problem, tell us.
-
-**The web works best when it's built together.**
+- websites can declare MCP servers; users can discover and connect to them
+- users can bring their own AI provider to any website
+- permissions can be scoped, granted, and revoked per-origin
+- tool execution can be allowlisted per-site
+- this is practically viable, not just theoretically sound
 
 ---
 
-## Specification Documents
+## the Web Agent API
 
-| Document | Description |
+the API defines two JavaScript surfaces:
+
+### `window.ai` — text generation
+
+compatible with Chrome's emerging Prompt API:
+
+```javascript
+const session = await window.ai.createTextSession({
+  systemPrompt: "you are a research assistant."
+});
+const response = await session.prompt("summarize this article");
+```
+
+### `window.agent` — tools and autonomous execution
+
+```javascript
+// discover available tools
+const tools = await window.agent.tools.list();
+
+// run an autonomous task
+for await (const event of window.agent.run({
+  task: 'find recent news about renewable energy',
+  maxToolCalls: 10
+})) {
+  if (event.type === 'token') process.stdout.write(event.token);
+  if (event.type === 'tool_call') console.log('using:', event.tool);
+  if (event.type === 'final') console.log('done:', event.output);
+}
+```
+
+### permission model
+
+all operations require explicit user consent, following patterns established for cameras and location:
+
+| scope | what it allows |
+|-------|----------------|
+| `model:prompt` | basic text generation |
+| `model:tools` | AI with tool-calling enabled |
+| `mcp:tools.list` | list available tools |
+| `mcp:tools.call` | execute specific tools (requires per-tool allowlist) |
+| `browser:activeTab.read` | read current page content |
+
+permissions are granted per-origin. access to one site doesn't affect others. users can grant once, always, or deny entirely.
+
+---
+
+## we need your help
+
+this is where you come in.
+
+### use cases we haven't considered
+
+we designed around scenarios we understood: research assistants, page summarization, shopping helpers, SaaS integrations. the web is vast.
+
+- what would you build with this?
+- what capabilities are missing?
+- what have we not imagined?
+
+### things we're uncertain about
+
+**session persistence:** should AI sessions persist across page reloads? better UX, but privacy implications.
+
+**cross-origin context:** should users share context across sites? powerful, but risky.
+
+**website-provided models:** should sites provide their own models, not just tools? useful, but undermines "bring your own AI."
+
+we don't have answers to these. your input would help.
+
+### security and privacy review
+
+we've thought about security. we're not infallible.
+
+- what attack vectors haven't we considered?
+- are there data flows we should restrict further?
+- what could a malicious website do that we haven't accounted for?
+
+[see all open questions →](feedback.md)
+
+---
+
+## how to engage
+
+### try it
+
+the best way to understand the proposal is to run the code:
+
+1. [install Harbor](../QUICKSTART.md)
+2. run the demos
+3. build something
+4. tell us what broke
+
+### contribute
+
+- **[GitHub Issues](https://github.com/anthropics/harbor/issues)** — bugs, features, questions
+- **[Discussions](https://github.com/anthropics/harbor/discussions)** — use cases, architecture, standards
+- **Pull Requests** — fixes, docs, examples
+
+### join the conversation
+
+we're not trying to own this. we're trying to figure out what user-controlled AI on the web should look like.
+
+if you're working on related problems, reach out. if you have concerns, share them. if you think we're solving the wrong problem, tell us.
+
+the rebellion needs builders.
+
+---
+
+## further reading
+
+| document | description |
 |----------|-------------|
-| [Web Agent API Overview](../spec/README.md) | What the API is and why it matters |
-| [Full Explainer](../spec/explainer.md) | Complete spec with Web IDL and security model |
-| [Security & Privacy](../spec/security-privacy.md) | Threat model and mitigations |
-| [Examples](../spec/examples/) | Working code examples |
+| [values](values.md) | the principles that guide design decisions |
+| [feedback](feedback.md) | specific areas where we need input |
+| [full explainer](../spec/explainer.md) | complete spec with Web IDL |
+| [security & privacy](../spec/security-privacy.md) | threat model and mitigations |
 
 ---
 
-## Acknowledgments
+*this is a living document. last updated: January 2026.*
 
-This work builds on the Model Context Protocol (MCP) developed by Anthropic, Chrome's Prompt API work, and years of browser platform evolution that established permission models for sensitive capabilities.
-
----
-
-*This is a living document. Last updated: January 2026.*
-
-*We welcome contributions, feedback, and collaboration. [Open an issue](https://github.com/anthropics/harbor/issues) or [start a discussion](https://github.com/anthropics/harbor/discussions).*
+*we kept the web open — not by asking permission, but by building something better. let's do it again.*
