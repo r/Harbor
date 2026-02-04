@@ -24,6 +24,11 @@ git clone --recurse-submodules https://github.com/anthropics/harbor.git
 cd harbor
 ```
 
+> **Already cloned without `--recurse-submodules`?** Run:
+> ```bash
+> git submodule update --init --recursive
+> ```
+
 ---
 
 ## Step 2: Start Ollama
