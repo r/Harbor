@@ -372,7 +372,7 @@ uvx mcp-server-time
 
 ```bash
 # Clone and setup
-git clone --recurse-submodules https://github.com/anthropics/harbor.git
+git clone --recurse-submodules https://github.com/r/Harbor.git
 cd harbor
 
 # Build the Rust bridge

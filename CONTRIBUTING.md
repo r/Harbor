@@ -28,7 +28,7 @@ This guide is for developers who want to contribute to Harbor itself. If you're 
 
 ```bash
 # Clone with submodules
-git clone --recurse-submodules https://github.com/anthropics/harbor.git
+git clone --recurse-submodules https://github.com/r/Harbor.git
 cd harbor
 
 # If you already cloned without submodules:

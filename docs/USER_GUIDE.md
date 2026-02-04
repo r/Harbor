@@ -60,7 +60,7 @@ Harbor consists of **two browser extensions** that work together:
 
 ```bash
 # 1. Clone the repository
-git clone --recurse-submodules https://github.com/anthropics/harbor.git
+git clone --recurse-submodules https://github.com/r/Harbor.git
 cd harbor
 
 # 2. Build Harbor extension

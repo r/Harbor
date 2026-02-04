@@ -137,7 +137,7 @@ HARBOR_GOOGLE_CLIENT_SECRET="your-client-secret"
 2. Click "New OAuth App"
 3. Fill in:
    - Application name: Harbor
-   - Homepage URL: `https://github.com/anthropics/harbor`
+   - Homepage URL: `https://github.com/r/Harbor`
    - Authorization callback URL: `http://localhost:8765/oauth/callback`
 4. Copy Client ID and generate a Client Secret:
 

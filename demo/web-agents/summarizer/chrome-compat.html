@@ -256,7 +256,7 @@
       <div class="requirements">
         <div class="requirement">
           <span class="requirement-icon">⚓</span>
-          <span>Requires Web Agent API (e.g., Harbor)</span>
+          <span>Requires Web Agent API</span>
         </div>
         <div class="requirement">
           <span class="requirement-icon">🔵</span>
@@ -369,7 +369,7 @@
     </div>
 
     <footer class="demo-footer">
-      <p>Built with <a href="https://github.com/nicholasoxford/harbor" target="_blank">Harbor</a> — Local AI in your browser</p>
+      <p>Built with the <a href="https://r.github.io/Harbor/spec/explainer.html" target="_blank">Web Agents API</a> — Local AI in your browser</p>
       <p style="margin-top: var(--demo-space-2);"><a href="../../">← Back to Demos</a></p>
     </footer>
   </div>
@@ -380,7 +380,7 @@
 (async function() {
   // Check Web Agent API availability
   if (!window.ai || !window.ai.languageModel) {
-    alert('Web Agent API not detected on this page.\\n\\nMake sure:\\n1. Harbor (or another implementation) is installed\\n2. Refresh this page');
+    alert('Web Agent API not detected on this page.\\n\\nMake sure:\\n1. A Web Agents API implementation is installed\\n2. Refresh this page');
     return;
   }
 
@@ -592,7 +592,7 @@
       </div>
     </div>
     <div class="demo-footer">
-      Powered by <a href="https://github.com/r/harbor" target="_blank">Web Agents API</a>
+      Powered by <a href="https://r.github.io/Harbor/spec/explainer.html" target="_blank">Web Agents API</a>
     </div>
   \`;
   

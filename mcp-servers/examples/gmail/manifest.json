@@ -8,10 +8,10 @@
   "description": "Read and send emails via Gmail API. Supports searching, reading, sending emails and managing labels.",
   "author": {
     "name": "Harbor Team (based on gongrzhe/server-gmail-autoauth-mcp)",
-    "url": "https://github.com/anthropics/harbor"
+    "url": "https://github.com/r/Harbor"
   },
   "license": "MIT",
-  "repository": "https://github.com/anthropics/harbor",
+  "repository": "https://github.com/r/Harbor",
   "keywords": ["gmail", "email", "google", "mcp", "oauth"],
 
   "runtime": "js",

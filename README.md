@@ -61,7 +61,7 @@ const response = await session.prompt("Summarize this page");
 ### 1. Clone and Build
 
 ```bash
-git clone --recurse-submodules https://github.com/anthropics/harbor.git
+git clone --recurse-submodules https://github.com/r/Harbor.git
 cd harbor
 
 # If you already cloned without --recurse-submodules:
