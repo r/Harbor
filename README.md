@@ -64,6 +64,11 @@ const response = await session.prompt("Summarize this page");
 git clone --recurse-submodules https://github.com/anthropics/harbor.git
 cd harbor
 
+# If you already cloned without --recurse-submodules:
+git submodule update --init --recursive
+```
+
+```bash
 # Build the Harbor extension
 cd extension && npm install && npm run build && cd ..
 

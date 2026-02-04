@@ -37,6 +37,13 @@ git clone --recurse-submodules https://github.com/anthropics/harbor.git
 cd harbor
 ```
 
+> **Already cloned without `--recurse-submodules`?** Run this to fetch the submodules:
+> ```bash
+> git submodule update --init --recursive
+> ```
+
+Harbor uses git submodules for shared libraries (like `bridge-rs/any-llm-rust`). The build will fail if submodules are missing.
+
 ### 2. Build the Harbor Extension
 
 This is the core extension that provides the chat sidebar, MCP server management, and native bridge connection.
