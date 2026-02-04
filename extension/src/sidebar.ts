@@ -17,6 +17,7 @@ type ServerStatus = {
 type BridgeStatus = {
   ok: boolean;
   connected: boolean;
+  bridgeReady?: boolean;
   lastCheck: number;
   error: string | null;
 };
@@ -258,14 +259,17 @@ async function checkBridgeStatus(): Promise<void> {
   try {
     const response = await browserAPI.runtime.sendMessage({ type: 'bridge_check_health' }) as BridgeStatus;
     // Debug: show response in title attribute
-    const debugInfo = `connected: ${response.connected}, error: ${response.error || 'none'}`;
+    const debugInfo = `connected: ${response.connected}, bridgeReady: ${response.bridgeReady}, error: ${response.error || 'none'}`;
     bridgeStatusText.title = debugInfo;
     console.log('[Sidebar] Bridge status:', debugInfo);
-    updateBridgeStatusUI(response.connected, response.error);
     
-    // If bridge just connected, refresh all data immediately
-    if (response.connected && !lastBridgeConnected) {
-      console.log('[Sidebar] Bridge connected - refreshing all data...');
+    // Only consider fully ready when both connected AND bridgeReady
+    const isReady = response.connected && response.bridgeReady;
+    updateBridgeStatusUI(isReady, response.error);
+    
+    // If bridge just became fully ready, refresh all data immediately
+    if (isReady && !lastBridgeConnected) {
+      console.log('[Sidebar] Bridge fully ready - refreshing all data...');
       // Refresh all data in parallel
       Promise.all([
         loadServers().catch(e => console.error('[Sidebar] Failed to load servers:', e)),
@@ -274,7 +278,7 @@ async function checkBridgeStatus(): Promise<void> {
         loadSessions().catch(e => console.error('[Sidebar] Failed to load sessions:', e)),
       ]);
     }
-    lastBridgeConnected = response.connected;
+    lastBridgeConnected = isReady;
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[Sidebar] Failed to check bridge status:', errorMsg);
