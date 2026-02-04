@@ -148,7 +148,7 @@
             </div>
             <div class="field">
               <label for="email-input">Work email</label>
-              <input id="email-input" class="demo-input" type="email" placeholder="ada@harbor.dev" />
+              <input id="email-input" class="demo-input" type="email" placeholder="ada@example.com" />
             </div>
           </div>
 
@@ -194,7 +194,7 @@
         </div>
         <div class="requirements">
           <p><strong>Scopes:</strong> <code>browser:activeTab.interact</code></p>
-          <p><strong>Feature flag:</strong> "Browser Interaction" must be enabled in Harbor.</p>
+          <p><strong>Feature flag:</strong> "Browser Interaction" must be enabled in the Web Agents API extension.</p>
         </div>
       </section>
     </div>
@@ -257,7 +257,7 @@
       {
         title: 'Confirm browser control',
         description: 'Verify browser control is available after permissions.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nif (!agent?.browser?.activeTab) {\n  throw new Error('Browser control not available. Enable Browser Control and reload this page.');\n}`,
+        code: `const agent = window.agent;\nif (!agent?.browser?.activeTab) {\n  throw new Error('Browser control not available. Enable Browser Control and reload this page.');\n}`,
         run: async () => {
           const agent = getWebAgent();
           if (!agent?.browser?.activeTab) {
@@ -269,18 +269,18 @@
       {
         title: 'Interact: fill inputs',
         description: 'Use fill() to populate text fields.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.fill('#name-input', 'Ada Lovelace');\nawait agent.browser.activeTab.fill('#email-input', 'ada@harbor.dev');`,
+        code: `const agent = window.agent;\nawait agent.browser.activeTab.fill('#name-input', 'Ada Lovelace');\nawait agent.browser.activeTab.fill('#email-input', 'ada@example.com');`,
         run: async () => {
           const agent = getWebAgent();
           await agent.browser.activeTab.fill('#name-input', 'Ada Lovelace');
-          await agent.browser.activeTab.fill('#email-input', 'ada@harbor.dev');
+          await agent.browser.activeTab.fill('#email-input', 'ada@example.com');
           return '✓ Inputs filled';
         }
       },
       {
         title: 'Interact: select plan',
         description: 'Use select() to change a dropdown value.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.select('#plan-select', 'team');`,
+        code: `const agent = window.agent;\nawait agent.browser.activeTab.select('#plan-select', 'team');`,
         run: async () => {
           const agent = getWebAgent();
           await agent.browser.activeTab.select('#plan-select', 'team');
@@ -290,7 +290,7 @@
       {
         title: 'Interact: toggle checkbox',
         description: 'Use click() to toggle a checkbox.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.click('#agree-check');`,
+        code: `const agent = window.agent;\nawait agent.browser.activeTab.click('#agree-check');`,
         run: async () => {
           const agent = getWebAgent();
           await agent.browser.activeTab.click('#agree-check');
@@ -300,7 +300,7 @@
       {
         title: 'Interact: submit',
         description: 'Click the primary button to submit.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.click('#submit-btn');`,
+        code: `const agent = window.agent;\nawait agent.browser.activeTab.click('#submit-btn');`,
         run: async () => {
           const agent = getWebAgent();
           await agent.browser.activeTab.click('#submit-btn');
