@@ -756,11 +756,21 @@ pub async fn set_configured_model_default(params: serde_json::Value) -> Result<s
     
     let mut cfg = get_config().unwrap_or_default();
     
+    // Get the model_id before setting as default
+    let model_id = cfg.models.iter()
+        .find(|m| m.name == name)
+        .map(|m| m.model_id.clone());
+    
     if !cfg.set_default_model_by_name(name) {
         return Err(RpcError {
             code: -32602,
             message: format!("Model '{}' not found", name),
         });
+    }
+    
+    // Also update the legacy default_model field so chat() picks it up
+    if let Some(model_id) = model_id {
+        cfg.default_model = Some(model_id);
     }
     
     set_config(cfg.clone());

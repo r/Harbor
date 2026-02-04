@@ -155,8 +155,17 @@ impl LlmConfig {
 
         if version >= 2 {
             // New format - parse directly
-            let config: Self = serde_json::from_value(raw)
+            let mut config: Self = serde_json::from_value(raw)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            
+            // Ensure default_model is set if there's a default configured model
+            // This syncs the configured models system with the legacy default_model field
+            if config.default_model.is_none() {
+                if let Some(default_model) = config.models.iter().find(|m| m.is_default) {
+                    config.default_model = Some(default_model.model_id.clone());
+                }
+            }
+            
             Ok(config)
         } else {
             // Legacy format - migrate
