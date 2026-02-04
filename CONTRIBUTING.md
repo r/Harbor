@@ -68,15 +68,22 @@ cd ..
 
 ```
 harbor/
-├── extension/              # Browser Extension (TypeScript + esbuild)
+├── extension/              # Harbor Extension - Infrastructure (TypeScript + esbuild)
 │   ├── src/
 │   │   ├── background.ts   # Native messaging, server management
 │   │   ├── sidebar.ts      # Main sidebar UI
-│   │   ├── agents/         # Web Agent API (injected.ts, orchestrator.ts)
 │   │   ├── js-runtime/     # In-browser JS MCP runtime
 │   │   ├── wasm/           # In-browser WASM MCP runtime
-│   │   ├── llm/            # Native bridge client
+│   │   ├── llm/            # LLM provider abstraction
 │   │   ├── mcp/            # MCP protocol & host
+│   │   └── policy/         # Feature flags
+│   └── dist/               # Built output
+│
+├── web-agents-api/         # Web Agents API Extension - Implements window.ai/agent
+│   ├── src/
+│   │   ├── background.ts   # Cross-extension messaging to Harbor
+│   │   ├── injected.ts     # window.ai and window.agent implementation
+│   │   ├── content-script.ts  # Script injection
 │   │   └── policy/         # Permission system
 │   └── dist/               # Built output
 │
@@ -90,8 +97,6 @@ harbor/
 │   │   ├── oauth/          # OAuth flow handling
 │   │   └── fs/             # Filesystem utilities
 │   └── any-llm-rust/       # Multi-provider LLM library (submodule)
-│
-├── web-agents-api/         # Companion extension (standalone/bridge mode)
 │
 ├── demo/                   # Demo web pages
 │   ├── web-agents/         # Web Agent API demos
@@ -122,12 +127,15 @@ harbor/
 
 | Component | Path | Description |
 |-----------|------|-------------|
+| **Web Agent API** | `web-agents-api/src/injected.ts` | window.ai/window.agent implementation |
+| **Permission System** | `web-agents-api/src/policy/` | Origin permission grants |
+| **Harbor Client** | `web-agents-api/src/harbor-client.ts` | Cross-extension messaging to Harbor |
 | **Native Messaging** | `bridge-rs/src/native_messaging.rs` | Stdin/stdout JSON framing |
 | **RPC Handlers** | `bridge-rs/src/rpc/` | All bridge message types |
 | **LLM Config** | `bridge-rs/src/llm/` | LLM provider configuration |
 | **QuickJS Runtime** | `bridge-rs/src/js/` | Sandboxed JS MCP server execution |
 | **OAuth** | `bridge-rs/src/oauth/` | OAuth flow handling |
-| **Web Agent API** | `extension/src/agents/` | window.ai/agent injection |
+| **MCP Host** | `extension/src/mcp/` | MCP server management |
 
 ---
 
@@ -242,6 +250,20 @@ See [TESTING_PLAN.md](docs/TESTING_PLAN.md) for comprehensive manual QA scenario
 - Prefer `interface` over `type` for object shapes
 - Use explicit return types on exported functions
 - Document public APIs with JSDoc comments
+
+### Logging and Debug Statements
+
+The codebase contains `console.log` statements used for debugging during development. For production releases:
+
+- **Debug flags**: Files with `const DEBUG = true/false` should have DEBUG set to `false` before release
+- **Console logging**: Console statements are intentionally left in place for debugging. They appear in the browser's extension console and don't affect end users
+- **Bridge logging**: The Rust bridge uses the `tracing` crate and logs to `~/.cache/harbor-bridge.log`
+
+When adding new debugging output, prefer using the existing DEBUG flag pattern:
+```typescript
+const DEBUG = false;  // Set to true for development
+if (DEBUG) console.log('Debug info:', data);
+```
 
 ### Naming Conventions
 

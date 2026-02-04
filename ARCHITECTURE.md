@@ -1,11 +1,14 @@
 # Harbor Architecture
 
-This document describes the architecture of Harbor, an implementation of the **[Web Agent API](spec/)**.
+This document describes the architecture of Harbor and the Web Agents API extension.
 
-Harbor is a browser extension (Firefox and Chrome) that implements the Web Agent API specification, bringing AI and MCP (Model Context Protocol) capabilities to web applications.
+This repository contains two browser extensions that work together to bring AI and MCP (Model Context Protocol) capabilities to web applications:
+
+- **Harbor** — Infrastructure extension providing LLM connections, MCP server hosting, and the native bridge
+- **Web Agents API** — Implements the **[Web Agent API](spec/)** specification, exposing `window.ai` and `window.agent` to web pages
 
 > **Related Documentation:**
-> - [Web Agent API Spec](spec/) — The API specification Harbor implements
+> - [Web Agent API Spec](spec/) — The API specification that Web Agents API implements
 > - [User Guide](docs/USER_GUIDE.md) — Installation and usage
 > - [Developer Guide](docs/DEVELOPER_GUIDE.md) — Building apps with the Web Agent API
 > - [Contributing](CONTRIBUTING.md) — Development setup
@@ -15,33 +18,34 @@ Harbor is a browser extension (Firefox and Chrome) that implements the Web Agent
 
 ## Overview
 
-Harbor implements the Web Agent API, providing:
+The two extensions together provide:
 
-| Capability | Description |
-|------------|-------------|
-| **Web Agent API** | `window.ai` and `window.agent` APIs for web pages |
-| **MCP Server Management** | Install, run, and connect to MCP servers |
-| **In-Browser MCP Execution** | Run MCP servers as WASM or JavaScript directly in the browser |
-| **LLM Integration** | Local model support (Ollama, llamafile) + cloud providers |
-| **Permission System** | Per-origin capability grants with user consent |
-| **Chat Orchestration** | Agent loop with tool calling |
-| **Address Bar Integration** | Omnibox suggestions and tool shortcuts |
-| **Bring Your Own Chatbot** | Websites can integrate with the user's AI via `agent.mcp.*` and `agent.chat.*` |
+| Capability | Provided By | Description |
+|------------|-------------|-------------|
+| **Web Agent API** | Web Agents API | `window.ai` and `window.agent` APIs for web pages |
+| **Permission System** | Web Agents API | Per-origin capability grants with user consent |
+| **MCP Server Management** | Harbor | Install, run, and connect to MCP servers |
+| **In-Browser MCP Execution** | Harbor | Run MCP servers as WASM or JavaScript directly in the browser |
+| **LLM Integration** | Harbor | Local model support (Ollama, llamafile) + cloud providers |
+| **Chat Sidebar** | Harbor | Built-in chat UI with tool calling |
+| **Address Bar Integration** | Harbor | Omnibox suggestions and tool shortcuts |
+| **Bring Your Own Chatbot** | Both | Websites can integrate with the user's AI via `agent.mcp.*` and `agent.chat.*` |
 
 ---
 
-## How Harbor Works
+## How It Works
 
-Harbor exposes AI capabilities to web pages through a layered architecture involving four key components:
+The system exposes AI capabilities to web pages through a layered architecture involving five key components:
 
-1. **Browser Extension** — Injects JavaScript APIs into web pages and manages permissions
-2. **Native Bridge (Rust)** — Handles LLM inference and native MCP server communication
-3. **WASM Runtime** — Runs MCP servers compiled to WebAssembly in the browser
-4. **JavaScript Runtime** — Runs JS MCP servers in sandboxed Web Workers
+1. **Web Agents API Extension** — Injects JavaScript APIs into web pages and manages permissions
+2. **Harbor Extension** — Manages LLM provider selection, MCP servers, and provides the chat sidebar
+3. **Native Bridge (Rust)** — Handles LLM inference and native MCP server communication
+4. **WASM Runtime** — Runs MCP servers compiled to WebAssembly in the browser
+5. **JavaScript Runtime** — Runs JS MCP servers in sandboxed Web Workers
 
 ### The Web Agent API
 
-When a web page loads with Harbor installed, the extension injects a script that exposes two global JavaScript objects:
+When a web page loads with both extensions installed, the Web Agents API extension injects a script that exposes two global JavaScript objects:
 
 ```javascript
 // window.ai — Text generation (Chrome Prompt API compatible)
@@ -64,27 +68,27 @@ for await (const event of window.agent.run({ task: 'Search for news' })) {
 
 These APIs are **permission-gated** — web pages must request explicit user consent before accessing AI capabilities.
 
-### Message Flow: Web Page → Extension → Bridge
+### Message Flow: Web Page → Web Agents API → Harbor → Bridge
 
 ```
-Web Page                Content Script             Background              Bridge
-   │                         │                         │                      │
-   │ window.ai.prompt()      │                         │                      │
-   ├────────────────────────►│                         │                      │
-   │      postMessage        │ browser.runtime.Port    │                      │
-   │                         ├────────────────────────►│                      │
-   │                         │                         │ Native Messaging     │
-   │                         │                         ├─────────────────────►│
-   │                         │                         │                      │ LLM API call
-   │                         │                         │◄─────────────────────┤
-   │                         │◄────────────────────────┤                      │
-   │◄────────────────────────┤                         │                      │
-   │  "Hello! How can I..."  │                         │                      │
+Web Page           Web Agents API            Harbor Extension           Bridge
+   │                    │                         │                        │
+   │ window.ai.prompt() │                         │                        │
+   ├───────────────────►│                         │                        │
+   │    postMessage     │ Cross-ext messaging     │                        │
+   │                    ├────────────────────────►│                        │
+   │                    │                         │ Native Messaging       │
+   │                    │                         ├───────────────────────►│
+   │                    │                         │                        │ LLM call
+   │                    │                         │◄───────────────────────┤
+   │                    │◄────────────────────────┤                        │
+   │◄───────────────────┤                         │                        │
+   │ "Hello! How can.." │                         │                        │
 ```
 
 ### Execution Paths
 
-Harbor supports two execution paths for different capabilities:
+The system supports two execution paths for different capabilities:
 
 #### Path 1: In-Browser Execution (No Bridge Required)
 

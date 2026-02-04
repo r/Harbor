@@ -1,8 +1,13 @@
 # Harbor
 
-**A browser extension that brings AI agent capabilities to web applications.**
+**Browser infrastructure for AI-powered web applications.**
 
-Harbor implements the **[Web Agent API](spec/)** — a proposed standard that exposes `window.ai` and `window.agent` to web pages, giving them access to AI models and tools with user consent.
+> **Note**: Harbor is released by [Raffi Krikorian](https://github.com/r) as a personal project and conversation starter about user-controlled AI on the web. While Raffi is the CTO of Mozilla, this project is not an official Mozilla product and is not affiliated with Mozilla Corporation. It is not a commitment that any of these features will appear in Firefox or any Mozilla product.
+
+This repository contains two browser extensions that work together:
+
+- **Harbor** — Infrastructure extension that provides LLM connections (Ollama, OpenAI, Anthropic), hosts MCP servers, and manages the native bridge
+- **Web Agents API** — Implements the **[Web Agent API](spec/)** specification, exposing `window.ai` and `window.agent` to web pages (requires Harbor for LLM/MCP infrastructure)
 
 ---
 
@@ -78,9 +83,9 @@ ollama pull llama3.2
 
 ### 3. Load Extensions
 
-Harbor requires **two extensions** working together:
-- **Harbor** — Core platform (MCP servers, native bridge, chat sidebar)
-- **Web Agents API** — Injects `window.ai` / `window.agent` into web pages
+The system requires **two extensions** working together:
+- **Harbor** — Infrastructure layer (LLM provider connections, MCP server hosting, native bridge, chat sidebar)
+- **Web Agents API** — Web Agent API implementation (injects `window.ai` / `window.agent` into web pages, delegates to Harbor for LLM/MCP)
 
 **Firefox:**
 1. Go to `about:debugging#/runtime/this-firefox`
@@ -218,15 +223,22 @@ await window.agent.requestPermissions({
                                 │ postMessage
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    BROWSER EXTENSION                             │
-│  • Permission enforcement       • In-browser WASM/JS MCP        │
-│  • Feature flags               • Message routing                │
+│              WEB AGENTS API EXTENSION                            │
+│  • Implements Web Agent API spec  • Permission prompts          │
+│  • Injects window.ai/agent        • Delegates to Harbor         │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │ Cross-extension messaging
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   HARBOR EXTENSION                               │
+│  • LLM provider selection      • In-browser WASM/JS MCP         │
+│  • MCP server management       • Chat sidebar UI                │
 └───────────────────────────────┬─────────────────────────────────┘
                                 │ Native Messaging
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      RUST BRIDGE                                 │
-│  • LLM provider abstraction    • Native MCP servers             │
+│  • LLM provider connections    • Native MCP servers             │
 │  • Ollama/OpenAI/Anthropic     • OAuth flows                    │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -258,7 +270,7 @@ cd extension && npm test
 
 ## The Web Agent API Specification
 
-Harbor is an *implementation* of the Web Agent API. The specification itself is browser-agnostic.
+The Web Agents API extension implements the Web Agent API specification. The specification itself is browser-agnostic and could be implemented by browsers natively or by other extensions.
 
 | Document | Description |
 |----------|-------------|
@@ -275,8 +287,8 @@ Harbor is an *implementation* of the Web Agent API. The specification itself is 
 harbor/
 ├── whitepaper/         # Public whitepaper (GitHub Pages)
 ├── spec/               # Web Agent API specification (browser-agnostic)
-├── extension/          # Harbor browser extension (TypeScript)
-├── web-agents-api/     # Web Agents API extension (injects window.ai/window.agent)
+├── extension/          # Harbor extension (LLM connections, MCP hosting, sidebar)
+├── web-agents-api/     # Web Agents API extension (implements window.ai/window.agent)
 ├── bridge-rs/          # Rust native messaging bridge
 ├── demo/               # Working examples
 ├── docs/               # Implementation documentation
@@ -286,6 +298,20 @@ harbor/
 
 ---
 
+## Known Limitations
+
+This is version 0.1.0, released as a conversation starter. Some features are still in development:
+
+- **Streaming abort**: Canceling streaming requests is not yet fully implemented
+- **Address bar parsing**: LLM-based argument parsing for omnibox commands is placeholder
+- **Permission granularity**: Origin-level permission checks are basic; more fine-grained controls planned
+- **Safari support**: Experimental; code is in the repo but not fully tested
+- **Function calling**: Native tool/function calling in the bridge uses response parsing (proper function calling planned)
+
+See individual TODO comments in the source for specific implementation notes.
+
+---
+
 ## License
 
-MIT
+MIT — See [LICENSE](LICENSE) for details.
