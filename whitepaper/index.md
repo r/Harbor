@@ -149,7 +149,7 @@ we want thought partners.
 
 we're not trying to own this. we're trying to figure out what AI on your side looks like.
 
-[our values →](values.md) · [open questions →](feedback.md) · [try the sketch →](../QUICKSTART.md)
+[try the sketch →](../QUICKSTART.md) · [join the conversation →](https://github.com/anthropics/anthropic-tools/discussions) · [view the code →](https://github.com/anthropics/anthropic-tools)
 
 ---
 

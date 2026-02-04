@@ -5,8 +5,3 @@ theme: jekyll-theme-minimal
 
 markdown: kramdown
 highlighter: rouge
-
-header_pages:
-  - index.md
-  - values.md
-  - feedback.md

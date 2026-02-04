@@ -2,7 +2,7 @@
 
 **Browser infrastructure for AI-powered web applications.**
 
-> **Note**: Harbor is an invitation to explore what user-controlled AI on the web could look like. This is meant to start a conversation—not announce a product. Nothing here is a commitment that these ideas will appear in Firefox or any Mozilla product. But if we're going to shape how AI works on the web, it helps to have something concrete to talk about.
+> **Note**: Harbor + Web Agents is an invitation to explore what user-controlled AI on the web could look like. This is meant to start a conversation—not announce a product. Nothing here is a commitment that these ideas will appear in Firefox or any Mozilla product. But if we're going to shape how AI works on the web, it helps to have something concrete to talk about.
 
 This repository contains two browser extensions that work together:
 
