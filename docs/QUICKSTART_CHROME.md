@@ -1,85 +1,12 @@
-# Chrome Quickstart
+# Chrome Setup Guide
 
-**Get Harbor running in Chrome in under 10 minutes.**
+**Get Harbor running in Chrome, Edge, Brave, Arc, or Vivaldi.**
 
----
+> **Note:** Firefox is the primary supported browser with a simpler setup experience. Consider [Firefox Setup](QUICKSTART_FIREFOX.md) if you're flexible on browser choice.
 
-## Installation Options
-
-There are two ways to install Harbor for Chrome:
-
-| Method | Best For | Time |
-|--------|----------|------|
-| **[macOS Package Installer](#option-a-macos-package-installer-recommended)** | Users, quick setup | 2 min |
-| **[Developer Setup](#option-b-developer-setup)** | Contributors, customization | 10 min |
+Chrome requires an extra configuration step: you must add your extension ID to the native messaging manifest.
 
 ---
-
-# Option A: macOS Package Installer (Recommended)
-
-The easiest way to install Harbor for Chrome on macOS.
-
-## Prerequisites
-
-| Tool | Install |
-|------|---------|
-| **Chrome 120+** | Already have it (or Edge, Brave, Arc, Vivaldi) |
-| **Ollama** (optional) | Installed automatically, or `brew install ollama` |
-
-## Step 1: Download and Install
-
-```bash
-# Build the installer (from the Harbor repo)
-cd installer/chrome
-./build-pkg.sh
-
-# Install
-sudo installer -pkg build/Harbor-Chrome-*.pkg -target /
-```
-
-Or double-click the `.pkg` file in Finder.
-
-The installer:
-- Installs the native bridge (universal binary for Intel + Apple Silicon)
-- Sets up native messaging for Chrome, Edge, Brave, Arc, Vivaldi, and Chromium
-- Downloads Ollama for local AI (if not already installed)
-- Copies the extension files to `/Library/Application Support/Harbor/`
-
-## Step 2: Load the Extension
-
-Since the extension isn't on the Chrome Web Store yet, load it in developer mode:
-
-1. Open Chrome → `chrome://extensions/`
-2. Enable **"Developer mode"** (toggle in top right)
-3. Click **"Load unpacked"**
-4. Select: `/Library/Application Support/Harbor/chrome-extension`
-5. **Note the extension ID** (32-character string like `abcdefghijklmnop...`)
-
-## Step 3: Configure Native Messaging
-
-Run the helper script with your extension ID:
-
-```bash
-/Library/Application\ Support/Harbor/configure-extension-id.sh
-```
-
-Enter your extension ID when prompted. This updates the native messaging manifests so the extension can communicate with the bridge.
-
-**Restart Chrome** for changes to take effect.
-
-## Step 4: Verify Installation
-
-1. Click the Harbor icon (⚓) in the Chrome toolbar
-2. The side panel should show "Bridge: Connected"
-3. If Ollama is running, you'll see "LLM: Ollama"
-
-**You're done!** Skip to [Run the Demos](#step-7-run-the-demos).
-
----
-
-# Option B: Developer Setup
-
-For contributors or those who want to build from source.
 
 ## Prerequisites
 
@@ -87,8 +14,10 @@ For contributors or those who want to build from source.
 |------|---------|
 | **Node.js 18+** | [nodejs.org](https://nodejs.org) |
 | **Rust** | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| **Chrome 120+** | Already have it |
+| **Chrome 120+** | Already have it (or Edge, Brave, Arc, Vivaldi) |
 | **Ollama** | [ollama.com](https://ollama.com) or `brew install ollama` |
+
+---
 
 ## Step 1: Clone the Repository
 
@@ -97,16 +26,14 @@ git clone --recurse-submodules https://github.com/anthropics/harbor.git
 cd harbor
 ```
 
-## Step 2: Start Ollama
+---
 
-Ollama provides the local LLM backend. Start the server and pull a model:
+## Step 2: Start Ollama
 
 ```bash
 ollama serve &
 ollama pull llama3.2
 ```
-
-You can use other models like `mistral`, `codellama`, or `phi3` if you prefer.
 
 **Verify Ollama is running:**
 
@@ -114,11 +41,18 @@ You can use other models like `mistral`, `codellama`, or `phi3` if you prefer.
 curl http://localhost:11434/api/tags
 ```
 
-You should see a JSON response listing your downloaded models.
+---
 
-## Step 3: Build the Extension for Chrome
+## Step 3: Build Both Extensions for Chrome
 
-Use the Chrome-specific build command:
+Harbor consists of two extensions that work together:
+
+| Extension | Purpose |
+|-----------|---------|
+| **Harbor** | Core platform — MCP servers, native bridge, chat panel |
+| **Web Agents API** | Injects `window.ai` and `window.agent` into web pages |
+
+### Build Harbor Extension
 
 ```bash
 cd extension
@@ -127,25 +61,57 @@ npm run build:chrome
 cd ..
 ```
 
-This creates `extension/dist-chrome/` containing the built extension.
+This creates `extension/dist-chrome/`.
 
-> **Note:** Chrome uses a service worker architecture instead of background scripts, so the build process differs from Firefox.
+### Build Web Agents API Extension
 
-## Step 4: Load the Extension in Chrome
+```bash
+cd web-agents-api
+npm install
+npm run build:chrome
+cd ..
+```
 
-1. Open Chrome
-2. Navigate to `chrome://extensions`
-3. Enable **"Developer mode"** (toggle in the top right)
-4. Click **"Load unpacked"**
-5. Select the `extension/dist-chrome/` folder
+This creates `web-agents-api/dist-chrome/`.
 
-You should see "Harbor" appear in your extensions list. **Note the extension ID** — you'll need it in the next step.
+---
 
-The extension ID looks like: `abcdefghijklmnopabcdefghijklmnop`
+## Step 4: Load Both Extensions in Chrome
 
-## Step 5: Build and Install the Bridge
+1. Open Chrome and navigate to `chrome://extensions`
+2. Enable **"Developer mode"** (toggle in the top right)
 
-The bridge connects the extension to Ollama and local resources:
+3. **Load Harbor:**
+   - Click **"Load unpacked"**
+   - Select the `extension/dist-chrome/` folder
+   - **⚠️ Copy the extension ID** — you'll need it in Step 5
+
+4. **Load Web Agents API:**
+   - Click **"Load unpacked"** again
+   - Select the `web-agents-api/dist-chrome/` folder
+
+Both extensions should appear in your extensions list.
+
+### Finding Your Extension ID
+
+The extension ID is a 32-character string that looks like:
+```
+abcdefghijklmnopabcdefghijklmnop
+```
+
+You can find it:
+- Displayed under the extension name in `chrome://extensions`
+- In the URL when you click "Details" on the extension
+
+**Write down the Harbor extension ID** — you need it for native messaging.
+
+---
+
+## Step 5: Configure Native Messaging
+
+This is the critical step that differs from Firefox. Chrome's native messaging requires the exact extension ID.
+
+### Build and Install the Bridge
 
 ```bash
 cd bridge-rs
@@ -154,9 +120,7 @@ cargo build --release
 cd ..
 ```
 
-### Important: Update the Chrome Manifest
-
-Chrome's native messaging requires the specific extension ID. After running `install.sh`, you need to update the manifest file:
+### Update the Native Messaging Manifest
 
 **macOS:**
 ```bash
@@ -168,49 +132,52 @@ nano ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_br
 nano ~/.config/google-chrome/NativeMessagingHosts/harbor_bridge_host.json
 ```
 
-Replace the `allowed_origins` line with your extension ID:
+**Windows:**
+The manifest is at `%LOCALAPPDATA%\Google\Chrome\User Data\NativeMessagingHosts\harbor_bridge_host.json`
+
+### Edit the Manifest
+
+Find the `allowed_origins` line and replace `YOUR_EXTENSION_ID_HERE` with your actual Harbor extension ID:
 
 ```json
 {
   "name": "harbor_bridge_host",
   "description": "Harbor Bridge - Local LLM and MCP server for Harbor extension",
-  "path": "/path/to/harbor-bridge",
+  "path": "/Users/you/.harbor/bin/harbor-bridge",
   "type": "stdio",
   "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID_HERE/"]
 }
 ```
 
-**Example:** If your extension ID is `abcdefghijklmnopabcdefghijklmnop`, use:
+**Example:** If your extension ID is `abcdefghijklmnopabcdefghijklmnop`:
+
 ```json
 "allowed_origins": ["chrome-extension://abcdefghijklmnopabcdefghijklmnop/"]
 ```
 
-After editing, **restart Chrome** for the changes to take effect.
+### Restart Chrome
+
+**Completely quit and restart Chrome** for the native messaging changes to take effect. Just closing tabs is not enough.
 
 ---
 
 ## Step 6: Verify the Installation
 
 1. **Open the Harbor panel:**
-   - Click the Harbor icon in the Chrome toolbar (puzzle piece menu → Harbor)
-   - Or pin it to your toolbar for easy access
+   - Click the Harbor icon (⚓) in the Chrome toolbar
+   - If you don't see it, click the puzzle piece → find Harbor → pin it
 
 2. **Check the bridge connection:**
-   - The panel should show "Bridge: Connected" (green indicator)
-   - If it shows "Bridge: Disconnected":
-     - Verify you updated the native messaging manifest with the correct extension ID
-     - Restart Chrome completely
-     - Check `chrome://extensions` for any errors on the Harbor extension
+   - The panel should show **"Bridge: Connected"** (green indicator)
+   - If it shows "Bridge: Disconnected", see [Troubleshooting](#troubleshooting)
 
 3. **Check the LLM provider:**
-   - The panel should show "LLM: Ollama" or similar
+   - The panel should show **"LLM: Ollama"**
    - If no LLM is found, make sure `ollama serve` is running
 
 ---
 
 ## Step 7: Run the Demos
-
-Start the demo server:
 
 ```bash
 cd demo
@@ -220,74 +187,47 @@ npm start
 
 Open http://localhost:8000 in Chrome.
 
----
+### Try the Getting Started Demo
 
-## Step 8: Try Your First Demo
+Navigate to http://localhost:8000/web-agents/getting-started/ and work through:
 
-Navigate to **[Getting Started](http://localhost:8000/web-agents/getting-started/)** to walk through the basics:
-
-1. **Detect the API** — Confirms Harbor is loaded
+1. **Detect the API** — Confirms both extensions are loaded
 2. **Request Permission** — Learn how permissions work
 3. **Check Tools** — See what MCP tools are available
 4. **Run an Agent** — Ask "What time is it?" and watch the AI use tools
-5. **See the Response** — View the final answer
-
-The demo walks you through each step interactively.
-
----
-
-## Other Demos to Try
-
-| Demo | URL | What It Shows |
-|------|-----|---------------|
-| **Chat Demo** | http://localhost:8000/web-agents/chat-poc/ | Full chat interface with tool calling |
-| **Page Summarizer** | http://localhost:8000/web-agents/summarizer/ | AI-powered page summaries |
-| **Time Agent** | http://localhost:8000/web-agents/time-agent/ | Simple tool usage example |
 
 ---
 
 ## Troubleshooting
 
-### "Web Agent API not detected"
+### "Bridge Disconnected" — Most Common Issue
 
-- Is Harbor loaded? Check `chrome://extensions`
-- Refresh the page after loading the extension
-- Make sure you loaded the `dist-chrome/` folder, not `dist-firefox/` or the source folder
+This is almost always an extension ID mismatch. Verify:
 
-### "Bridge Disconnected" in panel
+1. **Get your current extension ID** from `chrome://extensions`
+2. **Check the manifest** matches exactly:
+   ```bash
+   # macOS
+   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+   ```
+3. **Ensure the ID in `allowed_origins` matches** your extension ID
+4. **Restart Chrome completely** (Quit → Reopen, not just close tabs)
 
-This is usually an extension ID mismatch. Verify:
-
-1. Get your extension ID from `chrome://extensions`
-2. Edit the native messaging manifest (see Step 5)
-3. Make sure the ID matches exactly
-4. Restart Chrome completely (not just the tab)
-
-Check Chrome's native messaging logs:
-
+**Check Chrome's native messaging logs:**
 ```bash
 # macOS
 cat ~/Library/Caches/harbor-bridge.log
 
-# Linux
+# Linux  
 cat ~/.cache/harbor-bridge.log
 ```
 
-### "No LLM Provider Found"
+### "Web Agent API not detected"
 
-```bash
-ollama serve
-curl http://localhost:11434/api/tags  # Should return models
-```
-
-### "No tools available"
-
-The built-in `time-wasm` server should be available by default. If not:
-
-1. Open the Harbor panel
-2. Go to "MCP Servers"
-3. Check if any servers are listed
-4. Try reloading the extension (click the reload icon in `chrome://extensions`)
+- Are **both** extensions loaded? Check `chrome://extensions`
+  - You need both Harbor AND Web Agents API
+- Refresh the page after loading the extensions
+- Make sure you loaded from `dist-chrome/`, not `dist-firefox/` or the source folder
 
 ### Extension ID Changed
 
@@ -298,28 +238,31 @@ The extension ID can change if you:
 
 If this happens, update the native messaging manifest with the new ID and restart Chrome.
 
+### "No LLM Provider Found"
+
+```bash
+ollama serve
+curl http://localhost:11434/api/tags  # Should return models
+```
+
+### "No tools available"
+
+1. Open the Harbor panel
+2. Go to "MCP Servers"
+3. Check if `time-wasm` is listed
+4. Try reloading both extensions from `chrome://extensions`
+
 ---
 
-## Chrome vs Firefox Differences
+## Other Chromium Browsers
 
-| Feature | Chrome | Firefox |
-|---------|--------|---------|
-| UI location | Toolbar popup | Sidebar panel |
-| Background | Service worker | Background script |
-| Native messaging | Requires extension ID | Uses extension ID from manifest |
-| Build command | `npm run build:chrome` | `npm run build` |
-| Output folder | `dist-chrome/` | `dist-firefox/` |
+The same setup works for:
+- **Microsoft Edge** — Use `~/Library/Application Support/Microsoft Edge/NativeMessagingHosts/` on macOS
+- **Brave** — Use `~/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/` on macOS
+- **Arc** — Uses Chrome's native messaging location
+- **Vivaldi** — Use `~/Library/Application Support/Vivaldi/NativeMessagingHosts/` on macOS
 
----
-
-## Next Steps
-
-| What You Want | Where to Go |
-|---------------|-------------|
-| Build your own AI app | [QUICKSTART.md](../QUICKSTART.md#part-2-build-your-first-app) |
-| Create custom MCP tools | [QUICKSTART.md](../QUICKSTART.md#part-3-create-your-own-tools) |
-| Full API reference | [WEB_AGENTS_API.md](WEB_AGENTS_API.md) |
-| Understand the architecture | [ARCHITECTURE.md](../ARCHITECTURE.md) |
+The `install.sh` script may create manifests for multiple browsers. Check which one matches your browser.
 
 ---
 
@@ -328,8 +271,40 @@ If this happens, update the native messaging manifest with the new ID and restar
 For active development, use watch mode:
 
 ```bash
+# Terminal 1: Harbor extension
 cd extension
-npm run dev:chrome  # Rebuilds on file changes
+npm run dev:chrome
+
+# Terminal 2: Web Agents API extension
+cd web-agents-api
+npm run dev:chrome
+
+# Terminal 3: Demo server
+cd demo
+npm start
 ```
 
-After each rebuild, reload the extension in `chrome://extensions` by clicking the reload icon (circular arrow) on the Harbor extension card.
+After each rebuild, reload the extensions in `chrome://extensions` by clicking the reload icon (circular arrow) on each extension card.
+
+---
+
+## Chrome vs Firefox Differences
+
+| Feature | Chrome | Firefox |
+|---------|--------|---------|
+| **UI location** | Toolbar popup | Sidebar panel |
+| **Native messaging** | ⚠️ Requires extension ID | ✅ Works automatically |
+| **Background** | Service worker | Background script |
+| **Build command** | `npm run build:chrome` | `npm run build` |
+| **Output folder** | `dist-chrome/` | `dist-firefox/` |
+
+---
+
+## Next Steps
+
+| What You Want | Where to Go |
+|---------------|-------------|
+| Build your own AI app | [QUICKSTART.md](../QUICKSTART.md#build-your-first-app) |
+| Create custom MCP tools | [QUICKSTART.md](../QUICKSTART.md#create-your-own-tools) |
+| Full API reference | [WEB_AGENTS_API.md](WEB_AGENTS_API.md) |
+| Understand the architecture | [ARCHITECTURE.md](../ARCHITECTURE.md) |

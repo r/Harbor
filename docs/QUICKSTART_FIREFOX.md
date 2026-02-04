@@ -1,57 +1,12 @@
-# Firefox Quickstart
+# Firefox Setup Guide
 
-**Get Harbor running in Firefox in under 10 minutes.**
+**Get Harbor running in Firefox — the primary supported browser.**
 
----
-
-## Option A: Easy Install (Recommended for Users)
-
-If you just want to use Harbor without building from source, use the pre-built installer.
-
-### Download and Install
-
-1. **Download** the latest `Harbor-Firefox-{version}.pkg` from the releases page
-2. **Double-click** the .pkg file to run the installer
-3. **Follow the prompts** - the installer will:
-   - Install the native bridge (universal binary for Intel + Apple Silicon)
-   - Open Firefox with install prompts for both extensions
-4. **Click "Add"** for each extension when Firefox prompts you:
-   - **Harbor** - Core AI agent platform
-   - **Web Agents API** - Exposes AI capabilities to web pages
-
-### After Installation
-
-1. **Open the sidebar** - Press `Cmd+B` and click the Harbor icon
-2. **Verify connection** - The sidebar should show "Bridge: Connected"
-3. **Set up Ollama** (for local AI):
-   - The installer may have installed Ollama automatically
-   - If not: `brew install ollama` or download from [ollama.com](https://ollama.com)
-   - Run: `ollama serve && ollama pull llama3.2`
-
-### What Gets Installed
-
-| Location | Description |
-|----------|-------------|
-| `/Library/Application Support/Harbor/` | Bridge binary and extensions |
-| `/Library/Application Support/Mozilla/NativeMessagingHosts/` | Native messaging config |
-| `/Applications/Uninstall Harbor.app` | GUI uninstaller |
-| `~/.harbor/` | User data (settings, logs) |
-
-### Uninstalling
-
-- **GUI**: Open "Uninstall Harbor" from Applications
-- **CLI**: Run `harbor-uninstall`
-- Then remove the extensions from Firefox: `about:addons` → Remove Harbor and Web Agents API
+Firefox offers the best developer experience for Harbor with sidebar support and straightforward native messaging setup.
 
 ---
 
-## Option B: Developer Setup (Build from Source)
-
-For development or contributing to Harbor, build from source.
-
-### Prerequisites
-
-Before you begin, make sure you have:
+## Prerequisites
 
 | Tool | Install |
 |------|---------|
@@ -62,7 +17,7 @@ Before you begin, make sure you have:
 
 ---
 
-### Step 1: Clone the Repository
+## Step 1: Clone the Repository
 
 ```bash
 git clone --recurse-submodules https://github.com/anthropics/harbor.git
@@ -71,7 +26,7 @@ cd harbor
 
 ---
 
-### Step 2: Start Ollama
+## Step 2: Start Ollama
 
 Ollama provides the local LLM backend. Start the server and pull a model:
 
@@ -92,9 +47,16 @@ You should see a JSON response listing your downloaded models.
 
 ---
 
-### Step 3: Build the Extension
+## Step 3: Build Both Extensions
 
-The default build targets Firefox:
+Harbor consists of two extensions that work together:
+
+| Extension | Purpose |
+|-----------|---------|
+| **Harbor** | Core platform — MCP servers, native bridge, chat sidebar |
+| **Web Agents API** | Injects `window.ai` and `window.agent` into web pages |
+
+### Build Harbor Extension
 
 ```bash
 cd extension
@@ -105,11 +67,22 @@ cd ..
 
 This creates `extension/dist-firefox/` containing the built extension.
 
+### Build Web Agents API Extension
+
+```bash
+cd web-agents-api
+npm install
+npm run build
+cd ..
+```
+
+This creates `web-agents-api/dist-firefox/` containing the built extension.
+
 ---
 
-### Step 4: Build and Install the Bridge
+## Step 4: Build and Install the Native Bridge
 
-The bridge connects the extension to Ollama and local resources:
+The bridge connects the extensions to Ollama and local resources:
 
 ```bash
 cd bridge-rs
@@ -119,25 +92,33 @@ cd ..
 ```
 
 The install script:
-- Builds the `harbor-bridge` binary
+- Copies the `harbor-bridge` binary to a standard location
 - Installs the native messaging manifest for Firefox at:
   - **macOS:** `~/Library/Application Support/Mozilla/NativeMessagingHosts/harbor_bridge.json`
   - **Linux:** `~/.mozilla/native-messaging-hosts/harbor_bridge.json`
 
 ---
 
-### Step 5: Load the Extension in Firefox
+## Step 5: Load Both Extensions in Firefox
 
 1. Open Firefox
 2. Navigate to `about:debugging#/runtime/this-firefox`
-3. Click **"Load Temporary Add-on..."**
-4. Navigate to `extension/dist-firefox/` and select **`manifest.json`**
 
-You should see "Harbor" appear in your extensions list.
+3. **Load Harbor:**
+   - Click **"Load Temporary Add-on..."**
+   - Navigate to `extension/dist-firefox/`
+   - Select **`manifest.json`**
+
+4. **Load Web Agents API:**
+   - Click **"Load Temporary Add-on..."** again
+   - Navigate to `web-agents-api/dist-firefox/`
+   - Select **`manifest.json`**
+
+Both extensions should appear in your extensions list.
 
 ---
 
-### Step 6: Verify the Installation
+## Step 6: Verify the Installation
 
 1. **Open the Harbor sidebar:**
    - Press `Ctrl+B` (Windows/Linux) or `Cmd+B` (macOS) to open the sidebar
@@ -145,16 +126,16 @@ You should see "Harbor" appear in your extensions list.
    - Or click the Harbor icon in the toolbar
 
 2. **Check the bridge connection:**
-   - The sidebar should show "Bridge: Connected" (green indicator)
-   - If it shows "Bridge: Disconnected", re-run `./install.sh` in the `bridge-rs` directory and restart Firefox
+   - The sidebar should show **"Bridge: Connected"** (green indicator)
+   - If it shows "Bridge: Disconnected", see [Troubleshooting](#troubleshooting)
 
 3. **Check the LLM provider:**
-   - The sidebar should show "LLM: Ollama" or similar
+   - The sidebar should show **"LLM: Ollama"** or similar
    - If no LLM is found, make sure `ollama serve` is running
 
 ---
 
-### Step 7: Run the Demos
+## Step 7: Run the Demos
 
 Start the demo server:
 
@@ -168,11 +149,11 @@ Open http://localhost:8000 in Firefox.
 
 ---
 
-### Step 8: Try Your First Demo
+## Step 8: Try Your First Demo
 
 Navigate to **[Getting Started](http://localhost:8000/web-agents/getting-started/)** to walk through the basics:
 
-1. **Detect the API** — Confirms Harbor is loaded
+1. **Detect the API** — Confirms both extensions are loaded
 2. **Request Permission** — Learn how permissions work
 3. **Check Tools** — See what MCP tools are available
 4. **Run an Agent** — Ask "What time is it?" and watch the AI use tools
@@ -182,7 +163,7 @@ The demo walks you through each step interactively.
 
 ---
 
-### Other Demos to Try
+## Other Demos to Try
 
 | Demo | URL | What It Shows |
 |------|-----|---------------|
@@ -192,12 +173,13 @@ The demo walks you through each step interactively.
 
 ---
 
-## Troubleshooting (Both Options)
+## Troubleshooting
 
 ### "Web Agent API not detected"
 
-- Is Harbor loaded? Check `about:debugging#/runtime/this-firefox`
-- Refresh the page after loading the extension
+- Are **both** extensions loaded? Check `about:debugging#/runtime/this-firefox`
+  - You need both Harbor AND Web Agents API
+- Refresh the page after loading the extensions
 - Make sure you loaded from `dist-firefox/manifest.json`, not the source `manifest.json`
 
 ### "Bridge Disconnected" in sidebar
@@ -206,7 +188,16 @@ The demo walks you through each step interactively.
 cd bridge-rs && ./install.sh
 ```
 
-Then restart Firefox.
+Then restart Firefox completely (not just the tab).
+
+**Check the manifest exists:**
+```bash
+# macOS
+cat ~/Library/Application\ Support/Mozilla/NativeMessagingHosts/harbor_bridge.json
+
+# Linux
+cat ~/.mozilla/native-messaging-hosts/harbor_bridge.json
+```
 
 ### "No LLM Provider Found"
 
@@ -222,17 +213,35 @@ The built-in `time-wasm` server should be available by default. If not:
 1. Open the Harbor sidebar
 2. Go to "MCP Servers"
 3. Check if any servers are listed
-4. Try reloading the extension
+4. Try reloading both extensions
 
-### Extension disappears after restart (Developer Setup only)
+### Extensions disappear after restart
 
-Temporary add-ons in Firefox don't persist across browser restarts. You'll need to reload the extension each time via `about:debugging`.
+Temporary add-ons in Firefox don't persist across browser restarts. You'll need to reload the extensions each time via `about:debugging`.
 
-For persistent installation during development, consider:
-- Using [web-ext](https://extensionworkshop.com/documentation/develop/getting-started-with-web-ext/)
-- Building and installing the .pkg installer (see Option A)
+For persistent installation during development, consider using [web-ext](https://extensionworkshop.com/documentation/develop/getting-started-with-web-ext/).
 
-**Note**: If you installed via the .pkg installer (Option A), the extensions are permanently installed and will persist across restarts.
+---
+
+## Development Workflow
+
+For active development, use watch mode in separate terminals:
+
+```bash
+# Terminal 1: Harbor extension
+cd extension
+npm run dev
+
+# Terminal 2: Web Agents API extension
+cd web-agents-api
+npm run dev
+
+# Terminal 3: Demo server
+cd demo
+npm start
+```
+
+After each rebuild, reload the extensions in `about:debugging` by clicking the **"Reload"** button.
 
 ---
 
@@ -240,20 +249,20 @@ For persistent installation during development, consider:
 
 | What You Want | Where to Go |
 |---------------|-------------|
-| Build your own AI app | [QUICKSTART.md](../QUICKSTART.md#part-2-build-your-first-app) |
-| Create custom MCP tools | [QUICKSTART.md](../QUICKSTART.md#part-3-create-your-own-tools) |
+| Build your own AI app | [QUICKSTART.md](../QUICKSTART.md#build-your-first-app) |
+| Create custom MCP tools | [QUICKSTART.md](../QUICKSTART.md#create-your-own-tools) |
 | Full API reference | [WEB_AGENTS_API.md](WEB_AGENTS_API.md) |
 | Understand the architecture | [ARCHITECTURE.md](../ARCHITECTURE.md) |
 
 ---
 
-## Development Workflow
+## Why Firefox is Recommended
 
-For active development, use watch mode:
+| Feature | Firefox | Chrome |
+|---------|---------|--------|
+| **Sidebar support** | ✅ Native sidebar panel | ❌ Popup only |
+| **Native messaging** | ✅ Just works | ⚠️ Requires extension ID config |
+| **Developer experience** | ✅ Simpler setup | ⚠️ Extra steps |
+| **Extension persistence** | ❌ Temporary only | ❌ Temporary only |
 
-```bash
-cd extension
-npm run dev  # Rebuilds on file changes
-```
-
-After each rebuild, reload the extension in `about:debugging` by clicking the "Reload" button.
+Firefox's native sidebar makes Harbor feel like a built-in browser feature rather than a popup.
