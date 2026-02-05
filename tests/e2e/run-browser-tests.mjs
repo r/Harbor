@@ -1,23 +1,26 @@
 #!/usr/bin/env node
 /**
- * E2E Browser Test Runner
+ * E2E Browser Test Runner for Firefox
  * 
  * This script:
  * 1. Starts a local server to serve test pages
- * 2. Uses Playwright to launch Chromium with extensions loaded
- * 3. Opens the test runner page
- * 4. Captures results via HTTP endpoint
- * 5. Exits with appropriate code
+ * 2. Launches Firefox with web-ext and the Web Agents API extension
+ * 3. Captures results via HTTP endpoint
+ * 4. Exits with appropriate code
+ * 
+ * Note: This test verifies that the Web Agents API extension can inject
+ * window.ai and window.agent into web pages. For full functionality tests,
+ * both Harbor and Web Agents API extensions need to be installed.
  * 
  * Usage:
- *   node run-browser-tests.mjs [--timeout=60000] [--keep-open] [--browser=chromium|firefox]
+ *   node run-browser-tests.mjs [--timeout=60000] [--keep-open]
  */
 
+import { spawn } from 'child_process';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { chromium } from 'playwright';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -28,10 +31,10 @@ const getArg = (name, defaultVal) => {
   return arg ? arg.split('=')[1] : defaultVal;
 };
 
-// Configuration
+// Configuration - Firefox is the PRIMARY browser
 const config = {
-  harborExtPath: path.resolve(__dirname, '../../extension/dist-chrome'),
-  webAgentsExtPath: path.resolve(__dirname, '../../web-agents-api/dist-chrome'),
+  harborExtPath: path.resolve(__dirname, '../../extension/dist-firefox'),
+  webAgentsExtPath: path.resolve(__dirname, '../../web-agents-api/dist-firefox'),
   testServerPort: 3457,
   timeout: parseInt(getArg('timeout', '60000')),
   keepOpen: args.includes('--keep-open'),
@@ -163,88 +166,119 @@ function checkBuilds() {
   
   if (!fs.existsSync(harborManifest)) {
     console.error(`[error] Harbor extension not built at ${config.harborExtPath}`);
-    console.error(`        Run: cd extension && npm run build:chrome`);
+    console.error(`        Run: cd extension && npm run build`);
     process.exit(1);
   }
   
   if (!fs.existsSync(webAgentsManifest)) {
     console.error(`[error] Web Agents API extension not built at ${config.webAgentsExtPath}`);
-    console.error(`        Run: cd web-agents-api && npm run build:chrome`);
+    console.error(`        Run: cd web-agents-api && npm run build`);
     process.exit(1);
   }
   
-  console.log('[build] ✓ Harbor extension ready (Chromium)');
-  console.log('[build] ✓ Web Agents API extension ready (Chromium)');
+  console.log('[build] ✓ Harbor extension ready (Firefox)');
+  console.log('[build] ✓ Web Agents API extension ready (Firefox)');
 }
 
-// Launch Chromium with extensions using Playwright
-async function launchBrowser(testUrl, testResultsPromise) {
-  console.log(`[chromium] Launching with extensions...`);
-  
-  // Playwright Chromium supports loading extensions via --load-extension
-  // We need to use launchPersistentContext for extensions to work
-  const userDataDir = path.join(__dirname, '.playwright-profile');
-  
-  // Clean up old profile
-  if (fs.existsSync(userDataDir)) {
-    fs.rmSync(userDataDir, { recursive: true, force: true });
-  }
-  
-  // Launch with extensions
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    headless: false, // Extensions require headed mode
-    args: [
-      `--disable-extensions-except=${config.harborExtPath},${config.webAgentsExtPath}`,
-      `--load-extension=${config.harborExtPath},${config.webAgentsExtPath}`,
-      '--no-first-run',
-      '--disable-default-apps',
-    ],
+// Launch Firefox with web-ext
+function launchFirefox(testUrl, testResultsPromise) {
+  return new Promise((resolve, reject) => {
+    console.log(`[firefox] Launching with web-ext...`);
+    
+    // Use web-ext to load the Web Agents API extension
+    // This extension injects window.ai and window.agent into pages
+    const webExtArgs = [
+      'web-ext', 'run',
+      '--source-dir', config.webAgentsExtPath,
+      '--start-url', testUrl,
+      '--no-reload',
+    ];
+    
+    console.log(`[firefox] Command: npx ${webExtArgs.join(' ')}`);
+    console.log(`[firefox] Note: Loading Web Agents API extension (provides window.ai/window.agent)`);
+    
+    const webExt = spawn('npx', webExtArgs, {
+      cwd: __dirname,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env },
+    });
+    
+    console.log(`[firefox] Process started (PID: ${webExt.pid})`);
+    
+    let extensionLoaded = false;
+    
+    const processOutput = (data) => {
+      const text = data.toString();
+      
+      for (const line of text.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        
+        // Check for extension loading
+        if (line.includes('Installed') && line.includes('temporary add-on')) {
+          if (!extensionLoaded) {
+            extensionLoaded = true;
+            console.log('[firefox] ✓ Web Agents API extension loaded');
+          }
+        }
+        
+        // Log errors
+        if (line.includes('error') || line.includes('Error')) {
+          console.log(`[web-ext] ${trimmed}`);
+        }
+      }
+    };
+    
+    webExt.stdout.on('data', processOutput);
+    webExt.stderr.on('data', processOutput);
+    
+    webExt.on('error', (err) => {
+      reject(err);
+    });
+    
+    // Set up timeout
+    const timeout = setTimeout(() => {
+      console.log(`\n[timeout] Test timed out after ${config.timeout/1000}s`);
+      console.log('[timeout] This may mean the extension did not load properly.');
+      console.log('[timeout] Try running with --keep-open to investigate.');
+      webExt.kill('SIGTERM');
+      reject(new Error('Test timed out'));
+    }, config.timeout);
+    
+    // Wait for test results from HTTP endpoint
+    testResultsPromise.then((results) => {
+      clearTimeout(timeout);
+      
+      if (!config.keepOpen) {
+        setTimeout(() => {
+          webExt.kill('SIGTERM');
+          resolve(results);
+        }, 1000);
+      } else {
+        console.log('\n[keep-open] Tests complete. Firefox stays open for manual inspection.');
+        console.log('[keep-open] Press Ctrl+C to exit.\n');
+        resolve(results);
+      }
+    });
+    
+    webExt.on('exit', (code, signal) => {
+      console.log(`[firefox] Process exited (code: ${code}, signal: ${signal})`);
+      clearTimeout(timeout);
+    });
+    
+    // Handle Ctrl+C
+    process.on('SIGINT', () => {
+      console.log('\n[interrupted] Cleaning up...');
+      clearTimeout(timeout);
+      webExt.kill('SIGTERM');
+      process.exit(130);
+    });
   });
-  
-  console.log('[chromium] ✓ Browser launched with extensions');
-  
-  // Get the first page or create one
-  const pages = context.pages();
-  const page = pages.length > 0 ? pages[0] : await context.newPage();
-  
-  // Navigate to the test page
-  await page.goto(testUrl, { waitUntil: 'domcontentloaded' });
-  console.log(`[chromium] ✓ Navigated to: ${testUrl}`);
-  
-  // Wait for test results or timeout
-  let results;
-  try {
-    results = await Promise.race([
-      testResultsPromise,
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Test timed out')), config.timeout)
-      )
-    ]);
-  } catch (err) {
-    console.log(`\n[timeout] Test timed out after ${config.timeout/1000}s`);
-    if (!config.keepOpen) {
-      await context.close();
-    }
-    throw err;
-  }
-  
-  if (!config.keepOpen) {
-    await context.close();
-    // Clean up profile
-    if (fs.existsSync(userDataDir)) {
-      fs.rmSync(userDataDir, { recursive: true, force: true });
-    }
-  } else {
-    console.log('\n[keep-open] Tests complete. Browser stays open for manual inspection.');
-    console.log('[keep-open] Press Ctrl+C to exit.\n');
-  }
-  
-  return results;
 }
 
 // Main
 async function main() {
-  console.log('🚢 Harbor E2E Browser Tests (Chromium)\n');
+  console.log('🚢 Harbor E2E Browser Tests (Firefox)\n');
   
   // Check builds
   checkBuilds();
@@ -257,10 +291,10 @@ async function main() {
   try {
     console.log(`\n[test] Opening: ${testUrl}`);
     if (config.keepOpen) {
-      console.log('[test] Keep-open mode: Browser will stay open for manual testing\n');
+      console.log('[test] Keep-open mode: Firefox will stay open for manual testing\n');
     }
     
-    const results = await launchBrowser(testUrl, testResultsPromise);
+    const results = await launchFirefox(testUrl, testResultsPromise);
     
     server.close();
     
