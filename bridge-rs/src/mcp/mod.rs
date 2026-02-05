@@ -114,6 +114,7 @@ pub struct PendingToolCall {
     pub tool_name: String,
     pub args: serde_json::Value,
     #[serde(skip)]
+    #[allow(dead_code)]
     pub created_at: Instant,
 }
 

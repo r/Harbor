@@ -417,7 +417,8 @@ async fn handle_streaming_rpc(
 
 /// Broadcast a message to all connected WebSocket clients.
 /// Can be called from other parts of the codebase to push updates.
-pub async fn broadcast_message(_state: &Arc<RwLock<ServerState>>, _msg: WsMessage) {
+#[allow(dead_code)]
+async fn broadcast_message(_state: &Arc<RwLock<ServerState>>, _msg: WsMessage) {
     // This function can be used by other modules to push messages
     // For now, it's a placeholder for future use (e.g., console log forwarding)
 }

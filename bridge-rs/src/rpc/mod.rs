@@ -52,11 +52,13 @@ impl RpcError {
   }
 
   /// Standard JSON-RPC error: Invalid params
+  #[allow(dead_code)]
   pub fn invalid_params(message: impl Into<String>) -> Self {
     RpcError::new(-32602, message)
   }
 
   /// Standard JSON-RPC error: Internal error
+  #[allow(dead_code)]
   pub fn internal(message: impl Into<String>) -> Self {
     RpcError::new(-32603, message)
   }
