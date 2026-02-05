@@ -86,7 +86,7 @@ install_firefox_manifest() {
   "description": "Harbor Bridge - Local LLM and MCP server for Harbor extension",
   "path": "$WRAPPER_PATH",
   "type": "stdio",
-  "allowed_extensions": ["harbor@mozilla.org"]
+  "allowed_extensions": ["harbor@krikorian.co"]
 }
 EOF
         echo "  Manifest installed: $manifest_dir/harbor_bridge.json"

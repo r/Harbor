@@ -3,5 +3,5 @@
   "description": "Harbor Bridge - Local LLM and MCP server for Harbor extension",
   "path": "{{BINARY_PATH}}",
   "type": "stdio",
-  "allowed_extensions": ["harbor@mozilla.org"]
+  "allowed_extensions": ["harbor@krikorian.co"]
 }
