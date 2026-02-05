@@ -15,6 +15,14 @@
     "dev": "npm run dev --prefix extension",
     "dev:chrome": "npm run dev:chrome --prefix extension",
     "dev:safari": "npm run dev:safari --prefix extension",
-    "install:deps": "npm install --prefix extension && npm install --prefix web-agents-api"
+    "install:deps": "npm install --prefix extension && npm install --prefix web-agents-api && npm install --prefix tests/e2e",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "npm run test:unit:ts && npm run test:unit:rust",
+    "test:unit:ts": "npm test --prefix bridge-ts/src/any-llm-ts",
+    "test:unit:rust": "cargo test --manifest-path bridge-rs/Cargo.toml",
+    "test:e2e": "npm test --prefix tests/e2e",
+    "test:e2e:debug": "npm run test:debug --prefix tests/e2e",
+    "test:e2e:ui": "npm run test:ui --prefix tests/e2e",
+    "test:setup": "npm run build && cd bridge-rs && cargo build --release && ./install.sh --firefox-only --skip-build"
   }
 }

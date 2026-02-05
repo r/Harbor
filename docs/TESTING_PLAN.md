@@ -22,10 +22,45 @@ This document provides comprehensive testing guidance for the MCP Host implement
 cd bridge-rs
 cargo test
 
-# Run extension tests  
+# Run extension unit tests
 cd extension
 npm test
+
+# Run E2E tests (basic functionality, see note below)
+cd tests/e2e
+npm test
 ```
+
+### E2E Testing Limitations
+
+**Important:** Due to Playwright limitations with Firefox, we cannot fully automate Firefox extension testing:
+
+1. **Playwright cannot navigate to `about:debugging`** - This means we cannot automate loading temporary add-ons.
+2. **Playwright cannot navigate to `moz-extension://` URLs** - This means we cannot automate the extension's sidebar or internal pages.
+
+As a result, the E2E tests that require extension access are **skipped** in automated runs. They are replaced with manual testing instructions (see [Manual Extension Testing](#manual-extension-testing) below).
+
+The following E2E tests **do work** with Playwright:
+- Basic Firefox functionality tests
+- Demo server tests (serving static files)
+- Tests that don't require the extension
+
+### Manual Extension Testing
+
+For full extension testing, use `web-ext` to launch Firefox:
+
+```bash
+# Terminal 1: Run the extension with web-ext
+cd extension
+npm run build
+npx web-ext run --source-dir dist
+
+# Terminal 2: (Optional) Run demo server for additional testing
+cd tests/e2e
+npm run demo-server
+```
+
+Then manually test the extension in the Firefox window that opens.
 
 ### Test Suite Overview
 
