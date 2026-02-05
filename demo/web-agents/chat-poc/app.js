@@ -2,7 +2,7 @@
  * Web Agent API Chat Demo - Example Code
  * 
  * This demonstrates using the Web Agent API (window.ai and window.agent)
- * that implementations like Harbor provide to web pages.
+ * that Web Agents API implementations provide to web pages.
  * 
  * WEB AGENT API REFERENCE:
  * 
@@ -390,7 +390,7 @@ async function sendMessage() {
   
   // Check if Web Agent API is available
   if (!window.ai || !window.agent) {
-    addMessageUI('system', 'Web Agent API not detected. Please install Harbor (or another implementation) and reload.');
+    addMessageUI('system', 'Web Agent API not detected. Please install a Web Agents API implementation and reload.');
     return;
   }
   
@@ -615,9 +615,9 @@ async function runWithTools(content) {
           // Provide helpful error messages
           let errorMsg = event.error.message;
           if (event.error.code === 'ERR_LLM_FAILED' || errorMsg.includes('NetworkError') || errorMsg.includes('fetch')) {
-            errorMsg = 'LLM connection failed. Please check that an LLM provider (like Ollama) is running and configured in the Harbor sidebar.';
+            errorMsg = 'LLM connection failed. Please check that an LLM provider (like Ollama) is running and configured in the extension sidebar.';
           } else if (event.error.code === 'ERR_NO_MODEL') {
-            errorMsg = 'No LLM model configured. Please add an LLM provider in the Harbor sidebar.';
+            errorMsg = 'No LLM model configured. Please add an LLM provider in the extension sidebar.';
           }
           addMessageUI('assistant', `Error: ${errorMsg}`);
           break;

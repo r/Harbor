@@ -148,7 +148,7 @@
             </div>
             <div class="field">
               <label for="email-input">Work email</label>
-              <input id="email-input" class="demo-input" type="email" placeholder="ada@harbor.dev" />
+              <input id="email-input" class="demo-input" type="email" placeholder="ada@example.com" />
             </div>
           </div>
 
@@ -194,7 +194,7 @@
         </div>
         <div class="requirements">
           <p><strong>Scopes:</strong> <code>browser:activeTab.interact</code></p>
-          <p><strong>Feature flag:</strong> "Browser Interaction" must be enabled in Harbor.</p>
+          <p><strong>Feature flag:</strong> "Browser Interaction" must be enabled in the Web Agents API extension.</p>
         </div>
       </section>
     </div>
@@ -269,11 +269,11 @@
       {
         title: 'Interact: fill inputs',
         description: 'Use fill() to populate text fields.',
-        code: `const agent = window.agent;\nawait agent.browser.activeTab.fill('#name-input', 'Ada Lovelace');\nawait agent.browser.activeTab.fill('#email-input', 'ada@harbor.dev');`,
+        code: `const agent = window.agent;\nawait agent.browser.activeTab.fill('#name-input', 'Ada Lovelace');\nawait agent.browser.activeTab.fill('#email-input', 'ada@example.com');`,
         run: async () => {
           const agent = getWebAgent();
           await agent.browser.activeTab.fill('#name-input', 'Ada Lovelace');
-          await agent.browser.activeTab.fill('#email-input', 'ada@harbor.dev');
+          await agent.browser.activeTab.fill('#email-input', 'ada@example.com');
           return '✓ Inputs filled';
         }
       },

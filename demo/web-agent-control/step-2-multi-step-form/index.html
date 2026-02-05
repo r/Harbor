@@ -261,7 +261,7 @@
       {
         title: 'Detect Web Agent API',
         description: 'Confirm the Web Agent API is available in this page.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nif (!agent) {\n  throw new Error('Web Agent API not detected');\n}`,
+        code: `const agent = window.agent;\nif (!agent) {\n  throw new Error('Web Agent API not detected');\n}`,
         run: async () => {
           const agent = getWebAgent();
           if (!agent) {
@@ -273,7 +273,7 @@
       {
         title: 'Request permission',
         description: 'Ask for active-tab read + interact access.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nconst result = await agent.requestPermissions({\n  scopes: ['browser:activeTab.interact', 'browser:activeTab.read'],\n  reason: 'Multi-step form demo'\n});`,
+        code: `const agent = window.agent;\nconst result = await agent.requestPermissions({\n  scopes: ['browser:activeTab.interact', 'browser:activeTab.read'],\n  reason: 'Multi-step form demo'\n});`,
         run: async () => {
           const agent = getWebAgent();
           if (!agent?.requestPermissions) {
@@ -292,7 +292,7 @@
       {
         title: 'Confirm browser control',
         description: 'Verify browser control is available after permissions.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nif (!agent?.browser?.activeTab) {\n  throw new Error('Browser control not available. Enable Browser Control and reload this page.');\n}`,
+        code: `const agent = window.agent;\nif (!agent?.browser?.activeTab) {\n  throw new Error('Browser control not available. Enable Browser Control and reload this page.');\n}`,
         run: async () => {
           const agent = getWebAgent();
           if (!agent?.browser?.activeTab) {
@@ -304,7 +304,7 @@
       {
         title: 'Interact: complete step 1',
         description: 'Fill the profile form and continue.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.fill('#project-input', 'Project Atlas');\nawait agent.browser.activeTab.select('#role-select', 'engineer');\nawait agent.browser.activeTab.click('#step-1-next');`,
+        code: `const agent = window.agent;\nawait agent.browser.activeTab.fill('#project-input', 'Project Atlas');\nawait agent.browser.activeTab.select('#role-select', 'engineer');\nawait agent.browser.activeTab.click('#step-1-next');`,
         run: async () => {
           const agent = getWebAgent();
           await agent.browser.activeTab.fill('#project-input', 'Project Atlas');
@@ -316,7 +316,7 @@
       {
         title: 'Wait for step 2',
         description: 'Wait for the next panel to appear.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.waitForSelector('#step-2.is-visible');`,
+        code: `const agent = window.agent;\nawait agent.browser.activeTab.waitForSelector('#step-2.is-visible');`,
         run: async () => {
           const agent = getWebAgent();
           await agent.browser.activeTab.waitForSelector('#step-2.is-visible');
@@ -326,7 +326,7 @@
       {
         title: 'Interact: complete step 2',
         description: 'Choose a stack, enable notifications, and continue.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.select('#stack-select', 'typescript');\nawait agent.browser.activeTab.click('#notify-check');\nawait agent.browser.activeTab.click('#step-2-next');`,
+        code: `const agent = window.agent;\nawait agent.browser.activeTab.select('#stack-select', 'typescript');\nawait agent.browser.activeTab.click('#notify-check');\nawait agent.browser.activeTab.click('#step-2-next');`,
         run: async () => {
           const agent = getWebAgent();
           await agent.browser.activeTab.select('#stack-select', 'typescript');
@@ -338,7 +338,7 @@
       {
         title: 'Wait for step 3',
         description: 'Wait for the review panel to appear.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.waitForSelector('#step-3.is-visible');`,
+        code: `const agent = window.agent;\nawait agent.browser.activeTab.waitForSelector('#step-3.is-visible');`,
         run: async () => {
           const agent = getWebAgent();
           await agent.browser.activeTab.waitForSelector('#step-3.is-visible');
@@ -348,7 +348,7 @@
       {
         title: 'Interact: confirm',
         description: 'Click the final confirmation button.',
-        code: `const agent = window.harbor?.agent ?? window.agent;\nawait agent.browser.activeTab.click('#step-3-confirm');`,
+        code: `const agent = window.agent;\nawait agent.browser.activeTab.click('#step-3-confirm');`,
         run: async () => {
           const agent = getWebAgent();
           await agent.browser.activeTab.click('#step-3-confirm');

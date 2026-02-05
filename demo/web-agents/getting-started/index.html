@@ -198,7 +198,7 @@ console.<span class="method">log</span>(response);</pre>
         run: async () => {
           await delay(500);
           if (!window.ai || !window.agent) {
-            throw new Error('Web Agent API not detected.\n\nMake sure:\n• Harbor (or another implementation) is installed\n• This page is allowed access');
+            throw new Error('Web Agent API not detected.\n\nMake sure:\n• A Web Agent API implementation is installed\n• This page is allowed access');
           }
           return '✓ window.ai\n✓ window.agent';
         }

@@ -59,11 +59,9 @@ function waitForWebAgent(timeoutMs = 5000) {
 
     const cleanup = () => {
       clearTimeout(timeoutId);
-      window.removeEventListener('harbor-provider-ready', onReady);
       window.removeEventListener('agent-ready', onReady);
     };
 
-    window.addEventListener('harbor-provider-ready', onReady);
     window.addEventListener('agent-ready', onReady);
   });
 }

@@ -258,7 +258,7 @@
             <li><code>browser:tabs.read</code> — Read tab information</li>
             <li><code>model:prompt</code> — Use AI for synthesis</li>
           </ul>
-          <p style="margin-top: var(--demo-space-3);"><strong>Feature flag:</strong> "Browser Control" must be enabled in Harbor.</p>
+          <p style="margin-top: var(--demo-space-3);"><strong>Feature flag:</strong> "Browser Control" must be enabled in the Web Agents API extension.</p>
         </div>
       </section>
     </div>
@@ -306,14 +306,14 @@
         {
           title: 'Detect Web Agent API',
           description: 'Confirm the Web Agent API is available.',
-          code: `const agent = window.harbor?.agent ?? window.agent;
+          code: `const agent = window.agent;
 if (!agent) {
   throw new Error('Web Agent API not detected');
 }`,
           run: async () => {
             const agent = getWebAgent();
             if (!agent) {
-              throw new Error('Web Agent API not detected. Make sure Harbor is installed and enabled.');
+              throw new Error('Web Agent API not detected. Make sure the Web Agents API extension is installed and enabled.');
             }
             return '✓ Web Agent API detected';
           }

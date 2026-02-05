@@ -340,7 +340,7 @@
 
   var sb = document.createElement('div');
   sb.id = 'hc-sb';
-  sb.innerHTML = '<div class="hd"><div class="hd-l"><div class="logo">⚓</div><div><div class="tt">Harbor</div>' +
+  sb.innerHTML = '<div class="hd"><div class="hd-l"><div class="logo">🤖</div><div><div class="tt">Web Agent</div>' +
     '<div class="st">Chat about this page</div></div></div><div class="hd-r"><div class="sts"><span class="dot" id="hc-dot"></span>' +
     '<span id="hc-sts">Ready</span></div><button class="xbtn" id="hc-x">×</button></div></div>' +
     '<div class="ctx"><span>📄</span><span class="ctx-t">' + (document.title || location.hostname) + '</span></div>' +
@@ -389,7 +389,7 @@
     conn.innerHTML = '<span class="spin"></span> Connecting...';
     err.className = 'err';
     if (!window.ai || !window.agent) {
-      fail('Harbor not found. Install the extension first.');
+      fail('Web Agent API not found. Install the extension first.');
       return;
     }
     window.agent.requestPermissions({ scopes: ['model:prompt'], reason: 'Chat about page' }).then(function(r) {
@@ -424,8 +424,8 @@
     empty.className = 'empty hide';
     var m = document.createElement('div');
     m.className = 'msg ' + (role === 'user' ? 'u' : 'a');
-    m.innerHTML = '<div class="msg-h"><div class="av">' + (role === 'user' ? 'U' : 'H') + '</div>' +
-      '<span class="role">' + (role === 'user' ? 'You' : 'Harbor') + '</span></div>' +
+    m.innerHTML = '<div class="msg-h"><div class="av">' + (role === 'user' ? 'U' : 'A') + '</div>' +
+      '<span class="role">' + (role === 'user' ? 'You' : 'Assistant') + '</span></div>' +
       '<div class="body">' + esc(txt) + '</div>';
     msgs.appendChild(m);
     scroll();
@@ -439,7 +439,7 @@
     var m = document.createElement('div');
     m.className = 'msg a';
     m.id = 'hc-think';
-    m.innerHTML = '<div class="msg-h"><div class="av">H</div><span class="role">Harbor</span></div>' +
+    m.innerHTML = '<div class="msg-h"><div class="av">A</div><span class="role">Assistant</span></div>' +
       '<div class="think"><span></span><span></span><span></span></div>';
     msgs.appendChild(m);
     scroll();
