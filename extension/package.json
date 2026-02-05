@@ -13,7 +13,10 @@
     "build:all": "npm run build && npm run build:chrome && npm run build:safari",
     "dev": "node build.mjs --watch",
     "dev:chrome": "node build.mjs --watch --chrome",
-    "dev:safari": "node build.mjs --watch --safari"
+    "dev:safari": "node build.mjs --watch --safari",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@wasmer/wasi": "latest",
@@ -24,6 +27,7 @@
     "@types/chrome": "^0.1.35",
     "esbuild": "latest",
     "sharp": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "vitest": "^2.0.0"
   }
 }
