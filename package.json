@@ -5,6 +5,14 @@
   "description": "Harbor - Browser extensions for AI capabilities",
   "author": "Raffi Krikorian <raffi.krikorian@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/r/harbor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/r/harbor/issues"
+  },
+  "homepage": "https://github.com/r/harbor",
   "scripts": {
     "build": "npm run build:firefox",
     "build:firefox": "npm run build --prefix extension && npm run build --prefix web-agents-api",
