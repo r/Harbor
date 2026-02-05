@@ -8,10 +8,10 @@
   "description": "A simple MCP server that provides current time information. The host passes the current time to the server since WASM cannot access system clocks directly.",
   "author": {
     "name": "Harbor Project",
-    "url": "https://github.com/r/Harbor"
+    "url": "https://github.com/r/harbor"
   },
   "license": "MIT",
-  "repository": "https://github.com/r/Harbor",
+  "repository": "https://github.com/r/harbor",
   "keywords": ["time", "datetime", "demo", "wasm"],
 
   "wasm": {

@@ -8,7 +8,7 @@
   "description": "A simple echo server for testing the JavaScript MCP runtime. Echoes back messages and reverses strings.",
   "author": {
     "name": "Harbor Project",
-    "url": "https://github.com/r/Harbor"
+    "url": "https://github.com/r/harbor"
   },
   "license": "MIT",
   "keywords": ["echo", "test", "demo"],

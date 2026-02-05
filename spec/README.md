@@ -307,4 +307,4 @@ Websites receive the AI's responses (they made the request), but:
 
 ---
 
-*This specification is a draft proposal. Feedback welcome via [GitHub Issues](https://github.com/r/Harbor/issues).*
+*This specification is a draft proposal. Feedback welcome via [GitHub Issues](https://github.com/r/harbor/issues).*

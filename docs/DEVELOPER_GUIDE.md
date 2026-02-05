@@ -124,7 +124,7 @@ Harbor consists of two browser extensions that work together:
 
 ```bash
 # 1. Clone with submodules
-git clone --recurse-submodules https://github.com/r/Harbor.git
+git clone --recurse-submodules https://github.com/r/harbor.git
 cd harbor
 
 # 2. Build Harbor extension

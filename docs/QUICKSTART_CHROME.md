@@ -22,7 +22,7 @@ Chrome requires an extra configuration step: you must add your extension ID to t
 ## Step 1: Clone the Repository
 
 ```bash
-git clone --recurse-submodules https://github.com/r/Harbor.git
+git clone --recurse-submodules https://github.com/r/harbor.git
 cd harbor
 ```
 

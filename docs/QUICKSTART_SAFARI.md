@@ -40,7 +40,7 @@ The Harbor Safari implementation is an Xcode project that:
 First, build the extension bundles that Xcode will include:
 
 ```bash
-git clone --recurse-submodules https://github.com/r/Harbor.git
+git clone --recurse-submodules https://github.com/r/harbor.git
 cd harbor
 
 # Build Harbor extension for Safari

@@ -5,7 +5,7 @@ edition = "2021"
 description = "Native messaging bridge for Harbor browser extension"
 authors = ["Raffi Krikorian <raffi.krikorian@gmail.com>"]
 license = "MIT"
-repository = "https://github.com/r/Harbor"
+repository = "https://github.com/r/harbor"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

@@ -33,7 +33,7 @@ This guide covers:
 ### 1. Clone the Repository
 
 ```bash
-git clone --recurse-submodules https://github.com/r/Harbor.git
+git clone --recurse-submodules https://github.com/r/harbor.git
 cd harbor
 ```
 

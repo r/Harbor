@@ -20,7 +20,7 @@ Firefox offers the best developer experience for Harbor with sidebar support and
 ## Step 1: Clone the Repository
 
 ```bash
-git clone --recurse-submodules https://github.com/r/Harbor.git
+git clone --recurse-submodules https://github.com/r/harbor.git
 cd harbor
 ```
 
