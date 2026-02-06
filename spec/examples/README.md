@@ -24,6 +24,8 @@ Working examples demonstrating the Web Agent API (`window.ai` and `window.agent`
 - At least one AI backend configured (Ollama, OpenAI, etc.)
 - For tool examples: At least one MCP server connected
 
+**Testing these examples or your own app?** See [Testing your app](../../docs/TESTING_YOUR_APP.md) — generate a test harness (mock + E2E) from the Harbor repo with `scripts/generate-test-harness.mjs`.
+
 ## Using in Your Own Projects
 
 These examples are designed to be copy-paste friendly. Key patterns:

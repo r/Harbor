@@ -173,6 +173,7 @@ The Web Agent API gives your web pages access to:
 | **[API Quickstart](QUICKSTART.md)** | Get from zero to working code in 15 minutes |
 | **[Web Agents API Reference](docs/WEB_AGENTS_API.md)** | Complete API docs with examples |
 | **[Building on the Web Agents API](docs/BUILDING_ON_WEB_AGENTS_API.md)** | Portable guide for other projects — copy into your repo for examples, API, capabilities |
+| **[Testing your app](docs/TESTING_YOUR_APP.md)** | Unit tests (mock) and E2E (Playwright + Harbor) — generate harness from `scripts/generate-test-harness.mjs` |
 | **[JS API Reference](docs/JS_AI_PROVIDER_API.md)** | Detailed `window.ai` and `window.agent` reference |
 | **[LLMS.txt](docs/LLMS.txt)** | AI-optimized reference for Claude, Cursor, Copilot |
 | **[Working Examples](spec/examples/)** | Copy-paste ready code |
@@ -256,7 +257,7 @@ await window.agent.requestPermissions({
 | **[Architecture](ARCHITECTURE.md)** | System design and component details |
 | **[Contributing Guide](CONTRIBUTING.md)** | Build, test, and submit changes |
 | **[MCP Host](docs/MCP_HOST.md)** | MCP execution environment internals |
-| **[Testing Plan](docs/TESTING_PLAN.md)** | Test coverage and QA procedures |
+| **[Test Suite](tests/README.md)** | Run and write Harbor's unit and E2E tests |
 
 ### Development Setup
 

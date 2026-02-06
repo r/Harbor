@@ -113,7 +113,7 @@ harbor/
 │   ├── LLMS.txt            # AI agent reference
 │   ├── JS_AI_PROVIDER_API.md
 │   ├── MCP_HOST.md
-│   └── TESTING_PLAN.md
+│   └── TESTING_YOUR_APP.md # Testing apps that use the API
 │
 ├── installer/              # Distributable packages
 │   └── macos/              # macOS .pkg builder
@@ -226,12 +226,7 @@ npm test
 
 ### Manual QA
 
-See [TESTING_PLAN.md](docs/TESTING_PLAN.md) for comprehensive manual QA scenarios including:
-- Server installation and connection
-- Permission flows
-- Tool invocation
-- Rate limiting
-- JSON configuration import
+Run through key flows as needed: server installation and connection, permission prompts, tool invocation, rate limiting. See [tests/README.md](tests/README.md) for E2E and manual test setup.
 
 ---
 
@@ -362,7 +357,7 @@ chore: upgrade dependencies
 Before a release:
 
 - [ ] All tests pass
-- [ ] Manual QA completed (see TESTING_PLAN.md)
+- [ ] Manual QA completed (see [tests/README.md](tests/README.md))
 - [ ] Version bumped
 - [ ] CHANGELOG updated
 - [ ] Documentation reviewed and up-to-date
@@ -375,7 +370,7 @@ Before a release:
 
 - **Architecture questions**: Check `ARCHITECTURE.md` first
 - **API questions**: Check `DEVELOPER_GUIDE.md`
-- **Test questions**: Check `TESTING_PLAN.md`
+- **Test questions**: Check [tests/README.md](tests/README.md); for testing your own app that uses the API, see [docs/TESTING_YOUR_APP.md](docs/TESTING_YOUR_APP.md)
 - **File issues**: For bugs or feature requests
 
 

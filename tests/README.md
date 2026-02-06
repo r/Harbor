@@ -1,6 +1,8 @@
 # Harbor Test Suite
 
-This directory contains the test infrastructure for Harbor.
+This directory contains the **test infrastructure for Harbor itself** (unit and E2E tests for the extensions, bridge, and demos).
+
+**Testing your own app that uses the Web Agents API?** See [docs/TESTING_YOUR_APP.md](../docs/TESTING_YOUR_APP.md) — generate a test harness with mocks and Playwright from `scripts/generate-test-harness.mjs`.
 
 ## Quick Start
 

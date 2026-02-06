@@ -369,6 +369,8 @@ for await (const event of window.agent.run({
 
 → **[Full API Reference](docs/WEB_AGENTS_API.md)**
 
+**Testing your app?** Generate a test harness (unit tests with a mock, E2E with Playwright) from the Harbor repo: `node scripts/generate-test-harness.mjs /path/to/your/project`. See [Testing your app](docs/TESTING_YOUR_APP.md).
+
 ---
 
 ## Create Your Own Tools

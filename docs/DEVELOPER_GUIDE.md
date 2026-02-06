@@ -14,6 +14,7 @@ Harbor is an implementation of the Web Agent API. If you're looking to install H
 |----------|-------------|
 | [Web Agent API Spec](../spec/) | The specification this guide helps you use |
 | [Web Agents API Docs](./WEB_AGENTS_API.md) | Complete injected API documentation with examples |
+| **[Testing your app](./TESTING_YOUR_APP.md)** | Unit tests (mock) and E2E (Playwright + Harbor) — generate harness from `scripts/generate-test-harness.mjs` |
 | **[LLMS.txt](./LLMS.txt)** | **AI-optimized reference for Claude, Cursor, Copilot** |
 | [JS API Reference](./JS_AI_PROVIDER_API.md) | Detailed `window.ai` and `window.agent` reference |
 | [Sessions Guide](./SESSIONS_GUIDE.md) | When to use `window.ai` vs `agent.sessions` |

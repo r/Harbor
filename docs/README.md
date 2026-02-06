@@ -19,6 +19,9 @@
 
 → **[Building on the Web Agents API](BUILDING_ON_WEB_AGENTS_API.md)** — Portable guide for other projects (copy into your repo; examples, API summary, capabilities)
 
+### Test my app that uses the API
+→ **[Testing your app](TESTING_YOUR_APP.md)** — Generate a test harness (mock + Playwright E2E) with `node scripts/generate-test-harness.mjs <target-dir>` from the Harbor repo
+
 ### Create custom tools (MCP servers)
 → **[Quickstart Part 3](../QUICKSTART.md#part-3-create-your-own-tools)** — Build your first MCP server in 15 minutes
 
@@ -50,6 +53,7 @@
 |----------|-------------|
 | **[Web Agents API Reference](WEB_AGENTS_API.md)** | Complete `window.ai` and `window.agent` docs |
 | **[Building on the Web Agents API](BUILDING_ON_WEB_AGENTS_API.md)** | Portable guide for other projects — copy into your repo for examples, API summary, capabilities |
+| **[Testing your app](TESTING_YOUR_APP.md)** | Unit tests with mock, E2E with Playwright + Harbor extensions — generate harness via `scripts/generate-test-harness.mjs` |
 | **[JS API Reference](JS_AI_PROVIDER_API.md)** | Detailed API with TypeScript types |
 | [Sessions Guide](SESSIONS_GUIDE.md) | When to use `window.ai` vs `agent.sessions` |
 | [Working Examples](../spec/examples/) | Copy-paste ready code |
@@ -90,7 +94,8 @@
 | [Architecture](../ARCHITECTURE.md) | System design and components |
 | [Contributing Guide](../CONTRIBUTING.md) | Development setup and workflow |
 | [MCP Host](MCP_HOST.md) | MCP execution environment internals |
-| [Testing Plan](TESTING_PLAN.md) | Test coverage and QA procedures |
+| [Test Suite](../tests/README.md) | Run and write Harbor's unit and E2E tests |
+| [Testing your app](TESTING_YOUR_APP.md) | Test your Web Agents API app (mock + E2E harness) |
 
 ### Reference
 
@@ -141,6 +146,7 @@
 | Call MCP tools | [Web Agents API](WEB_AGENTS_API.md#tools) |
 | Run autonomous agents | [Web Agents API](WEB_AGENTS_API.md#autonomous-agent) |
 | Understand feature flags | [Web Agents API](WEB_AGENTS_API.md#feature-flags) |
+| **Test your app** (mock + E2E) | [Testing your app](TESTING_YOUR_APP.md) |
 | **Create a JS MCP server** | [Quickstart Part 3](../QUICKSTART.md#part-3-create-your-own-tools) |
 | **Create a WASM MCP server** | [MCP Authoring Guide](../mcp-servers/AUTHORING_GUIDE.md#wasm-servers-rust) |
 | **Add OAuth to MCP server** | [OAuth Guide](OAUTH_GUIDE.md#for-mcp-server-authors) |

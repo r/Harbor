@@ -56,7 +56,8 @@ cd tests/e2e && npm run test:browser:keep-open
 - `web-agents-api/` - Web Agents API extension (page-facing)
 - `bridge-rs/` - Native messaging bridge (Rust)
 - `demo/` - Demo pages for testing
-- `tests/e2e/` - End-to-end browser tests
+- `tests/e2e/` - End-to-end browser tests (Harbor's own)
+- `spec/testing/` - Test harness for **third-party** apps: run `scripts/generate-test-harness.mjs <target-dir>` to give them mocks + Playwright E2E
 
 ## Common Pitfalls
 
