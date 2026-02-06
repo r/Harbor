@@ -6,6 +6,8 @@
 
 ## see it in action
 
+**[Download whitepaper (PDF)]({{ site.baseurl }}/whitepaper.pdf)** — the full proposal in one document.
+
 **[Watch the video](https://youtu.be/9B_c8Ji4yGA)** — a walkthrough of Harbor and the Web Agents API: LLM choice, MCP servers, demos (page summarizer, research agent, multi-agent, bring-your-own chatbot).
 
 <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1em 0;">

@@ -2,7 +2,7 @@
 
 **Use this document in another project** when you want to build on the Web Agents API. Copy it into your repo (e.g. `docs/` or `.cursor/`) and point your AI assistant at it so it has clear examples, API surface, and capabilities.
 
-The Web Agents API is provided by the **Harbor** ecosystem: two browser extensions inject `window.ai` and `window.agent` into web pages. Your app runs in the browser and calls these APIs; you do **not** need to clone or build Harbor itself.
+The Web Agents API is provided by the **Harbor** ecosystem: two browser extensions inject `window.ai` and `window.agent` into web pages. Your app runs in the browser and calls these APIs; you do **not** need to clone or build Harbor itself. For the full vision and proposal, see the [whitepaper (PDF)](../whitepaper.pdf).
 
 ---
 
