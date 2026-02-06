@@ -97,6 +97,10 @@ git submodule update --init --recursive
 # If you don’t commit harbor-test/, run: node harbor/scripts/generate-test-harness.mjs .
 ```
 
+### Instructions for Cursor (other project)
+
+To have Cursor set up Option 2 in your other project for you, give it the instructions in **[spec/testing/INSTRUCTIONS_FOR_OTHER_PROJECT.md](../spec/testing/INSTRUCTIONS_FOR_OTHER_PROJECT.md)** — e.g. open that file in the other project (after adding Harbor as a reference) or paste its contents into chat. It walks through submodule add, generator, wiring tests, and doc updates.
+
 ---
 
 ## Unit / integration tests (mock)

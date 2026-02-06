@@ -19,9 +19,11 @@ By default this creates a `harbor-test/` folder in the target project with:
 
 You can then import the mock in your tests (e.g. `import { installWebAgentsMock } from './harbor-test/mock.js'`) and run E2E using the Playwright config.
 
-## If you're using Cursor
+## If you're using Cursor (in your other project)
 
-Point Cursor at this repo (e.g. add Harbor as a reference). The rule `.cursor/rules/third-party-testing.mdc` tells the AI to use this harness when you ask to test your Web Agents API app—it can run the generator for you or copy the relevant files into your project.
+**Option A — Paste instructions:** In your **other project** (the app that uses the Web Agents API), open or paste the contents of **[spec/testing/INSTRUCTIONS_FOR_OTHER_PROJECT.md](INSTRUCTIONS_FOR_OTHER_PROJECT.md)** into Cursor. It tells Cursor to add Harbor as a submodule, generate the harness, wire your tests, and update your docs.
+
+**Option B — Point Cursor at Harbor:** Add Harbor as a reference. The rule `.cursor/rules/third-party-testing.mdc` tells the AI to use this harness when you ask to test your Web Agents API app—it can run the generator for you or copy the relevant files into your project.
 
 ## What's in the template
 
