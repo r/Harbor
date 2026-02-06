@@ -425,6 +425,19 @@ Sites can declare an MCP server and open a chat that uses the user’s model plu
 
 ---
 
+## Testing your app
+
+To **test** your Web Agents API app (unit tests with mocks, E2E with real extensions):
+
+- **[Testing your Harbor app](TESTING_YOUR_APP.md)** – step-by-step: generate the harness, run unit tests with the mock, run E2E with Playwright and Harbor extensions.
+- **Generate the harness** from the Harbor repo:  
+  `node scripts/generate-test-harness.mjs /path/to/your/project`  
+  This creates a `harbor-test/` folder with mock, Playwright config, example tests, and types.
+- **Or point Cursor at Harbor** and ask for help testing your app; the AI can run the generator or copy the harness into your project.
+- Full plan: [THIRD_PARTY_TESTING_PLAN.md](./THIRD_PARTY_TESTING_PLAN.md).
+
+---
+
 ## Where to get more
 
 - **This guide on the web:** If you're reading this on the published site, the same doc is at e.g. `https://r.github.io/Harbor/docs/BUILDING_ON_WEB_AGENTS_API.md` — share that link so others can build with AI tools.
