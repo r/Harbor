@@ -4,6 +4,18 @@
 
 ---
 
+## see it in action
+
+**[Watch the video](https://youtu.be/9B_c8Ji4yGA)** — a walkthrough of Harbor and the Web Agents API: LLM choice, MCP servers, demos (page summarizer, research agent, multi-agent, bring-your-own chatbot).
+
+<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1em 0;">
+  <iframe src="https://www.youtube.com/embed/9B_c8Ji4yGA" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allowfullscreen title="Harbor &amp; Web Agents API walkthrough"></iframe>
+</div>
+
+**[Join the conversation on LinkedIn](https://www.linkedin.com/posts/rkrikorian_the-deal-we-have-with-ai-is-broken-lets-activity-7425217144180592641-5I8M?utm_source=share&utm_medium=member_desktop&rcm=ACoAAAAAC-wBZLgQviFdQYr6XGU7Tq7V9hOsR2A)** — *"the deal we have with AI is broken. let's fix it."* — share feedback, tell us what's wrong, or what you'd build.
+
+---
+
 ## context is all you need
 
 whoever holds your context has leverage over you.
