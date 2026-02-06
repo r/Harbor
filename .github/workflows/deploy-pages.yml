@@ -7,6 +7,7 @@ on:
     paths:
       - 'whitepaper/**'
       - 'demo/**'
+      - 'docs/BUILDING_ON_WEB_AGENTS_API.md'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 
@@ -57,6 +58,9 @@ jobs:
           # Remove unnecessary files from demo
           rm -f _site/demo/package.json _site/demo/package-lock.json
           rm -rf _site/demo/node_modules 2>/dev/null || true
+          # Copy build-on-API guide for published docs (invite people to build with AI tools)
+          mkdir -p _site/docs
+          cp docs/BUILDING_ON_WEB_AGENTS_API.md _site/docs/
           # Add .nojekyll to prevent GitHub from processing with Jekyll again
           touch _site/.nojekyll
 

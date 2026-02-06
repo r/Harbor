@@ -17,6 +17,8 @@
 
 → **[Web Agents API Reference](WEB_AGENTS_API.md)** — Complete API documentation
 
+→ **[Building on the Web Agents API](BUILDING_ON_WEB_AGENTS_API.md)** — Portable guide for other projects (copy into your repo; examples, API summary, capabilities)
+
 ### Create custom tools (MCP servers)
 → **[Quickstart Part 3](../QUICKSTART.md#part-3-create-your-own-tools)** — Build your first MCP server in 15 minutes
 
@@ -47,6 +49,7 @@
 | Document | Description |
 |----------|-------------|
 | **[Web Agents API Reference](WEB_AGENTS_API.md)** | Complete `window.ai` and `window.agent` docs |
+| **[Building on the Web Agents API](BUILDING_ON_WEB_AGENTS_API.md)** | Portable guide for other projects — copy into your repo for examples, API summary, capabilities |
 | **[JS API Reference](JS_AI_PROVIDER_API.md)** | Detailed API with TypeScript types |
 | [Sessions Guide](SESSIONS_GUIDE.md) | When to use `window.ai` vs `agent.sessions` |
 | [Working Examples](../spec/examples/) | Copy-paste ready code |

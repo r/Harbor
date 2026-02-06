@@ -150,6 +150,8 @@ we have hypotheses. we don't have answers.
 
 we want thought partners.
 
+**if you build with generative AI tools (Cursor, Claude, Copilot, etc.):** we've put together a [starter guide]({{ site.baseurl }}/docs/BUILDING_ON_WEB_AGENTS_API.md) you can copy into your project so the API, examples, and capabilities are in context. Use it to build on the Web Agents API with your assistant.
+
 **if you build for the web:** what would you build with this? what's missing?
 
 **if you think about security:** what attacks haven't we considered?
