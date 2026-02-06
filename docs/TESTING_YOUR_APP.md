@@ -40,6 +40,65 @@ npx playwright test
 
 ---
 
+## Using Harbor as a submodule
+
+If you want to **track Harbor in your repo** and periodically refresh the test harness (or point E2E at Harbor’s built extensions), add Harbor as a git submodule and run the generator from it.
+
+### 1. Add the submodule
+
+From your project root:
+
+```bash
+git submodule add https://github.com/r/harbor.git harbor
+git submodule update --init --recursive
+```
+
+### 2. Generate the harness into your project
+
+Run the generator from the submodule; it will create `harbor-test/` in your project (same as the quick start):
+
+```bash
+node harbor/scripts/generate-test-harness.mjs .
+```
+
+Commit both the submodule and the generated `harbor-test/` folder. Your unit and E2E setup then use `harbor-test/` as in the rest of this guide.
+
+### 3. E2E: point at the submodule’s built extensions
+
+If you build Harbor from the submodule, set the extension paths to the submodule:
+
+```bash
+cd harbor && npm run build && cd ..
+export HARBOR_EXTENSION_PATH=$(pwd)/harbor/extension/dist-chrome
+export WEB_AGENTS_EXTENSION_PATH=$(pwd)/harbor/web-agents-api/dist-chrome
+npx playwright test
+```
+
+(Use `dist-firefox` if you use Firefox; the Playwright fixture in the harness uses Chromium by default.)
+
+### 4. Refreshing the harness
+
+When Harbor’s test harness template changes (e.g. new mock APIs or Playwright fixture fixes), regenerate and merge:
+
+```bash
+git submodule update --remote harbor   # optional: pull latest Harbor
+node harbor/scripts/generate-test-harness.mjs .
+# Resolve any conflicts in harbor-test/, then commit
+```
+
+### 5. CI and new clones
+
+Anyone (including CI) who clones your repo must init the submodule before generating or building Harbor:
+
+```bash
+git clone <your-repo> && cd <your-repo>
+git submodule update --init --recursive
+# If you commit harbor-test/, you can run tests without generating again.
+# If you don’t commit harbor-test/, run: node harbor/scripts/generate-test-harness.mjs .
+```
+
+---
+
 ## Unit / integration tests (mock)
 
 Use the mock so your code that calls `window.ai` / `window.agent` runs in Node or jsdom without a browser or extensions.
@@ -161,6 +220,7 @@ Or in a `.d.ts` file: `/// <reference path="./harbor-test/web-agents-api.d.ts" /
 
 - **Generator:** `node scripts/generate-test-harness.mjs <target-dir>` (from the Harbor repo).
 - **Template:** Harbor’s `spec/testing/harness-template/`.
+- **Submodule:** See [Using Harbor as a submodule](#using-harbor-as-a-submodule) to add Harbor as a submodule and generate or refresh the harness from it.
 - **Plan:** [THIRD_PARTY_TESTING_PLAN.md](./THIRD_PARTY_TESTING_PLAN.md).
 
 If you use **Cursor** and add Harbor as a reference, you can ask the AI to set up testing for your Web Agents API app; the rule in Harbor tells it to use this harness (generator or template).
