@@ -1,3 +1,4 @@
 [submodule "bridge-rs/any-llm-rust"]
 	path = bridge-rs/any-llm-rust
 	url = https://github.com/r/any-llm-rust.git
+	branch = main
