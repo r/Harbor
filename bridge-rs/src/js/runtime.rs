@@ -1,7 +1,7 @@
 //! QuickJS runtime for executing JS MCP servers.
 
 use super::sandbox::Capabilities;
-use crate::native_messaging::{get_console_log_sender, ConsoleLogMessage};
+use crate::native_messaging::{get_console_log_sender, ConsoleLogMessage, HostRequestSender};
 use rquickjs::{Context, Object, Runtime};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -50,6 +50,10 @@ pub struct ServerHandle {
 struct ServerRequest {
     payload: serde_json::Value,
     response_tx: oneshot::Sender<Result<serde_json::Value, String>>,
+    /// When set, the server can use MCP.requestHost(method, params) for browser capture.
+    host_request_tx: Option<HostRequestSender>,
+    /// Context (origin, tabId) to attach to host_request.
+    context: Option<serde_json::Value>,
 }
 
 /// Represents a running JS MCP server
@@ -58,12 +62,24 @@ pub struct JsServer;
 impl ServerHandle {
     /// Send an MCP request to the server and wait for response
     pub async fn call(&self, request: serde_json::Value) -> Result<serde_json::Value, String> {
+        self.call_with_host(request, None, None).await
+    }
+
+    /// Send an MCP request with optional host request capability (MCP.requestHost).
+    pub async fn call_with_host(
+        &self,
+        request: serde_json::Value,
+        context: Option<serde_json::Value>,
+        host_request_tx: Option<HostRequestSender>,
+    ) -> Result<serde_json::Value, String> {
         let (response_tx, response_rx) = oneshot::channel();
         
         self.request_tx
             .send(ServerRequest {
                 payload: request,
                 response_tx,
+                host_request_tx,
+                context,
             })
             .await
             .map_err(|_| "Server channel closed".to_string())?;
@@ -168,7 +184,13 @@ impl JsServer {
             }) {
                 Some(request) => {
                     let response = Self::handle_mcp_request_with_jobs(
-                        &context, &runtime, &rt, request.payload, &config.id
+                        &context,
+                        &runtime,
+                        &rt,
+                        request.payload,
+                        &config.id,
+                        request.host_request_tx,
+                        request.context,
                     );
                     let _ = request.response_tx.send(response);
                 }
@@ -230,8 +252,12 @@ impl JsServer {
             };
         "#).map_err(|e| e.to_string())?;
 
-        // Create MCP interface
+        // Create MCP interface (readLine, writeLine, requestHost for browser capture)
         ctx.eval::<(), _>(r#"
+            globalThis.__host_requests = [];
+            globalThis.__host_responses = {};
+            globalThis.__host_id = 0;
+            globalThis.__requestHostContext = {};
             globalThis.MCP = {
                 readLine: function() {
                     return new Promise((resolve) => {
@@ -240,6 +266,22 @@ impl JsServer {
                 },
                 writeLine: function(json) {
                     globalThis.__mcp_responses.push(json);
+                },
+                requestHost: function(method, params) {
+                    const id = String(++globalThis.__host_id);
+                    globalThis.__host_requests.push({ id: id, method: method, params: params || {} });
+                    return new Promise((resolve, reject) => {
+                        const check = function() {
+                            const r = globalThis.__host_responses[id];
+                            if (r !== undefined) {
+                                delete globalThis.__host_responses[id];
+                                if (r.err) reject(new Error(r.err)); else resolve(r.result);
+                            } else {
+                                setTimeout(check, 1);
+                            }
+                        };
+                        check();
+                    });
                 },
             };
         "#).map_err(|e| e.to_string())?;
@@ -418,15 +460,35 @@ impl JsServer {
         rt: &tokio::runtime::Handle,
         request: serde_json::Value,
         server_id: &str,
+        host_request_tx: Option<HostRequestSender>,
+        request_context: Option<serde_json::Value>,
     ) -> Result<serde_json::Value, String> {
         tracing::info!("[JS:{}] Handling MCP request", server_id);
         
         let request_json = serde_json::to_string(&request).map_err(|e| e.to_string())?;
+        let context_json = request_context
+            .as_ref()
+            .and_then(|c| serde_json::to_string(c).ok())
+            .unwrap_or_else(|| "{}".to_string());
 
-        // Step 1: Inject the request (inside context lock)
+        // Step 1: Set host request context and inject the MCP request (inside context lock)
         context.with(|ctx| {
             let has_pending: bool = ctx.eval("!!globalThis.__mcp_pendingRead").unwrap_or(false);
             tracing::info!("[JS:{}] __mcp_pendingRead before: {}", server_id, has_pending);
+
+            let escaped_context = context_json
+                .replace('\\', "\\\\")
+                .replace('\'', "\\'")
+                .replace('\n', "\\n")
+                .replace('\r', "\\r")
+                .replace('\t', "\\t");
+            let _: Result<(), _> = ctx.eval(
+                format!(
+                    "globalThis.__requestHostContext = JSON.parse('{}');",
+                    escaped_context
+                )
+                .into_bytes(),
+            );
 
             // Properly escape for JavaScript string literal
             let escaped_json = request_json
@@ -495,6 +557,12 @@ impl JsServer {
             
             // Process pending fetch requests
             Self::process_fetch_requests(&context, &rt, server_id);
+            // Process pending host requests (MCP.requestHost → bridge → extension → Web Agents)
+            if let Some(ref tx) = host_request_tx {
+                if let Err(e) = Self::process_host_requests(context, rt, server_id, tx, request_context.as_ref()) {
+                    tracing::warn!("[JS:{}] process_host_requests error: {}", server_id, e);
+                }
+            }
             
             // Check for response INSIDE context lock
             let response_result: Result<Option<String>, String> = context.with(|ctx| {
@@ -545,6 +613,75 @@ impl JsServer {
             server_id, total_jobs, has_pending, response_count);
         
         Err("Timeout waiting for server response".to_string())
+    }
+
+    /// Process any pending host requests (MCP.requestHost); send to extension, block for response, inject into JS.
+    fn process_host_requests(
+        context: &Context,
+        rt: &tokio::runtime::Handle,
+        server_id: &str,
+        host_request_tx: &HostRequestSender,
+        request_context: Option<&serde_json::Value>,
+    ) -> Result<(), String> {
+        let (requests_json, context_value): (String, serde_json::Value) = context.with(|ctx| {
+            let reqs: String = ctx.eval(r#"
+                JSON.stringify(globalThis.__host_requests ? globalThis.__host_requests.splice(0) : [])
+            "#).map_err(|e| format!("eval host_requests: {}", e))?;
+            let ctx_val: String = ctx.eval("JSON.stringify(globalThis.__requestHostContext || {})")
+                .unwrap_or_else(|_| "{}".to_string());
+            let cv: serde_json::Value = serde_json::from_str(&ctx_val).unwrap_or(serde_json::json!({}));
+            Ok::<(String, serde_json::Value), String>((reqs, cv))
+        })?;
+
+        let requests: Vec<serde_json::Value> = serde_json::from_str(&requests_json).unwrap_or_default();
+        if requests.is_empty() {
+            return Ok(());
+        }
+
+        let context_to_send = request_context.cloned().unwrap_or(context_value);
+        tracing::info!("[JS:{}] Processing {} host requests", server_id, requests.len());
+
+        for req in requests {
+            let id = req.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let params = req.get("params").cloned().unwrap_or(serde_json::Value::Null);
+            let (response_tx, mut response_rx) = tokio::sync::oneshot::channel();
+            host_request_tx
+                .try_send((id.clone(), method, params, context_to_send.clone(), response_tx))
+                .map_err(|e| format!("host_request_tx send: {}", e))?;
+
+            let outcome = rt.block_on(async {
+                response_rx.await.unwrap_or(Err(serde_json::json!("host_response timeout")))
+            });
+
+            let err_msg = match &outcome {
+                Ok(_) => None,
+                Err(e) => Some(if let Some(s) = e.as_str() {
+                    s.to_string()
+                } else {
+                    e.to_string()
+                }),
+            };
+            let payload = match outcome {
+                Ok(r) => serde_json::json!({ "result": r }),
+                Err(_) => serde_json::json!({ "err": err_msg.unwrap_or_else(|| "host request failed".to_string()) }),
+            };
+            let response_json = payload.to_string();
+            let response_escaped = response_json
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', "\\n")
+                .replace('\r', "\\r");
+            let id_escaped = id.replace('\\', "\\\\").replace('"', "\\\"");
+            context.with(|ctx| {
+                let code = format!(
+                    "globalThis.__host_responses[\"{}\"] = JSON.parse(\"{}\");",
+                    id_escaped, response_escaped
+                );
+                let _: Result<(), _> = ctx.eval(code.into_bytes());
+            });
+        }
+        Ok(())
     }
 
     /// Process any pending fetch requests from JS

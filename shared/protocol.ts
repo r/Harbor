@@ -72,6 +72,7 @@ export type MessageType =
   | 'llm.configureProvider'
   | 'llm.listModels'
   | 'llm.listConfiguredModels'
+  | 'llm.getConfiguredModelsMetadata'
   // MCP Operations
   | 'mcp.listServers'
   | 'mcp.listTools'
@@ -97,7 +98,9 @@ export type MessageType =
   | 'agent.terminate'
   | 'agent.status'
   | 'agents.list'
-  | 'agents.getActive';
+  | 'agents.getActive'
+  // Host operations (MCP server requests browser capture; Harbor → Web Agents)
+  | 'agent.host.run';
 
 // =============================================================================
 // LLM Request/Response Types
@@ -172,6 +175,16 @@ export interface LlmListModelsResponse {
     name: string;
     provider: string;
   }>;
+}
+
+/** Metadata for configured models (companion to listConfiguredModels). */
+export interface LlmConfiguredModelMetadata {
+  model_id: string;
+  is_local: boolean;
+}
+
+export interface LlmGetConfiguredModelsMetadataResponse {
+  metadata: LlmConfiguredModelMetadata[];
 }
 
 // =============================================================================

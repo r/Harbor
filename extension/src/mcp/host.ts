@@ -134,14 +134,18 @@ export async function listTools(serverId: string): Promise<McpServerManifest['to
   return handle?.manifest.tools || [];
 }
 
+/** Optional context for MCP.requestHost (browser capture). */
+export type ToolCallContext = { origin?: string; tabId?: number };
+
 export function callTool(
   serverId: string,
   toolName: string,
   args: Record<string, unknown>,
+  context?: ToolCallContext,
 ): Promise<{ ok: boolean; result?: unknown; error?: string }> {
   const finalArgs = { ...args };
   if (serverId === 'time-wasm' && toolName === 'time.now' && !finalArgs.now) {
     finalArgs.now = new Date().toISOString();
   }
-  return callMcpTool(serverId, toolName, finalArgs);
+  return callMcpTool(serverId, toolName, finalArgs, context);
 }

@@ -400,16 +400,25 @@ export async function listAllPermissions(): Promise<PermissionStatus[]> {
 }
 
 // =============================================================================
-// Permission Prompt
+// Permission Prompt (at most one popup per origin; reuse for same site)
 // =============================================================================
 
-let promptWindowId: number | null = null;
-let pendingPromptResolve: ((result: {
+type PromptResolve = (result: {
   granted: boolean;
   grantType?: 'granted-once' | 'granted-always';
   allowedTools?: string[];
   explicitDeny?: boolean;
-}) => void) | null = null;
+}) => void;
+
+let promptWindowId: number | null = null;
+/** Which origin the current prompt is for; we never show more than one popup per site. */
+let promptOrigin: string | null = null;
+/** Merged state for the current prompt (updated when same origin requests again). */
+let promptScopes: PermissionScope[] = [];
+let promptTools: string[] = [];
+let promptReason: string | undefined;
+let promptSessionContext: SessionPromptContext | undefined;
+let pendingPromptResolvers: PromptResolve[] = [];
 
 /**
  * Session context for permission prompts.
@@ -422,8 +431,51 @@ export interface SessionPromptContext {
   requestedBrowser?: ('read' | 'interact' | 'screenshot')[];
 }
 
+function buildPromptUrl(opts: {
+  origin: string;
+  scopes: PermissionScope[];
+  reason?: string;
+  tools?: string[];
+  sessionContext?: SessionPromptContext;
+}): string {
+  const params = new URLSearchParams({
+    origin: opts.origin,
+    scopes: opts.scopes.join(','),
+  });
+  if (opts.reason) params.set('reason', opts.reason);
+  if (opts.tools && opts.tools.length > 0) {
+    params.set('tools', opts.tools.join(','));
+  }
+  if (opts.sessionContext) {
+    if (opts.sessionContext.name) params.set('sessionName', opts.sessionContext.name);
+    if (opts.sessionContext.type) params.set('sessionType', opts.sessionContext.type);
+    if (opts.sessionContext.requestedLLM) params.set('llm', 'true');
+    if (opts.sessionContext.requestedToolsCount !== undefined) {
+      params.set('toolsCount', String(opts.sessionContext.requestedToolsCount));
+    }
+    if (opts.sessionContext.requestedBrowser && opts.sessionContext.requestedBrowser.length > 0) {
+      params.set('browser', opts.sessionContext.requestedBrowser.join(','));
+    }
+  }
+  return browserAPI.runtime.getURL(`dist/permission-prompt.html?${params.toString()}`);
+}
+
+function clearPromptState(): void {
+  promptWindowId = null;
+  promptOrigin = null;
+  promptScopes = [];
+  promptTools = [];
+  promptReason = undefined;
+  promptSessionContext = undefined;
+  const resolvers = pendingPromptResolvers;
+  pendingPromptResolvers = [];
+  for (const r of resolvers) {
+    r({ granted: false });
+  }
+}
+
 /**
- * Show permission prompt to user.
+ * Show permission prompt to user. At most one popup per origin; same-site requests reuse/update the existing popup.
  */
 export async function showPermissionPrompt(
   origin: string,
@@ -439,73 +491,91 @@ export async function showPermissionPrompt(
 }> {
   console.log('[Permissions] showPermissionPrompt called:', { origin, scopes, reason, sessionContext });
 
-  // Close any existing prompt
+  // Same site already has a prompt: merge and reuse so we never show a second popup for this origin
+  if (promptOrigin === origin) {
+    promptScopes = [...new Set([...promptScopes, ...scopes])];
+    promptTools = [...new Set([...promptTools, ...(requestedTools || [])])];
+    if (reason) promptReason = reason;
+    if (sessionContext) promptSessionContext = sessionContext;
+
+    const promptUrl = buildPromptUrl({
+      origin,
+      scopes: promptScopes,
+      reason: promptReason,
+      tools: promptTools,
+      sessionContext: promptSessionContext,
+    });
+
+    if (promptWindowId !== null) {
+      try {
+        const win = await browserAPI.windows.get(promptWindowId, { populate: true });
+        const tab = (win as chrome.windows.Window).tabs?.[0];
+        if (tab?.id) {
+          await browserAPI.tabs.update(tab.id, { url: promptUrl });
+        }
+      } catch {
+        // Window may have been closed
+        clearPromptState();
+        // Fall through to open new window below (we'll set promptOrigin and create)
+      }
+    }
+
+    if (promptOrigin === origin) {
+      return new Promise<{ granted: boolean; grantType?: 'granted-once' | 'granted-always'; allowedTools?: string[]; explicitDeny?: boolean }>((resolve) => {
+        pendingPromptResolvers.push(resolve);
+      });
+    }
+  }
+
+  // Different origin or no prompt: close any existing prompt first so we never have more than one
   if (promptWindowId !== null) {
     try {
       await browserAPI.windows.remove(promptWindowId);
     } catch {
       // Window may already be closed
     }
-    promptWindowId = null;
-    if (pendingPromptResolve) {
-      pendingPromptResolve({ granted: false });
-      pendingPromptResolve = null;
-    }
+    clearPromptState();
   }
 
-  // Build prompt URL with params
-  const params = new URLSearchParams({
+  promptOrigin = origin;
+  promptScopes = [...scopes];
+  promptTools = requestedTools ? [...requestedTools] : [];
+  promptReason = reason;
+  promptSessionContext = sessionContext;
+
+  const promptUrl = buildPromptUrl({
     origin,
-    scopes: scopes.join(','),
+    scopes: promptScopes,
+    reason: promptReason,
+    tools: promptTools,
+    sessionContext: promptSessionContext,
   });
-  if (reason) params.set('reason', reason);
-  if (requestedTools && requestedTools.length > 0) {
-    params.set('tools', requestedTools.join(','));
-  }
-  
-  // Add session context if provided
-  if (sessionContext) {
-    if (sessionContext.name) params.set('sessionName', sessionContext.name);
-    if (sessionContext.type) params.set('sessionType', sessionContext.type);
-    if (sessionContext.requestedLLM) params.set('llm', 'true');
-    if (sessionContext.requestedToolsCount !== undefined) {
-      params.set('toolsCount', String(sessionContext.requestedToolsCount));
-    }
-    if (sessionContext.requestedBrowser && sessionContext.requestedBrowser.length > 0) {
-      params.set('browser', sessionContext.requestedBrowser.join(','));
-    }
-  }
-
-  const promptUrl = browserAPI.runtime.getURL(`dist/permission-prompt.html?${params.toString()}`);
   console.log('[Permissions] Opening prompt URL:', promptUrl);
 
   return new Promise((resolve) => {
-    pendingPromptResolve = resolve;
+    pendingPromptResolvers.push(resolve);
 
-    // Use promise-based API (works in both Chrome and Firefox)
     const createPromise = browserAPI.windows.create({
       url: promptUrl,
       type: 'popup',
       width: 450,
-      height: 550, // Slightly taller to accommodate session context
+      height: 550,
       focused: true,
     });
 
-    // Handle both callback and promise patterns
     if (createPromise && typeof createPromise.then === 'function') {
-      // Promise-based (Firefox/modern Chrome)
       createPromise.then((window) => {
         console.log('[Permissions] Window created (promise):', window?.id);
         if (window?.id) {
           promptWindowId = window.id;
         } else {
           console.error('[Permissions] Window creation failed - no window returned');
-          pendingPromptResolve = null;
+          clearPromptState();
           resolve({ granted: false });
         }
       }).catch((err) => {
         console.error('[Permissions] Window creation failed:', err);
-        pendingPromptResolve = null;
+        clearPromptState();
         resolve({ granted: false });
       });
     }
@@ -522,25 +592,26 @@ export function handlePermissionPromptResponse(response: {
   explicitDeny?: boolean;
 }): void {
   console.log('[Permissions] handlePermissionPromptResponse:', response);
-  if (pendingPromptResolve) {
-    pendingPromptResolve(response);
-    pendingPromptResolve = null;
+  const resolvers = pendingPromptResolvers;
+  pendingPromptResolvers = [];
+  for (const r of resolvers) {
+    r(response);
   }
-
   if (promptWindowId !== null) {
     browserAPI.windows.remove(promptWindowId).catch(() => {});
     promptWindowId = null;
   }
+  promptOrigin = null;
+  promptScopes = [];
+  promptTools = [];
+  promptReason = undefined;
+  promptSessionContext = undefined;
 }
 
 // Listen for window close to handle user dismissing the prompt
 browserAPI.windows?.onRemoved?.addListener((windowId) => {
   if (windowId === promptWindowId) {
-    promptWindowId = null;
-    if (pendingPromptResolve) {
-      pendingPromptResolve({ granted: false });
-      pendingPromptResolve = null;
-    }
+    clearPromptState();
   }
 });
 

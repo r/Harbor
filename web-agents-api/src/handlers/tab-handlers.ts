@@ -225,35 +225,40 @@ export async function handleSpawnedTabReadability(ctx: RequestContext): HandlerR
       url: string;
       content: string;
       text: string;
+      html?: string;
       length: number;
     }>(
       tabId,
       () => {
         const title = document.title;
         const url = window.location.href;
-        
         const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.article'];
         let content = '';
-        
+        let html = '';
+
         for (const selector of mainSelectors) {
           const el = document.querySelector(selector);
           if (el) {
             content = el.textContent?.trim() || '';
+            html = el.innerHTML || '';
             break;
           }
         }
-        
+
         if (!content) {
           content = document.body.textContent?.trim() || '';
+          html = document.body.innerHTML || '';
         }
-        
+
         content = content.replace(/\s+/g, ' ').trim();
-        
+        const htmlSlice = html ? html.slice(0, 150000) : '';
+
         return {
           title,
           url,
           content: content.slice(0, 50000),
           text: content.slice(0, 50000),
+          html: htmlSlice || undefined,
           length: content.length,
         };
       },

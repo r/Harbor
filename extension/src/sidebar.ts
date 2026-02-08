@@ -3,6 +3,8 @@ export {};
 
 import { browserAPI } from './browser-compat';
 
+type SecretDecl = { name: string; label: string; type?: 'text' | 'password' };
+
 type ServerStatus = {
   id: string;
   name: string;
@@ -12,6 +14,7 @@ type ServerStatus = {
   remoteUrl?: string;
   tools?: Array<{ name: string }>;
   running: boolean;
+  secretsDecl?: SecretDecl[];
 };
 
 type BridgeStatus = {
@@ -69,6 +72,7 @@ const headerLogo = document.getElementById('header-logo') as HTMLDivElement;
 
 // Server elements
 const serversEl = document.getElementById('servers') as HTMLDivElement;
+const serversListEl = document.getElementById('servers-list') as HTMLDivElement;
 const addBtn = document.getElementById('add') as HTMLButtonElement;
 const fileInput = document.getElementById('file') as HTMLInputElement;
 const addRemoteBtn = document.getElementById('add-remote') as HTMLButtonElement;
@@ -83,9 +87,24 @@ const remoteServerTestBtn = document.getElementById('remote-server-test') as HTM
 const remoteServerSaveBtn = document.getElementById('remote-server-save') as HTMLButtonElement;
 const remoteServerCancelBtn = document.getElementById('remote-server-cancel') as HTMLButtonElement;
 
+// Server secrets (Configure credentials) form
+const serverSecretsForm = document.getElementById('server-secrets-form') as HTMLDivElement;
+const serverSecretsTitle = document.getElementById('server-secrets-title') as HTMLSpanElement;
+const serverSecretsFields = document.getElementById('server-secrets-fields') as HTMLDivElement;
+const serverSecretsSaveBtn = document.getElementById('server-secrets-save') as HTMLButtonElement;
+const serverSecretsCancelBtn = document.getElementById('server-secrets-cancel') as HTMLButtonElement;
+const serverSecretsCancelBtn2 = document.getElementById('server-secrets-cancel-btn') as HTMLButtonElement;
+
 // Bridge status elements
 const bridgeStatusIndicator = document.getElementById('bridge-status-indicator') as HTMLDivElement;
 const bridgeStatusText = document.getElementById('bridge-status-text') as HTMLSpanElement;
+
+// Setup status panel
+const setupStatusList = document.getElementById('setup-status-list') as HTMLDivElement;
+const setupStatusBody = document.getElementById('setup-status-body') as HTMLDivElement;
+const setupStatusToggle = document.getElementById('setup-status-toggle') as HTMLSpanElement;
+const setupStatusHeader = document.getElementById('setup-status-header') as HTMLDivElement;
+const openDebuggingLink = document.getElementById('open-debugging-link') as HTMLAnchorElement;
 
 // LLM elements
 const llmPanelHeader = document.getElementById('llm-panel-header') as HTMLDivElement;
@@ -254,21 +273,55 @@ function updateBridgeStatusUI(connected: boolean, error?: string | null): void {
 }
 
 let lastBridgeConnected = false;
+let lastBridgeError: string | null = null;
+
+function renderSetupStatus(): void {
+  if (!setupStatusList) return;
+  const bridgeOk = lastBridgeConnected;
+  const bridgeErr = lastBridgeError;
+
+  setupStatusList.innerHTML = '';
+  // Bridge row (MCP and browser capture are solely Harbor)
+  const bridgeRow = document.createElement('div');
+  bridgeRow.className = 'setup-status-row';
+  const bridgeDot = document.createElement('span');
+  bridgeDot.className = `status-dot ${bridgeOk ? 'status-running' : 'status-stopped'}`;
+  const bridgeLabel = document.createElement('span');
+  bridgeLabel.className = 'label';
+  bridgeLabel.textContent = 'Bridge';
+  const bridgeContent = document.createElement('div');
+  bridgeContent.innerHTML = bridgeOk
+    ? '<span>Connected</span>'
+    : `<span>Disconnected</span><div class="hint">Run in terminal: cd harbor/bridge-rs && ./install.sh --firefox-only --skip-build — then restart Firefox.</div>`;
+  if (bridgeErr && !bridgeOk) {
+    const errEl = document.createElement('div');
+    errEl.className = 'hint';
+    errEl.textContent = bridgeErr;
+    bridgeContent.appendChild(errEl);
+  }
+  bridgeRow.append(bridgeDot, bridgeLabel, bridgeContent);
+  setupStatusList.appendChild(bridgeRow);
+}
 
 async function checkBridgeStatus(): Promise<void> {
   try {
     const response = await browserAPI.runtime.sendMessage({ type: 'bridge_check_health' }) as BridgeStatus;
+    lastBridgeError = response.error ?? null;
     // Debug: show response in title attribute
     const debugInfo = `connected: ${response.connected}, bridgeReady: ${response.bridgeReady}, error: ${response.error || 'none'}`;
     bridgeStatusText.title = debugInfo;
     console.log('[Sidebar] Bridge status:', debugInfo);
-    
+
     // Only consider fully ready when both connected AND bridgeReady
     const isReady = response.connected && response.bridgeReady;
+    const wasReady = lastBridgeConnected;
+    lastBridgeConnected = isReady;
+
     updateBridgeStatusUI(isReady, response.error);
-    
+    renderSetupStatus();
+
     // If bridge just became fully ready, refresh all data immediately
-    if (isReady && !lastBridgeConnected) {
+    if (isReady && !wasReady) {
       console.log('[Sidebar] Bridge fully ready - refreshing all data...');
       // Refresh all data in parallel
       Promise.all([
@@ -278,13 +331,14 @@ async function checkBridgeStatus(): Promise<void> {
         loadSessions().catch(e => console.error('[Sidebar] Failed to load sessions:', e)),
       ]);
     }
-    lastBridgeConnected = isReady;
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[Sidebar] Failed to check bridge status:', errorMsg);
+    lastBridgeError = errorMsg;
     // Show error in UI for debugging
     bridgeStatusText.title = `Error: ${errorMsg}`;
     updateBridgeStatusUI(false, errorMsg);
+    renderSetupStatus();
     lastBridgeConnected = false;
   }
 }
@@ -294,6 +348,13 @@ function startBridgeStatusPolling(): void {
   checkBridgeStatus();
   // Periodic polling
   setInterval(checkBridgeStatus, BRIDGE_STATUS_POLL_INTERVAL);
+
+  // When user switches back to Harbor sidebar, refresh immediately so we don't show stale "Disconnected"
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      checkBridgeStatus();
+    }
+  });
 }
 
 function toBase64(buffer: ArrayBuffer): string {
@@ -305,7 +366,7 @@ function toBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function renderServer(server: ServerStatus): HTMLElement {
+function renderServer(server: ServerStatus, bridgeConnected?: boolean): HTMLElement {
   const item = document.createElement('div');
   item.className = 'server';
 
@@ -368,6 +429,7 @@ function renderServer(server: ServerStatus): HTMLElement {
         console.error(response?.error || 'Failed to stop server');
       }
       await loadServers();
+      await loadToolTesterServers();
       stopButton.disabled = false;
     });
     actions.appendChild(stopButton);
@@ -386,9 +448,19 @@ function renderServer(server: ServerStatus): HTMLElement {
       console.error(response?.error || 'Failed to remove server');
     }
     await loadServers();
+    await loadToolTesterServers();
     removeButton.disabled = false;
   });
   actions.appendChild(removeButton);
+
+  if (server.secretsDecl?.length) {
+    const configureButton = document.createElement('button');
+    configureButton.className = 'btn btn-ghost btn-sm';
+    configureButton.textContent = 'Configure';
+    configureButton.title = 'Set credentials for this server';
+    configureButton.addEventListener('click', () => openServerSecretsForm(server));
+    actions.appendChild(configureButton);
+  }
 
   header.appendChild(nameContainer);
   header.appendChild(actions);
@@ -396,15 +468,24 @@ function renderServer(server: ServerStatus): HTMLElement {
   // Row 2: Status and tools info
   const meta = document.createElement('div');
   meta.className = 'server-meta';
-  
+
   const statusDot = document.createElement('span');
   statusDot.className = `status-dot ${server.running ? 'status-running' : 'status-stopped'}`;
   meta.appendChild(statusDot);
-  
+
   const statusText = document.createElement('span');
-  statusText.textContent = server.running ? 'Running' : 'Stopped';
+  const isStub = server.runtime === 'js' && server.running && bridgeConnected === false;
+  statusText.textContent = server.running ? (isStub ? 'Running (Stub)' : 'Running') : 'Stopped';
   statusText.style.marginRight = '12px';
   meta.appendChild(statusText);
+  if (isStub) {
+    const stubHint = document.createElement('span');
+    stubHint.className = 'status-stub-hint';
+    stubHint.style.color = 'var(--color-text-muted)';
+    stubHint.style.fontSize = '11px';
+    stubHint.textContent = ' — Connect bridge for real tools';
+    meta.appendChild(stubHint);
+  }
   
   // Show remote URL for remote servers
   if (server.runtime === 'remote' && server.remoteUrl) {
@@ -440,15 +521,17 @@ async function loadServers(): Promise<void> {
   isLoadingServers = true;
   
   try {
-    serversEl.innerHTML = '';
+    const listEl = serversListEl || serversEl;
+    listEl.innerHTML = '';
     const response = await browserAPI.runtime.sendMessage({ type: 'sidebar_get_servers' });
     if (!response?.ok) {
-      serversEl.textContent = response?.error || 'Failed to load servers';
+      listEl.textContent = response?.error || 'Failed to load servers';
       return;
     }
     const servers = response.servers as ServerStatus[];
+    const bridgeConnected = response.bridgeConnected === true;
     if (!servers || servers.length === 0) {
-      serversEl.textContent = 'No servers installed.';
+      listEl.textContent = 'No servers installed.';
       return;
     }
     // Deduplicate by ID just in case
@@ -458,11 +541,78 @@ async function loadServers(): Promise<void> {
       seen.add(s.id);
       return true;
     });
-    uniqueServers.forEach((server) => serversEl.appendChild(renderServer(server)));
+    uniqueServers.forEach((server) => listEl.appendChild(renderServer(server, bridgeConnected)));
+    // Keep Tool Tester dropdown in sync (e.g. after adding or starting a server)
+    loadToolTesterServers().catch((e) => console.warn('[Sidebar] Tool Tester refresh:', e));
   } finally {
     isLoadingServers = false;
   }
 }
+
+// Server secrets (Configure) form state and actions
+let configuringSecretsServer: ServerStatus | null = null;
+
+function openServerSecretsForm(server: ServerStatus): void {
+  if (!server.secretsDecl?.length || !serverSecretsForm || !serverSecretsFields) return;
+  configuringSecretsServer = server;
+  serverSecretsTitle.textContent = `Credentials for ${server.name}`;
+  serverSecretsFields.innerHTML = '';
+  for (const decl of server.secretsDecl) {
+    const group = document.createElement('div');
+    group.className = 'form-group';
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.setAttribute('for', `secret-${decl.name}`);
+    label.textContent = decl.label;
+    const input = document.createElement('input');
+    input.type = decl.type === 'password' ? 'password' : 'text';
+    input.className = 'form-input';
+    input.id = `secret-${decl.name}`;
+    input.dataset.secretName = decl.name;
+    input.placeholder = decl.optional ? '(optional)' : '';
+    group.appendChild(label);
+    group.appendChild(input);
+    serverSecretsFields.appendChild(group);
+  }
+  serverSecretsForm.style.display = 'block';
+  // Load current values
+  browserAPI.runtime.sendMessage({ type: 'sidebar_get_server_secrets', serverId: server.id }).then((response: { ok?: boolean; secrets?: Record<string, string> }) => {
+    if (response?.ok && response.secrets) {
+      for (const [name, value] of Object.entries(response.secrets)) {
+        const input = serverSecretsFields.querySelector(`[data-secret-name="${name}"]`) as HTMLInputElement | null;
+        if (input) input.value = value ?? '';
+      }
+    }
+  });
+}
+
+function closeServerSecretsForm(): void {
+  configuringSecretsServer = null;
+  if (serverSecretsForm) serverSecretsForm.style.display = 'none';
+}
+
+async function saveServerSecrets(): Promise<void> {
+  if (!configuringSecretsServer?.secretsDecl?.length || !serverSecretsFields) return;
+  const secrets: Record<string, string> = {};
+  for (const decl of configuringSecretsServer.secretsDecl) {
+    const input = serverSecretsFields.querySelector(`[data-secret-name="${decl.name}"]`) as HTMLInputElement | null;
+    if (input) secrets[decl.name] = input.value.trim();
+  }
+  const response = await browserAPI.runtime.sendMessage({
+    type: 'sidebar_set_server_secrets',
+    serverId: configuringSecretsServer.id,
+    secrets,
+  });
+  if (response?.ok) {
+    closeServerSecretsForm();
+  } else {
+    console.error(response?.error || 'Failed to save credentials');
+  }
+}
+
+if (serverSecretsSaveBtn) serverSecretsSaveBtn.addEventListener('click', saveServerSecrets);
+if (serverSecretsCancelBtn) serverSecretsCancelBtn.addEventListener('click', closeServerSecretsForm);
+if (serverSecretsCancelBtn2) serverSecretsCancelBtn2.addEventListener('click', closeServerSecretsForm);
 
 // Theme toggle
 const themeToggle = document.getElementById('theme-toggle');
@@ -677,6 +827,19 @@ function setupPanelToggle(header: HTMLElement, toggle: HTMLElement, body: HTMLEl
 }
 
 setupPanelToggle(llmPanelHeader, llmPanelToggle, llmPanelBody);
+if (setupStatusHeader && setupStatusToggle && setupStatusBody) {
+  setupPanelToggle(setupStatusHeader, setupStatusToggle, setupStatusBody);
+}
+openDebuggingLink?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  try {
+    await navigator.clipboard.writeText(DEBUGGING_URL);
+    showToast('Copied about:debugging URL — paste in address bar');
+  } catch (err) {
+    console.error('[Sidebar] Failed to copy URL:', err);
+    showToast('Failed to copy URL');
+  }
+});
 setupPanelToggle(serversPanelHeader, serversPanelToggle, serversEl);
 
 // =============================================================================
@@ -1453,6 +1616,30 @@ const toolTesterHint = document.getElementById('tool-tester-hint') as HTMLDivEle
 const toolTesterRunBtn = document.getElementById('tool-tester-run') as HTMLButtonElement;
 const toolTesterResultDiv = document.getElementById('tool-tester-result') as HTMLDivElement;
 const toolTesterOutput = document.getElementById('tool-tester-output') as HTMLElement;
+const toolTesterParsed = document.getElementById('tool-tester-parsed') as HTMLDivElement;
+const toolTesterCopyBtn = document.getElementById('tool-tester-copy') as HTMLButtonElement;
+
+function renderSearchResultParsed(data: Record<string, unknown>): string {
+  const query = typeof data.query === 'string' ? data.query : '';
+  const articles = Array.isArray(data.articles) ? data.articles : [];
+  const urls = Array.isArray(data.articleUrls) ? data.articleUrls : [];
+  const parts: string[] = [];
+  if (query) parts.push(`<div class="form-label" style="margin-bottom: var(--space-1);">Query: ${escapeHtml(query)}</div>`);
+  if (articles.length > 0) {
+    parts.push('<table style="width:100%; border-collapse: collapse; margin-bottom: var(--space-2);"><thead><tr><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--border);">Title</th><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--border);">Author</th><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--border);">Date</th></tr></thead><tbody>');
+    for (const a of articles.slice(0, 20)) {
+      const row = a as Record<string, unknown>;
+      const title = escapeHtml(String(row.title ?? ''));
+      const author = escapeHtml(String(row.author ?? ''));
+      const date = escapeHtml(String(row.date ?? row.dateISO ?? ''));
+      parts.push(`<tr><td style="padding: 4px 6px; border-bottom: 1px solid var(--border);">${title}</td><td style="padding: 4px 6px; border-bottom: 1px solid var(--border);">${author}</td><td style="padding: 4px 6px; border-bottom: 1px solid var(--border);">${date}</td></tr>`);
+    }
+    parts.push('</tbody></table>');
+    if (articles.length > 20) parts.push(`<div style="color: var(--text-muted);">… and ${articles.length - 20} more</div>`);
+  }
+  if (urls.length > 0) parts.push(`<div style="color: var(--text-muted);">Article URLs: ${urls.length}</div>`);
+  return parts.join('');
+}
 
 type ToolInfo = {
   name: string;
@@ -1488,9 +1675,9 @@ async function loadToolTesterServers(): Promise<void> {
     })));
     
     // Populate server dropdown
+    const runningIds = new Set(cachedServersWithTools.filter((s) => s.running).map((s) => s.id));
     toolTesterServerSelect.innerHTML = '<option value="">Select a server...</option>';
     for (const server of cachedServersWithTools) {
-      // Show all running servers, even if tools aren't populated yet
       if (server.running) {
         const option = document.createElement('option');
         option.value = server.id;
@@ -1498,6 +1685,15 @@ async function loadToolTesterServers(): Promise<void> {
         option.textContent = `${server.name} (${toolCount} tools)`;
         toolTesterServerSelect.appendChild(option);
       }
+    }
+    // If currently selected server is no longer running/listed, clear selection and tools
+    const currentId = toolTesterServerSelect.value;
+    if (currentId && !runningIds.has(currentId)) {
+      toolTesterServerSelect.value = '';
+      toolTesterToolSelect.innerHTML = '<option value="">Select a tool...</option>';
+      toolTesterSchemaDiv.style.display = 'none';
+      toolTesterRunBtn.disabled = true;
+      toolTesterResultDiv.style.display = 'none';
     }
   } catch (err) {
     console.error('[Sidebar] Failed to load servers for tool tester:', err);
@@ -1632,7 +1828,9 @@ toolTesterRunBtn.addEventListener('click', async () => {
   toolTesterRunBtn.textContent = 'Running...';
   toolTesterResultDiv.style.display = 'block';
   toolTesterOutput.textContent = 'Executing...';
-  
+  toolTesterParsed.style.display = 'none';
+  toolTesterParsed.innerHTML = '';
+
   try {
     console.log(`[Tool Tester] Calling ${serverId}/${toolName} with:`, args);
     const response = await browserAPI.runtime.sendMessage({
@@ -1645,9 +1843,31 @@ toolTesterRunBtn.addEventListener('click', async () => {
     console.log('[Tool Tester] Response:', response);
     
     if (response?.ok) {
+      const result = response.result as Record<string, unknown> | undefined;
       toolTesterOutput.textContent = JSON.stringify(response.result, null, 2);
+      // Show parsed view when result has searchResult or when content contains JSON we can parse
+      let data = result?.searchResult as Record<string, unknown> | undefined;
+      if (!data && result?.content && Array.isArray(result.content)) {
+        const second = result.content[1] as { type?: string; text?: string; mediaType?: string } | undefined;
+        if (second?.text && second.mediaType === 'application/json') {
+          try {
+            data = JSON.parse(second.text) as Record<string, unknown>;
+          } catch {
+            data = undefined;
+          }
+        }
+      }
+      if (data && (data.articles || data.query !== undefined)) {
+        toolTesterParsed.style.display = 'block';
+        toolTesterParsed.innerHTML = renderSearchResultParsed(data);
+      } else {
+        toolTesterParsed.style.display = 'none';
+        toolTesterParsed.innerHTML = '';
+      }
     } else {
       toolTesterOutput.textContent = `Error: ${response?.error || 'Unknown error'}`;
+      toolTesterParsed.style.display = 'none';
+      toolTesterParsed.innerHTML = '';
     }
   } catch (err) {
     console.error('[Tool Tester] Error:', err);
@@ -1656,6 +1876,18 @@ toolTesterRunBtn.addEventListener('click', async () => {
   
   toolTesterRunBtn.disabled = false;
   toolTesterRunBtn.textContent = 'Run Tool';
+});
+
+toolTesterCopyBtn?.addEventListener('click', async () => {
+  const text = toolTesterOutput?.textContent ?? '';
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toolTesterCopyBtn.textContent = 'Copied!';
+    setTimeout(() => { toolTesterCopyBtn.textContent = 'Copy'; }, 1500);
+  } catch (e) {
+    console.warn('[Tool Tester] Copy failed:', e);
+  }
 });
 
 // Load servers when the panel body becomes visible (on expand)

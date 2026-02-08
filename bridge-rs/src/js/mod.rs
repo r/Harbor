@@ -5,6 +5,7 @@
 //! - Filesystem with path allowlists  
 //! - Environment variables
 //! - MCP stdio interface
+//! - MCP.requestHost (ask host to open tab / get content; bridge → extension → Web Agents)
 
 mod runtime;
 mod sandbox;
@@ -12,6 +13,7 @@ mod sandbox;
 pub use runtime::{JsServer, JsServerConfig, ServerHandle};
 pub use sandbox::Capabilities;
 
+use crate::native_messaging::HostRequestSender;
 use crate::rpc::RpcError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -46,6 +48,9 @@ pub struct StopServerParams {
 pub struct CallServerParams {
     pub id: String,
     pub request: serde_json::Value,
+    /// Optional context (origin, tabId) for host requests (browser capture).
+    #[serde(default)]
+    pub context: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -134,6 +139,33 @@ pub async fn call_server(params: serde_json::Value) -> Result<serde_json::Value,
         code: -32000,
         message: format!("Server call failed: {}", e),
     })
+}
+
+/// Send an MCP request to a running JS server with host request capability (browser capture).
+/// When the JS server calls MCP.requestHost(), the bridge sends host_request to the extension.
+pub async fn call_server_with_host(
+    params: serde_json::Value,
+    host_request_tx: HostRequestSender,
+) -> Result<serde_json::Value, RpcError> {
+    let params: CallServerParams = serde_json::from_value(params).map_err(|e| RpcError {
+        code: -32602,
+        message: format!("Invalid params: {}", e),
+    })?;
+
+    let servers = SERVERS.read().await;
+    
+    let handle = servers.get(&params.id).ok_or_else(|| RpcError {
+        code: -32000,
+        message: format!("Server '{}' not found", params.id),
+    })?;
+
+    handle
+        .call_with_host(params.request, params.context, Some(host_request_tx))
+        .await
+        .map_err(|e| RpcError {
+            code: -32000,
+            message: format!("Server call failed: {}", e),
+        })
 }
 
 /// List all running JS servers

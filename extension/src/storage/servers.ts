@@ -1,5 +1,6 @@
 import { browserAPI, getExtensionURL } from '../browser-compat';
 import type { McpServerManifest } from '../wasm/types';
+import { clearServerSecrets } from './server-secrets';
 
 // New storage key for unified MCP servers
 const STORAGE_KEY = 'harbor_mcp_servers';
@@ -62,6 +63,7 @@ export async function removeInstalledServer(serverId: string): Promise<void> {
   const existing = await loadInstalledServers();
   const next = existing.filter((item) => item.id !== serverId);
   await saveInstalledServers(next);
+  await clearServerSecrets(serverId);
 }
 
 /**

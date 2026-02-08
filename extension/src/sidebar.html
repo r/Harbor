@@ -381,6 +381,26 @@
         background: rgba(59, 130, 246, 0.15);
         color: #3b82f6;
       }
+      .setup-status-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+        margin-bottom: var(--space-2);
+      }
+      .setup-status-row {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-2);
+        font-size: var(--text-xs);
+      }
+      .setup-status-row .status-dot { flex-shrink: 0; margin-top: 2px; }
+      .setup-status-row .label { font-weight: var(--weight-semibold); min-width: 5em; }
+      .setup-status-row .hint {
+        color: var(--color-text-muted);
+        font-size: 11px;
+        margin-top: 2px;
+      }
+      .setup-status-actions { margin-top: var(--space-2); }
       /* Provider list */
       .provider-list {
         display: flex;
@@ -991,6 +1011,21 @@
       </div>
     </div>
 
+    <div class="panel" id="setup-status-panel">
+      <div class="panel-header" id="setup-status-header">
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon" id="setup-status-toggle">&#9660;</span>
+          <div class="panel-title">Setup</div>
+        </div>
+      </div>
+      <div class="panel-body" id="setup-status-body">
+        <div id="setup-status-list" class="setup-status-list"></div>
+        <div class="setup-status-actions">
+          <a href="#" id="open-debugging-link" class="btn btn-secondary btn-sm">Open about:debugging</a>
+        </div>
+      </div>
+    </div>
+
     <div class="panel" id="llm-panel">
       <div class="panel-header" id="llm-panel-header">
         <div class="panel-header-left">
@@ -1122,7 +1157,19 @@
             <button class="btn btn-primary btn-sm" id="remote-server-save" style="flex: 1;">Add Server</button>
           </div>
         </div>
-        <!-- Server list will be rendered here -->
+        <!-- Server secrets form (hidden; shown when Configure is clicked for a server with secretsDecl) -->
+        <div id="server-secrets-form" class="api-key-config" style="display: none; margin-bottom: var(--space-3);">
+          <div class="api-key-header">
+            <span id="server-secrets-title">Credentials</span>
+            <button class="btn btn-ghost btn-sm" id="server-secrets-cancel" type="button">×</button>
+          </div>
+          <div id="server-secrets-fields"></div>
+          <div class="form-actions">
+            <button class="btn btn-primary btn-sm" id="server-secrets-save" type="button">Save</button>
+            <button class="btn btn-ghost btn-sm" id="server-secrets-cancel-btn" type="button">Cancel</button>
+          </div>
+        </div>
+        <div id="servers-list"><!-- Server list rendered here --></div>
       </div>
     </div>
 
@@ -1156,7 +1203,11 @@
         </div>
         <button class="btn btn-primary btn-sm" id="tool-tester-run" disabled style="width: 100%;">Run Tool</button>
         <div id="tool-tester-result" style="display: none; margin-top: var(--space-3);">
-          <div class="form-label">Result</div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1);">
+            <div class="form-label" style="margin-bottom: 0;">Result</div>
+            <button type="button" class="btn btn-ghost btn-sm" id="tool-tester-copy" title="Copy result to clipboard">Copy</button>
+          </div>
+          <div id="tool-tester-parsed" style="display: none; margin-bottom: var(--space-2); font-size: var(--text-xs);"></div>
           <pre style="background: var(--color-surface-secondary); padding: var(--space-2); border-radius: var(--radius-sm); font-size: var(--text-xs); overflow-x: auto; max-height: 300px; white-space: pre-wrap; word-break: break-word;"><code id="tool-tester-output"></code></pre>
         </div>
       </div>

@@ -688,6 +688,32 @@ pub async fn list_configured_models() -> Result<serde_json::Value, RpcError> {
     }))
 }
 
+/// Provider prefixes that are considered local (no API key, run on this machine).
+const LOCAL_PROVIDER_PREFIXES: [&str; 2] = ["ollama:", "llamafile:"];
+
+fn is_local_model(model_id: &str) -> bool {
+    LOCAL_PROVIDER_PREFIXES
+        .iter()
+        .any(|prefix| model_id.starts_with(prefix))
+}
+
+/// Return metadata for each configured model (e.g. local vs remote).
+/// Companion to list_configured_models; use model_id to correlate.
+pub async fn get_configured_models_metadata() -> Result<serde_json::Value, RpcError> {
+    let cfg = get_config().unwrap_or_default();
+    let metadata: Vec<serde_json::Value> = cfg
+        .models
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "model_id": m.model_id,
+                "is_local": is_local_model(&m.model_id),
+            })
+        })
+        .collect();
+    Ok(serde_json::json!({ "metadata": metadata }))
+}
+
 /// Add a configured model.
 pub async fn add_configured_model(params: serde_json::Value) -> Result<serde_json::Value, RpcError> {
     let model_id = params

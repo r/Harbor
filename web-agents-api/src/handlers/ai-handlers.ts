@@ -165,6 +165,46 @@ export async function handleProvidersGetActive(ctx: RequestContext): HandlerResp
   }
 }
 
+/** List configured models (named aliases) from Harbor — e.g. "llama", "gpt". */
+export async function handleProvidersListConfiguredModels(ctx: RequestContext): HandlerResponse {
+  if (!(await hasPermission(ctx.origin, 'model:list'))) {
+    return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission model:list required');
+  }
+
+  try {
+    const result = await harborRequest<{ models: Array<{ name: string; model_id: string; is_default?: boolean }> }>(
+      'llm.listConfiguredModels'
+    );
+    return successResponse(ctx.id, result.models ?? []);
+  } catch (e) {
+    return errorResponse(
+      ctx.id,
+      'ERR_INTERNAL',
+      e instanceof Error ? e.message : 'Failed to list configured models'
+    );
+  }
+}
+
+/** Get metadata for configured models (companion to listConfiguredModels). Includes is_local. */
+export async function handleProvidersGetConfiguredModelsMetadata(ctx: RequestContext): HandlerResponse {
+  if (!(await hasPermission(ctx.origin, 'model:list'))) {
+    return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission model:list required');
+  }
+
+  try {
+    const result = await harborRequest<{ metadata: Array<{ model_id: string; is_local: boolean }> }>(
+      'llm.getConfiguredModelsMetadata'
+    );
+    return successResponse(ctx.id, result.metadata ?? []);
+  } catch (e) {
+    return errorResponse(
+      ctx.id,
+      'ERR_INTERNAL',
+      e instanceof Error ? e.message : 'Failed to get configured models metadata'
+    );
+  }
+}
+
 // =============================================================================
 // Exports for streaming (used by background.ts directly)
 // =============================================================================

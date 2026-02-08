@@ -55,6 +55,7 @@ type MessageType =
   | 'llm.configureProvider'
   | 'llm.listModels'
   | 'llm.listConfiguredModels'
+  | 'llm.getConfiguredModelsMetadata'
   // MCP Operations
   | 'mcp.listServers'
   | 'mcp.listTools'
@@ -209,6 +210,17 @@ async function handleLlmListConfiguredModels(): Promise<ExtensionApiResponse> {
   try {
     const result = await bridgeRequest<{ models: unknown[] }>('llm.list_configured_models');
     return success({ models: result.models });
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+async function handleLlmGetConfiguredModelsMetadata(): Promise<ExtensionApiResponse> {
+  try {
+    const result = await bridgeRequest<{ metadata: Array<{ model_id: string; is_local: boolean }> }>(
+      'llm.get_configured_models_metadata'
+    );
+    return success({ metadata: result.metadata });
   } catch (e) {
     return failure(e);
   }
@@ -644,6 +656,8 @@ export async function routeExtensionApiMessage(
       return handleLlmListModels();
     case 'llm.listConfiguredModels':
       return handleLlmListConfiguredModels();
+    case 'llm.getConfiguredModelsMetadata':
+      return handleLlmGetConfiguredModelsMetadata();
 
     // MCP Operations
     case 'mcp.listServers':

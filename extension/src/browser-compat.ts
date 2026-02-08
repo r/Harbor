@@ -130,6 +130,33 @@ export async function executeScriptInTab<T>(
 }
 
 /**
+ * Execute script in a tab in ALL frames (main + iframes). Returns the first result
+ * for which the value matches the predicate (e.g. form was found and submitted).
+ * Use when the login form may be inside an iframe.
+ */
+export async function executeScriptInTabAllFrames<T>(
+  tabId: number,
+  func: (...args: unknown[]) => T,
+  args: unknown[] = [],
+  predicate?: (value: T) => boolean
+): Promise<T | undefined> {
+  if (browserAPI.scripting?.executeScript) {
+    const results = await browserAPI.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: func as () => T,
+      args,
+    });
+    if (!results?.length) return undefined;
+    for (const r of results) {
+      const value = r.result as T;
+      if (value !== undefined && value !== null && (!predicate || predicate(value))) return value;
+    }
+    return (results[0]?.result as T) ?? undefined;
+  }
+  return executeScriptInTab(tabId, func, args);
+}
+
+/**
  * Get the current browser name for logging and debugging.
  */
 export function getBrowserName(): 'firefox' | 'chrome' | 'safari' | 'unknown' {

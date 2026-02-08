@@ -4,11 +4,15 @@
  * All communication with the native bridge happens through this module via stdio.
  * Supports RPC requests, streaming responses, and console log forwarding.
  * 
+ * When the bridge sends host_request (MCP server wants browser to open a tab and
+ * return content/cookies), we forward to Web Agents and send host_response back.
+ * 
  * Safari uses HTTP to localhost (avoids sandbox restrictions).
  * Firefox/Chrome use connectNative() for a persistent port connection.
  */
 
 import { browserAPI, isSafari } from '../browser-compat';
+import { handleHostRequest } from '../handlers/host-request-handlers';
 
 // Native app ID differs by browser:
 // - Firefox/Chrome: 'harbor_bridge' (matches native messaging manifest name)
@@ -128,11 +132,22 @@ async function checkSafariConnection(): Promise<void> {
 }
 
 // Message types from bridge
-type IncomingMessage = 
+export type HostRequestContext = { origin?: string; tabId?: number };
+
+export type HostRequestMessage = {
+  type: 'host_request';
+  id: string;
+  method: string;
+  params: Record<string, unknown>;
+  context?: HostRequestContext;
+};
+
+type IncomingMessage =
   | { type: 'status'; status: string; message: string }
   | { type: 'rpc_response'; id: string; result?: unknown; error?: { code: number; message: string } }
   | { type: 'stream'; id: string; event: StreamEvent }
-  | { type: 'console'; server_id: string; level: string; message: string };
+  | { type: 'console'; server_id: string; level: string; message: string }
+  | HostRequestMessage;
 
 type StreamEvent = {
   id: string;
@@ -290,6 +305,27 @@ function handleMessage(message: IncomingMessage): void {
       } else {
         console.log('[Harbor:NativeBridge] No pending stream found for id:', message.id);
       }
+      break;
+    }
+
+    case 'host_request': {
+      // MCP server (in bridge) asked host to open a tab / get content / get cookies.
+      // Forward to Web Agents and send host_response back to the bridge.
+      (async () => {
+        const req = message;
+        try {
+          const result = await handleHostRequest(req);
+          sendMessage({ type: 'host_response', id: req.id, result });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn('[Harbor:NativeBridge] host_request failed:', req.method, msg);
+          sendMessage({
+            type: 'host_response',
+            id: req.id,
+            error: { code: -32000, message: msg },
+          });
+        }
+      })();
       break;
     }
 

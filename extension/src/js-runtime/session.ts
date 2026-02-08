@@ -10,6 +10,7 @@ import { browserAPI } from '../browser-compat';
 import type { StdioEndpoint } from '../mcp/stdio-transport';
 import type { McpServerManifest } from '../wasm/types';
 import { bridgeRequest, getBridgeConnectionState } from '../llm/bridge-client';
+import { getServerSecrets } from '../storage/server-secrets';
 
 // Built-in server IDs that have pre-bundled worker files (fallback)
 const BUILTIN_WORKER_MAP: Record<string, string> = {
@@ -91,7 +92,12 @@ async function fetchOAuthTokens(manifest: McpServerManifest): Promise<Record<str
  * Creates a JS MCP server session using the native bridge.
  * The bridge runs the JS code in QuickJS with sandboxed capabilities.
  */
-async function createBridgeSession(manifest: McpServerManifest): Promise<JsSession> {
+type RequestContext = { origin?: string; tabId?: number };
+
+async function createBridgeSession(
+  manifest: McpServerManifest,
+  getContext?: () => RequestContext | undefined,
+): Promise<JsSession> {
   // Load the server code
   const code = await loadServerCode(manifest);
 
@@ -99,6 +105,14 @@ async function createBridgeSession(manifest: McpServerManifest): Promise<JsSessi
   // Note: manifest.secrets is metadata about what secrets are needed, not actual values.
   // Actual secret values come from OAuth tokens or user configuration.
   const env: Record<string, string> = {};
+
+  // Inject stored per-server secrets (e.g. Atlantic email/password)
+  if (manifest.secretsDecl?.length) {
+    const stored = await getServerSecrets(manifest.id);
+    for (const [name, value] of Object.entries(stored)) {
+      if (value !== undefined && value !== '') env[name] = value;
+    }
+  }
 
   // Fetch and inject OAuth tokens if required
   if (manifest.oauth) {
@@ -139,11 +153,12 @@ async function createBridgeSession(manifest: McpServerManifest): Promise<JsSessi
 
       try {
         const request = JSON.parse(jsonString);
-        
-        // Call the bridge to forward request to JS server
+        const context = getContext?.() ?? {};
+        // Call the bridge to forward request to JS server (context for MCP.requestHost)
         const response = await bridgeRequest<unknown>('js.call', {
           id: manifest.id,
           request,
+          context,
         });
 
         // Send response back through the endpoint
@@ -301,6 +316,7 @@ async function createBuiltinWorkerSession(
  */
 export async function createJsSession(
   manifest: McpServerManifest,
+  getContext?: () => { origin?: string; tabId?: number } | undefined,
 ): Promise<JsSession> {
   // Validate that this is a JS server
   if (manifest.runtime !== 'js') {
@@ -313,7 +329,7 @@ export async function createJsSession(
   // Try bridge first for non-builtin servers, or when bridge is connected
   if (bridgeState.connected && (!builtinWorkerPath || manifest.scriptBase64 || manifest.scriptUrl)) {
     try {
-      return await createBridgeSession(manifest);
+      return await createBridgeSession(manifest, getContext);
     } catch (e) {
       console.warn('[Harbor] Bridge session failed, trying fallback:', e);
     }
@@ -356,12 +372,16 @@ export function createJsStubSession(manifest: McpServerManifest): JsSession {
             result: { tools: manifest.tools || [] },
           };
         } else if (request.method === 'tools/call') {
+          const stubMessage =
+            'Stub response: the real JS server is not running. ' +
+            '1) In Harbor header, ensure Bridge shows "Connected" (run: cd harbor/bridge-rs && ./install.sh then restart the browser). ' +
+            '2) For Atlantic, add the server using atlantic-archive-dist.json (not manifest.json) so the script is inlined. Then Stop and Start the server.';
           response = {
             jsonrpc: '2.0',
             id: request.id,
             result: {
               content: [
-                { type: 'text', text: 'Stub response from JS MCP server' },
+                { type: 'text', text: stubMessage },
               ],
             },
           };

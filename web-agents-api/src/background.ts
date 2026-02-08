@@ -498,6 +498,19 @@ function handleForwardedInvocation(
 }
 
 chrome.runtime.onMessageExternal?.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'agent.host.run') {
+    const { payload } = message as { payload?: { method: string; params: Record<string, unknown>; context: { origin?: string; tabId?: number } } };
+    if (!payload) {
+      sendResponse({ ok: false, error: 'Missing payload' });
+      return true;
+    }
+    import('./handlers/host-run-handlers').then(({ handleHostRun }) => {
+      handleHostRun(payload)
+        .then((out) => sendResponse(out))
+        .catch((err) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+    });
+    return true;
+  }
   if (message?.type !== 'harbor.forwardInvocation') {
     return false;
   }

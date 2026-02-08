@@ -306,6 +306,8 @@ export async function harborRequest<T = unknown>(
       'system.getVersion': 'system.health', // No version on bridge, use health
       'system.getCapabilities': 'system.health', // Simplified
       'llm.listProviders': 'llm.list_providers',
+      'llm.listConfiguredModels': 'llm.list_configured_models',
+      'llm.getConfiguredModelsMetadata': 'llm.get_configured_models_metadata',
       'llm.chat': 'llm.chat',
       'mcp.listServers': 'js.list_servers',
       'mcp.listTools': 'mcp.list_tools', // Tools synced from Harbor

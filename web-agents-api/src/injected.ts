@@ -497,6 +497,20 @@ const aiApi = Object.freeze({
     async getActive(): Promise<{ provider: string | null; model: string | null }> {
       return sendRequest('ai.providers.getActive');
     },
+
+    /** List configured models (Harbor named aliases, e.g. "llama", "gpt"). */
+    async listConfiguredModels(): Promise<Array<{ name: string; model_id: string; is_default?: boolean }>> {
+      return sendRequest<Array<{ name: string; model_id: string; is_default?: boolean }>>(
+        'ai.providers.listConfiguredModels'
+      );
+    },
+
+    /** Metadata for configured models (companion to listConfiguredModels). Use model_id to correlate; includes is_local. */
+    async getConfiguredModelsMetadata(): Promise<Array<{ model_id: string; is_local: boolean }>> {
+      return sendRequest<Array<{ model_id: string; is_local: boolean }>>(
+        'ai.providers.getConfiguredModelsMetadata'
+      );
+    },
   }),
 });
 

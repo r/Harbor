@@ -38,6 +38,17 @@ export type McpToolDefinition = {
 };
 
 /**
+ * Declaration of a non-OAuth secret (e.g. login email/password) the server needs.
+ * Values are stored separately and injected as process.env[name].
+ */
+export type SecretDeclaration = {
+  name: string;
+  label: string;
+  type?: 'text' | 'password';
+  optional?: boolean;
+};
+
+/**
  * OAuth configuration for servers that require API authentication.
  */
 export type McpServerOAuth = {
@@ -99,7 +110,9 @@ export type McpServerManifest = {
   // Environment configuration
   /** Environment variable names to pass through */
   env?: string[];
-  /** Secret values to inject as process.env (name -> value) */
+  /** Declares non-OAuth secrets this server needs (user enters values in Harbor UI) */
+  secretsDecl?: SecretDeclaration[];
+  /** Secret values to inject as process.env (name -> value); used by built-in workers */
   secrets?: Record<string, string>;
 
   // OAuth configuration

@@ -14,12 +14,15 @@ import {
   listServersWithStatus,
   callTool,
 } from '../mcp/host';
+import { getBridgeConnectionState } from '../llm/bridge-client';
+import { getServerSecrets, setServerSecrets } from '../storage/server-secrets';
 
 export function registerServerHandlers(): void {
-  // List all servers with status
+  // List all servers with status (include bridgeConnected so sidebar can show Stub for JS servers)
   registerAsyncHandler('sidebar_get_servers', async () => {
     const servers = await listServersWithStatus();
-    return { ok: true, servers };
+    const { connected: bridgeConnected } = getBridgeConnectionState();
+    return { ok: true, servers, bridgeConnected };
   });
 
   // Start a server
@@ -74,6 +77,24 @@ export function registerServerHandlers(): void {
     return true;
   });
 
+  // Get stored secrets for a server (for Configure UI)
+  registerAsyncHandler('sidebar_get_server_secrets', async (message) => {
+    const serverId = message.serverId as string | undefined;
+    if (!serverId) return { ok: false, error: 'Missing serverId' };
+    const secrets = await getServerSecrets(serverId);
+    return { ok: true, secrets };
+  });
+
+  // Save secrets for a server
+  registerAsyncHandler('sidebar_set_server_secrets', async (message) => {
+    const serverId = message.serverId as string | undefined;
+    const secrets = message.secrets as Record<string, string> | undefined;
+    if (!serverId) return { ok: false, error: 'Missing serverId' };
+    if (!secrets || typeof secrets !== 'object') return { ok: false, error: 'Missing secrets object' };
+    await setServerSecrets(serverId, secrets);
+    return { ok: true };
+  });
+
   // Remove a server
   registerHandler('sidebar_remove_server', (message, _sender, sendResponse) => {
     const serverId = message.serverId as string | undefined;
@@ -87,7 +108,7 @@ export function registerServerHandlers(): void {
     return true;
   });
 
-  // Call a tool
+  // Call a tool (pass harbor-extension context so host_request has an origin for browser capture)
   registerHandler('sidebar_call_tool', (message, _sender, sendResponse) => {
     const { serverId, toolName, args } = message as {
       serverId?: string;
@@ -99,7 +120,8 @@ export function registerServerHandlers(): void {
       sendResponse({ ok: false, error: 'Missing serverId or toolName' });
       return true;
     }
-    callTool(serverId, toolName, args || {})
+    const context = { origin: 'harbor-extension' as const };
+    callTool(serverId, toolName, args || {}, context)
       .then((result) => {
         console.log('[Harbor] Tool result:', result);
         sendResponse(result as { ok: boolean });

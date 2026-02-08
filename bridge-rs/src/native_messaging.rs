@@ -9,9 +9,10 @@
 //! - `ping`: Health check, responds with `status`
 //! - `shutdown`: Graceful shutdown request
 
+use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, RwLock};
 
 use crate::llm;
 use crate::rpc::{self, RpcRequest};
@@ -27,7 +28,22 @@ struct IncomingMessage {
     method: Option<String>,
     #[serde(default)]
     params: serde_json::Value,
+    // host_response fields (when msg_type == "host_response")
+    #[serde(default)]
+    result: Option<serde_json::Value>,
+    #[serde(default)]
+    error: Option<serde_json::Value>,
 }
+
+/// Payload for sending host_request to the extension (MCP server asked host to open tab / get content).
+pub type HostRequestSender = mpsc::Sender<HostRequestItem>;
+pub type HostRequestItem = (
+    String,
+    String,
+    serde_json::Value,
+    serde_json::Value,
+    tokio::sync::oneshot::Sender<Result<serde_json::Value, serde_json::Value>>,
+);
 
 /// Message to the browser extension
 #[derive(Debug, serde::Serialize)]
@@ -149,6 +165,16 @@ impl MessageWriter {
             "message": log.message,
         })).await;
     }
+
+    /// Send a host_request to the extension (bridge → extension; MCP server asked for browser capture).
+    async fn send_host_request(&self, id: &str, method: &str, params: serde_json::Value, context: serde_json::Value) {
+        self.send("host_request", serde_json::json!({
+            "id": id,
+            "method": method,
+            "params": params,
+            "context": context,
+        })).await;
+    }
 }
 
 /// Run the native messaging event loop.
@@ -189,7 +215,11 @@ pub async fn run_native_messaging() {
 
     // Create channel for incoming messages
     let (msg_tx, mut msg_rx) = mpsc::channel::<IncomingMessage>(32);
-    
+    // Channel for host requests (JS server asks bridge to send host_request and wait for host_response)
+    let (host_request_tx, mut host_request_rx) = mpsc::channel::<HostRequestItem>(32);
+    let pending_host: Arc<RwLock<HashMap<String, tokio::sync::oneshot::Sender<Result<serde_json::Value, serde_json::Value>>>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+
     // Spawn stdin reader task
     tokio::task::spawn_blocking(move || {
         let mut stdin = io::stdin().lock();
@@ -212,14 +242,36 @@ pub async fn run_native_messaging() {
         }
     });
 
-    // Process incoming messages
-    while let Some(msg) = msg_rx.recv().await {
-        let writer = writer.clone();
-        
-        // Handle message in background task
-        tokio::spawn(async move {
-            handle_message(msg, writer).await;
-        });
+    // Process incoming messages and host requests
+    loop {
+        tokio::select! {
+            Some(msg) = msg_rx.recv() => {
+                if msg.msg_type == "host_response" {
+                    let id = msg.id.as_ref().and_then(|v| v.as_str()).map(String::from);
+                    if let Some(id) = id {
+                        let outcome = if let Some(err) = msg.error {
+                            Err(err)
+                        } else {
+                            Ok(msg.result.unwrap_or(serde_json::Value::Null))
+                        };
+                        if let Some(tx) = pending_host.write().await.remove(&id) {
+                            let _ = tx.send(outcome);
+                        }
+                    }
+                } else {
+                    let writer_clone = writer.clone();
+                    let host_tx = host_request_tx.clone();
+                    tokio::spawn(async move {
+                        handle_message(msg, writer_clone, host_tx).await;
+                    });
+                }
+            }
+            Some((id, method, params, context, response_tx)) = host_request_rx.recv() => {
+                pending_host.write().await.insert(id.clone(), response_tx);
+                writer.send_host_request(&id, &method, params, context).await;
+            }
+            else => break,
+        }
     }
 
     tracing::info!("Native messaging handler exiting");
@@ -227,7 +279,7 @@ pub async fn run_native_messaging() {
 }
 
 /// Handle an incoming message
-async fn handle_message(msg: IncomingMessage, writer: Arc<MessageWriter>) {
+async fn handle_message(msg: IncomingMessage, writer: Arc<MessageWriter>, host_request_tx: HostRequestSender) {
     tracing::debug!("Received message type: {}", msg.msg_type);
 
     match msg.msg_type.as_str() {
@@ -258,7 +310,7 @@ async fn handle_message(msg: IncomingMessage, writer: Arc<MessageWriter>) {
             if rpc::is_streaming_method(&method) {
                 handle_streaming_rpc(id, method, msg.params, writer).await;
             } else {
-                handle_rpc(id, method, msg.params, writer).await;
+                handle_rpc(id, method, msg.params, writer, host_request_tx).await;
             }
         }
         
@@ -274,12 +326,20 @@ async fn handle_rpc(
     method: String,
     params: serde_json::Value,
     writer: Arc<MessageWriter>,
+    host_request_tx: HostRequestSender,
 ) {
-    let request = RpcRequest { id: id.clone(), method, params };
-    let response = rpc::handle(request).await;
-    
+    let response = if method == "js.call" {
+        match crate::js::call_server_with_host(params, host_request_tx).await {
+            Ok(value) => rpc::RpcResponse::success(id.clone(), value),
+            Err(e) => rpc::RpcResponse::error(id.clone(), e),
+        }
+    } else {
+        let request = RpcRequest { id: id.clone(), method, params };
+        rpc::handle(request).await
+    };
+
     writer.send_rpc_response(
-        id,
+        response.id,
         response.result,
         response.error.map(|e| serde_json::json!({
             "code": e.code,

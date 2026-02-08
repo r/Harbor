@@ -166,17 +166,9 @@ pub async fn call_tool(params: serde_json::Value) -> Result<serde_json::Value, R
     
     match crate::js::call_server(js_request).await {
         Ok(result) => {
-            // JS server call succeeded
-            // Extract the result from the MCP response
-            if let Some(content) = result.get("result").and_then(|r| r.get("content")) {
-                if let Some(arr) = content.as_array() {
-                    if let Some(first) = arr.first() {
-                        if let Some(text) = first.get("text") {
-                            return Ok(serde_json::json!({ "result": text }));
-                        }
-                    }
-                }
-                return Ok(serde_json::json!({ "result": content }));
+            // JS server call succeeded — pass through the full MCP result (content + any extra keys e.g. searchResult)
+            if let Some(mcp_result) = result.get("result") {
+                return Ok(serde_json::json!({ "result": mcp_result }));
             }
             Ok(serde_json::json!({ "result": result }))
         }
@@ -194,8 +186,8 @@ pub async fn call_tool(params: serde_json::Value) -> Result<serde_json::Value, R
             
             pending_calls().write().await.insert(call_id.clone(), pending);
             
-            // Wait for result with timeout
-            let timeout = Duration::from_secs(30);
+            // Wait for result with timeout (capture can include scroll-to-end for article pages)
+            let timeout = Duration::from_secs(60);
             let start = Instant::now();
             
             loop {

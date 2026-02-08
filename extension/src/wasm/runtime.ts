@@ -149,11 +149,11 @@ export async function startMcpServer(serverId: string): Promise<boolean> {
       });
       console.log('[Harbor] Connected to remote MCP server:', serverId);
     } else if (runtime === 'js') {
-      // Create JS worker session
-      const session = await createJsSession({
-        ...handle.manifest,
-        runtime: 'js',
-      });
+      // Create JS worker session (getCurrentRequestContext used for MCP.requestHost)
+      const session = await createJsSession(
+        { ...handle.manifest, runtime: 'js' },
+        getCurrentRequestContext,
+      );
       activeSessions.set(serverId, {
         transport: new McpStdioTransport(session.endpoint),
         close: session.close,
@@ -327,13 +327,22 @@ export async function callMcpMethod(
   }
 }
 
+/** Current request context (origin, tabId) for host requests; set during tool call. */
+let currentRequestContext: { origin?: string; tabId?: number } | undefined;
+
+export function getCurrentRequestContext(): { origin?: string; tabId?: number } | undefined {
+  return currentRequestContext;
+}
+
 /**
  * Call a tool on an MCP server.
+ * @param context - Optional context (origin, tabId) for MCP.requestHost (browser capture).
  */
 export async function callMcpTool(
   serverId: string,
   toolName: string,
   args: Record<string, unknown>,
+  context?: { origin?: string; tabId?: number },
 ): Promise<{ ok: boolean; result?: unknown; error?: string }> {
   const handle = runningServers.get(serverId);
   if (!handle) {
@@ -357,10 +366,13 @@ export async function callMcpTool(
     params,
   };
 
+  const prevContext = currentRequestContext;
+  currentRequestContext = context;
   try {
+    // Tool can do browser capture (scroll + DOM extract); allow up to 90s
     const response = await withTimeout(
       session.transport.send(request),
-      10_000,
+      90_000,
     );
     if (response.error) {
       return { ok: false, error: response.error.message };
@@ -372,6 +384,8 @@ export async function callMcpTool(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, error: message };
+  } finally {
+    currentRequestContext = prevContext;
   }
 }
 

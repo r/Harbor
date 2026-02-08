@@ -17,6 +17,8 @@ import {
   handleLanguageModelCapabilities,
   handleProvidersList,
   handleProvidersGetActive,
+  handleProvidersListConfiguredModels,
+  handleProvidersGetConfiguredModelsMetadata,
   getTextSession,
 } from './ai-handlers';
 
@@ -121,6 +123,8 @@ handlers.set('session.destroy', handleSessionDestroy);
 handlers.set('ai.languageModel.capabilities', handleLanguageModelCapabilities);
 handlers.set('ai.providers.list', handleProvidersList);
 handlers.set('ai.providers.getActive', handleProvidersGetActive);
+handlers.set('ai.providers.listConfiguredModels', handleProvidersListConfiguredModels);
+handlers.set('ai.providers.getConfiguredModelsMetadata', handleProvidersGetConfiguredModelsMetadata);
 
 // Permission handlers
 handlers.set('agent.requestPermissions', handleRequestPermissions);

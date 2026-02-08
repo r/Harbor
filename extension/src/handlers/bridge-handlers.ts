@@ -6,7 +6,7 @@
 
 import { registerHandler, registerAsyncHandler, errorResponse } from './types';
 import { getBridgeConnectionState, checkBridgeHealth, bridgeRequest } from '../llm/bridge-client';
-import { getConnectionState as getNativeConnectionState } from '../llm/native-bridge';
+import { getConnectionState as getNativeConnectionState, connectNativeBridge } from '../llm/native-bridge';
 
 export function registerBridgeHandlers(): void {
   // Get bridge status
@@ -16,18 +16,24 @@ export function registerBridgeHandlers(): void {
     return true;
   });
 
-  // Check bridge health
+  // Check bridge health (on failure, try reconnect so switching back to Harbor restores connection)
   registerHandler('bridge_check_health', (_message, _sender, sendResponse) => {
     checkBridgeHealth()
       .then(() => {
         const state = getBridgeConnectionState();
-        sendResponse({ ok: true, ...state });
+        sendResponse({ ok: true, connected: state.connected, bridgeReady: state.bridgeReady, error: state.error });
       })
       .catch((error) => {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.toLowerCase().includes('not connected') || msg.toLowerCase().includes('bridge not connected')) {
+          connectNativeBridge();
+        }
+        const state = getBridgeConnectionState();
         sendResponse({
-          ok: false,
-          connected: false,
-          error: error instanceof Error ? error.message : String(error),
+          ok: state.bridgeReady,
+          connected: state.connected,
+          bridgeReady: state.bridgeReady,
+          error: state.error || msg,
         });
       });
     return true;
