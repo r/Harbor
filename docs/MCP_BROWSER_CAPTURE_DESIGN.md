@@ -137,21 +137,28 @@ So the server does **not** use `fetch()` with a stored cookie; it asks the host 
 5. **Bridge JS sandbox**
    - Add `MCP.requestHost(method, params)` (or equivalent). Implementation: when the JS calls it, the Rust side must send `host_request` and wait for `host_response`. This requires the bridge to support an async “wait for host response” in the middle of handling one `js.call`. Details depend on how the bridge runs the JS (single-threaded event loop vs async). If the JS runtime is single-threaded and synchronous, we may need to “pause” the current RPC and handle the incoming `host_response` when it arrives, then resume the JS with the result.
 
-### 9. Implemented so far
+### 9. Host methods: JS vs WASM
+
+Host methods (e.g. `browser.capturePage`, `browser.getCookies`, `http.get`) are **runtime-agnostic**: the same handler in `host-request-handlers.ts` runs regardless of who sent the request. So **http.get** (and any other host method) can conceptually be called from either a **JS** or a **WASM** MCP server.
+
+- **JS servers** (run in the bridge’s QuickJS): they have `MCP.requestHost(method, params)`. When they call it, the bridge sends `host_request` to the extension and blocks until `host_response`. So JS servers can call `http.get` today.
+- **WASM servers** (run in the Harbor extension via WASI): they do not currently have a way to issue host requests. The WASM runtime does not expose a `requestHost`-style import. To allow WASM servers to use `http.get` (or other host methods), the extension’s WASM session would need to expose a host import that the WASM module can call; the extension would then call `handleHostRequest` with the same `method`/`params` and return the result. The same `handleHostRequest` and `http.get` implementation would serve both.
+
+### 10. Implemented so far
 
 - **Protocol:** `host_request` / `host_response`; `agent.host.run` in shared protocol.
-- **Harbor extension:** In `native-bridge.ts`, on `type: 'host_request'` we call `handleHostRequest()` (forwards to Web Agents) and send `host_response`. See `handlers/host-request-handlers.ts`.
-- **Web Agents:** External listener for `agent.host.run`; `handlers/host-run-handlers.ts` implements `browser.capturePage` and `browser.getCookies`.
+- **Harbor extension:** In `native-bridge.ts`, on `type: 'host_request'` we call `handleHostRequest()` and send `host_response`. See `handlers/host-request-handlers.ts`. Handlers: `browser.capturePage`, `browser.getCookies`, `browser.loginThenCapture`, `browser.ensureLogin`, **`http.get`** (GET https URL, returns `{ status, statusText, body }`; used by e.g. Flickr MCP when the bridge has no `fetch`).
+- **Web Agents:** No longer in the loop for MCP host_request; Harbor handles it locally (see §11).
 
-**Bridge (Rust):** Implemented. JS sandbox has `MCP.requestHost(method, params)`. Bridge sends `host_request` and waits for `host_response`; `js.call` accepts optional `context` and attaches it to `host_request`. See `bridge-rs/src/native_messaging.rs` and `bridge-rs/src/js/runtime.rs`.
+**Bridge (Rust):** JS sandbox has `MCP.requestHost(method, params)`. Bridge sends `host_request` and waits for `host_response`; `js.call` accepts optional `context` and attaches it to `host_request`. See `bridge-rs/src/native_messaging.rs` and `bridge-rs/src/js/runtime.rs`. WASM servers do not go through the bridge for tool execution (Harbor polls and runs them); WASM host-request path not implemented.
 
-### 10. Harbor-owned browser capture (no Web Agents dependency)
+### 11. Harbor-owned browser capture (no Web Agents dependency)
 
 **Rationale:** MCP servers are Harbor's domain; host_request (open tab, capture, login) exists only to serve those servers. Relying on Web Agents for this path is architecturally awkward. Centralizing browser capture (and future login flows) in Harbor keeps the stack simple: **bridge → Harbor** only. Harbor already has the needed permissions (`tabs`, `scripting`, `cookies`, `host_permissions`).
 
 **Target flow:** Bridge → Harbor (local capture) → bridge. Harbor's background handles `host_request` itself: open tab, wait for load, run `scripting.executeScript` to read content/cookies, send `host_response`. Allowed context for MCP-initiated calls: `origin: 'harbor-extension'`. Future: `browser.loginThenCapture` can also live in Harbor. Web Agents remains for the **page-facing API** (`window.ai`, etc.); it is not in the loop for MCP host_request.
 
-### 11. Summary
+### 12. Summary
 
 - **Yes, we can send a message up the stack:** the MCP server (in the bridge) calls `MCP.requestHost(...)`, the bridge sends **host_request** to the Harbor extension, Harbor forwards to the Web Agents extension (when browser control and interaction are enabled and the request context’s origin has permission), Web Agents opens/drives the browser and returns content/cookies, and the result comes back down as **host_response** to the bridge and then to the MCP server.
 - **Login state** is obtained by either (a) capturing cookies after the user has logged in in the opened tab (`captureCookies` or `browser.getCookies`), or (b) using the fact that the tab is already logged in and we only return content (no explicit cookie string). Both are supported by the above design.

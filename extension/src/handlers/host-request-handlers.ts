@@ -39,6 +39,31 @@ export async function handleHostRequest(msg: HostRequestMessage): Promise<unknow
   if (method === 'browser.ensureLogin') {
     return runEnsureLogin((params ?? {}) as Record<string, unknown>);
   }
+  if (method === 'http.get') {
+    return runHttpGet((params ?? {}) as Record<string, unknown>);
+  }
 
   throw new Error(`Unknown host method: ${method}`);
+}
+
+/**
+ * Perform a GET request (for MCP servers that run in environments without fetch, e.g. QuickJS).
+ * Only allows https URLs. Optional headers (e.g. User-Agent for Nominatim) can be passed.
+ */
+async function runHttpGet(params: Record<string, unknown>): Promise<{ status: number; statusText: string; body: string }> {
+  const url = params.url as string | undefined;
+  if (!url || typeof url !== 'string') {
+    throw new Error('http.get requires a "url" parameter');
+  }
+  if (!url.startsWith('https://')) {
+    throw new Error('http.get only allows https URLs');
+  }
+  const headers = params.headers as Record<string, string> | undefined;
+  const init: RequestInit = { method: 'GET' };
+  if (headers && typeof headers === 'object') {
+    init.headers = headers;
+  }
+  const res = await fetch(url, init);
+  const body = await res.text();
+  return { status: res.status, statusText: res.statusText, body };
 }
