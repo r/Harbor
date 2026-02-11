@@ -62,6 +62,8 @@ your accumulated context — conversation history, preferences, identity — sta
 
 websites expose domain expertise — tools, data, functionality. your AI connects to those tools. the website gets powerful capabilities without building AI infrastructure. you keep control.
 
+developers choose everything. choose the LLM — Ollama, llamafile, GPT, Claude, Gemini, whatever the user has configured. choose which MCP servers to integrate — search, files, databases, or custom ones. choose what tools the page itself provides via [WebMCP](https://github.com/webmachinelearning/webmcp). the API gives building blocks, not opinions.
+
 a news site exposes its 20-year archive. your AI searches it. the publisher pays nothing for inference.
 
 an e-commerce site exposes product search. your AI brings your context ("I own a MacBook Pro M3") and finds compatible accessories.
@@ -117,10 +119,10 @@ a news site might expose its archive. a shopping site might expose product searc
 websites can request AI capabilities through a browser API:
 
 ```javascript
-// text generation
+// text generation — choose a provider, or use the user's default
 const response = await window.ai.prompt("summarize this article");
 
-// autonomous tasks with tools
+// autonomous tasks with tools — choose which tools to use
 for await (const event of window.agent.run({
   task: 'find coverage of the 2008 financial crisis'
 })) {
@@ -128,6 +130,21 @@ for await (const event of window.agent.run({
   if (event.type === 'final') console.log('result:', event.output);
 }
 ```
+
+**websites can provide their own tools.**
+
+the [W3C WebMCP proposal](https://github.com/webmachinelearning/webmcp) defines `navigator.modelContext` — a standard way for pages to register JavaScript functions as tools that AI agents can call. Harbor implements this today:
+
+```javascript
+// expose page functionality to the AI (WebMCP)
+navigator.modelContext.addTool({
+  name: 'search_archive',
+  description: 'Search the 20-year news archive',
+  handler: async ({ query }) => searchArchive(query),
+});
+```
+
+the developer chooses what tools to expose. the user's AI calls them. no server needed — the code runs right in the page.
 
 **permissions mediate access.**
 
@@ -141,6 +158,20 @@ just like camera and location access, AI capabilities require permission:
 | `browser:activeTab.read` | read page content |
 
 permissions are per-origin. revocable. auditable. you stay in control.
+
+---
+
+## the standards are converging
+
+this isn't just our idea. there's a real standards effort forming around it.
+
+**[WebMCP](https://github.com/webmachinelearning/webmcp)** is a proposal incubating at the [W3C Web Machine Learning Community Group](https://www.w3.org/community/webmachinelearning/). it defines `navigator.modelContext` — a standard JavaScript API for web pages to register tools that AI agents can call. the proposal was published in August 2025 by engineers at Google and Microsoft. Harbor implements `navigator.modelContext` today.
+
+**[MCP (Model Context Protocol)](https://modelcontextprotocol.io/)** is the open protocol for connecting AI to tools. Harbor connects to any MCP server — search, files, databases, GitHub, or custom servers you build yourself. the developer chooses which ones.
+
+**Chrome's Prompt API** proposes built-in `window.ai` for text generation. Harbor's `window.ai` is compatible — same code works with either.
+
+three standards, one architecture: the browser mediates between websites, AI models, and tools. the developer chooses the components. the user stays in control.
 
 ---
 

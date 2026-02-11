@@ -7,6 +7,7 @@ on:
     paths:
       - 'whitepaper/**'
       - 'demo/**'
+      - 'spec/README.md'
       - 'docs/BUILDING_ON_WEB_AGENTS_API.md'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
@@ -61,6 +62,9 @@ jobs:
           # Copy build-on-API guide for published docs (invite people to build with AI tools)
           mkdir -p _site/docs
           cp docs/BUILDING_ON_WEB_AGENTS_API.md _site/docs/
+          # Copy spec README for published docs
+          mkdir -p _site/spec
+          cp spec/README.md _site/spec/
           # Add .nojekyll to prevent GitHub from processing with Jekyll again
           touch _site/.nojekyll
 

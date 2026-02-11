@@ -6,6 +6,8 @@ The Web Agents API is provided by the **Harbor** ecosystem: two browser extensio
 
 **The core idea: you choose everything.** Choose the LLM (Ollama, llamafile, OpenAI, Anthropic — whatever the user has configured). Choose the MCP servers (Brave Search, GitHub, filesystem, or your own). Choose the integration style (manual tool calls, autonomous agents, or page-registered tools). The API gives you building blocks, not opinions.
 
+**Standards-aligned.** Harbor implements `navigator.modelContext` from the [W3C WebMCP proposal](https://github.com/webmachinelearning/webmcp) — the emerging standard (incubating at the W3C Web Machine Learning CG, published by engineers at Google and Microsoft) for pages to register client-side JavaScript tools that AI agents can call. Same API shape the standards track is converging on, available today.
+
 ---
 
 ## Prerequisites (end users)
@@ -175,6 +177,46 @@ const result = await window.agent.tools.call({
   args: { timezone: 'America/New_York' }
 });
 ```
+
+---
+
+## navigator.modelContext — page tools (WebMCP)
+
+Register your own JavaScript functions as tools the AI can call. This implements the [`navigator.modelContext` API from the W3C WebMCP proposal](https://github.com/webmachinelearning/webmcp) — the same API shape Google and Microsoft are standardizing.
+
+```javascript
+// Register a page tool — runs in page context, no server needed
+navigator.modelContext.addTool({
+  name: 'search_products',
+  description: 'Search the product catalog by query',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Search query' },
+      limit: { type: 'number', description: 'Max results' }
+    },
+    required: ['query']
+  },
+  handler: async ({ query, limit = 10 }) => {
+    return await searchCatalog(query, limit);
+  },
+});
+
+// Page tools appear in agent.tools.list() with serverId: 'page'
+const tools = await window.agent.tools.list();
+// → [...mcpTools, { name: 'page/search_products', serverId: 'page', ... }]
+
+// Call a page tool — executes locally, never leaves the page
+const results = await window.agent.tools.call({
+  tool: 'page/search_products',
+  args: { query: 'red shoes', limit: 5 },
+});
+
+// Remove when no longer needed
+navigator.modelContext.removeTool('search_products');
+```
+
+Page tools run in your page's JavaScript context. They never cross the extension boundary — no network, no MCP server needed. Choose what your page exposes; the user's AI calls it.
 
 ---
 
