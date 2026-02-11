@@ -28,6 +28,46 @@ const SCOPE_DESCRIPTIONS: Record<PermissionScope, { title: string; description: 
     description: 'Call MCP tools to perform actions. Tools may access external services.',
     risk: 'medium',
   },
+  'browser:activeTab.read': {
+    title: 'Read active tab',
+    description: 'Read content and metadata of the current tab.',
+    risk: 'low',
+  },
+  'browser:activeTab.interact': {
+    title: 'Interact with tab',
+    description: 'Click, fill forms, and scroll on the current page.',
+    risk: 'medium',
+  },
+  'browser:activeTab.screenshot': {
+    title: 'Screenshot tab',
+    description: 'Capture a screenshot of the current page.',
+    risk: 'low',
+  },
+  'browser:tabs.create': {
+    title: 'Create tabs',
+    description: 'Open new tabs and load URLs (e.g. for web search).',
+    risk: 'medium',
+  },
+  'browser:tabs.read': {
+    title: 'Read tabs',
+    description: 'Read URLs and titles of open tabs.',
+    risk: 'low',
+  },
+  'browser:navigate': {
+    title: 'Navigate',
+    description: 'Navigate the current tab to a URL.',
+    risk: 'low',
+  },
+  'agents:register': {
+    title: 'Register as agent',
+    description: 'Register this page as an agent that can receive tasks from other agents.',
+    risk: 'low',
+  },
+  'agents:invoke': {
+    title: 'Invoke other agents',
+    description: 'Run multi-agent workflows (e.g. web search and tools in parallel). Required for research apps that coordinate several agents.',
+    risk: 'medium',
+  },
 };
 
 // Icons for each scope
@@ -36,6 +76,14 @@ const SCOPE_ICONS: Record<string, string> = {
   'model:list': '📋',
   'mcp:tools.list': '🔌',
   'mcp:tools.call': '⚡',
+  'browser:activeTab.read': '📖',
+  'browser:activeTab.interact': '👆',
+  'browser:activeTab.screenshot': '📷',
+  'browser:tabs.create': '➕',
+  'browser:tabs.read': '📑',
+  'browser:navigate': '🧭',
+  'agents:register': '📝',
+  'agents:invoke': '🔀',
 };
 
 // =============================================================================

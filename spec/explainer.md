@@ -41,24 +41,25 @@ These APIs provide the web platform primitives needed to build AI agents — app
 
 ### Design Principles
 
-1. **User Consent First**: All capabilities require explicit user permission, scoped per-origin.
-2. **Chrome Compatibility**: The `window.ai` API surface is designed for compatibility with Chrome's built-in Prompt API, enabling graceful fallback.
-3. **Tool Extensibility**: MCP servers provide a plugin architecture for extending AI capabilities with tools (file system, GitHub, databases, etc.).
-4. **Secure by Default**: Tool access is granular; users can allowlist specific tools per-origin.
+1. **Developer Choice**: Developers choose the LLM provider, the MCP servers, the tools, and the integration style. The API provides building blocks, not opinions. Nothing is locked in.
+2. **User Consent First**: All capabilities require explicit user permission, scoped per-origin.
+3. **Chrome Compatibility**: The `window.ai` API surface is designed for compatibility with Chrome's built-in Prompt API, enabling graceful fallback.
+4. **Tool Extensibility**: MCP servers provide an open plugin architecture for extending AI capabilities with tools (file system, GitHub, databases, or anything you build).
+5. **Secure by Default**: Tool access is granular; users can allowlist specific tools per-origin.
 
 ---
 
 ## Goals
 
-1. **Provide AI capabilities to web applications** without requiring developers to manage API keys, model hosting, or authentication.
+1. **Give developers choice over every integration decision** — which LLM, which MCP servers, which tools, which interaction pattern — without requiring API keys, model hosting, or vendor lock-in.
 
-2. **Enable tool-augmented AI interactions** where language models can call external tools (search, file access, APIs) with user consent.
+2. **Enable tool-augmented AI interactions** where language models can call external tools (search, file access, APIs) with user consent. Developers pick the tools; users approve them.
 
 3. **Maintain user privacy and control** by requiring explicit permission grants before any AI operation.
 
-4. **Support both simple and complex use cases** from single-turn text generation to multi-step autonomous agents.
+4. **Support both simple and complex use cases** from single-turn text generation to multi-step autonomous agents. Developers choose the level of autonomy.
 
-5. **Be compatible with Chrome's Prompt API** to enable applications to work with both Chrome's built-in AI and Harbor's backend.
+5. **Be compatible with Chrome's Prompt API** to enable applications to work with both Chrome's built-in AI and any Web Agent API implementation.
 
 ---
 
@@ -1161,6 +1162,32 @@ await window.agent.tools.call({
   }
 });
 ```
+
+---
+
+#### Page Tools (`navigator.modelContext`)
+
+Pages can register JavaScript functions as tools available to the AI via the `navigator.modelContext` polyfill. Page tools run in the page's own JavaScript context and never cross the extension boundary.
+
+**Registration:**
+```javascript
+navigator.modelContext.addTool({
+  name: 'get_cart_items',
+  description: 'Returns current shopping cart contents',
+  inputSchema: { type: 'object', properties: {} },
+  handler: async (args) => {
+    return getCartFromDOM();
+  },
+});
+```
+
+**Listing:** Page tools appear in `agent.tools.list()` alongside MCP tools, with `serverId: 'page'` and a `page/` name prefix.
+
+**Calling:** `agent.tools.call({ tool: 'page/get_cart_items' })` executes the handler in page context. Bare names (without the `page/` prefix) also match if a page tool with that name exists.
+
+**Removal:** `navigator.modelContext.removeTool('get_cart_items')` unregisters the tool.
+
+**Note:** Page tools are not yet available to `agent.run()` (Phase 2).
 
 ---
 

@@ -591,6 +591,7 @@ export async function handleOrchestratePipeline(
 
 /**
  * Handle agents.orchestrate.parallel - Execute agents in parallel.
+ * Accepts either a direct ParallelExecution (Harbor page) or { config, origin } (Web Agents API).
  */
 export async function handleOrchestrateParallel(
   ctx: RequestContext,
@@ -600,7 +601,28 @@ export async function handleOrchestrateParallel(
     return;
   }
 
-  const payload = ctx.payload as ParallelExecution;
+  const raw = ctx.payload as
+    | { config?: { id?: string; tasks?: Array<{ agentId: string; task: string; input?: unknown }>; combineStrategy?: 'array' | 'merge' | 'first' | 'custom' } }
+    | ParallelExecution;
+  // Web Agents API sends { config: { tasks, combineStrategy }, origin }; Harbor pages send execution directly.
+  const execution: ParallelExecution =
+    raw && typeof raw === 'object' && 'config' in raw && raw.config != null
+      ? {
+          id: raw.config.id ?? `exec-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          tasks: Array.isArray(raw.config.tasks) ? raw.config.tasks : [],
+          combineStrategy: raw.config.combineStrategy ?? 'array',
+        }
+      : (raw as ParallelExecution);
+
+  if (!Array.isArray(execution.tasks) || execution.tasks.length === 0) {
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INVALID_REQUEST', message: 'Missing parallel tasks' },
+    });
+    return;
+  }
+
   const agentId = originAgents.get(ctx.origin);
 
   if (!agentId) {
@@ -612,8 +634,17 @@ export async function handleOrchestrateParallel(
     return;
   }
 
-  const result = await executeParallel(payload, agentId, ctx.origin);
-  sender.sendResponse({ id: ctx.id, ok: true, result });
+  const result = await executeParallel(execution, agentId, ctx.origin);
+  // Web Agents API / Margin expect { success, results, combined }; Harbor returns taskResults + combinedOutput.
+  sender.sendResponse({
+    id: ctx.id,
+    ok: true,
+    result: {
+      ...result,
+      results: result.taskResults.map((r) => r.result),
+      combined: result.combinedOutput,
+    },
+  });
 }
 
 /**

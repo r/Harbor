@@ -312,6 +312,143 @@
         }
       });
       
+      // ---- Page Tools (navigator.modelContext) ----
+      await test('Page Tools', 'navigator.modelContext exists', async () => {
+        assert(typeof navigator.modelContext === 'object', 'navigator.modelContext should be defined');
+        assert(typeof navigator.modelContext.addTool === 'function', 'addTool should be a function');
+        assert(typeof navigator.modelContext.removeTool === 'function', 'removeTool should be a function');
+        assert(Array.isArray(navigator.modelContext.tools), 'tools should be an array');
+      });
+
+      await test('Page Tools', 'addTool registers a page tool', async () => {
+        navigator.modelContext.addTool({
+          name: 'test_register',
+          description: 'A test tool for registration',
+          handler: () => ({ registered: true }),
+        });
+        const found = navigator.modelContext.tools.find(t => t.name === 'test_register');
+        assert(found, 'Tool should appear in navigator.modelContext.tools');
+        assert(found.description === 'A test tool for registration', 'Description should match');
+        navigator.modelContext.removeTool('test_register');
+      });
+
+      await test('Page Tools', 'removeTool unregisters a page tool', async () => {
+        navigator.modelContext.addTool({
+          name: 'test_remove',
+          description: 'Will be removed',
+          handler: () => null,
+        });
+        const removed = navigator.modelContext.removeTool('test_remove');
+        assert(removed === true, 'removeTool should return true');
+        const found = navigator.modelContext.tools.find(t => t.name === 'test_remove');
+        assert(!found, 'Tool should not appear after removal');
+        // Removing again should return false
+        const removedAgain = navigator.modelContext.removeTool('test_remove');
+        assert(removedAgain === false, 'removeTool on missing tool should return false');
+      });
+
+      await test('Page Tools', 'page tool appears in agent.tools.list()', async () => {
+        navigator.modelContext.addTool({
+          name: 'list_integration_test',
+          description: 'Tests list integration',
+          handler: () => 'hello',
+        });
+        try {
+          const tools = await window.agent.tools.list();
+          assert(Array.isArray(tools), 'tools.list() should return an array');
+          const found = tools.find(t => t.name === 'page/list_integration_test');
+          assert(found, 'page/list_integration_test should appear in tools list');
+          assert(found.serverId === 'page', 'serverId should be "page"');
+          assert(found.description === 'Tests list integration', 'description should match');
+        } catch (err) {
+          if (err.message && err.message.includes('ermission')) {
+            log('Permission required for tools.list() - page tool registered but cannot verify via list');
+          } else {
+            throw err;
+          }
+        } finally {
+          navigator.modelContext.removeTool('list_integration_test');
+        }
+      });
+
+      await test('Page Tools', 'agent.tools.call() executes page tool handler', async () => {
+        navigator.modelContext.addTool({
+          name: 'call_test',
+          description: 'Returns a known value',
+          handler: (args) => ({ answer: 42, received: args }),
+        });
+        try {
+          const result = await window.agent.tools.call({
+            tool: 'page/call_test',
+            args: { input: 'test' },
+          });
+          assert(result && result.answer === 42, 'Handler should return { answer: 42 }');
+          assert(result.received && result.received.input === 'test', 'Args should be passed through');
+        } finally {
+          navigator.modelContext.removeTool('call_test');
+        }
+      });
+
+      await test('Page Tools', 'agent.tools.call() page tool error produces ERR_TOOL_FAILED', async () => {
+        navigator.modelContext.addTool({
+          name: 'error_test',
+          description: 'Always throws',
+          handler: () => { throw new Error('Intentional test error'); },
+        });
+        try {
+          await window.agent.tools.call({ tool: 'page/error_test', args: {} });
+          assert(false, 'Should have thrown');
+        } catch (err) {
+          assert(err.code === 'ERR_TOOL_FAILED', 'Error code should be ERR_TOOL_FAILED, got: ' + err.code);
+          assert(err.message.includes('Intentional test error'), 'Error message should contain original message');
+        } finally {
+          navigator.modelContext.removeTool('error_test');
+        }
+      });
+
+      await test('Page Tools', 'agent.tools.call() supports bare name for page tools', async () => {
+        navigator.modelContext.addTool({
+          name: 'bare_name_test',
+          description: 'Test bare name resolution',
+          handler: () => ({ bare: true }),
+        });
+        try {
+          const result = await window.agent.tools.call({
+            tool: 'bare_name_test',
+            args: {},
+          });
+          assert(result && result.bare === true, 'Bare name should resolve to page tool');
+        } finally {
+          navigator.modelContext.removeTool('bare_name_test');
+        }
+      });
+
+      await test('Page Tools', 'MCP tools still returned alongside page tools', async () => {
+        navigator.modelContext.addTool({
+          name: 'coexistence_test',
+          description: 'Test MCP coexistence',
+          handler: () => null,
+        });
+        try {
+          const tools = await window.agent.tools.list();
+          assert(Array.isArray(tools), 'tools.list() should return an array');
+          const pageToolFound = tools.find(t => t.name === 'page/coexistence_test');
+          assert(pageToolFound, 'Page tool should be in the list');
+          // Verify there are no duplicate page entries
+          const pageEntries = tools.filter(t => t.serverId === 'page' && t.name === 'page/coexistence_test');
+          assert(pageEntries.length === 1, 'Should have exactly one entry for the page tool');
+          log(`Total tools: ${tools.length} (MCP: ${tools.filter(t => t.serverId !== 'page').length}, Page: ${tools.filter(t => t.serverId === 'page').length})`);
+        } catch (err) {
+          if (err.message && err.message.includes('ermission')) {
+            log('Permission required for tools.list() - skipping coexistence check');
+          } else {
+            throw err;
+          }
+        } finally {
+          navigator.modelContext.removeTool('coexistence_test');
+        }
+      });
+
       // Finish
       updateProgress('Tests complete!');
       await renderSummary();

@@ -190,9 +190,10 @@ export async function executeParallel(
   invokerOrigin: string,
 ): Promise<ParallelResult> {
   const startTime = Date.now();
+  const tasks = Array.isArray(execution.tasks) ? execution.tasks : [];
 
   // Execute all tasks in parallel
-  const taskPromises = execution.tasks.map(async (task) => {
+  const taskPromises = tasks.map(async (task) => {
     const taskStartTime = Date.now();
     
     const request: AgentInvocationRequest = {

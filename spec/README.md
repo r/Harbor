@@ -53,18 +53,23 @@ What if AI worked like other browser capabilities?
 The Web Agent API proposes that **AI should work the same way**:
 
 ```javascript
-// Website requests AI capability
+// Website requests AI capability — developer chooses the integration style
 const session = await window.ai.createTextSession();
 const response = await session.prompt("Summarize this article");
 ```
 
-The website doesn't need to know:
-- Which AI model is being used
-- Whether it's local (Ollama) or cloud (OpenAI)
-- What the user's preferences are
-- How to handle authentication
+The developer **chooses** what to build:
+- Which tools to integrate (search, files, your own custom tools)
+- How much autonomy the AI gets (manual tool calls vs. autonomous `agent.run()`)
+- Which provider/model to request (or defer to the user's default)
+- What page tools to expose via `navigator.modelContext`
 
-The **user** controls all of that through their browser.
+The developer doesn't need to manage:
+- API keys or authentication
+- Model hosting or infrastructure
+- Per-user billing or quotas
+
+The **developer** chooses the architecture. The **user** controls the backend through their browser.
 
 ---
 
@@ -97,25 +102,32 @@ The user experience looks like:
 
 ### For Developers
 
-Two JavaScript APIs are available on web pages:
+You write against two standard JavaScript APIs. **You** choose the model. **You** choose the tools. The API gives you the building blocks; every integration decision is yours.
 
-**`window.ai`** — Text generation (Chrome Prompt API compatible)
+**`window.ai`** — Text generation. Choose a provider, or let the user's default handle it.
 ```javascript
+// Use the user's default model
 const session = await window.ai.createTextSession({
   systemPrompt: "You are a helpful assistant."
 });
-const response = await session.prompt("Hello!");
+
+// Or pick a specific provider/model
+const session = await window.ai.createTextSession({
+  provider: "ollama",
+  model: "llama3"
+});
 ```
 
-**`window.agent`** — Tools and autonomous capabilities
+**`window.agent`** — Tools and autonomous capabilities. Choose which MCP servers and tools to integrate.
 ```javascript
-// Request permissions
+// Choose your tools: request only the scopes you need
 await window.agent.requestPermissions({
   scopes: ['model:tools', 'mcp:tools.list', 'mcp:tools.call'],
+  tools: ['brave-search/search', 'memory/save'],  // pick exactly which tools
   reason: 'Research assistant needs search access'
 });
 
-// Run an autonomous task
+// Choose to run an autonomous agent — or call tools manually, your call
 for await (const event of window.agent.run({
   task: 'Find recent news about AI safety'
 })) {
@@ -124,28 +136,47 @@ for await (const event of window.agent.run({
 }
 ```
 
+**`navigator.modelContext`** — Register your own tools. Choose what capabilities your page provides to the AI.
+```javascript
+navigator.modelContext.addTool({
+  name: 'search_products',
+  description: 'Search the product catalog',
+  handler: async (args) => searchCatalog(args.query),
+});
+```
+
 ### For AI/Tool Providers
 
-The Web Agent API uses **[MCP (Model Context Protocol)](https://modelcontextprotocol.io/)** for tool extensibility:
+The Web Agent API uses **[MCP (Model Context Protocol)](https://modelcontextprotocol.io/)** for tool extensibility. There is no walled garden — any MCP server works, and developers choose which ones to integrate.
 
 ```
-User installs MCP servers → Browser connects them → Websites can use their tools
+Developer chooses tools → User installs MCP servers → Browser connects them → Website uses them
 ```
 
-Examples of MCP servers:
-- **File system** — Read/write local files
-- **GitHub** — Manage repos, issues, PRs
+The MCP ecosystem is open. Pick the servers that fit your use case:
 - **Brave Search** — Web search
+- **GitHub** — Manage repos, issues, PRs
+- **File system** — Read/write local files
 - **Memory** — Persistent user memory
 - **Database** — Query databases
+- **Your own** — Build a custom MCP server for your domain
 
-Users control which tools are available to which websites.
+Developers select which tools their app uses. Users control which tools they allow.
 
 ---
 
 ## Key Principles
 
-### 1. User Consent Required
+### 1. Developer Choice
+
+Developers are not locked into any model, provider, or tool ecosystem:
+
+- **Choose your LLM** — Ollama, llamafile, OpenAI, Anthropic, or any provider the user has configured. Specify one explicitly or use the default.
+- **Choose your MCP servers** — Brave Search, GitHub, filesystem, databases, or build your own. Pick the tools that fit your application.
+- **Choose your integration style** — Call tools manually with `agent.tools.call()`, let the LLM drive with `agent.run()`, or register page tools via `navigator.modelContext`. Mix and match.
+- **Choose your scope** — Request only the permissions your app needs. Nothing more.
+
+### 2. User Consent Required
 
 Every AI operation requires explicit user permission:
 
@@ -157,15 +188,15 @@ Every AI operation requires explicit user permission:
 | `mcp:tools.call` | Execute tools |
 | `browser:activeTab.read` | Read page content |
 
-### 2. Origin Isolation
+### 3. Origin Isolation
 
 Permissions are scoped per-origin. `example.com` permissions don't affect `other.com`.
 
-### 3. Local-First Privacy
+### 4. Local-First Privacy
 
 Users can run entirely local AI (Ollama, llamafile) — data never leaves their machine.
 
-### 4. Chrome Prompt API Compatible
+### 5. Chrome Prompt API Compatible
 
 The `window.ai` surface is designed to work with Chrome's built-in AI:
 
@@ -176,9 +207,9 @@ const session = await window.ai.languageModel.create({
 });
 ```
 
-### 5. Extensible via MCP
+### 6. Extensible via MCP
 
-Any MCP server can be connected. The ecosystem is open.
+Any MCP server can be connected. The ecosystem is open — not gated by an app store or approval process.
 
 ---
 

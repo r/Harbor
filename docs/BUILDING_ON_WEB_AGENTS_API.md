@@ -2,7 +2,9 @@
 
 **Use this document in another project** when you want to build on the Web Agents API. Copy it into your repo (e.g. `docs/` or `.cursor/`) and point your AI assistant at it so it has clear examples, API surface, and capabilities.
 
-The Web Agents API is provided by the **Harbor** ecosystem: two browser extensions inject `window.ai` and `window.agent` into web pages. Your app runs in the browser and calls these APIs; you do **not** need to clone or build Harbor itself. For the full vision and proposal, see the [whitepaper (PDF)](../whitepaper.pdf).
+The Web Agents API is provided by the **Harbor** ecosystem: two browser extensions inject `window.ai`, `window.agent`, and `navigator.modelContext` into web pages. Your app runs in the browser and calls these APIs; you do **not** need to clone or build Harbor itself. For the full vision and proposal, see the [whitepaper (PDF)](../whitepaper.pdf).
+
+**The core idea: you choose everything.** Choose the LLM (Ollama, llamafile, OpenAI, Anthropic — whatever the user has configured). Choose the MCP servers (Brave Search, GitHub, filesystem, or your own). Choose the integration style (manual tool calls, autonomous agents, or page-registered tools). The API gives you building blocks, not opinions.
 
 ---
 
@@ -17,17 +19,18 @@ Both must be installed (e.g. load unpacked from Harbor’s `extension/dist-firef
 
 ## What the API can do
 
-| Capability | APIs | Typical use |
-|------------|------|-------------|
-| **Text generation** | `window.ai.createTextSession()`, `session.prompt()`, `session.promptStreaming()` | Chat, completions, summarization |
-| **List/call MCP tools** | `agent.tools.list()`, `agent.tools.call()` | Use tools (e.g. time, search, files) from connected MCP servers |
-| **Autonomous agent** | `agent.run({ task })` | Let the model decide when to call tools to complete a task |
-| **Sessions** | `agent.sessions.create()`, `session.prompt()`, `session.callTool()` | Bounded sessions with specific tools and limits |
-| **Browser: read active tab** | `agent.browser.activeTab.readability()` | Summarize or analyze the current page |
-| **Browser: interact** | `agent.browser.activeTab.click()`, `fill()`, `scroll()`, `screenshot()` | Automate the current tab |
-| **Browser: tabs & fetch** | `agent.browser.navigate()`, `tabs.list/create/close`, `agent.browser.fetch()` | Multi-tab and CORS-bypass fetch |
-| **Multi-agent** | `agent.agents.register()`, `discover()`, `invoke()`, `orchestrate.*` | Register as an agent, discover and call others, pipelines/parallel/route |
-| **BYOC (site MCP)** | `agent.mcp.discover()`, `agent.mcp.register()`, `agent.chat.open()` | Let sites declare MCP servers and open a chat UI |
+| Capability | APIs | You choose... |
+|------------|------|---------------|
+| **Text generation** | `window.ai.createTextSession()`, `session.prompt()`, `session.promptStreaming()` | The LLM provider and model, or use the user's default |
+| **List/call MCP tools** | `agent.tools.list()`, `agent.tools.call()` | Which MCP servers and tools to integrate (search, files, your own) |
+| **Page tools** | `navigator.modelContext.addTool()` | What JS functions your page exposes as tools to the AI |
+| **Autonomous agent** | `agent.run({ task })` | Whether the LLM drives tool calls, or you call tools manually |
+| **Sessions** | `agent.sessions.create()`, `session.prompt()`, `session.callTool()` | Scoped sessions with specific tools, limits, and providers |
+| **Browser: read active tab** | `agent.browser.activeTab.readability()` | How to analyze the current page |
+| **Browser: interact** | `agent.browser.activeTab.click()`, `fill()`, `scroll()`, `screenshot()` | How the AI interacts with the page |
+| **Browser: tabs & fetch** | `agent.browser.navigate()`, `tabs.list/create/close`, `agent.browser.fetch()` | Multi-tab workflows and CORS-bypass fetch |
+| **Multi-agent** | `agent.agents.register()`, `discover()`, `invoke()`, `orchestrate.*` | Agent topology: pipelines, parallel, routing |
+| **BYOC (site MCP)** | `agent.mcp.discover()`, `agent.mcp.register()`, `agent.chat.open()` | How your site provides tools to the user's AI |
 
 All of the above are gated by **permissions** (user must grant per origin) and some by **feature flags** in the extension (e.g. `toolCalling`, `browserControl`, `multiAgent`).
 

@@ -15,7 +15,12 @@ export type PermissionScope =
   | 'mcp:tools.call'            // Execute tools
   | 'browser:activeTab.read'    // Read page content
   | 'browser:activeTab.interact'// Click, fill, scroll
-  | 'browser:activeTab.screenshot'; // Take screenshots
+  | 'browser:activeTab.screenshot' // Take screenshots
+  | 'browser:tabs.create'       // Create and control new tabs
+  | 'browser:tabs.read'         // Read tab URLs/titles
+  | 'browser:navigate'          // Navigate current tab
+  | 'agents:register'           // Register this page as an agent
+  | 'agents:invoke';            // Invoke other agents (required for multi-agent orchestration)
 
 export type PermissionGrantType =
   | 'granted-once'     // Valid for 10 minutes, tab-scoped
@@ -91,6 +96,13 @@ export interface ToolDescriptor {
   name: string;
   description?: string;
   inputSchema?: unknown;
+}
+
+export interface PageToolDescriptor {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  handler: (args: Record<string, unknown>) => unknown | Promise<unknown>;
 }
 
 export interface ToolCallOptions {

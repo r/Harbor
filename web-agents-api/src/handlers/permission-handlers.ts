@@ -118,7 +118,19 @@ interface PendingPrompt {
 const pendingPermissionPrompts = new Map<string, PendingPrompt>();
 /** Tracks which origin has an open prompt so we update it instead of opening a second one. */
 const openPromptByOrigin = new Map<string, string>(); // origin -> promptId
+/** Serializes openPermissionPrompt per origin so concurrent requests see the first prompt. */
+const openPromptLockByOrigin = new Map<string, Promise<void>>();
 let promptIdCounter = 0;
+
+/** Normalize origin so "https://example.com/" and "https://example.com" share one prompt. */
+function normalizeOrigin(origin: string): string {
+  try {
+    const u = new URL(origin);
+    return u.origin;
+  } catch {
+    return origin;
+  }
+}
 
 function generatePromptId(): string {
   return `prompt-${Date.now()}-${++promptIdCounter}`;
@@ -128,7 +140,7 @@ export function resolvePromptClosed(windowId: number): void {
   for (const [promptId, pending] of pendingPermissionPrompts.entries()) {
     if (pending.windowId === windowId) {
       pendingPermissionPrompts.delete(promptId);
-      openPromptByOrigin.delete(pending.origin);
+      openPromptByOrigin.delete(normalizeOrigin(pending.origin));
       const response = { promptId, granted: false };
       for (const resolve of pending.resolvers) resolve(response);
       return;
@@ -148,7 +160,7 @@ export function handlePermissionPromptResponse(response: PermissionPromptRespons
   }
 
   pendingPermissionPrompts.delete(promptId);
-  openPromptByOrigin.delete(pending.origin);
+  openPromptByOrigin.delete(normalizeOrigin(pending.origin));
   if (pending.windowId) {
     chrome.windows.remove(pending.windowId);
   }
@@ -186,104 +198,118 @@ async function openPermissionPrompt(options: {
   reason?: string;
   tools?: string[];
 }): Promise<PermissionPromptResponse> {
-  const existingPromptId = openPromptByOrigin.get(options.origin);
-  if (existingPromptId) {
-    const pending = pendingPermissionPrompts.get(existingPromptId);
-    if (pending) {
-      // Same site already has a prompt (window may or may not exist yet). Merge and reuse so we never show a second popup for this origin.
-      const mergedScopes = [...new Set([...pending.currentScopes, ...options.scopes])];
-      const mergedTools = [...new Set([...pending.currentTools, ...(options.tools || [])])];
-      const mergedReason = options.reason || pending.currentReason;
-      pending.currentScopes = mergedScopes;
-      pending.currentTools = mergedTools;
-      pending.currentReason = mergedReason;
+  const originKey = normalizeOrigin(options.origin);
 
-      if (pending.windowId != null) {
-        const newUrl = buildPromptUrl({
-          promptId: existingPromptId,
-          origin: options.origin,
-          scopes: mergedScopes,
-          reason: mergedReason,
-          tools: mergedTools,
-        });
-        try {
-          const win = await chrome.windows.get(pending.windowId, { populate: true });
-          const tab = win.tabs?.[0];
-          if (tab?.id) {
-            await chrome.tabs.update(tab.id, { url: newUrl });
-          }
-        } catch {
-          // Window may have been closed; resolvers will be resolved when we detect it
-        }
-      }
-      // Attach this caller to the existing prompt (whether window exists yet or not)
-      return new Promise((resolve) => {
-        pending.resolvers.push(resolve);
-      });
-    }
-    // Stale entry (promptId in map but no pending); remove and create new prompt below
-    openPromptByOrigin.delete(options.origin);
-  }
-
-  const promptId = generatePromptId();
-  const pending: PendingPrompt = {
-    resolvers: [],
-    origin: options.origin,
-    currentScopes: options.scopes,
-    currentTools: options.tools || [],
-    currentReason: options.reason,
-  };
-  pendingPermissionPrompts.set(promptId, pending);
-  openPromptByOrigin.set(options.origin, promptId);
-
-  return new Promise((resolve) => {
-    pending.resolvers.push(resolve);
-
-    // Use current merged state (may have been updated by a concurrent request for same origin)
-    const url = buildPromptUrl({
-      promptId,
-      origin: options.origin,
-      scopes: pending.currentScopes,
-      reason: pending.currentReason,
-      tools: pending.currentTools,
-    });
-
-    chrome.windows.create(
-      {
-        url,
-        type: 'popup',
-        width: 480,
-        height: 640,
-      },
-      (createdWindow) => {
-        if (chrome.runtime.lastError || !createdWindow?.id) {
-          pendingPermissionPrompts.delete(promptId);
-          openPromptByOrigin.delete(options.origin);
-          resolve({ promptId, granted: false });
-          return;
-        }
-
-        const p = pendingPermissionPrompts.get(promptId);
-        if (p) {
-          p.windowId = createdWindow.id;
-          // In case more requests merged while we were creating, refresh the tab to show latest
-          const mergedUrl = buildPromptUrl({
-            promptId,
-            origin: p.origin,
-            scopes: p.currentScopes,
-            reason: p.currentReason,
-            tools: p.currentTools,
-          });
-          chrome.windows.get(createdWindow.id, { populate: true }).then((win) => {
-            const tab = win.tabs?.[0];
-            if (tab?.id && tab.url !== mergedUrl) {
-              chrome.tabs.update(tab.id, { url: mergedUrl });
-            }
-          }).catch(() => {});
-        }
-      },
-    );
+  // Serialize per origin so a concurrent request for the same site waits and then sees this prompt
+  const prevLock = openPromptLockByOrigin.get(originKey) ?? Promise.resolve();
+  let releaseLock: () => void;
+  const myLock = new Promise<void>((r) => {
+    releaseLock = r;
   });
+  openPromptLockByOrigin.set(originKey, prevLock.then(() => myLock));
+  await prevLock;
+
+  try {
+    const existingPromptId = openPromptByOrigin.get(originKey);
+    if (existingPromptId) {
+      const pending = pendingPermissionPrompts.get(existingPromptId);
+      if (pending) {
+        // Same site already has a prompt (window may or may not exist yet). Merge and reuse so we never show a second popup for this origin.
+        const mergedScopes = [...new Set([...pending.currentScopes, ...options.scopes])];
+        const mergedTools = [...new Set([...pending.currentTools, ...(options.tools || [])])];
+        const mergedReason = options.reason || pending.currentReason;
+        pending.currentScopes = mergedScopes;
+        pending.currentTools = mergedTools;
+        pending.currentReason = mergedReason;
+
+        if (pending.windowId != null) {
+          const newUrl = buildPromptUrl({
+            promptId: existingPromptId,
+            origin: options.origin,
+            scopes: mergedScopes,
+            reason: mergedReason,
+            tools: mergedTools,
+          });
+          try {
+            const win = await chrome.windows.get(pending.windowId, { populate: true });
+            const tab = win.tabs?.[0];
+            if (tab?.id) {
+              await chrome.tabs.update(tab.id, { url: newUrl });
+            }
+          } catch {
+            // Window may have been closed; resolvers will be resolved when we detect it
+          }
+        }
+        releaseLock!();
+        return new Promise((resolve) => {
+          pending.resolvers.push(resolve);
+        });
+      }
+      openPromptByOrigin.delete(originKey);
+    }
+
+    const promptId = generatePromptId();
+    const pending: PendingPrompt = {
+      resolvers: [],
+      origin: options.origin,
+      currentScopes: options.scopes,
+      currentTools: options.tools || [],
+      currentReason: options.reason,
+    };
+    pendingPermissionPrompts.set(promptId, pending);
+    openPromptByOrigin.set(originKey, promptId);
+    releaseLock!();
+
+    return new Promise((resolve) => {
+      pending.resolvers.push(resolve);
+
+      const url = buildPromptUrl({
+        promptId,
+        origin: options.origin,
+        scopes: pending.currentScopes,
+        reason: pending.currentReason,
+        tools: pending.currentTools,
+      });
+
+      chrome.windows.create(
+        {
+          url,
+          type: 'popup',
+          width: 480,
+          height: 640,
+        },
+        (createdWindow) => {
+          if (chrome.runtime.lastError || !createdWindow?.id) {
+            pendingPermissionPrompts.delete(promptId);
+            openPromptByOrigin.delete(originKey);
+            resolve({ promptId, granted: false });
+            return;
+          }
+
+          const p = pendingPermissionPrompts.get(promptId);
+          if (p) {
+            p.windowId = createdWindow.id;
+            const mergedUrl = buildPromptUrl({
+              promptId,
+              origin: p.origin,
+              scopes: p.currentScopes,
+              reason: p.currentReason,
+              tools: p.currentTools,
+            });
+            chrome.windows.get(createdWindow.id, { populate: true }).then((win) => {
+              const tab = win.tabs?.[0];
+              if (tab?.id && tab.url !== mergedUrl) {
+                chrome.tabs.update(tab.id, { url: mergedUrl });
+              }
+            }).catch(() => {});
+          }
+        },
+      );
+    });
+  } catch (e) {
+    releaseLock!();
+    throw e;
+  }
 }
 
 export async function showPermissionPrompt(
@@ -406,6 +432,8 @@ export async function showPermissionPrompt(
 // Message Handlers
 // =============================================================================
 
+const MULTI_AGENT_SCOPES: PermissionScope[] = ['agents:register', 'agents:invoke'];
+
 export async function handleRequestPermissions(ctx: RequestContext): HandlerResponse {
   const { scopes, reason, tools } = ctx.payload as {
     scopes: PermissionScope[];
@@ -413,7 +441,16 @@ export async function handleRequestPermissions(ctx: RequestContext): HandlerResp
     tools?: string[];
   };
 
-  const result = await showPermissionPrompt(ctx.origin, scopes, reason, tools);
+  // Ensure agent scopes are always included when the app requests model or tools (multi-agent/research apps need them)
+  const hasResearchScopes = scopes.some(
+    (s) => s === 'model:prompt' || s === 'mcp:tools.call' || s === 'browser:tabs.create'
+  );
+  const mergedScopes =
+    hasResearchScopes && Array.isArray(scopes)
+      ? [...new Set([...scopes, ...MULTI_AGENT_SCOPES])] as PermissionScope[]
+      : scopes;
+
+  const result = await showPermissionPrompt(ctx.origin, mergedScopes, reason, tools);
   return successResponse(ctx.id, result);
 }
 

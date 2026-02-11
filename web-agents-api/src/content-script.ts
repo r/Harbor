@@ -41,7 +41,11 @@ function getBackgroundPort(): RuntimePort {
     backgroundPort.onMessage.addListener((message: TransportResponse | TransportStreamEvent) => {
       if ('ok' in message) {
         // Regular response
-        console.log('[Web Agents API:ContentScript] Regular response:', message.id, 'ok:', message.ok);
+        if (!message.ok && message.error) {
+          console.warn('[Web Agents API:ContentScript] Response failed:', message.id, message.error);
+        } else {
+          console.log('[Web Agents API:ContentScript] Regular response:', message.id, 'ok:', message.ok);
+        }
         const pending = pendingRequests.get(message.id);
         if (pending) {
           pendingRequests.delete(message.id);
@@ -195,6 +199,23 @@ async function injectAgentsAPI(): Promise<void> {
   document.addEventListener('readystatechange', retry);
   window.addEventListener('DOMContentLoaded', retry);
 }
+
+/** Update the flags JSON element in the page so the injected script sees new flags without refresh. */
+async function updatePageFlags(): Promise<void> {
+  const flags = await getFeatureFlags();
+  const el = document.getElementById('web-agents-api-flags');
+  if (el) {
+    el.textContent = JSON.stringify(flags);
+  }
+}
+
+// When user toggles flags in the sidebar, update the page so the injected API sees them without refresh.
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') return;
+  if (changes['web-agents-api-flags']) {
+    updatePageFlags();
+  }
+});
 
 /**
  * Listen for messages from the page.

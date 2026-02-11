@@ -86,6 +86,11 @@ type PermissionScope =
   | 'browser:activeTab.read'
   | 'browser:activeTab.interact'
   | 'browser:activeTab.screenshot'
+  | 'browser:tabs.create'
+  | 'browser:tabs.read'
+  | 'browser:navigate'
+  | 'agents:register'
+  | 'agents:invoke'
   | 'chat:open'
   | 'web:fetch';
 
@@ -131,6 +136,16 @@ interface ToolDescriptor {
   inputSchema?: Record<string, unknown>;
   serverId?: string;
 }
+
+interface PageToolDescriptor {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  handler: (args: Record<string, unknown>) => unknown | Promise<unknown>;
+}
+
+/** Registry of page-provided tools, keyed by name. */
+const pageTools = new Map<string, PageToolDescriptor>();
 
 // Session types
 interface SessionCapabilities {
@@ -1241,10 +1256,52 @@ const agentApi = Object.freeze({
   tools: FEATURE_FLAGS.toolAccess
     ? Object.freeze({
         async list(): Promise<ToolDescriptor[]> {
-          return sendRequest<ToolDescriptor[]>('agent.tools.list');
+          // 1. Fetch MCP tools from background/Harbor
+          const mcpTools = await sendRequest<ToolDescriptor[]>('agent.tools.list');
+
+          // 2. Build page tool descriptors (serverId: 'page', prefixed name)
+          const pageToolDescriptors: ToolDescriptor[] = Array.from(pageTools.values()).map(pt => ({
+            name: `page/${pt.name}`,
+            description: pt.description,
+            inputSchema: pt.inputSchema,
+            serverId: 'page',
+          }));
+
+          // 3. Merge: MCP tools first, page tools appended
+          return [...mcpTools, ...pageToolDescriptors];
         },
 
         async call(options: { tool: string; args?: Record<string, unknown> }): Promise<unknown> {
+          const { tool, args = {} } = options;
+
+          // Check if this is a page tool (serverId 'page' prefix or bare name match)
+          let pageToolName: string | null = null;
+          if (tool.startsWith('page/')) {
+            pageToolName = tool.slice('page/'.length);
+          } else if (pageTools.has(tool)) {
+            // Bare name also works if it matches a registered page tool
+            pageToolName = tool;
+          }
+
+          if (pageToolName) {
+            const descriptor = pageTools.get(pageToolName);
+            if (!descriptor) {
+              const err = new Error(`Page tool "${pageToolName}" not found`);
+              (err as Error & { code?: string }).code = 'ERR_TOOL_NOT_FOUND';
+              throw err;
+            }
+
+            // Execute the handler in page context
+            try {
+              return await Promise.resolve(descriptor.handler(args));
+            } catch (e) {
+              const err = new Error(e instanceof Error ? e.message : 'Page tool failed');
+              (err as Error & { code?: string }).code = 'ERR_TOOL_FAILED';
+              throw err;
+            }
+          }
+
+          // Not a page tool — forward to background (MCP) as before
           return sendRequest('agent.tools.call', options);
         },
       })
@@ -1486,27 +1543,124 @@ const agentApi = Object.freeze({
     },
   }),
 
-  // Multi-agent API (Extension 3)
-  agents: FEATURE_FLAGS.multiAgent
-    ? createMultiAgentApi()
-    : {
-        register: featureDisabledAsync('multiAgent'),
-        unregister: featureDisabledAsync('multiAgent'),
-        getInfo: featureDisabledAsync('multiAgent'),
-        discover: featureDisabledAsync('multiAgent'),
-        list: featureDisabledAsync('multiAgent'),
-        invoke: featureDisabledAsync('multiAgent'),
-        send: featureDisabledAsync('multiAgent'),
-        onMessage: featureDisabled('multiAgent'),
-        onInvoke: featureDisabled('multiAgent'),
-        subscribe: featureDisabledAsync('multiAgent'),
-        unsubscribe: featureDisabledAsync('multiAgent'),
-        orchestrate: {
-          pipeline: featureDisabledAsync('multiAgent'),
-          parallel: featureDisabledAsync('multiAgent'),
-          route: featureDisabledAsync('multiAgent'),
-        },
+  // Multi-agent API (Extension 3) — re-reads feature flags at call time so toggling in the sidebar takes effect without refresh.
+  agents: (() => {
+    const real = createMultiAgentApi();
+    const check = () => {
+      if (!getFeatureFlags().multiAgent) {
+        const err = new Error('Feature "multiAgent" is not enabled. Enable it in Web Agents API settings.');
+        (err as Error & { code?: string }).code = 'ERR_FEATURE_DISABLED';
+        throw err;
+      }
+    };
+    const checkAsync = async () => {
+      if (!getFeatureFlags().multiAgent) {
+        const err = new Error('Feature "multiAgent" is not enabled. Enable it in Web Agents API settings.');
+        (err as Error & { code?: string }).code = 'ERR_FEATURE_DISABLED';
+        throw err;
+      }
+    };
+    return Object.freeze({
+      register: async (options: AgentRegisterOptions) => {
+        await checkAsync();
+        return real.register(options);
       },
+      unregister: async (agentId?: string) => {
+        await checkAsync();
+        return real.unregister(agentId);
+      },
+      getInfo: async (agentId: string) => {
+        await checkAsync();
+        return real.getInfo(agentId);
+      },
+      discover: async (query?: AgentDiscoveryQuery) => {
+        await checkAsync();
+        return real.discover(query);
+      },
+      list: async () => {
+        await checkAsync();
+        return real.list();
+      },
+      invoke: async (agentId: string, request: AgentInvocationRequest) => {
+        await checkAsync();
+        return real.invoke(agentId, request);
+      },
+      send: async (agentId: string, payload: unknown) => {
+        await checkAsync();
+        return real.send(agentId, payload);
+      },
+      onMessage: (handler: (message: AgentMessage) => void) => {
+        check();
+        return real.onMessage(handler);
+      },
+      onInvoke: (handler: (request: AgentInvocationRequest & { from: string }) => Promise<unknown>) => {
+        check();
+        return real.onInvoke(handler);
+      },
+      subscribe: async (eventType: string, handler: (event: { type: string; data: unknown; source: string }) => void) => {
+        await checkAsync();
+        return real.subscribe(eventType, handler);
+      },
+      unsubscribe: async (eventType: string, handler?: (event: { type: string; data: unknown; source: string }) => void) => {
+        await checkAsync();
+        return real.unsubscribe(eventType, handler);
+      },
+      broadcast: async (eventType: string, data: unknown) => {
+        await checkAsync();
+        return real.broadcast(eventType, data);
+      },
+      orchestrate: Object.freeze({
+        pipeline: async (config: { steps: PipelineStep[] }, initialInput: unknown) => {
+          await checkAsync();
+          return real.orchestrate.pipeline(config, initialInput);
+        },
+        parallel: async (config: { tasks: ParallelTask[]; combineStrategy?: 'array' | 'merge' | 'first' }) => {
+          await checkAsync();
+          return real.orchestrate.parallel(config);
+        },
+        route: async (
+          config: { routes: Array<{ condition: string; agentId: string }>; defaultAgentId?: string },
+          input: unknown,
+          task: string
+        ) => {
+          await checkAsync();
+          return real.orchestrate.route(config, input, task);
+        },
+      }),
+    });
+  })(),
+});
+
+// =============================================================================
+// navigator.modelContext Polyfill (Web MCP)
+// =============================================================================
+
+/**
+ * navigator.modelContext — Web MCP compatibility surface.
+ *
+ * Pages call:
+ *   navigator.modelContext.addTool({ name, description, inputSchema, handler })
+ *   navigator.modelContext.removeTool(name)
+ *   navigator.modelContext.tools  // current snapshot
+ */
+const modelContext = Object.freeze({
+  addTool(descriptor: PageToolDescriptor): void {
+    if (!descriptor.name || typeof descriptor.handler !== 'function') {
+      throw new TypeError('addTool requires { name: string, handler: function }');
+    }
+    if (pageTools.has(descriptor.name)) {
+      console.warn(`[Web Agents API] page tool "${descriptor.name}" replaced`);
+    }
+    pageTools.set(descriptor.name, descriptor);
+  },
+
+  removeTool(name: string): boolean {
+    return pageTools.delete(name);
+  },
+
+  get tools(): PageToolDescriptor[] {
+    return Array.from(pageTools.values());
+  },
 });
 
 // =============================================================================
@@ -1558,6 +1712,21 @@ try {
   const existingAgent = (window as { agent?: unknown }).agent;
   if (existingAgent === undefined) {
     safeDefineProperty('agent', agentApi);
+  }
+
+  // Register navigator.modelContext (Web MCP polyfill)
+  try {
+    const existingModelContext = Object.getOwnPropertyDescriptor(navigator, 'modelContext');
+    if (!existingModelContext) {
+      Object.defineProperty(navigator, 'modelContext', {
+        value: modelContext,
+        writable: false,
+        enumerable: true,
+        configurable: false,
+      });
+    }
+  } catch (e) {
+    console.debug('[Web Agents API] Could not define navigator.modelContext:', e);
   }
 
   // Dispatch ready event with feature flags info

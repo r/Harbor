@@ -497,6 +497,82 @@ try {
 
 ---
 
+### Page Tools (Web MCP)
+
+Pages can register JavaScript functions as "page tools" that appear alongside MCP tools. Page tools execute in the page context — they never leave the page.
+
+**Registration API:** `navigator.modelContext`
+
+#### navigator.modelContext.addTool(descriptor)
+
+Register a page tool.
+
+```javascript
+navigator.modelContext.addTool({
+  name: 'get_cart_items',
+  description: 'Returns the current shopping cart contents',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      includeMetadata: { type: 'boolean', description: 'Include product metadata' }
+    }
+  },
+  handler: async (args) => {
+    const items = document.querySelectorAll('.cart-item');
+    return Array.from(items).map(el => ({
+      name: el.querySelector('.name')?.textContent,
+      price: el.querySelector('.price')?.textContent,
+    }));
+  },
+});
+```
+
+#### navigator.modelContext.removeTool(name)
+
+Unregister a page tool. Returns `true` if the tool was found and removed.
+
+```javascript
+navigator.modelContext.removeTool('get_cart_items');
+```
+
+#### navigator.modelContext.tools
+
+Read-only snapshot of all registered page tools.
+
+```javascript
+const tools = navigator.modelContext.tools;
+console.log(`${tools.length} page tools registered`);
+```
+
+#### Page tools in agent.tools.list()
+
+Page tools appear in `agent.tools.list()` with `serverId: 'page'` and a `page/` name prefix:
+
+```javascript
+const tools = await window.agent.tools.list();
+// → [...mcpTools, { name: 'page/get_cart_items', serverId: 'page', description: '...' }]
+```
+
+#### Calling page tools
+
+```javascript
+// Using the prefixed name (preferred)
+const cart = await window.agent.tools.call({
+  tool: 'page/get_cart_items',
+  args: { includeMetadata: true },
+});
+
+// Bare name also works if it matches a registered page tool
+const cart2 = await window.agent.tools.call({
+  tool: 'get_cart_items',
+  args: {},
+});
+```
+
+Page tool errors produce `ERR_TOOL_FAILED` errors, matching the behavior of MCP tool errors.
+
+---
+
 ### Autonomous Agent
 
 Run an AI agent that can use tools to accomplish tasks.
