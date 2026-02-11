@@ -231,19 +231,4 @@ these aren't hypotheticals. they're [working demos](demo/).
 
 ---
 
-## changelog
-
-**February 2026**
-- added `navigator.modelContext` — Harbor now implements page tools from the [W3C WebMCP proposal](https://github.com/webmachinelearning/webmcp). pages register JavaScript functions as tools; the user's AI calls them. no server needed.
-- added "the standards are converging" section connecting Harbor to WebMCP (W3C), MCP (Anthropic), and Chrome's Prompt API.
-- emphasized developer choice throughout: choose the LLM, choose the MCP servers, choose the tools, choose the integration style.
-- updated [demos](demo/) and [starter guide]({{ site.baseurl }}/docs/BUILDING_ON_WEB_AGENTS_API.md) with WebMCP examples and standards context.
-
-**January 2026**
-- published whitepaper and [video walkthrough](https://youtu.be/9B_c8Ji4yGA).
-- launched working demos: chat, page summarizer, email chat, research agent, multi-agent pipeline, bring-your-own chatbot.
-- released [starter guide]({{ site.baseurl }}/docs/BUILDING_ON_WEB_AGENTS_API.md) for building on the API with AI coding tools.
-
----
-
 *context is all you need. let's make sure it stays yours.*
