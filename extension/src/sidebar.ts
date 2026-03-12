@@ -115,6 +115,7 @@ const llmStatusText = document.getElementById('llm-status-text') as HTMLSpanElem
 const configuredModelsEl = document.getElementById('configured-models') as HTMLDivElement;
 const availableModelsSelect = document.getElementById('available-models') as HTMLSelectElement;
 const addModelBtn = document.getElementById('add-model-btn') as HTMLButtonElement;
+const refreshModelsBtn = document.getElementById('refresh-models-btn') as HTMLButtonElement;
 const providersCountEl = document.getElementById('providers-count') as HTMLSpanElement;
 const detectedProvidersEl = document.getElementById('detected-providers') as HTMLDivElement;
 const apiKeyConfig = document.getElementById('api-key-config') as HTMLDivElement;
@@ -1146,6 +1147,52 @@ function renderProviders(providers: ProviderInfo[]): void {
 availableModelsSelect.addEventListener('change', () => {
   addModelBtn.disabled = !availableModelsSelect.value;
 });
+
+// Auto-refresh available models when dropdown is focused
+let lastModelsRefresh = 0;
+const MODELS_REFRESH_COOLDOWN = 5_000;
+
+availableModelsSelect.addEventListener('focus', async () => {
+  const now = Date.now();
+  if (now - lastModelsRefresh < MODELS_REFRESH_COOLDOWN) return;
+  lastModelsRefresh = now;
+  await refreshAvailableModels();
+});
+
+// Refresh button for available models
+refreshModelsBtn.addEventListener('click', async () => {
+  refreshModelsBtn.disabled = true;
+  refreshModelsBtn.textContent = '...';
+  try {
+    await refreshAvailableModels();
+    showToast('Models refreshed', 'success');
+  } finally {
+    refreshModelsBtn.disabled = false;
+    refreshModelsBtn.textContent = '↻';
+  }
+});
+
+async function refreshAvailableModels(): Promise<void> {
+  try {
+    const [modelsRes, configuredModelsRes] = await Promise.all([
+      browserAPI.runtime.sendMessage({ type: 'llm_list_models' }) as Promise<{
+        ok: boolean;
+        models?: ModelInfo[];
+      }>,
+      browserAPI.runtime.sendMessage({ type: 'llm_list_configured_models' }) as Promise<{
+        ok: boolean;
+        models?: ConfiguredModel[];
+      }>,
+    ]);
+
+    const models = modelsRes.ok ? (modelsRes.models || []) : [];
+    const configured = configuredModelsRes.ok ? (configuredModelsRes.models || []) : [];
+    cachedAvailableModels = models;
+    renderAvailableModelsDropdown(models, configured);
+  } catch (err) {
+    console.error('[Sidebar] Failed to refresh available models:', err);
+  }
+}
 
 // Add model button
 addModelBtn.addEventListener('click', async () => {
