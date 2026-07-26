@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title description">
+  <title id="title">Harbor inverse mark</title>
+  <desc id="description">Fog-colored harbor gate with a bright beacon light for dark surfaces.</desc>
+  <path
+    fill="#F6F3EC"
+    d="M18 12h36v38h20V12h36v104H74V78H54v38H18V12Z"
+  />
+  <circle cx="64" cy="64" r="7" fill="#D4764F"/>
+</svg>

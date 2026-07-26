@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title description">
+  <title id="title">Harbor extension icon</title>
+  <desc id="description">Harbor gate and beacon on an eight-sided slate channel marker.</desc>
+  <path fill="#17262B" d="M25 6h78l19 19v78l-19 19H25L6 103V25L25 6Z"/>
+  <path fill="#F6F3EC" d="M28 24h24v31h24V24h24v80H76V77H52v27H28V24Z"/>
+  <circle cx="64" cy="66" r="6" fill="#D4764F"/>
+</svg>
