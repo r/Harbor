@@ -7,9 +7,10 @@ native bridges, model providers, endpoints, and connection health. Interfaces
 should feel calm and operational, with enough technical detail to diagnose a
 problem without becoming a debugging console.
 
-The primary user is a developer configuring infrastructure from a compact
-browser popup. They need to identify a resource, understand where Harbor will
-connect, verify its state, and recover from an error quickly.
+The primary user is a developer configuring infrastructure from a persistent
+browser side panel beside the page they are working in. They need to identify a
+resource, understand where Harbor will connect, verify its state, and recover
+from an error without losing page context.
 
 The approved brand direction is Port Authority. It combines the whitepaper's
 editorial intelligence with the extension's operational precision. Use Open
@@ -72,6 +73,32 @@ machine-state discipline.
 - Use `--space-3` inside forms and between distinct sections.
 - Keep padding symmetrical unless content requires otherwise.
 
+## Panel-First Navigation Pattern
+
+Harbor's canonical operational surface is `extension/src/sidebar.html`. Keep one
+shared panel document and controller across browsers:
+
+- Chrome 114 and later uses the native `side_panel` manifest surface. Clicking
+  the toolbar action opens the Harbor panel.
+- Firefox uses the native `sidebar_action` manifest surface. Clicking the
+  toolbar action toggles the Harbor sidebar.
+- Safari retains the toolbar popup as a compatibility fallback.
+
+The panel remains available beside the current page and must not behave like a
+transient menu:
+
+- Keep bridge health and Harbor identity visible in the panel header.
+- Preserve operational state when the developer interacts with the page.
+- Refresh tab-sensitive state when visibility or active-tab context changes.
+- Bind approvals to the exact tab shown in the trust-boundary rail. Never imply
+  that authority followed the developer to another tab.
+- Open broad browsing surfaces such as the MCP directory in a full browser tab.
+- Keep the operational panel usable without horizontal scrolling from 320 to
+  480 px.
+- At narrow widths, stack the Agent, Harbor, and exact-tab boundaries while
+  preserving their directional order.
+- Do not maintain separate full popup and side-panel implementations.
+
 ## Port Authority Tokens
 
 - The source token package is `brand/port-authority.tokens.css`.
@@ -110,7 +137,7 @@ Configured remote providers should show:
 
 ## Agent Gateway Trust Boundary Pattern
 
-Agent access belongs inline in the Harbor popup as an operational approval
+Agent access belongs inline in the Harbor operational panel as an approval
 surface, not in DevTools or a separate settings page.
 
 The primary structure is the trust-boundary rail:

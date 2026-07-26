@@ -75,7 +75,7 @@ type ConfiguredModel = {
 };
 
 // Header elements
-const headerLogo = document.getElementById('header-logo') as HTMLDivElement;
+const headerLogo = document.getElementById('header-logo') as HTMLButtonElement;
 
 // Server elements
 const serversEl = document.getElementById('servers') as HTMLDivElement;
