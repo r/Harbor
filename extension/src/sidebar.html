@@ -781,35 +781,6 @@
       .providers-details[open] .detected-providers-list {
         margin-top: var(--space-2);
       }
-      /* Quick Actions Panel */
-      .quick-actions-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: var(--space-2);
-      }
-      .quick-action-btn {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: var(--space-1);
-        padding: var(--space-3);
-        background: var(--color-surface-secondary);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        transition: all 0.15s;
-      }
-      .quick-action-btn:hover {
-        background: var(--color-surface-tertiary);
-        border-color: var(--color-accent-primary);
-      }
-      .quick-action-label {
-        font-size: var(--text-xs);
-        color: var(--color-text-secondary);
-        font-weight: var(--weight-medium);
-      }
-      
       /* Permissions Panel */
       .permissions-list {
         display: flex;
@@ -1398,7 +1369,192 @@
       </div>
     </div>
 
-    <div class="panel" id="setup-status-panel">
+    <nav class="harbor-mode-switch" role="tablist" aria-label="Harbor sections">
+      <button
+        class="harbor-mode-switch-item is-active"
+        id="harbor-mode-tab-overview"
+        type="button"
+        role="tab"
+        aria-selected="true"
+        aria-controls="harbor-mode-overview"
+        data-harbor-mode="overview"
+      >
+        <span>Overview</span>
+      </button>
+      <button
+        class="harbor-mode-switch-item"
+        id="harbor-mode-tab-connections"
+        type="button"
+        role="tab"
+        aria-selected="false"
+        aria-controls="harbor-mode-connections"
+        tabindex="-1"
+        data-harbor-mode="connections"
+      >
+        <span>Connections</span>
+        <span
+          class="harbor-mode-signal"
+          id="harbor-mode-signal-connections"
+          aria-hidden="true"
+          hidden
+        ></span>
+      </button>
+      <button
+        class="harbor-mode-switch-item"
+        id="harbor-mode-tab-access"
+        type="button"
+        role="tab"
+        aria-selected="false"
+        aria-controls="harbor-mode-access"
+        tabindex="-1"
+        data-harbor-mode="access"
+      >
+        <span>Access</span>
+        <span
+          class="harbor-mode-signal"
+          id="harbor-mode-signal-access"
+          aria-hidden="true"
+          hidden
+        ></span>
+      </button>
+    </nav>
+
+    <main class="harbor-mode-host">
+      <section
+        class="harbor-mode-panel"
+        id="harbor-mode-overview"
+        role="tabpanel"
+        aria-labelledby="harbor-mode-tab-overview"
+        tabindex="0"
+      >
+        <div class="panel overview-status-panel" id="overview-status-panel">
+          <div class="panel-header overview-status-header">
+            <div class="panel-header-left">
+              <div class="panel-title">Current Route</div>
+            </div>
+            <div class="panel-header-right">
+              <button
+                class="btn btn-primary btn-sm"
+                id="open-chat-btn"
+                type="button"
+                title="Open chat in a new tab"
+              >Open Chat</button>
+              <span class="overview-route-state" id="overview-route-state">
+                Checking
+              </span>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div
+              class="gateway-trust-rail overview-trust-rail"
+              aria-label="External agent through Harbor to shared tab"
+            >
+              <div class="gateway-boundary">
+                <span class="gateway-boundary-label">External agent</span>
+                <span class="gateway-boundary-value">
+                  <span
+                    class="gateway-boundary-state"
+                    id="overview-route-agent-state"
+                  ></span>
+                  <span id="overview-route-agent-value">none</span>
+                </span>
+              </div>
+              <span class="gateway-rail-arrow" aria-hidden="true">-&gt;</span>
+              <div class="gateway-boundary">
+                <span class="gateway-boundary-label">Harbor</span>
+                <span class="gateway-boundary-value">
+                  <span
+                    class="gateway-boundary-state"
+                    id="overview-route-harbor-state"
+                  ></span>
+                  <span id="overview-route-harbor-value">checking</span>
+                </span>
+              </div>
+              <span class="gateway-rail-arrow" aria-hidden="true">-&gt;</span>
+              <div class="gateway-boundary">
+                <span class="gateway-boundary-label">Shared tab</span>
+                <span class="gateway-boundary-value">
+                  <span
+                    class="gateway-boundary-state"
+                    id="overview-route-tab-state"
+                  ></span>
+                  <span id="overview-route-tab-value">none</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="overview-ledger" aria-label="Harbor status summary">
+              <button
+                class="overview-ledger-row"
+                type="button"
+                data-harbor-mode-target="connections"
+              >
+                <span
+                  class="overview-ledger-state connecting"
+                  id="overview-connections-state"
+                  aria-hidden="true"
+                ></span>
+                <span class="overview-ledger-main">
+                  <span class="overview-ledger-title">Connections</span>
+                  <span
+                    class="overview-ledger-meta"
+                    id="overview-connections-summary"
+                  >Bridge checking · Models checking</span>
+                </span>
+                <span class="overview-ledger-action">Manage</span>
+              </button>
+              <button
+                class="overview-ledger-row"
+                type="button"
+                data-harbor-mode-target="access"
+              >
+                <span
+                  class="overview-ledger-state disconnected"
+                  id="overview-access-state"
+                  aria-hidden="true"
+                ></span>
+                <span class="overview-ledger-main">
+                  <span class="overview-ledger-title">Access</span>
+                  <span
+                    class="overview-ledger-meta"
+                    id="overview-access-summary"
+                  >Gateway disconnected · 0 sessions</span>
+                </span>
+                <span class="overview-ledger-action">Manage</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section
+        class="harbor-mode-panel"
+        id="harbor-mode-connections"
+        role="tabpanel"
+        aria-labelledby="harbor-mode-tab-connections"
+        tabindex="0"
+        hidden
+      >
+        <div class="harbor-mode-toolbar">
+          <span class="harbor-mode-toolbar-label">MCP Catalog</span>
+          <button
+            class="btn btn-secondary btn-sm"
+            id="open-directory-btn"
+            type="button"
+            title="Browse the MCP server directory"
+          >Browse Directory</button>
+        </div>
+      </section>
+      <section
+        class="harbor-mode-panel"
+        id="harbor-mode-access"
+        role="tabpanel"
+        aria-labelledby="harbor-mode-tab-access"
+        tabindex="0"
+        hidden
+      ></section>
+    </main>
+
+    <div class="panel" id="setup-status-panel" data-harbor-mode-panel="connections">
       <div class="panel-header" id="setup-status-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon collapsed" id="setup-status-toggle">&#9660;</span>
@@ -1415,7 +1571,12 @@
       </div>
     </div>
 
-    <div class="panel gateway-panel" id="agent-gateway-panel" aria-busy="true">
+    <div
+      class="panel gateway-panel"
+      id="agent-gateway-panel"
+      aria-busy="true"
+      data-harbor-mode-panel="access"
+    >
       <div class="panel-header">
         <div class="panel-header-left">
           <div class="panel-title">Agent Gateway</div>
@@ -1642,7 +1803,7 @@
       </div>
     </div>
 
-    <div class="panel" id="llm-panel">
+    <div class="panel" id="llm-panel" data-harbor-mode-panel="connections">
       <div class="panel-header" id="llm-panel-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon" id="llm-panel-toggle">&#9660;</span>
@@ -1776,7 +1937,7 @@
     </div>
 
     <!-- OAuth App Credentials Panel -->
-    <div class="panel" id="oauth-panel">
+    <div class="panel" id="oauth-panel" data-harbor-mode-panel="connections">
       <div class="panel-header" id="oauth-panel-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon" id="oauth-panel-toggle">&#9660;</span>
@@ -1812,7 +1973,7 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="servers-panel" data-harbor-mode-panel="connections">
       <div class="panel-header" id="servers-panel-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon" id="servers-panel-toggle">&#9660;</span>
@@ -1875,7 +2036,7 @@
     </div>
 
     <!-- Tool Tester Panel -->
-    <div class="panel" id="tool-tester-panel">
+    <div class="panel" id="tool-tester-panel" data-harbor-mode-panel="connections">
       <div class="panel-header" id="tool-tester-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon collapsed" id="tool-tester-toggle">&#9660;</span>
@@ -1915,7 +2076,7 @@
     </div>
 
     <!-- Agent Sessions Panel -->
-    <div class="panel" id="sessions-panel">
+    <div class="panel" id="sessions-panel" data-harbor-mode-panel="access">
       <div class="panel-header" id="sessions-panel-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon" id="sessions-panel-toggle">&#9660;</span>
@@ -1933,7 +2094,7 @@
     </div>
 
     <!-- Policy Activity Panel -->
-    <div class="panel" id="activity-panel">
+    <div class="panel" id="activity-panel" data-harbor-mode-panel="access">
       <div class="panel-header" id="activity-panel-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon" id="activity-panel-toggle">&#9660;</span>
@@ -1959,7 +2120,7 @@
     </div>
 
     <!-- Site Permissions Panel -->
-    <div class="panel" id="permissions-panel">
+    <div class="panel" id="permissions-panel" data-harbor-mode-panel="access">
       <div class="panel-header" id="permissions-panel-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon collapsed" id="permissions-panel-toggle">&#9660;</span>
@@ -1971,26 +2132,6 @@
       </div>
       <div class="panel-body collapsed" id="permissions-list">
         <div class="empty-state">No site permissions granted yet.</div>
-      </div>
-    </div>
-
-    <!-- Quick Actions Panel -->
-    <div class="panel" id="quick-actions-panel">
-      <div class="panel-header" id="quick-actions-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon" id="quick-actions-toggle">&#9660;</span>
-          <div class="panel-title">Quick Actions</div>
-        </div>
-      </div>
-      <div class="panel-body" id="quick-actions-body">
-        <div class="quick-actions-grid">
-          <button class="quick-action-btn" id="open-chat-btn" title="Open chat in new tab">
-            <span class="quick-action-label">Open Chat</span>
-          </button>
-          <button class="quick-action-btn" id="open-directory-btn" title="Browse MCP server directory">
-            <span class="quick-action-label">Directory</span>
-          </button>
-        </div>
       </div>
     </div>
 

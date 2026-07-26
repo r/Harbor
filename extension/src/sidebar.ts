@@ -3,6 +3,16 @@ export {};
 
 import { browserAPI, getBrowserName } from './browser-compat';
 import { getExtensionManagementTarget } from './developer-tools';
+import {
+  deriveGatewayAttention,
+  derivePanelAttention,
+  HARBOR_PANEL_MODES,
+  isHarborPanelMode,
+  nextHarborPanelMode,
+  type HarborPanelMode,
+  type PanelAttention,
+  type PanelNavigationKey,
+} from './panel-navigation';
 import { validateRemoteOllamaConfiguration } from './llm/provider-form';
 import {
   isConfiguredProviderInstance,
@@ -241,8 +251,272 @@ function cycleTheme(): void {
   applyTheme(next);
 }
 
-// Initialize theme on load
+const PANEL_MODE_STORAGE_KEY = 'harbor-panel-mode';
+let currentPanelMode: HarborPanelMode = 'overview';
+
+function initializePanelNavigation(): void {
+  const modePanels = new Map<HarborPanelMode, HTMLElement>(
+    HARBOR_PANEL_MODES.map((mode) => [
+      mode,
+      requireSidebarElement(`harbor-mode-${mode}`),
+    ]),
+  );
+  const modeTabs = new Map<HarborPanelMode, HTMLButtonElement>(
+    HARBOR_PANEL_MODES.map((mode) => [
+      mode,
+      requireSidebarElement<HTMLButtonElement>(`harbor-mode-tab-${mode}`),
+    ]),
+  );
+
+  for (const panel of document.querySelectorAll<HTMLElement>(
+    '[data-harbor-mode-panel]',
+  )) {
+    const mode = panel.dataset.harborModePanel;
+    if (isHarborPanelMode(mode ?? null)) {
+      modePanels.get(mode)?.append(panel);
+    }
+  }
+
+  const storedMode = readStoredPanelMode();
+  currentPanelMode = isHarborPanelMode(storedMode) ? storedMode : 'overview';
+
+  const activateMode = (
+    mode: HarborPanelMode,
+    options: { focusTab?: boolean; resetScroll?: boolean } = {},
+  ): void => {
+    currentPanelMode = mode;
+    for (const candidate of HARBOR_PANEL_MODES) {
+      const isActive = candidate === mode;
+      const tab = modeTabs.get(candidate);
+      const panel = modePanels.get(candidate);
+      if (tab) {
+        tab.classList.toggle('is-active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+        tab.tabIndex = isActive ? 0 : -1;
+      }
+      if (panel) {
+        panel.hidden = !isActive;
+      }
+    }
+    storePanelMode(mode);
+    if (options.focusTab) {
+      modeTabs.get(mode)?.focus();
+    }
+    if (options.resetScroll) {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  };
+
+  for (const [mode, tab] of modeTabs) {
+    tab.addEventListener('click', () => {
+      activateMode(mode, { resetScroll: true });
+    });
+    tab.addEventListener('keydown', (event) => {
+      if (!isPanelNavigationKey(event.key)) {
+        return;
+      }
+      event.preventDefault();
+      activateMode(nextHarborPanelMode(mode, event.key), {
+        focusTab: true,
+        resetScroll: true,
+      });
+    });
+  }
+
+  for (const target of document.querySelectorAll<HTMLButtonElement>(
+    '[data-harbor-mode-target]',
+  )) {
+    target.addEventListener('click', () => {
+      const mode = target.dataset.harborModeTarget;
+      if (isHarborPanelMode(mode ?? null)) {
+        activateMode(mode, { focusTab: true, resetScroll: true });
+      }
+    });
+  }
+
+  activateMode(currentPanelMode);
+  initializeOverviewSummary();
+}
+
+function initializeOverviewSummary(): void {
+  const observedElements = [
+    bridgeStatusIndicator,
+    bridgeStatusText,
+    llmStatusIndicator,
+    llmStatusText,
+    document.getElementById('gateway-status-indicator'),
+    document.getElementById('gateway-status-text'),
+    document.getElementById('gateway-rail-agent'),
+    document.getElementById('gateway-rail-harbor'),
+    document.getElementById('gateway-rail-tab'),
+    document.getElementById('sessions-count'),
+  ].filter((element): element is HTMLElement => element instanceof HTMLElement);
+
+  const observer = new MutationObserver(updateOverviewSummary);
+  for (const element of observedElements) {
+    observer.observe(element, {
+      attributes: true,
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+  }
+  updateOverviewSummary();
+}
+
+function updateOverviewSummary(): void {
+  const gatewayStatusIndicator = document.getElementById('gateway-status-indicator');
+  const gatewayStatusText = document.getElementById('gateway-status-text');
+  const sessionsCountElement = document.getElementById('sessions-count');
+
+  setSidebarText(
+    'overview-connections-summary',
+    `Bridge ${statusText(bridgeStatusText)} · Models ${statusText(llmStatusText)}`,
+  );
+  setSidebarText(
+    'overview-access-summary',
+    `Gateway ${statusText(gatewayStatusText)} · ${statusText(sessionsCountElement)} sessions`,
+  );
+
+  const connectionAttention = derivePanelAttention([
+    bridgeStatusIndicator.className,
+    llmStatusIndicator.className,
+  ]);
+  const accessAttention = deriveGatewayAttention(statusText(gatewayStatusText));
+
+  updateOverviewLedgerState(
+    'overview-connections-state',
+    connectionAttention,
+    [bridgeStatusIndicator, llmStatusIndicator],
+  );
+  updateOverviewLedgerState(
+    'overview-access-state',
+    accessAttention,
+    gatewayStatusIndicator ? [gatewayStatusIndicator] : [],
+  );
+  updateModeSignal('connections', connectionAttention);
+  updateModeSignal('access', accessAttention);
+
+  copyGatewayBoundary('agent');
+  copyGatewayBoundary('harbor');
+  copyGatewayBoundary('tab');
+
+  const routeState = document.getElementById('overview-route-state');
+  const gatewayStatus = statusText(gatewayStatusText);
+  if (routeState) {
+    routeState.textContent = gatewayStatus === 'Active'
+      ? 'Active'
+      : gatewayStatus === 'Disconnected'
+        ? 'Unavailable'
+        : gatewayStatus;
+  }
+}
+
+function copyGatewayBoundary(boundary: 'agent' | 'harbor' | 'tab'): void {
+  const source = document.getElementById(`gateway-rail-${boundary}`);
+  const sourceState = document.getElementById(`gateway-rail-${boundary}-state`);
+  const targetValue = document.getElementById(`overview-route-${boundary}-value`);
+  const targetState = document.getElementById(`overview-route-${boundary}-state`);
+  if (!source || !sourceState || !targetValue || !targetState) {
+    return;
+  }
+  targetValue.textContent = statusText(source);
+  targetState.className = sourceState.className;
+}
+
+function updateOverviewLedgerState(
+  elementId: string,
+  attention: PanelAttention,
+  sourceIndicators: HTMLElement[],
+): void {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    return;
+  }
+  const allConnected = sourceIndicators.length > 0
+    && sourceIndicators.every((source) => source.classList.contains('connected'));
+  element.className = [
+    'overview-ledger-state',
+    attention === 'error'
+      ? 'disconnected'
+      : attention === 'warning'
+        ? 'connecting'
+        : allConnected
+          ? 'connected'
+          : '',
+  ].filter(Boolean).join(' ');
+}
+
+function updateModeSignal(
+  mode: Exclude<HarborPanelMode, 'overview'>,
+  attention: PanelAttention,
+): void {
+  const signal = document.getElementById(`harbor-mode-signal-${mode}`);
+  const tab = document.getElementById(`harbor-mode-tab-${mode}`);
+  if (!signal) {
+    return;
+  }
+  signal.hidden = attention === 'none';
+  signal.className = [
+    'harbor-mode-signal',
+    attention === 'error' ? 'error' : '',
+  ].filter(Boolean).join(' ');
+  tab?.setAttribute(
+    'aria-label',
+    attention === 'none'
+      ? capitalizePanelMode(mode)
+      : `${capitalizePanelMode(mode)} needs attention`,
+  );
+}
+
+function setSidebarText(elementId: string, value: string): void {
+  const element = document.getElementById(elementId);
+  if (element) {
+    element.textContent = value;
+  }
+}
+
+function statusText(element: Element | null): string {
+  return element?.textContent?.trim() || 'Unknown';
+}
+
+function isPanelNavigationKey(key: string): key is PanelNavigationKey {
+  return key === 'ArrowLeft'
+    || key === 'ArrowRight'
+    || key === 'Home'
+    || key === 'End';
+}
+
+function readStoredPanelMode(): string | null {
+  try {
+    return sessionStorage.getItem(PANEL_MODE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storePanelMode(mode: HarborPanelMode): void {
+  try {
+    sessionStorage.setItem(PANEL_MODE_STORAGE_KEY, mode);
+  } catch {
+    return;
+  }
+}
+
+function capitalizePanelMode(mode: HarborPanelMode): string {
+  return mode.charAt(0).toUpperCase() + mode.slice(1);
+}
+
+function requireSidebarElement<T extends HTMLElement = HTMLElement>(id: string): T {
+  const element = document.getElementById(id);
+  if (!element) {
+    throw new Error(`Missing Harbor panel element: ${id}`);
+  }
+  return element as T;
+}
+
 initTheme();
+initializePanelNavigation();
 initializeAgentGatewaySidebar();
 
 // =============================================================================
@@ -2128,18 +2402,12 @@ setupPanelToggle(oauthPanelHeader, oauthPanelToggle, oauthPanelBody);
 })();
 
 // =============================================================================
-// Quick Actions Panel
+// Panel destinations
 // =============================================================================
 
-const quickActionsHeader = document.getElementById('quick-actions-header') as HTMLDivElement;
-const quickActionsToggle = document.getElementById('quick-actions-toggle') as HTMLSpanElement;
-const quickActionsBody = document.getElementById('quick-actions-body') as HTMLDivElement;
 const openDirectoryBtn = document.getElementById('open-directory-btn') as HTMLButtonElement;
 const openChatBtn = document.getElementById('open-chat-btn') as HTMLButtonElement;
 const reloadExtensionBtn = document.getElementById('reload-extension-btn') as HTMLButtonElement;
-
-// Set up panel toggle
-setupPanelToggle(quickActionsHeader, quickActionsToggle, quickActionsBody);
 
 // Open Directory button - opens the MCP server directory
 openDirectoryBtn.addEventListener('click', async () => {

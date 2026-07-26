@@ -113,6 +113,39 @@ transient menu:
 - Disabled is neutral.
 - Explicit Light, Dark, or High Contrast selection wins over Auto.
 
+## Operational Mode Navigation Pattern
+
+The persistent side panel uses three modes beneath the shared Harbor header:
+
+1. Overview summarizes the current route, connection health, access health, and
+   the primary Open Chat destination.
+2. Connections contains setup, model providers, app credentials, MCP servers,
+   and tool testing.
+3. Access contains Agent Gateway pairing, shared-tab authority, agent sessions,
+   activity, and site permissions.
+
+Keep the header and mode switch visible while the operational ledger changes.
+Use one full-width, three-column tablist with a Harbor signal underline for the
+active mode. Support click, Left Arrow, Right Arrow, Home, and End navigation
+with standard tab and tabpanel semantics.
+
+Move the existing operational panels between mode containers without recreating
+their DOM nodes. This preserves expanded sections, form input, controller
+references, and event listeners. Remember the selected mode for the side-panel
+session and default new sessions to Overview.
+
+Overview is a summary surface, not a duplicate settings page:
+
+- Mirror the External agent to Harbor to shared tab route.
+- Summarize Connections and Access in ledger rows that open the relevant mode.
+- Keep Open Chat visible in the Overview route header.
+- Keep Browse Directory visible at the top of Connections as an MCP catalog
+  destination.
+- Show attention signals on inactive mode labels only for failures, expiry,
+  loading, or in-flight actions.
+- Keep healthy enabled, paired, active, and intentionally paused states quiet.
+- Use text with color for detailed state. Never rely on a signal dot alone.
+
 ## Provider Configuration Pattern
 
 Provider configuration belongs inline under the Providers section:
