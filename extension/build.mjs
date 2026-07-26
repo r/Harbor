@@ -6,6 +6,7 @@ import sharp from 'sharp';
 const isWatch = process.argv.includes('--watch');
 const isChrome = process.argv.includes('--chrome');
 const isSafari = process.argv.includes('--safari');
+const isDevelopmentBuild = isWatch || process.argv.includes('--development');
 
 // Determine target browser
 const targetBrowser = isChrome ? 'chrome' : isSafari ? 'safari' : 'firefox';
@@ -24,6 +25,9 @@ const common = {
   outdir: outDir,
   outbase: 'src',
   logLevel: 'info',
+  define: {
+    __HARBOR_DEVELOPMENT__: JSON.stringify(isDevelopmentBuild),
+  },
 };
 
 const entryPoints = [

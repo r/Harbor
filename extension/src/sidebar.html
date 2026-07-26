@@ -34,19 +34,11 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        cursor: pointer;
-        transition: opacity var(--transition-fast);
       }
       .header-logo img {
         display: block;
         width: 22px;
         height: 22px;
-      }
-      .header-logo:hover {
-        opacity: 0.78;
-      }
-      .header-logo:active {
-        opacity: 0.62;
       }
       .header-title {
         font-size: var(--text-sm);
@@ -408,6 +400,7 @@
         margin-top: 2px;
       }
       .setup-status-actions { margin-top: var(--space-2); }
+      .setup-status-actions[hidden] { display: none; }
       /* Provider list */
       .provider-list {
         display: flex;
@@ -1384,16 +1377,10 @@
   <body>
     <div class="header">
       <div class="header-brand">
-        <button
-          class="header-logo"
-          id="header-logo"
-          type="button"
-          title="Copy Firefox debugging address"
-          aria-label="Copy Firefox debugging address"
-        >
+        <span class="header-logo" aria-hidden="true">
           <img class="header-mark" src="./assets/harbor-mark.svg" alt="" />
           <img class="header-mark-inverse" src="./assets/harbor-mark-inverse.svg" alt="" />
-        </button>
+        </span>
         <div class="header-copy">
           <span class="header-title">Harbor</span>
           <span class="header-register">Port Authority · 0.1</span>
@@ -1420,8 +1407,10 @@
       </div>
       <div class="panel-body collapsed" id="setup-status-body">
         <div id="setup-status-list" class="setup-status-list"></div>
-        <div class="setup-status-actions">
-          <a href="#" id="open-debugging-link" class="btn btn-secondary btn-sm">Open about:debugging</a>
+        <div class="setup-status-actions" id="developer-tools-actions" hidden>
+          <button class="btn btn-secondary btn-sm" id="developer-tools-button" type="button">
+            Copy extension management URL
+          </button>
         </div>
       </div>
     </div>

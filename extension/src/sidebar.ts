@@ -1,13 +1,16 @@
 // Make this a module to avoid global scope conflicts
 export {};
 
-import { browserAPI } from './browser-compat';
+import { browserAPI, getBrowserName } from './browser-compat';
+import { getExtensionManagementTarget } from './developer-tools';
 import { validateRemoteOllamaConfiguration } from './llm/provider-form';
 import {
   isConfiguredProviderInstance,
   isProviderConfigurationReady,
 } from './llm/provider-readiness';
 import { initializeAgentGatewaySidebar } from './agent-gateway/sidebar-controller';
+
+declare const __HARBOR_DEVELOPMENT__: boolean;
 
 type SecretDecl = { name: string; label: string; type?: 'text' | 'password' };
 
@@ -74,9 +77,6 @@ type ConfiguredModel = {
   is_default: boolean;
 };
 
-// Header elements
-const headerLogo = document.getElementById('header-logo') as HTMLButtonElement;
-
 // Server elements
 const serversEl = document.getElementById('servers') as HTMLDivElement;
 const serversListEl = document.getElementById('servers-list') as HTMLDivElement;
@@ -111,7 +111,8 @@ const setupStatusList = document.getElementById('setup-status-list') as HTMLDivE
 const setupStatusBody = document.getElementById('setup-status-body') as HTMLDivElement;
 const setupStatusToggle = document.getElementById('setup-status-toggle') as HTMLSpanElement;
 const setupStatusHeader = document.getElementById('setup-status-header') as HTMLDivElement;
-const openDebuggingLink = document.getElementById('open-debugging-link') as HTMLAnchorElement;
+const developerToolsActions = document.getElementById('developer-tools-actions') as HTMLDivElement;
+const developerToolsButton = document.getElementById('developer-tools-button') as HTMLButtonElement;
 
 // LLM elements
 const llmPanelHeader = document.getElementById('llm-panel-header') as HTMLDivElement;
@@ -259,25 +260,6 @@ function showToast(message: string, type: 'info' | 'error' | 'success' = 'info',
 
   setTimeout(() => toast.remove(), duration);
 }
-
-// =============================================================================
-// Header Logo - Open about:debugging or copy to clipboard
-// =============================================================================
-
-const DEBUGGING_URL = 'about:debugging#/runtime/this-firefox';
-
-headerLogo.addEventListener('click', async () => {
-  try {
-    // Try to open the URL in a new tab
-    // Note: Firefox extensions cannot directly open about: URLs via tabs.create
-    // So we copy to clipboard as the fallback
-    await navigator.clipboard.writeText(DEBUGGING_URL);
-    showToast('Copied debugging URL to clipboard');
-  } catch (err) {
-    console.error('[Sidebar] Failed to copy to clipboard:', err);
-    showToast('Failed to copy URL');
-  }
-});
 
 function updateBridgeStatusUI(connected: boolean, error?: string | null): void {
   if (connected) {
@@ -856,16 +838,25 @@ setupPanelToggle(llmPanelHeader, llmPanelToggle, llmPanelBody);
 if (setupStatusHeader && setupStatusToggle && setupStatusBody) {
   setupPanelToggle(setupStatusHeader, setupStatusToggle, setupStatusBody);
 }
-openDebuggingLink?.addEventListener('click', async (e) => {
-  e.preventDefault();
-  try {
-    await navigator.clipboard.writeText(DEBUGGING_URL);
-    showToast('Copied about:debugging URL — paste in address bar');
-  } catch (err) {
-    console.error('[Sidebar] Failed to copy URL:', err);
-    showToast('Failed to copy URL');
+
+if (typeof __HARBOR_DEVELOPMENT__ !== 'undefined' && __HARBOR_DEVELOPMENT__) {
+  const extensionManagementTarget = getExtensionManagementTarget(getBrowserName());
+
+  if (extensionManagementTarget) {
+    developerToolsButton.textContent = extensionManagementTarget.buttonLabel;
+    developerToolsActions.hidden = false;
+    developerToolsButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(extensionManagementTarget.clipboardValue);
+        showToast(extensionManagementTarget.successMessage);
+      } catch (error) {
+        console.error('[Sidebar] Failed to copy extension management target:', error);
+        showToast('Failed to copy extension management target', 'error');
+      }
+    });
   }
-});
+}
+
 setupPanelToggle(serversPanelHeader, serversPanelToggle, serversEl);
 
 // =============================================================================
