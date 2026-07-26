@@ -140,17 +140,17 @@ pub async fn chat(params: serde_json::Value) -> Result<serde_json::Value, RpcErr
             .collect()
     });
 
-    let provider_config = get_provider_config_for_model(&model);
-
-    let completion_request = CompletionRequest {
-        model,
-        messages,
-        tools,
-        temperature: request.temperature,
-        max_tokens: request.max_tokens,
-        api_key: provider_config.and_then(|c| c.api_key.flatten()),
-        ..Default::default()
-    };
+    let completion_request = apply_provider_config_to_completion_request(
+        CompletionRequest {
+            model: model.clone(),
+            messages,
+            tools,
+            temperature: request.temperature,
+            max_tokens: request.max_tokens,
+            ..Default::default()
+        },
+        get_provider_config_for_model(&model),
+    );
 
     let response = completion(completion_request).await.map_err(|e| RpcError {
         code: -32001,
@@ -181,6 +181,18 @@ fn get_provider_config(provider: &str) -> Option<ProviderConfig> {
 fn get_provider_config_for_model(model: &str) -> Option<ProviderConfig> {
     let provider = model.split(':').next()?;
     get_provider_config(provider)
+}
+
+fn apply_provider_config_to_completion_request(
+    mut request: CompletionRequest,
+    provider_config: Option<ProviderConfig>,
+) -> CompletionRequest {
+    if let Some(config) = provider_config {
+        request.api_key = config.api_key.flatten();
+        request.api_base = config.base_url;
+    }
+
+    request
 }
 
 /// Get the actual provider type from an instance ID or type string.
@@ -277,23 +289,31 @@ pub async fn list_providers() -> Result<serde_json::Value, RpcError> {
     let supported_types = get_supported_providers();
     let cfg = get_config().unwrap_or_default();
 
-    // Check which local providers are actually running
-    let mut local_available: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for local_type in &["ollama", "llamafile", "lmstudio"] {
-        let status = check_provider(local_type, None).await;
-        if status.available {
-            local_available.insert(local_type.to_string());
-        }
-    }
-
     let mut provider_info: Vec<serde_json::Value> = Vec::new();
 
     // Add configured instances
     for instance in cfg.providers.values() {
-        let needs_api_key = matches!(instance.provider_type.as_str(), "openai" | "anthropic" | "mistral" | "groq");
-        let is_local = matches!(instance.provider_type.as_str(), "ollama" | "llamafile" | "lmstudio");
+        let needs_api_key = matches!(
+            instance.provider_type.as_str(),
+            "openai" | "anthropic" | "mistral" | "groq"
+        );
+        let is_local = matches!(
+            instance.provider_type.as_str(),
+            "ollama" | "llamafile" | "lmstudio"
+        );
         let is_global_default = cfg.default_provider.as_deref() == Some(&instance.id);
-        let is_available = is_local && local_available.contains(&instance.provider_type);
+        let is_available = if is_local {
+            let provider_config = ProviderConfig {
+                api_key: Some(instance.api_key.clone()),
+                base_url: instance.base_url.clone(),
+                ..Default::default()
+            };
+            check_provider(&instance.provider_type, Some(provider_config))
+                .await
+                .available
+        } else {
+            instance.api_key.is_some()
+        };
 
         provider_info.push(serde_json::json!({
             "id": instance.id,
@@ -304,9 +324,10 @@ pub async fn list_providers() -> Result<serde_json::Value, RpcError> {
             "is_local": is_local,
             "is_default": is_global_default,
             "is_type_default": instance.is_type_default,
+            "is_configured_instance": true,
             "has_api_key": instance.api_key.is_some(),
             "base_url": instance.base_url,
-            "available": is_available || (!is_local && instance.api_key.is_some()),
+            "available": is_available,
         }));
     }
 
@@ -315,10 +336,15 @@ pub async fn list_providers() -> Result<serde_json::Value, RpcError> {
     for ptype in &supported_types {
         let has_instance = cfg.get_instances_by_type(ptype).len() > 0;
         if !has_instance {
-            let needs_api_key = matches!(ptype.as_str(), "openai" | "anthropic" | "mistral" | "groq");
+            let needs_api_key =
+                matches!(ptype.as_str(), "openai" | "anthropic" | "mistral" | "groq");
             let is_local = matches!(ptype.as_str(), "ollama" | "llamafile" | "lmstudio");
-            let is_available = local_available.contains(ptype.as_str());
-            
+            let is_available = if is_local {
+                check_provider(ptype, None).await.available
+            } else {
+                false
+            };
+
             // Auto-detected local providers show as configured
             let auto_configured = is_local && is_available;
 
@@ -331,13 +357,14 @@ pub async fn list_providers() -> Result<serde_json::Value, RpcError> {
                 "is_local": is_local,
                 "is_default": false,
                 "is_type_default": false,
+                "is_configured_instance": false,
                 "available": is_available,
                 "has_api_key": false,
             }));
         }
     }
 
-    Ok(serde_json::json!({ 
+    Ok(serde_json::json!({
         "providers": provider_info,
         "default_provider": cfg.default_provider,
     }))
@@ -878,17 +905,17 @@ pub async fn chat_stream(
                 })
                 .collect();
 
-            let provider_config = get_provider_config_for_model(&model);
-
-            let completion_request = CompletionRequest {
-                model: model.clone(),
-                messages,
-                temperature: request.temperature,
-                max_tokens: request.max_tokens,
-                api_key: provider_config.and_then(|c| c.api_key.flatten()),
-                stream: Some(true),
-                ..Default::default()
-            };
+            let completion_request = apply_provider_config_to_completion_request(
+                CompletionRequest {
+                    model: model.clone(),
+                    messages,
+                    temperature: request.temperature,
+                    max_tokens: request.max_tokens,
+                    stream: Some(true),
+                    ..Default::default()
+                },
+                get_provider_config_for_model(&model),
+            );
 
             // Try to create stream
             match completion_stream(completion_request).await {
@@ -965,5 +992,34 @@ pub async fn chat_stream(
                 })),
             }).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completion_request_preserves_custom_provider_base_url() {
+        let provider_config = ProviderConfig {
+            api_key: Some(Some("test-key".to_string())),
+            base_url: Some("https://ollama.example.test".to_string()),
+            ..Default::default()
+        };
+
+        let request = apply_provider_config_to_completion_request(
+            CompletionRequest {
+                model: "ollama:qwen3.6:35b".to_string(),
+                messages: vec![Message::user("hello")],
+                ..Default::default()
+            },
+            Some(provider_config),
+        );
+
+        assert_eq!(request.api_key.as_deref(), Some("test-key"));
+        assert_eq!(
+            request.api_base.as_deref(),
+            Some("https://ollama.example.test")
+        );
     }
 }

@@ -2,6 +2,11 @@
 export {};
 
 import { browserAPI } from './browser-compat';
+import { validateRemoteOllamaConfiguration } from './llm/provider-form';
+import {
+  isConfiguredProviderInstance,
+  isProviderConfigurationReady,
+} from './llm/provider-readiness';
 
 type SecretDecl = { name: string; label: string; type?: 'text' | 'password' };
 
@@ -34,6 +39,7 @@ type ProviderInfo = {
   is_local: boolean;
   is_default: boolean;
   is_type_default: boolean;
+  is_configured_instance?: boolean;
   has_api_key: boolean;
   base_url?: string;
   available?: boolean;
@@ -123,11 +129,22 @@ const apiKeyProviderName = document.getElementById('api-key-provider-name') as H
 const apiKeyInput = document.getElementById('api-key-input') as HTMLInputElement;
 const apiKeySaveBtn = document.getElementById('api-key-save') as HTMLButtonElement;
 const apiKeyCancelBtn = document.getElementById('api-key-cancel') as HTMLButtonElement;
+const addRemoteOllamaBtn = document.getElementById('add-remote-ollama') as HTMLButtonElement;
+const remoteOllamaConfig = document.getElementById('remote-ollama-config') as HTMLDivElement;
+const remoteOllamaFormTitle = document.getElementById('remote-ollama-form-title') as HTMLSpanElement;
+const remoteOllamaNameInput = document.getElementById('remote-ollama-name') as HTMLInputElement;
+const remoteOllamaUrlInput = document.getElementById('remote-ollama-url') as HTMLInputElement;
+const remoteOllamaSaveBtn = document.getElementById('remote-ollama-save') as HTMLButtonElement;
+const remoteOllamaCancelBtn = document.getElementById('remote-ollama-cancel') as HTMLButtonElement;
+const remoteOllamaFormCancelBtn = document.getElementById('remote-ollama-form-cancel') as HTMLButtonElement;
+const providerManagementStatus = document.getElementById('provider-management-status') as HTMLDivElement;
 const serversPanelHeader = document.getElementById('servers-panel-header') as HTMLDivElement;
 const serversPanelToggle = document.getElementById('servers-panel-toggle') as HTMLSpanElement;
 
 // Track which provider is being configured
 let configuringProviderId: string | null = null;
+let configuringRemoteOllamaProviderId: string | null = null;
+let providerConfigurationReady = false;
 
 // OAuth App Credentials elements
 const oauthPanelHeader = document.getElementById('oauth-panel-header') as HTMLDivElement;
@@ -323,6 +340,7 @@ async function checkBridgeStatus(): Promise<void> {
 
     // If bridge just became fully ready, refresh all data immediately
     if (isReady && !wasReady) {
+      setProviderConfigurationState('checking');
       console.log('[Sidebar] Bridge fully ready - refreshing all data...');
       // Refresh all data in parallel
       Promise.all([
@@ -331,6 +349,8 @@ async function checkBridgeStatus(): Promise<void> {
         loadPermissions().catch(e => console.error('[Sidebar] Failed to load permissions:', e)),
         loadSessions().catch(e => console.error('[Sidebar] Failed to load sessions:', e)),
       ]);
+    } else if (!isReady) {
+      setProviderConfigurationState('bridge-unavailable');
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
@@ -341,6 +361,7 @@ async function checkBridgeStatus(): Promise<void> {
     updateBridgeStatusUI(false, errorMsg);
     renderSetupStatus();
     lastBridgeConnected = false;
+    setProviderConfigurationState('bridge-unavailable');
   }
 }
 
@@ -864,12 +885,66 @@ function capitalizeFirst(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+type ProviderConfigurationState = 'checking' | 'ready' | 'waiting-for-connection' | 'bridge-unavailable';
+
+function setProviderConfigurationState(state: ProviderConfigurationState): void {
+  providerConfigurationReady = state === 'ready';
+  document.querySelectorAll<HTMLButtonElement>('.provider-add-trigger').forEach(button => {
+    button.disabled = !providerConfigurationReady;
+  });
+
+  const statusMessages: Record<Exclude<ProviderConfigurationState, 'ready'>, string> = {
+    checking: 'Checking model and provider connections...',
+    'waiting-for-connection': 'Waiting for models to load or a configured provider to connect.',
+    'bridge-unavailable': 'Connect the Harbor bridge to add providers.',
+  };
+
+  providerManagementStatus.hidden = providerConfigurationReady;
+  if (!providerConfigurationReady) {
+    providerManagementStatus.textContent = statusMessages[state];
+  }
+}
+
+function showRemoteOllamaConfig(provider?: ProviderInfo): void {
+  configuringProviderId = null;
+  apiKeyConfig.style.display = 'none';
+  apiKeyInput.value = '';
+  configuringRemoteOllamaProviderId = provider?.id ?? null;
+  remoteOllamaFormTitle.textContent = provider ? 'Edit Remote Ollama' : 'Ollama';
+  remoteOllamaNameInput.value = provider?.name ?? '';
+  remoteOllamaUrlInput.value = provider?.base_url ?? '';
+  remoteOllamaSaveBtn.textContent = provider ? 'Save Changes' : 'Save Provider';
+  remoteOllamaConfig.style.display = 'block';
+  addRemoteOllamaBtn.style.display = 'none';
+  hideApiKeyConfig();
+  remoteOllamaNameInput.focus();
+}
+
+function hideRemoteOllamaConfig(): void {
+  configuringRemoteOllamaProviderId = null;
+  remoteOllamaConfig.style.display = 'none';
+  remoteOllamaNameInput.value = '';
+  remoteOllamaUrlInput.value = '';
+  remoteOllamaSaveBtn.textContent = 'Save Provider';
+  addRemoteOllamaBtn.style.display = configuringProviderId ? 'none' : '';
+}
+
+function getProviderEndpointLabel(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return baseUrl;
+  }
+}
+
 // Show API key configuration for a cloud provider
 function showApiKeyConfig(providerType: string): void {
+  hideRemoteOllamaConfig();
   configuringProviderId = providerType;
   apiKeyProviderName.textContent = `Configure ${capitalizeFirst(providerType)}`;
   apiKeyInput.value = '';
   apiKeyConfig.style.display = 'block';
+  addRemoteOllamaBtn.style.display = 'none';
   apiKeyInput.focus();
 }
 
@@ -878,6 +953,8 @@ function hideApiKeyConfig(): void {
   configuringProviderId = null;
   apiKeyConfig.style.display = 'none';
   apiKeyInput.value = '';
+  const remoteOllamaFormIsOpen = remoteOllamaConfig.style.display === 'block';
+  addRemoteOllamaBtn.style.display = remoteOllamaFormIsOpen ? 'none' : '';
 }
 
 // API Key save button
@@ -917,8 +994,83 @@ apiKeyCancelBtn.addEventListener('click', () => {
   hideApiKeyConfig();
 });
 
+addRemoteOllamaBtn.addEventListener('click', () => {
+  if (!providerConfigurationReady) return;
+  showRemoteOllamaConfig();
+});
+
+remoteOllamaCancelBtn.addEventListener('click', hideRemoteOllamaConfig);
+remoteOllamaFormCancelBtn.addEventListener('click', hideRemoteOllamaConfig);
+
+remoteOllamaSaveBtn.addEventListener('click', async () => {
+  const validationResult = validateRemoteOllamaConfiguration(
+    remoteOllamaNameInput.value,
+    remoteOllamaUrlInput.value,
+  );
+  if (!validationResult.ok) {
+    showToast(validationResult.error, 'error');
+    return;
+  }
+
+  remoteOllamaSaveBtn.disabled = true;
+  remoteOllamaSaveBtn.textContent = 'Connecting...';
+
+  try {
+    const providerIdentity = configuringRemoteOllamaProviderId
+      ? { id: configuringRemoteOllamaProviderId }
+      : { provider: 'ollama' };
+    const response = await browserAPI.runtime.sendMessage({
+      type: 'llm_configure_provider',
+      ...providerIdentity,
+      name: validationResult.value.name,
+      base_url: validationResult.value.baseUrl,
+      enabled: true,
+    }) as { ok: boolean; id?: string; error?: string };
+
+    if (!response.ok || !response.id) {
+      showToast(`Failed to save provider: ${response.error || 'Unknown error'}`, 'error');
+      return;
+    }
+
+    configuringRemoteOllamaProviderId = response.id;
+    const healthResponse = await browserAPI.runtime.sendMessage({
+      type: 'llm_check_provider',
+      provider: response.id,
+    }) as {
+      ok: boolean;
+      status?: { available: boolean; error?: string };
+      error?: string;
+    };
+
+    await Promise.all([
+      loadLlmProviders(),
+      refreshAvailableModels(),
+    ]);
+
+    if (healthResponse.ok && healthResponse.status?.available) {
+      showToast(`Connected to ${validationResult.value.name}`, 'success');
+      hideRemoteOllamaConfig();
+    } else {
+      const connectionError = healthResponse.status?.error || healthResponse.error || 'Connection failed';
+      showToast(`Provider saved, but Harbor could not connect: ${connectionError}`, 'error', 5000);
+      remoteOllamaSaveBtn.textContent = 'Retry Connection';
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast(`Failed to save provider: ${message}`, 'error');
+  } finally {
+    remoteOllamaSaveBtn.disabled = false;
+    if (remoteOllamaSaveBtn.textContent === 'Connecting...') {
+      remoteOllamaSaveBtn.textContent = configuringRemoteOllamaProviderId
+        ? 'Save Changes'
+        : 'Save Provider';
+    }
+  }
+});
+
 async function loadLlmProviders(): Promise<void> {
   console.log('[Sidebar] loadLlmProviders starting...');
+  setProviderConfigurationState('checking');
   try {
     // Load configured models, available models, and providers in parallel
     const [configuredModelsRes, modelsRes, providersRes] = await Promise.all([
@@ -955,10 +1107,13 @@ async function loadLlmProviders(): Promise<void> {
 
     // Handle providers
     const providers = providersRes.ok ? (providersRes.providers || []) : [];
-    const availableCount = providers.filter(p => p.available || (p.is_local && p.configured)).length;
+    const availableCount = providers.filter(p => p.available).length;
     
     providersCountEl.textContent = String(availableCount);
     renderProviders(providers);
+    const configurationReady = lastBridgeConnected
+      && isProviderConfigurationReady(modelsRes.ok, providers);
+    setProviderConfigurationState(configurationReady ? 'ready' : 'waiting-for-connection');
 
     // Update header status based on configured models
     if (configuredModels.length > 0) {
@@ -981,6 +1136,7 @@ async function loadLlmProviders(): Promise<void> {
     llmStatusText.className = 'status-text disconnected';
     llmStatusText.textContent = 'Offline';
     configuredModelsEl.innerHTML = '<div class="no-models">Bridge not connected</div>';
+    setProviderConfigurationState('bridge-unavailable');
   }
 }
 
@@ -1096,8 +1252,9 @@ function renderProviders(providers: ProviderInfo[]): void {
   const cloudProviders = providers.filter(p => !p.is_local);
   
   for (const provider of [...localProviders, ...cloudProviders]) {
-    const isAvailable = provider.available || (provider.is_local && provider.configured);
+    const isAvailable = provider.available === true;
     const needsConfig = !provider.is_local && !provider.has_api_key;
+    const isRemoteOllama = provider.type === 'ollama' && Boolean(provider.base_url);
     
     const el = document.createElement('div');
     el.className = `detected-provider ${isAvailable ? 'available' : needsConfig ? 'needs-config' : 'unavailable'}`;
@@ -1105,8 +1262,11 @@ function renderProviders(providers: ProviderInfo[]): void {
     let statusText = '';
     let statusClass = '';
     if (isAvailable) {
-      statusText = '● Running';
+      statusText = isRemoteOllama ? '● Connected' : '● Running';
       statusClass = 'available';
+    } else if (isRemoteOllama) {
+      statusText = '○ Unreachable';
+      statusClass = 'unavailable';
     } else if (provider.is_local) {
       statusText = '○ Not detected';
       statusClass = 'unavailable';
@@ -1119,14 +1279,24 @@ function renderProviders(providers: ProviderInfo[]): void {
     }
     
     let actionHtml = '';
-    if (needsConfig) {
-      actionHtml = `<button class="btn btn-secondary btn-sm configure-provider-btn" data-provider="${provider.type}">Configure</button>`;
+    if (isRemoteOllama) {
+      actionHtml = `<button class="btn btn-secondary btn-sm edit-remote-ollama-btn" data-provider-id="${escapeHtml(provider.id)}">Edit</button>`;
+    } else if (needsConfig) {
+      actionHtml = `<button class="btn btn-secondary btn-sm configure-provider-btn provider-add-trigger" data-provider="${provider.type}">Configure</button>`;
     }
+    if (isConfiguredProviderInstance(provider)) {
+      actionHtml += `<button class="btn btn-danger btn-sm delete-provider-btn" data-provider-id="${escapeHtml(provider.id)}">Delete</button>`;
+    }
+
+    const endpointHtml = provider.base_url
+      ? `<div class="provider-endpoint" title="${escapeHtml(provider.base_url)}">Remote · ${escapeHtml(getProviderEndpointLabel(provider.base_url))}</div>`
+      : '';
     
     el.innerHTML = `
       <div class="detected-provider-info">
-        <div class="detected-provider-name">${provider.name}</div>
+        <div class="detected-provider-name">${escapeHtml(provider.name)}</div>
         <div class="detected-provider-status ${statusClass}">${statusText}</div>
+        ${endpointHtml}
       </div>
       <div class="detected-provider-action">${actionHtml}</div>
     `;
@@ -1139,6 +1309,58 @@ function renderProviders(providers: ProviderInfo[]): void {
     btn.addEventListener('click', () => {
       const providerType = (btn as HTMLElement).dataset.provider;
       if (providerType) showApiKeyConfig(providerType);
+    });
+  });
+
+  detectedProvidersEl.querySelectorAll('.edit-remote-ollama-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const providerId = (btn as HTMLElement).dataset.providerId;
+      const provider = providers.find(candidate => candidate.id === providerId);
+      if (provider) showRemoteOllamaConfig(provider);
+    });
+  });
+
+  detectedProvidersEl.querySelectorAll('.delete-provider-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const providerId = (btn as HTMLElement).dataset.providerId;
+      const provider = providers.find(candidate => candidate.id === providerId);
+      if (!providerId || !provider) return;
+      if (!confirm(`Delete provider "${provider.name}"?`)) return;
+
+      const deleteButton = btn as HTMLButtonElement;
+      deleteButton.disabled = true;
+      deleteButton.textContent = 'Deleting...';
+
+      try {
+        const response = await browserAPI.runtime.sendMessage({
+          type: 'llm_remove_provider',
+          id: providerId,
+        }) as { ok: boolean; error?: string };
+
+        if (!response.ok) {
+          showToast(`Failed to delete provider: ${response.error || 'Unknown error'}`, 'error');
+          return;
+        }
+
+        if (configuringRemoteOllamaProviderId === providerId) {
+          hideRemoteOllamaConfig();
+        }
+        if (configuringProviderId === provider.type) {
+          hideApiKeyConfig();
+        }
+
+        await Promise.all([
+          loadLlmProviders(),
+          refreshAvailableModels(),
+        ]);
+        showToast(`Deleted provider "${provider.name}"`, 'success');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        showToast(`Failed to delete provider: ${message}`, 'error');
+      } finally {
+        deleteButton.disabled = false;
+        deleteButton.textContent = 'Delete';
+      }
     });
   });
 }
@@ -2514,4 +2736,3 @@ loadSessions();
 
 // Auto-refresh sessions every 30 seconds
 setInterval(loadSessions, 30000);
-

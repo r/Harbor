@@ -96,6 +96,8 @@
       .status-text.connected { color: var(--color-success); }
       .status-text.disconnected { color: var(--color-error); }
       .status-text.connecting { color: var(--color-warning); }
+      .status-indicator.idle { background: var(--color-text-disabled); }
+      .status-text.idle { color: var(--color-text-muted); }
       .panel {
         background: var(--color-surface-primary);
         border: 1px solid var(--color-border-default);
@@ -592,6 +594,7 @@
         display: flex;
         flex-direction: column;
         gap: 2px;
+        min-width: 0;
       }
       .detected-provider-name {
         font-size: var(--text-sm);
@@ -614,7 +617,57 @@
         color: var(--color-warning);
       }
       .detected-provider-action {
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
         flex-shrink: 0;
+      }
+      .provider-endpoint {
+        max-width: 250px;
+        overflow: hidden;
+        color: var(--color-text-muted);
+        font-family: var(--font-mono);
+        font-size: var(--text-2xs);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .remote-provider-entry {
+        padding-top: var(--space-2);
+        border-top: 1px solid var(--color-border-subtle);
+      }
+      .provider-management-status {
+        margin-bottom: var(--space-2);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .provider-management-status[hidden] {
+        display: none;
+      }
+      .remote-provider-trigger {
+        width: 100%;
+      }
+      .remote-provider-form {
+        margin-top: var(--space-2);
+        margin-bottom: 0;
+      }
+      .remote-provider-kind {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .remote-provider-kind-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .remote-provider-kind-name {
+        color: var(--color-text-primary);
+        font-size: var(--text-sm);
+        font-weight: var(--weight-medium);
+      }
+      .remote-provider-kind-detail {
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
       }
       /* API Key Config */
       .api-key-config {
@@ -1058,6 +1111,90 @@
             <span id="providers-count" class="providers-count">0</span>
           </summary>
           <div id="detected-providers" class="detected-providers-list"></div>
+
+          <div class="remote-provider-entry">
+            <div
+              class="provider-management-status"
+              id="provider-management-status"
+              role="status"
+              aria-live="polite"
+            >
+              Checking model and provider connections...
+            </div>
+            <button
+              class="btn btn-secondary btn-sm remote-provider-trigger provider-add-trigger"
+              id="add-remote-ollama"
+              type="button"
+              aria-describedby="provider-management-status"
+              disabled
+            >
+              Add Remote Ollama
+            </button>
+
+            <div
+              class="provider-config-form remote-provider-form"
+              id="remote-ollama-config"
+              style="display: none;"
+            >
+              <div class="api-key-header">
+                <div class="remote-provider-kind">
+                  <span class="badge badge-remote">Remote</span>
+                  <div class="remote-provider-kind-copy">
+                    <span class="remote-provider-kind-name" id="remote-ollama-form-title">
+                      Ollama
+                    </span>
+                    <span class="remote-provider-kind-detail">
+                      Connect through the Harbor native bridge
+                    </span>
+                  </div>
+                </div>
+                <button
+                  class="btn btn-ghost btn-sm"
+                  id="remote-ollama-cancel"
+                  type="button"
+                  aria-label="Cancel remote Ollama configuration"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="remote-ollama-name">Provider name</label>
+                <input
+                  class="form-input"
+                  id="remote-ollama-name"
+                  type="text"
+                  placeholder="Ollama (box)"
+                  autocomplete="off"
+                />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="remote-ollama-url">Server URL</label>
+                <input
+                  class="form-input"
+                  id="remote-ollama-url"
+                  type="url"
+                  inputmode="url"
+                  placeholder="https://ollama.example.com"
+                  autocomplete="url"
+                  spellcheck="false"
+                />
+                <div class="form-hint">
+                  Enter the server origin without <code>/api</code>.
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button class="btn btn-secondary btn-sm" id="remote-ollama-form-cancel" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-primary btn-sm" id="remote-ollama-save" type="button">
+                  Save Provider
+                </button>
+              </div>
+            </div>
+          </div>
           
           <!-- API Key Config -->
           <div id="api-key-config" class="api-key-config" style="display: none;">
