@@ -27,6 +27,9 @@ const common = {
   logLevel: 'info',
   define: {
     __HARBOR_DEVELOPMENT__: JSON.stringify(isDevelopmentBuild),
+    'process.env.NODE_ENV': JSON.stringify(
+      isDevelopmentBuild ? 'development' : 'production',
+    ),
   },
 };
 
@@ -37,6 +40,7 @@ const entryPoints = [
   'src/page-chat.ts',
   'src/directory.ts',
   'src/sidebar.ts',
+  'src/chat.tsx',
   'src/demo-bootstrap.ts',
   'src/js-runtime/worker-loader.ts',
 ];
@@ -82,10 +86,12 @@ async function copyStatic() {
   // Copy HTML and CSS files
   await copyFile('src/directory.html', `${outDir}/directory.html`);
   await copyFile('src/sidebar.html', `${outDir}/sidebar.html`);
+  await copyFile('src/chat.html', `${outDir}/chat.html`);
   await copyFile('src/permission-prompt.html', `${outDir}/permission-prompt.html`);
   await copyFile('src/design-tokens.css', `${outDir}/design-tokens.css`);
   await copyFile('../brand/port-authority.tokens.css', `${outDir}/port-authority.tokens.css`);
   await copyFile('src/port-authority.css', `${outDir}/port-authority.css`);
+  await copyFile('src/chat.css', `${outDir}/chat.css`);
   await copyFile('src/js-runtime/sandbox.html', `${outDir}/js-runtime/sandbox.html`).catch(() => {});
   await copyFile('src/js-runtime/builtin-echo-worker.js', `${outDir}/js-runtime/builtin-echo-worker.js`);
   
