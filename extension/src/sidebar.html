@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Harbor</title>
+    <link rel="stylesheet" href="./port-authority.tokens.css" />
     <link rel="stylesheet" href="./design-tokens.css" />
     <style>
       body {
@@ -810,9 +811,6 @@
         background: var(--color-surface-tertiary);
         border-color: var(--color-accent-primary);
       }
-      .quick-action-icon {
-        font-size: var(--text-lg);
-      }
       .quick-action-label {
         font-size: var(--text-xs);
         color: var(--color-text-secondary);
@@ -1381,6 +1379,7 @@
       }
 
     </style>
+    <link rel="stylesheet" href="./port-authority.css" />
   </head>
   <body>
     <div class="header">
@@ -1392,28 +1391,34 @@
           title="Copy Firefox debugging address"
           aria-label="Copy Firefox debugging address"
         >
-          <img src="./assets/icon.svg" alt="" />
+          <img class="header-mark" src="./assets/harbor-mark.svg" alt="" />
+          <img class="header-mark-inverse" src="./assets/harbor-mark-inverse.svg" alt="" />
         </button>
-        <span class="header-title">Harbor</span>
+        <div class="header-copy">
+          <span class="header-title">Harbor</span>
+          <span class="header-register">Port Authority · 0.1</span>
+        </div>
+      </div>
+      <div class="header-operations">
         <div class="header-status">
           <div id="bridge-status-indicator" class="status-indicator connecting"></div>
           <span id="bridge-status-text" class="status-text connecting">...</span>
         </div>
-      </div>
-      <div class="header-actions">
-        <button class="btn btn-ghost btn-sm" id="reload-extension-btn" title="Reload extension">🔄</button>
-        <button class="btn btn-ghost btn-sm" id="theme-toggle" title="Toggle theme">🖥️</button>
+        <div class="header-actions">
+          <button class="btn btn-ghost btn-sm" id="reload-extension-btn" title="Reload extension">Reload</button>
+          <button class="btn btn-ghost btn-sm" id="theme-toggle" title="Change appearance">Auto</button>
+        </div>
       </div>
     </div>
 
     <div class="panel" id="setup-status-panel">
       <div class="panel-header" id="setup-status-header">
         <div class="panel-header-left">
-          <span class="panel-collapse-icon" id="setup-status-toggle">&#9660;</span>
+          <span class="panel-collapse-icon collapsed" id="setup-status-toggle">&#9660;</span>
           <div class="panel-title">Setup</div>
         </div>
       </div>
-      <div class="panel-body" id="setup-status-body">
+      <div class="panel-body collapsed" id="setup-status-body">
         <div id="setup-status-list" class="setup-status-list"></div>
         <div class="setup-status-actions">
           <a href="#" id="open-debugging-link" class="btn btn-secondary btn-sm">Open about:debugging</a>
@@ -1670,7 +1675,7 @@
             <option value="">Select a model to add...</option>
           </select>
           <button class="btn btn-primary btn-sm" id="add-model-btn" disabled>Add</button>
-          <button class="btn btn-ghost btn-sm" id="refresh-models-btn" title="Refresh available models">↻</button>
+          <button class="btn btn-ghost btn-sm" id="refresh-models-btn" title="Refresh available models">Refresh</button>
         </div>
 
         <!-- Detected Providers (collapsible) -->
@@ -1786,7 +1791,7 @@
       <div class="panel-header" id="oauth-panel-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon" id="oauth-panel-toggle">&#9660;</span>
-          <div class="panel-title">🔑 App Credentials</div>
+          <div class="panel-title">App Credentials</div>
         </div>
         <div class="panel-header-right">
           <div id="oauth-status-indicator" class="status-indicator disconnected"></div>
@@ -1885,7 +1890,7 @@
       <div class="panel-header" id="tool-tester-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon collapsed" id="tool-tester-toggle">&#9660;</span>
-          <div class="panel-title">🧪 Tool Tester</div>
+          <div class="panel-title">Tool Tester</div>
         </div>
       </div>
       <div class="panel-body collapsed" id="tool-tester-body">
@@ -1925,12 +1930,12 @@
       <div class="panel-header" id="sessions-panel-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon" id="sessions-panel-toggle">&#9660;</span>
-          <div class="panel-title">🤖 Agent Sessions</div>
+          <div class="panel-title">Agent Sessions</div>
         </div>
         <div class="panel-header-right">
           <div id="sessions-status-indicator" class="status-indicator disconnected"></div>
           <span id="sessions-count" class="status-text disconnected">0</span>
-          <button class="btn btn-ghost btn-sm" id="refresh-sessions-btn" title="Refresh">↻</button>
+          <button class="btn btn-ghost btn-sm" id="refresh-sessions-btn" title="Refresh sessions">Refresh</button>
         </div>
       </div>
       <div class="panel-body" id="sessions-list">
@@ -1943,7 +1948,7 @@
       <div class="panel-header" id="activity-panel-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon" id="activity-panel-toggle">&#9660;</span>
-          <div class="panel-title">📜 Activity</div>
+          <div class="panel-title">Activity</div>
         </div>
         <div class="panel-header-right">
           <select class="form-input form-input-sm" id="activity-filter-effect" title="Filter by outcome" style="height: 24px; font-size: var(--text-xs); padding: 0 var(--space-2);">
@@ -1953,7 +1958,7 @@
             <option value="preview">Previewed</option>
             <option value="deny">Denied</option>
           </select>
-          <button class="btn btn-ghost btn-sm" id="refresh-activity-btn" title="Refresh">↻</button>
+          <button class="btn btn-ghost btn-sm" id="refresh-activity-btn" title="Refresh activity">Refresh</button>
         </div>
       </div>
       <div class="panel-body" id="activity-body">
@@ -1969,10 +1974,10 @@
       <div class="panel-header" id="permissions-panel-header">
         <div class="panel-header-left">
           <span class="panel-collapse-icon collapsed" id="permissions-panel-toggle">&#9660;</span>
-          <div class="panel-title">🔒 Site Permissions</div>
+          <div class="panel-title">Site Permissions</div>
         </div>
         <div class="panel-header-right">
-          <button class="btn btn-ghost btn-sm" id="refresh-permissions-btn" title="Refresh">↻</button>
+          <button class="btn btn-ghost btn-sm" id="refresh-permissions-btn" title="Refresh permissions">Refresh</button>
         </div>
       </div>
       <div class="panel-body collapsed" id="permissions-list">
@@ -1991,11 +1996,9 @@
       <div class="panel-body" id="quick-actions-body">
         <div class="quick-actions-grid">
           <button class="quick-action-btn" id="open-chat-btn" title="Open chat in new tab">
-            <span class="quick-action-icon">💬</span>
             <span class="quick-action-label">Open Chat</span>
           </button>
           <button class="quick-action-btn" id="open-directory-btn" title="Browse MCP server directory">
-            <span class="quick-action-icon">📚</span>
             <span class="quick-action-label">Directory</span>
           </button>
         </div>

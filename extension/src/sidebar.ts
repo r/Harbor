@@ -184,6 +184,7 @@ function getSystemTheme(): 'light' | 'dark' {
 function applyTheme(theme: Theme): void {
   const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
   document.documentElement.setAttribute('data-theme', effectiveTheme);
+  document.documentElement.setAttribute('data-harbor-theme', effectiveTheme);
   localStorage.setItem('harbor-theme', theme);
   updateThemeToggle(theme);
 }
@@ -192,9 +193,10 @@ function updateThemeToggle(theme: Theme): void {
   const btn = document.getElementById('theme-toggle');
   if (!btn) return;
   
-  const icons: Record<Theme, string> = { light: '☀️', dark: '🌙', system: '🖥️' };
-  btn.textContent = icons[theme];
-  btn.title = `Theme: ${theme} (click to change)`;
+  const labels: Record<Theme, string> = { light: 'Light', dark: 'Dark', system: 'Auto' };
+  btn.textContent = labels[theme];
+  btn.title = `Appearance: ${labels[theme]}`;
+  btn.setAttribute('aria-label', `Appearance: ${labels[theme]}. Click to change.`);
 }
 
 function initTheme(): void {
@@ -1164,9 +1166,9 @@ function renderConfiguredModels(models: ConfiguredModel[]): void {
         <div class="configured-model-id">${model.model_id}</div>
       </div>
       <div class="configured-model-actions">
-        <button class="btn btn-ghost btn-sm test-model-btn" data-model="${model.model_id}" title="Test connection">⚡</button>
-        ${!model.is_default ? `<button class="btn btn-ghost btn-sm set-default-model-btn" data-name="${model.name}" title="Set as default">★</button>` : ''}
-        <button class="btn btn-ghost btn-sm remove-model-btn" data-name="${model.name}" title="Remove">✕</button>
+        <button class="btn btn-ghost btn-sm test-model-btn" data-model="${model.model_id}">Test</button>
+        ${!model.is_default ? `<button class="btn btn-ghost btn-sm set-default-model-btn" data-name="${model.name}">Set default</button>` : ''}
+        <button class="btn btn-ghost btn-sm remove-model-btn" data-name="${model.name}">Remove</button>
       </div>
     `;
     
@@ -1392,7 +1394,7 @@ refreshModelsBtn.addEventListener('click', async () => {
     showToast('Models refreshed', 'success');
   } finally {
     refreshModelsBtn.disabled = false;
-    refreshModelsBtn.textContent = '↻';
+    refreshModelsBtn.textContent = 'Refresh';
   }
 });
 
@@ -1512,12 +1514,12 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
         const label = scope.split(':')[1] || scope;
         const isOnce = status === 'granted-once';
         const badgeClass = isOnce ? 'permission-scope-badge temporary' : 'permission-scope-badge';
-        const suffix = isOnce ? ' <span class="permission-temp-label">⏱</span>' : '';
+        const suffix = isOnce ? ' <span class="permission-temp-label">Once</span>' : '';
         return `<span class="${badgeClass}">${escapeHtml(label)}${suffix}</span>`;
       }),
       ...deniedScopes.map((scope) => {
         const label = scope.split(':')[1] || scope;
-        return `<span class="permission-scope-badge denied">${escapeHtml(label)} ✕</span>`;
+        return `<span class="permission-scope-badge denied">${escapeHtml(label)} denied</span>`;
       }),
     ].join('');
 
@@ -1841,7 +1843,9 @@ async function loadActivity(): Promise<void> {
     }
     // Render newest first.
     const rows = recordsResp.records.slice().reverse().map((r) => {
-      const labels = r.labelsOut.length ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">⛳ ${escapeHtml(r.labelsOut.join(','))}</span>` : '';
+      const labels = r.labelsOut.length
+        ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">Labels ${escapeHtml(r.labelsOut.join(','))}</span>`
+        : '';
       const tier = `<span style="font-size:10px;color:var(--color-text-muted);">tier ${r.tier}</span>`;
       const rule = r.rule ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">rule:${escapeHtml(r.rule.id)}</span>` : '';
       const recordJson = encodeURIComponent(JSON.stringify(r));
@@ -1912,17 +1916,15 @@ loadActivity();
 // OAuth App Credentials Panel
 // =============================================================================
 
-const oauthProviderConfigs: Array<{ id: string; name: string; icon: string; helpUrl: string }> = [
+const oauthProviderConfigs: Array<{ id: string; name: string; helpUrl: string }> = [
   {
     id: 'google',
     name: 'Google',
-    icon: '🔵',
     helpUrl: 'https://console.cloud.google.com/apis/credentials',
   },
   {
     id: 'github',
     name: 'GitHub',
-    icon: '⚫',
     helpUrl: 'https://github.com/settings/developers',
   },
 ];
@@ -1981,12 +1983,12 @@ function renderOAuthProviders(providers: Record<string, { configured: boolean; c
     const statusClass = isConfigured ? 'available' : 'needs-config';
     
     const actionHtml = isConfigured
-      ? `<button class="btn btn-ghost btn-sm oauth-remove-btn" data-provider="${config.id}" title="Remove credentials">✕</button>`
+      ? `<button class="btn btn-ghost btn-sm oauth-remove-btn" data-provider="${config.id}">Remove</button>`
       : `<button class="btn btn-secondary btn-sm oauth-configure-btn" data-provider="${config.id}">Configure</button>`;
     
     el.innerHTML = `
       <div class="detected-provider-info">
-        <div class="detected-provider-name">${config.icon} ${config.name}</div>
+        <div class="detected-provider-name">${config.name}</div>
         <div class="detected-provider-status ${statusClass}">${statusText}</div>
       </div>
       <div class="detected-provider-action">${actionHtml}</div>
@@ -2635,8 +2637,8 @@ function renderSessions(sessions: SessionSummary[]): void {
           ${capBadges.length > 0 ? capBadges.join('') : '<span style="color: var(--color-text-muted); font-size: 10px;">No capabilities</span>'}
         </div>
         <div class="session-stats">
-          <span class="session-stat">💬 ${session.usage.promptCount} prompts</span>
-          <span class="session-stat">⚡ ${session.usage.toolCallCount} tool calls</span>
+          <span class="session-stat">${session.usage.promptCount} prompts</span>
+          <span class="session-stat">${session.usage.toolCallCount} tool calls</span>
         </div>
         ${session.status === 'active' ? `
           <div class="session-actions" style="display:flex;gap:6px;align-items:center;">

@@ -67,6 +67,8 @@ async function copyStatic() {
   
   // Copy assets (icons, wasm files, etc.)
   await cp('assets', `${outDir}/assets`, { recursive: true });
+  await copyFile('../brand/harbor-mark.svg', `${outDir}/assets/harbor-mark.svg`);
+  await copyFile('../brand/harbor-mark-inverse.svg', `${outDir}/assets/harbor-mark-inverse.svg`);
   
   // Generate PNG icons for Chrome (Chrome has better PNG support than SVG)
   if (isChrome || isSafari) {
@@ -78,6 +80,8 @@ async function copyStatic() {
   await copyFile('src/sidebar.html', `${outDir}/sidebar.html`);
   await copyFile('src/permission-prompt.html', `${outDir}/permission-prompt.html`);
   await copyFile('src/design-tokens.css', `${outDir}/design-tokens.css`);
+  await copyFile('../brand/port-authority.tokens.css', `${outDir}/port-authority.tokens.css`);
+  await copyFile('src/port-authority.css', `${outDir}/port-authority.css`);
   await copyFile('src/js-runtime/sandbox.html', `${outDir}/js-runtime/sandbox.html`).catch(() => {});
   await copyFile('src/js-runtime/builtin-echo-worker.js', `${outDir}/js-runtime/builtin-echo-worker.js`);
   
