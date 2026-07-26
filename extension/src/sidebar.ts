@@ -7,6 +7,7 @@ import {
   isConfiguredProviderInstance,
   isProviderConfigurationReady,
 } from './llm/provider-readiness';
+import { initializeAgentGatewaySidebar } from './agent-gateway/sidebar-controller';
 
 type SecretDecl = { name: string; label: string; type?: 'text' | 'password' };
 
@@ -239,6 +240,7 @@ function cycleTheme(): void {
 
 // Initialize theme on load
 initTheme();
+initializeAgentGatewaySidebar();
 
 // =============================================================================
 // Toast notification helper

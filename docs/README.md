@@ -92,6 +92,7 @@
 | Document | Description |
 |----------|-------------|
 | [Architecture](../ARCHITECTURE.md) | System design and components |
+| [Harbor Agent Gateway](specs/harbor-agent-gateway.md) | Draft MCP gateway for user-approved external agents |
 | [Contributing Guide](../CONTRIBUTING.md) | Development setup and workflow |
 | [MCP Host](MCP_HOST.md) | MCP execution environment internals |
 | [Test Suite](../tests/README.md) | Run and write Harbor's unit and E2E tests |

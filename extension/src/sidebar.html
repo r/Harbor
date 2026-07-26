@@ -1009,6 +1009,281 @@
         color: var(--color-text-muted);
       }
 
+      /* Agent Gateway */
+      .gateway-panel {
+        border-color: var(--color-border-strong);
+      }
+      .gateway-status-copy {
+        font-size: var(--text-xs);
+        color: var(--color-text-secondary);
+        line-height: var(--leading-normal);
+      }
+      .gateway-error {
+        margin-bottom: var(--space-3);
+        padding: var(--space-2);
+        border: 1px solid var(--color-error);
+        border-radius: var(--radius-sm);
+        background: var(--color-error-subtle);
+        color: var(--color-error);
+        font-size: var(--text-xs);
+      }
+      .gateway-error[hidden],
+      .gateway-view[hidden],
+      .gateway-inline-confirm[hidden],
+      .gateway-secret[hidden] {
+        display: none;
+      }
+      .gateway-trust-rail {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+        align-items: center;
+        gap: var(--space-1);
+        margin-bottom: var(--space-3);
+        padding: var(--space-2);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface-secondary);
+      }
+      .gateway-boundary {
+        min-width: 0;
+      }
+      .gateway-boundary-label {
+        display: block;
+        font-size: var(--text-2xs);
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: var(--tracking-wide);
+      }
+      .gateway-boundary-value {
+        display: block;
+        margin-top: var(--space-1);
+        overflow: hidden;
+        color: var(--color-text-primary);
+        font-family: var(--font-mono);
+        font-size: var(--text-2xs);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .gateway-boundary-state {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        margin-right: var(--space-1);
+        border-radius: var(--radius-full);
+        background: var(--color-text-disabled);
+      }
+      .gateway-boundary-state.connected {
+        background: var(--color-success);
+      }
+      .gateway-boundary-state.pending {
+        background: var(--color-warning);
+      }
+      .gateway-boundary-state.failed {
+        background: var(--color-error);
+      }
+      .gateway-rail-arrow {
+        color: var(--color-text-disabled);
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+      }
+      .gateway-section {
+        padding-top: var(--space-3);
+        border-top: 1px solid var(--color-border-subtle);
+      }
+      .gateway-section + .gateway-section {
+        margin-top: var(--space-3);
+      }
+      .gateway-section-heading {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--space-2);
+        margin-bottom: var(--space-2);
+      }
+      .gateway-section-title {
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+        font-weight: var(--weight-semibold);
+        letter-spacing: var(--tracking-wide);
+        text-transform: uppercase;
+      }
+      .gateway-section-meta {
+        color: var(--color-text-muted);
+        font-family: var(--font-mono);
+        font-size: var(--text-2xs);
+      }
+      .gateway-choice-list {
+        display: grid;
+        gap: var(--space-2);
+      }
+      .gateway-choice {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: start;
+        gap: var(--space-2);
+        padding: var(--space-2);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface-secondary);
+        cursor: pointer;
+      }
+      .gateway-choice:hover {
+        border-color: var(--color-border-default);
+      }
+      .gateway-choice:has(input:checked) {
+        border-color: var(--color-accent-primary);
+        background: var(--color-accent-primary-subtle);
+      }
+      .gateway-choice:focus-within,
+      .gateway-scope:focus-within {
+        border-color: var(--color-border-focus);
+        outline: 2px solid var(--color-border-focus);
+        outline-offset: 1px;
+      }
+      .gateway-choice:has(input:disabled),
+      .gateway-scope:has(input:disabled) {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+      .gateway-choice input {
+        margin: 2px 0 0;
+        accent-color: var(--color-accent-primary);
+      }
+      .gateway-choice-main {
+        min-width: 0;
+      }
+      .gateway-choice-name {
+        display: block;
+        color: var(--color-text-primary);
+        font-size: var(--text-sm);
+        font-weight: var(--weight-medium);
+      }
+      .gateway-choice-meta {
+        display: block;
+        margin-top: var(--space-1);
+        overflow: hidden;
+        color: var(--color-text-muted);
+        font-family: var(--font-mono);
+        font-size: var(--text-2xs);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .gateway-scope-grid,
+      .gateway-ttl-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-2);
+      }
+      .gateway-ttl-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .gateway-scope {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-2);
+        padding: var(--space-2);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface-secondary);
+        color: var(--color-text-secondary);
+        font-size: var(--text-xs);
+        cursor: pointer;
+      }
+      .gateway-scope:has(input:checked) {
+        border-color: var(--color-accent-primary);
+        background: var(--color-accent-primary-subtle);
+      }
+      .gateway-scope input {
+        margin: 1px 0 0;
+        accent-color: var(--color-accent-primary);
+      }
+      .gateway-scope code {
+        display: block;
+        color: var(--color-text-primary);
+        font-family: var(--font-mono);
+        font-size: var(--text-2xs);
+      }
+      .gateway-pair-form,
+      .gateway-secret,
+      .gateway-session {
+        padding: var(--space-3);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface-secondary);
+      }
+      .gateway-pair-form[hidden] {
+        display: none;
+      }
+      .gateway-secret {
+        margin-top: var(--space-2);
+        border-color: var(--color-warning);
+        background: var(--color-warning-subtle);
+      }
+      .gateway-secret-value {
+        display: block;
+        width: 100%;
+        margin: var(--space-2) 0;
+        padding: var(--space-2);
+        overflow-wrap: anywhere;
+        border: 1px solid var(--color-border-default);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface-primary);
+        color: var(--color-text-primary);
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        user-select: all;
+      }
+      .gateway-session {
+        border-color: var(--color-success);
+      }
+      .gateway-session.paused {
+        border-color: var(--color-warning);
+      }
+      .gateway-session-line {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: var(--space-2);
+        font-size: var(--text-xs);
+      }
+      .gateway-session-line + .gateway-session-line {
+        margin-top: var(--space-1);
+      }
+      .gateway-session-key {
+        color: var(--color-text-muted);
+      }
+      .gateway-session-value {
+        overflow: hidden;
+        color: var(--color-text-primary);
+        font-family: var(--font-mono);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .gateway-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        margin-top: var(--space-3);
+      }
+      .gateway-actions .btn-primary {
+        flex: 1;
+      }
+      .gateway-inline-confirm {
+        margin-top: var(--space-2);
+        padding: var(--space-2);
+        border: 1px solid var(--color-error);
+        border-radius: var(--radius-sm);
+        background: var(--color-error-subtle);
+      }
+      .gateway-inline-confirm-copy {
+        color: var(--color-text-secondary);
+        font-size: var(--text-xs);
+      }
+      .gateway-empty {
+        padding: var(--space-2) 0;
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+
       /* Toast notification */
       .toast {
         position: fixed;
@@ -1075,6 +1350,233 @@
         <div id="setup-status-list" class="setup-status-list"></div>
         <div class="setup-status-actions">
           <a href="#" id="open-debugging-link" class="btn btn-secondary btn-sm">Open about:debugging</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel gateway-panel" id="agent-gateway-panel" aria-busy="true">
+      <div class="panel-header">
+        <div class="panel-header-left">
+          <div class="panel-title">Agent Gateway</div>
+        </div>
+        <div class="panel-header-right">
+          <div id="gateway-status-indicator" class="status-indicator disconnected"></div>
+          <span
+            id="gateway-status-text"
+            class="status-text disconnected"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >Disconnected</span>
+          <button class="btn btn-ghost btn-sm" id="gateway-refresh" type="button">Refresh</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="gateway-trust-rail" aria-label="Agent Gateway trust boundary">
+          <div class="gateway-boundary">
+            <span class="gateway-boundary-label">Agent</span>
+            <span class="gateway-boundary-value" id="gateway-rail-agent">
+              <span class="gateway-boundary-state" id="gateway-rail-agent-state"></span>none
+            </span>
+          </div>
+          <span class="gateway-rail-arrow" aria-hidden="true">-&gt;</span>
+          <div class="gateway-boundary">
+            <span class="gateway-boundary-label">Harbor</span>
+            <span class="gateway-boundary-value" id="gateway-rail-harbor">
+              <span class="gateway-boundary-state" id="gateway-rail-harbor-state"></span>disabled
+            </span>
+          </div>
+          <span class="gateway-rail-arrow" aria-hidden="true">-&gt;</span>
+          <div class="gateway-boundary">
+            <span class="gateway-boundary-label">Exact tab</span>
+            <span class="gateway-boundary-value" id="gateway-rail-tab">
+              <span class="gateway-boundary-state" id="gateway-rail-tab-state"></span>none
+            </span>
+          </div>
+        </div>
+
+        <div class="gateway-error" id="gateway-error" role="alert" hidden></div>
+
+        <div
+          class="gateway-view"
+          id="gateway-loading"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <div class="gateway-status-copy">Reading native gateway authority...</div>
+        </div>
+
+        <div class="gateway-view" id="gateway-disconnected" hidden>
+          <div class="gateway-status-copy">
+            The native bridge is unavailable. Pairing and approvals stay disabled.
+          </div>
+        </div>
+
+        <div class="gateway-view" id="gateway-disabled" hidden>
+          <div class="gateway-status-copy">
+            Gateway access is off. Existing pairings remain dormant until you enable it.
+          </div>
+          <div class="gateway-actions">
+            <button class="btn btn-primary btn-sm" id="gateway-enable" type="button">
+              Enable Agent Gateway
+            </button>
+          </div>
+        </div>
+
+        <div class="gateway-view" id="gateway-enabled" hidden>
+          <div class="gateway-section">
+            <div class="gateway-section-heading">
+              <span class="gateway-section-title">Paired coding agents</span>
+              <button class="btn btn-secondary btn-sm" id="gateway-show-pair" type="button">
+                Pair Agent
+              </button>
+            </div>
+            <div class="gateway-choice-list" id="gateway-client-list"></div>
+
+            <div class="gateway-pair-form" id="gateway-pair-form" hidden>
+              <div class="form-group">
+                <label class="form-label" for="gateway-agent-name">Agent name</label>
+                <input
+                  class="form-input"
+                  id="gateway-agent-name"
+                  type="text"
+                  maxlength="128"
+                  placeholder="Claude Code on laptop"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="gateway-agent-version">Version, optional</label>
+                <input
+                  class="form-input"
+                  id="gateway-agent-version"
+                  type="text"
+                  maxlength="64"
+                  placeholder="1.2.0"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="form-label">Allowed scopes</div>
+              <div class="gateway-scope-grid">
+                <label class="gateway-scope">
+                  <input type="checkbox" name="gateway-pair-scope" value="tabs:list" />
+                  <span><code>tabs:list</code>Safe tab metadata</span>
+                </label>
+                <label class="gateway-scope">
+                  <input type="checkbox" name="gateway-pair-scope" value="page:observe" />
+                  <span><code>page:observe</code>Readable page snapshot</span>
+                </label>
+              </div>
+              <div class="gateway-actions">
+                <button class="btn btn-secondary btn-sm" id="gateway-cancel-pair" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-primary btn-sm" id="gateway-pair" type="button">
+                  Pair Agent
+                </button>
+              </div>
+            </div>
+
+            <div class="gateway-secret" id="gateway-secret" hidden>
+              <div class="gateway-section-title">One-time client credentials</div>
+              <div class="gateway-status-copy">
+                Copy this now. Harbor will not show or store this secret again.
+              </div>
+              <label class="form-label" for="gateway-client-id-value">Client ID</label>
+              <code class="gateway-secret-value" id="gateway-client-id-value"></code>
+              <div class="gateway-actions">
+                <button class="btn btn-secondary btn-sm" id="gateway-copy-client-id" type="button">
+                  Copy Client ID
+                </button>
+              </div>
+              <label class="form-label" for="gateway-secret-value">Secret</label>
+              <code class="gateway-secret-value" id="gateway-secret-value"></code>
+              <div class="gateway-actions">
+                <button class="btn btn-secondary btn-sm" id="gateway-copy-secret" type="button">
+                  Copy Secret
+                </button>
+              </div>
+              <label class="gateway-scope">
+                <input type="checkbox" id="gateway-secret-acknowledged" />
+                <span>I saved this secret in the coding agent.</span>
+              </label>
+              <div class="gateway-actions">
+                <button class="btn btn-primary btn-sm" id="gateway-finish-pair" type="button" disabled>
+                  Finish Pairing
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="gateway-section">
+            <div class="gateway-section-heading">
+              <span class="gateway-section-title">Tab approval</span>
+              <span class="gateway-section-meta">read only</span>
+            </div>
+            <div id="gateway-session-active" hidden></div>
+            <div id="gateway-session-form">
+              <div class="form-label">Coding agent</div>
+              <div class="gateway-choice-list" id="gateway-session-clients"></div>
+
+              <div class="form-label" style="margin-top: var(--space-3);">Exact tab</div>
+              <div class="gateway-choice-list" id="gateway-tab-list"></div>
+
+              <div class="form-label" style="margin-top: var(--space-3);">Session scopes</div>
+              <div class="gateway-scope-grid">
+                <label class="gateway-scope">
+                  <input type="checkbox" name="gateway-session-scope" value="tabs:list" />
+                  <span><code>tabs:list</code>Safe tab metadata</span>
+                </label>
+                <label class="gateway-scope">
+                  <input type="checkbox" name="gateway-session-scope" value="page:observe" />
+                  <span><code>page:observe</code>Readable page snapshot</span>
+                </label>
+              </div>
+
+              <div class="form-label" style="margin-top: var(--space-3);">Expires after</div>
+              <div class="gateway-ttl-grid">
+                <label class="gateway-scope">
+                  <input type="radio" name="gateway-session-ttl" value="300" />
+                  <span><code>5 min</code></span>
+                </label>
+                <label class="gateway-scope">
+                  <input type="radio" name="gateway-session-ttl" value="900" checked />
+                  <span><code>15 min</code></span>
+                </label>
+                <label class="gateway-scope">
+                  <input type="radio" name="gateway-session-ttl" value="3600" />
+                  <span><code>60 min</code></span>
+                </label>
+              </div>
+              <div class="gateway-actions">
+                <button class="btn btn-primary btn-sm" id="gateway-start-session" type="button">
+                  Approve Read-only Session
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="gateway-section">
+            <div class="gateway-actions">
+              <button class="btn btn-danger btn-sm" id="gateway-disable" type="button">
+                Disable Gateway
+              </button>
+            </div>
+            <div class="gateway-inline-confirm" id="gateway-disable-confirm" hidden>
+              <div class="gateway-inline-confirm-copy">
+                Disable the gateway and end the active session?
+              </div>
+              <div class="gateway-actions">
+                <button class="btn btn-secondary btn-sm" id="gateway-cancel-disable" type="button">
+                  Keep Enabled
+                </button>
+                <button class="btn btn-danger btn-sm" id="gateway-confirm-disable" type="button">
+                  Disable Gateway
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

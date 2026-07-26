@@ -121,43 +121,29 @@ This is the critical step that differs from Firefox. Chrome's native messaging r
 ```bash
 cd bridge-rs
 cargo build --release
-./install.sh
+./install.sh --chrome-extension-id YOUR_32_CHARACTER_EXTENSION_ID
 cd ..
 ```
 
-### Update the Native Messaging Manifest
+The installer validates the ID and refuses to create a Chrome manifest with a
+wildcard origin.
 
-**macOS:**
-```bash
-nano ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
-```
+### Verify the Native Messaging Manifest
 
-**Linux:**
-```bash
-nano ~/.config/google-chrome/NativeMessagingHosts/harbor_bridge_host.json
-```
+- **macOS:** `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json`
+- **Linux:** `~/.config/google-chrome/NativeMessagingHosts/harbor_bridge.json`
+- **Windows:** Native installation is not provided by `install.sh`
 
-**Windows:**
-The manifest is at `%LOCALAPPDATA%\Google\Chrome\User Data\NativeMessagingHosts\harbor_bridge_host.json`
-
-### Edit the Manifest
-
-Find the `allowed_origins` line and replace `YOUR_EXTENSION_ID_HERE` with your actual Harbor extension ID:
+The generated manifest must contain your exact Harbor extension ID:
 
 ```json
 {
-  "name": "harbor_bridge_host",
+  "name": "harbor_bridge",
   "description": "Harbor Bridge - Local LLM and MCP server for Harbor extension",
-  "path": "/Users/you/.harbor/bin/harbor-bridge",
+  "path": "<path-to-harbor-bridge-native>",
   "type": "stdio",
   "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID_HERE/"]
 }
-```
-
-**Example:** If your extension ID is `abcdefghijklmnopabcdefghijklmnop`:
-
-```json
-"allowed_origins": ["chrome-extension://abcdefghijklmnopabcdefghijklmnop/"]
 ```
 
 ### Restart Chrome
@@ -179,6 +165,51 @@ Find the `allowed_origins` line and replace `YOUR_EXTENSION_ID_HERE` with your a
 3. **Check the LLM provider:**
    - The panel should show **"LLM: Ollama"**
    - If no LLM is found, make sure `ollama serve` is running
+
+### Optional: Pair a local MCP client
+
+Firefox remains the primary Agent Gateway target. After the Chrome bridge is
+connected, the same read-only gateway can be used as the secondary browser
+implementation.
+
+1. Open **Agent Gateway** in Harbor.
+2. Enable the gateway and choose **Pair client**.
+3. Approve the read-only scopes and copy the client ID and one-time secret.
+4. Approve a tab-bound session before the client calls a browser read tool.
+
+Register the installed gateway with the client's normal MCP stdio
+configuration. The outer format varies by client, but the registration is
+equivalent to:
+
+```json
+{
+  "mcpServers": {
+    "harbor": {
+      "command": "<path-to-harbor-agent-gateway>",
+      "env": {
+        "HARBOR_AGENT_GATEWAY_CLIENT_ID": "<client-id-from-harbor>",
+        "HARBOR_AGENT_GATEWAY_SECRET": "<one-time-secret-from-harbor>"
+      }
+    }
+  }
+}
+```
+
+Keep the secret in a protected environment or secret store. Never pass it as a
+command argument or write it to logs or committed configuration.
+
+Harbor stores an RFC 9807 OPAQUE server setup and per-client OPAQUE registration
+record, not the raw one-time credential. OPAQUE uses fresh client and server
+protocol randomness for every login, and the client verifies a server
+confirmation bound to its client ID and browser instance. The raw credential is
+not sent over gateway IPC. The fixed gateway socket remains an untrusted
+discovery point until authentication finishes.
+
+The gateway exposes exactly `harbor.gateway.health`, `harbor.tabs.list`, and
+`harbor.page.observe`. The two browser tools require the `sessionId` from an
+active Harbor approval. Revoke the paired client in Harbor to end its sessions
+and invalidate its credential. Disabling Agent Gateway ends all sessions and
+returns it to its deny-all state.
 
 ---
 
@@ -213,7 +244,7 @@ This is almost always an extension ID mismatch. Verify:
 2. **Check the manifest** matches exactly:
    ```bash
    # macOS
-   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
    ```
 3. **Ensure the ID in `allowed_origins` matches** your extension ID
 4. **Restart Chrome completely** (Quit → Reopen, not just close tabs)
@@ -233,6 +264,30 @@ cat ~/.cache/harbor-bridge.log
   - You need both Harbor AND Web Agents API
 - Refresh the page after loading the extensions
 - Make sure you loaded from `dist-chrome/`, not `dist-firefox/` or the source folder
+
+### Agent Gateway reports `BROWSER_DISCONNECTED`
+
+Keep Chrome open with Harbor loaded and confirm that the panel reports the
+native bridge as connected. The MCP process cannot create the browser
+connection. After a Chrome or extension restart, reconnect Harbor and approve a
+new session.
+
+### Agent Gateway reports `GATEWAY_SOCKET_OCCUPIED`
+
+The fixed socket path has a reachable but unverified listener. Close the expected
+Harbor browser instance or profile cleanly before opening the profile you want
+to use. If the error remains, inspect the listening process. Do not trust it as
+Harbor or delete the socket while it is active.
+
+### Agent Gateway reports `GATEWAY_CONFIGURATION_MIGRATION_REQUIRED`
+
+Close every Harbor browser instance and gateway MCP client. In the OS user-local
+configuration directory, move `harbor/agent_gateway.json` to
+`harbor/agent_gateway.v1.backup.json`, then restart Harbor. The replacement
+version 2 configuration starts disabled. Enable Agent Gateway, pair every client
+again, and replace its environment values. Keep the backup until the new pairing
+works. Legacy version 1 hashes cannot be converted into OPAQUE registration
+records.
 
 ### Extension ID Changed
 
@@ -267,7 +322,9 @@ The same setup works for:
 - **Arc** — Uses Chrome's native messaging location
 - **Vivaldi** — Use `~/Library/Application Support/Vivaldi/NativeMessagingHosts/` on macOS
 
-The `install.sh` script may create manifests for multiple browsers. Check which one matches your browser.
+`install.sh` writes only the Google Chrome manifest. For another Chromium
+browser, install the same exact-origin manifest in that browser's native
+messaging directory.
 
 ---
 

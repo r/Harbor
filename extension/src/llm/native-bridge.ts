@@ -13,6 +13,8 @@
 
 import { browserAPI, isSafari } from '../browser-compat';
 import { handleHostRequest } from '../handlers/host-request-handlers';
+import { handleAgentGatewayRequest } from '../agent-gateway/handler';
+import type { AgentGatewayRequest } from '../agent-gateway/types';
 
 // Native app ID differs by browser:
 // - Firefox/Chrome: 'harbor_bridge' (matches native messaging manifest name)
@@ -147,6 +149,7 @@ type IncomingMessage =
   | { type: 'rpc_response'; id: string; result?: unknown; error?: { code: number; message: string } }
   | { type: 'stream'; id: string; event: StreamEvent }
   | { type: 'console'; server_id: string; level: string; message: string }
+  | AgentGatewayRequest
   | HostRequestMessage;
 
 type StreamEvent = {
@@ -329,6 +332,20 @@ function handleMessage(message: IncomingMessage): void {
       break;
     }
 
+    case 'agent_gateway_request': {
+      void handleAgentGatewayRequest(message)
+        .then((response) => sendMessage({ ...response }))
+        .catch((error) => {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          sendMessage({
+            type: 'agent_gateway_response',
+            id: message.id,
+            error: { code: 'INTERNAL_ERROR', message: errorMessage },
+          });
+        });
+      break;
+    }
+
     case 'console': {
       // Log to browser console
       const level = message.level as 'log' | 'warn' | 'error' | 'info' | 'debug';
@@ -458,6 +475,10 @@ function sendMessage(message: Record<string, unknown>): void {
  * Make an RPC request to the bridge
  */
 export async function rpcRequest<T>(method: string, params?: unknown): Promise<T> {
+  if (method.startsWith('agent_gateway.')) {
+    throw new Error('Agent Gateway administration requires the dedicated control plane');
+  }
+
   // Safari: Use HTTP for each request
   if (useSafariMode) {
     if (!connectionState.bridgeReady) {
@@ -466,6 +487,14 @@ export async function rpcRequest<T>(method: string, params?: unknown): Promise<T
     
     return safariHttpRequest<T>(method, params ?? {});
   }
+
+  return nativeMessagingRpcRequest<T>(method, params);
+}
+
+async function nativeMessagingRpcRequest<T>(
+  method: string,
+  params?: unknown,
+): Promise<T> {
   
   // Firefox/Chrome: Use persistent port
   if (!nativePort || !connectionState.bridgeReady) {
@@ -635,4 +664,22 @@ export function disconnectNativeBridge(): void {
  */
 export function isNativeBridgeReady(): boolean {
   return connectionState.connected && connectionState.bridgeReady;
+}
+
+export type AgentGatewayNativeAdminMethod =
+  | 'agent_gateway.get_config'
+  | 'agent_gateway.set_enabled'
+  | 'agent_gateway.pair_client'
+  | 'agent_gateway.revoke_client';
+
+export async function agentGatewayNativeAdminRequest<T>(
+  method: AgentGatewayNativeAdminMethod,
+  params: Record<string, unknown> = {},
+): Promise<T> {
+  if (useSafariMode) {
+    throw new Error(
+      'Agent Gateway administration requires the browser native messaging bridge',
+    );
+  }
+  return nativeMessagingRpcRequest<T>(method, params);
 }

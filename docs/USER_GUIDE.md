@@ -77,7 +77,7 @@ npm run build          # Firefox
 npm run build:chrome   # Chrome
 cd ..
 
-# 4. Build the native bridge
+# 4. Build the native bridge and agent gateway
 cd bridge-rs
 cargo build --release
 ./install.sh
@@ -227,6 +227,82 @@ Some MCP servers require API keys (e.g., GitHub, Brave Search):
 
 ---
 
+## Connecting a Local Coding Agent
+
+Harbor Agent Gateway exposes a vendor-neutral MCP stdio server for local coding
+agents. It uses the same browser-connected native host as Harbor, but it has a
+separate paired-client identity and separate tab-bound sessions.
+
+The installer places `harbor-agent-gateway` beside `harbor-bridge` in
+`~/.harbor/bin/`. The gateway is disabled by default, so installing the binary
+does not grant an agent browser access.
+
+### Pair the MCP client
+
+1. Use Firefox with both Harbor extensions loaded.
+2. Confirm that the Harbor sidebar reports the native bridge as connected.
+3. Open **Agent Gateway**, enable it, and choose **Pair client**.
+4. Give the client a recognizable name and approve the read-only scopes.
+5. Copy the client ID and one-time secret. The secret is shown once.
+6. Add them to the MCP client's protected environment or secret store.
+7. Approve a tab-bound session in Harbor when the client needs browser context.
+
+Use the MCP client's normal stdio server configuration. The outer format varies
+by client, but the registration is equivalent to:
+
+```json
+{
+  "mcpServers": {
+    "harbor": {
+      "command": "<path-to-harbor-agent-gateway>",
+      "env": {
+        "HARBOR_AGENT_GATEWAY_CLIENT_ID": "<client-id-from-harbor>",
+        "HARBOR_AGENT_GATEWAY_SECRET": "<one-time-secret-from-harbor>"
+      }
+    }
+  }
+}
+```
+
+Never pass the secret as a command argument or write it to logs or a committed
+configuration file.
+
+Harbor persists an RFC 9807 OPAQUE server setup and a per-client OPAQUE
+registration record, not the raw one-time credential. OPAQUE mutually
+authenticates each connection using fresh client and server protocol randomness,
+and the client verifies a server confirmation bound to its client ID and browser
+instance. The raw credential is never sent over gateway IPC, and captured login
+messages cannot authenticate a later connection. The gateway socket is only a
+fixed discovery point, so its listener remains untrusted until authentication
+finishes.
+
+The server exposes exactly three tools:
+
+| Tool | Purpose |
+|------|---------|
+| `harbor.gateway.health` | Check authenticated gateway and browser connection status |
+| `harbor.tabs.list` | List safe metadata for tabs approved by a session |
+| `harbor.page.observe` | Read a bounded, sanitized observation of the session's bound page |
+
+Both browser read tools require the `sessionId` from an active Harbor approval.
+They do not expose cookies, browser storage, request headers, password values,
+hidden fields, or raw page HTML.
+
+### End or revoke access
+
+- End a session in Harbor to remove that tab and document binding.
+- Revoke a paired client to end its sessions and invalidate its credential.
+- Disable Agent Gateway to end every session and reject all clients.
+
+Pair again if a one-time secret is lost or a client is revoked. Harbor does not
+recover previously issued secrets.
+
+Chrome can use the same MCP server after Chrome native messaging is configured,
+but Firefox remains the primary setup and acceptance target. See
+[Chrome Setup](QUICKSTART_CHROME.md) for the required extension ID step.
+
+---
+
 ## Troubleshooting
 
 ### "Bridge Disconnected"
@@ -252,7 +328,7 @@ Some MCP servers require API keys (e.g., GitHub, Brave Search):
 
 1. **Check the native messaging manifest**:
    ```bash
-   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
    ```
 
 2. **Verify the extension ID** in `allowed_origins` matches your Harbor extension ID from `chrome://extensions`
@@ -260,8 +336,7 @@ Some MCP servers require API keys (e.g., GitHub, Brave Search):
 3. **Reinstall the bridge** and update the manifest:
    ```bash
    cd bridge-rs
-   ./install.sh
-   # Then edit the manifest to add your extension ID
+   ./install.sh --chrome-extension-id YOUR_32_CHARACTER_EXTENSION_ID
    ```
 
 4. **Restart Chrome completely**
@@ -275,6 +350,45 @@ Some MCP servers require API keys (e.g., GitHub, Brave Search):
 2. **Rebuild the app in Xcode** — the bridge is bundled inside
 
 → See [Safari Setup](QUICKSTART_SAFARI.md) for details.
+
+### Agent Gateway: Browser Disconnected
+
+Keep Firefox open with Harbor loaded and confirm that the sidebar reports the
+bridge as connected. The MCP stdio process cannot start the browser connection
+on its own. After a browser or extension restart, reconnect Harbor and approve a
+new tab-bound session.
+
+### Agent Gateway: `GATEWAY_SOCKET_OCCUPIED`
+
+The fixed socket path already has a reachable but unverified listener. Close the
+expected Harbor browser instance or profile cleanly, then reopen the intended
+one. If the error remains, inspect the listening process. Do not assume it is
+Harbor and do not remove the socket while it is active.
+
+### Agent Gateway: Disabled or Not Paired
+
+Open the Agent Gateway panel and confirm that it is enabled, the client still
+appears as paired, and both environment variables contain the latest pairing
+values. A revoked client needs a new pairing.
+
+### Agent Gateway: `GATEWAY_CONFIGURATION_MIGRATION_REQUIRED`
+
+A legacy version 1 gateway configuration contains credential hashes that cannot
+be converted into RFC 9807 OPAQUE registration records. Harbor fails closed
+until you recover with a new version 2 configuration:
+
+1. Close every Harbor browser instance and gateway MCP client.
+2. In the OS user-local configuration directory, move
+   `harbor/agent_gateway.json` to
+   `harbor/agent_gateway.v1.backup.json`.
+3. Restart Harbor. The replacement configuration starts with Agent Gateway
+   disabled.
+4. Enable the gateway and explicitly pair every client again.
+5. Replace both gateway environment values for each MCP client.
+6. Confirm the new pairing works before removing the backup.
+
+Do not copy legacy hashes into the new configuration. Re-pairing is required to
+create new OPAQUE records.
 
 ### Safari: "Extension not enabled"
 
@@ -355,7 +469,7 @@ rm -rf ~/.harbor
    rm ~/Library/Application\ Support/Mozilla/NativeMessagingHosts/harbor_bridge.json
    
    # Chrome
-   rm ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+   rm ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
    ```
 
 3. **Remove user data:**
@@ -387,5 +501,3 @@ rm -rf ~/.harbor
 - Try the [Chat POC Demo](../demo/web-agents/chat-poc/) to see the full API in action
 - Read the [Developer Guide](DEVELOPER_GUIDE.md) to build apps with Harbor
 - Explore the [MCP Servers](../mcp-servers/) for examples and templates
-
-
