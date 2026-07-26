@@ -16,6 +16,7 @@ import type {
   MessageType,
   REQUIRED_SCOPES,
 } from '../agents/types';
+import { buildPermissionPromptUrl } from './permission-prompt-url';
 
 const PERMISSIONS_STORAGE_KEY = 'harbor_origin_permissions';
 const ONCE_GRANT_DURATION_MS = 10 * 60 * 1000; // 10 minutes
@@ -438,26 +439,10 @@ function buildPromptUrl(opts: {
   tools?: string[];
   sessionContext?: SessionPromptContext;
 }): string {
-  const params = new URLSearchParams({
-    origin: opts.origin,
-    scopes: opts.scopes.join(','),
-  });
-  if (opts.reason) params.set('reason', opts.reason);
-  if (opts.tools && opts.tools.length > 0) {
-    params.set('tools', opts.tools.join(','));
-  }
-  if (opts.sessionContext) {
-    if (opts.sessionContext.name) params.set('sessionName', opts.sessionContext.name);
-    if (opts.sessionContext.type) params.set('sessionType', opts.sessionContext.type);
-    if (opts.sessionContext.requestedLLM) params.set('llm', 'true');
-    if (opts.sessionContext.requestedToolsCount !== undefined) {
-      params.set('toolsCount', String(opts.sessionContext.requestedToolsCount));
-    }
-    if (opts.sessionContext.requestedBrowser && opts.sessionContext.requestedBrowser.length > 0) {
-      params.set('browser', opts.sessionContext.requestedBrowser.join(','));
-    }
-  }
-  return browserAPI.runtime.getURL(`dist/permission-prompt.html?${params.toString()}`);
+  return buildPermissionPromptUrl(
+    path => browserAPI.runtime.getURL(path),
+    opts,
+  );
 }
 
 function clearPromptState(): void {
