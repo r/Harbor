@@ -227,11 +227,11 @@ Some MCP servers require API keys (e.g., GitHub, Brave Search):
 
 ---
 
-## Connecting a Local Coding Agent
+## Connecting an External Agent
 
-Harbor Agent Gateway exposes a vendor-neutral MCP stdio server for local coding
-agents. It uses the same browser-connected native host as Harbor, but it has a
-separate paired-client identity and separate tab-bound sessions.
+Harbor Agent Gateway exposes a vendor-neutral MCP stdio server for compatible
+external agents. It uses the same browser-connected native host as Harbor, but
+it has a separate paired-client identity and separate shared-tab sessions.
 
 The installer places `harbor-agent-gateway` beside `harbor-bridge` in
 `~/.harbor/bin/`. The gateway is disabled by default, so installing the binary
@@ -245,7 +245,7 @@ does not grant an agent browser access.
 4. Give the client a recognizable name and approve the read-only scopes.
 5. Copy the client ID and one-time secret. The secret is shown once.
 6. Add them to the MCP client's protected environment or secret store.
-7. Approve a tab-bound session in Harbor when the client needs browser context.
+7. Share a browser tab in Harbor when the client needs browser context.
 
 Use the MCP client's normal stdio server configuration. The outer format varies
 by client, but the registration is equivalent to:

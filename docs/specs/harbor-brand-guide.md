@@ -73,7 +73,7 @@ targets. A port light marks each meaningful stop.
 
 Use it for:
 
-- Agent to Harbor to exact-tab authority
+- External agent to Harbor to shared-tab authority
 - Provider to endpoint connectivity
 - Model to capability to site relationships
 - Permission and session timelines
@@ -327,9 +327,9 @@ Use a quiet surface shift on hover. Do not lift rows with shadows.
 
 The trust rail shows:
 
-1. Agent name and client ID
+1. External agent name and client ID
 2. Harbor bridge and gateway state
-3. Exact tab title, origin, window ID, and tab ID
+3. Shared tab, identified by title, origin, window ID, and tab ID
 
 Each stop has its own port light and state label. The line never implies that a
 later stop is ready when an earlier boundary has failed.
@@ -402,7 +402,7 @@ Harbor speaks like an operator standing beside the user.
 
 - `Connected to Ollama workstation`
 - `Saved, but the endpoint did not respond`
-- `Codex CLI can observe this exact tab for 15 minutes`
+- `{agent name} can read this tab for 15 minutes`
 - `Gateway access is off`
 - `Copy this secret now. Harbor will not show it again.`
 

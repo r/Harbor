@@ -131,7 +131,7 @@ export function deriveGatewayActionPresentation(
     case 'pair':
       return { status: 'Pairing...', sessionLabel: null, revokeLabel: null };
     case 'start':
-      return { status: 'Approving...', sessionLabel: null, revokeLabel: null };
+      return { status: 'Sharing...', sessionLabel: null, revokeLabel: null };
     default:
       return { status: null, sessionLabel: null, revokeLabel: null };
   }
@@ -562,7 +562,7 @@ async function startSession(): Promise<void> {
   const scopes = checkedValues('gateway-session-scope');
   const ttlSeconds = Number(checkedValue('gateway-session-ttl'));
   let succeeded = false;
-  setBusy(elements.startSession, true, 'Approving...');
+  setBusy(elements.startSession, true, 'Sharing...');
   applyControlAvailability();
   clearError();
   try {
@@ -579,7 +579,7 @@ async function startSession(): Promise<void> {
     showError(error);
   } finally {
     actionGate.finish('start');
-    setBusy(elements.startSession, false, 'Approve Read-only Session');
+    setBusy(elements.startSession, false, 'Share Selected Tab');
     renderGateway();
     if (succeeded) {
       focusElement(gatewayFocusTargetAfterTransition('start-success'));
@@ -725,7 +725,7 @@ function renderClients(state: AgentGatewayUiState): void {
   const liveClients = state.clients.filter((client) => !client.revokedAt);
   const revoking = actionGate.currentAction() === 'revoke';
   elements.clientList.innerHTML = liveClients.length === 0
-    ? '<div class="gateway-empty">No coding agents are paired.</div>'
+    ? '<div class="gateway-empty">No external agents are paired.</div>'
     : liveClients.map((client) => `
       <div class="gateway-choice">
         <span class="gateway-boundary-state connected"></span>
@@ -795,7 +795,7 @@ function renderSessionApproval(
           <span class="gateway-session-value">${escapeHtml(client?.displayName ?? session.clientId)}</span>
         </div>
         <div class="gateway-session-line">
-          <span class="gateway-session-key">Tab</span>
+          <span class="gateway-session-key">Shared tab</span>
           <span class="gateway-session-value">${escapeHtml(tab?.origin ?? session.origin)}</span>
         </div>
         <div class="gateway-session-line">
@@ -832,7 +832,7 @@ function renderSessionApproval(
 
   const clients = state.clients.filter((client) => !client.revokedAt);
   elements.sessionClients.innerHTML = clients.length === 0
-    ? '<div class="gateway-empty">Pair a coding agent before approving a tab.</div>'
+    ? '<div class="gateway-empty">Pair an external agent before sharing a tab.</div>'
     : clients.map((client, index) => `
       <label class="gateway-choice">
         <input type="radio" name="gateway-session-client" value="${escapeHtml(client.clientId)}" ${index === 0 ? 'checked' : ''} />
@@ -850,7 +850,7 @@ function renderSessionApproval(
 
   const defaultTabId = defaultGatewayTabId(state.tabs);
   elements.tabList.innerHTML = state.tabs.length === 0
-    ? '<div class="gateway-empty">No controllable HTTP(S) tabs are open.</div>'
+    ? '<div class="gateway-empty">No shareable HTTP(S) tabs are open.</div>'
     : state.tabs.map((tab) => `
       <label class="gateway-choice">
         <input type="radio" name="gateway-session-tab" value="${tab.tabId}" ${tab.tabId === defaultTabId ? 'checked' : ''} />

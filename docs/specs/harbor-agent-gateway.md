@@ -8,10 +8,10 @@
 
 ## Summary
 
-Harbor Agent Gateway lets an authorized local agent use browser capabilities that
-the user has explicitly exposed through Harbor. The gateway presents a standard
-Model Context Protocol server to any compatible coding agent, desktop agent, or
-other MCP client. It is not tied to one vendor, model, or agent product.
+Harbor Agent Gateway lets an authorized external agent use browser capabilities
+that the user has explicitly exposed through Harbor. The gateway presents a
+standard Model Context Protocol server to any compatible external agent or other
+MCP client. It is not tied to one vendor, model, or agent product.
 
 The gateway can expose three classes of capability:
 
@@ -87,10 +87,10 @@ Harbor already connects the main pieces:
 - Pages can register semantic tools that execute in their own JavaScript context.
 
 What Harbor does not currently provide is a standard MCP endpoint that an
-external local agent can connect to. Harbor is an MCP host, but it is not an MCP
+external agent can connect to. Harbor is an MCP host, but it is not an MCP
 server for the browser capabilities it mediates.
 
-That missing direction prevents a coding agent or desktop agent from:
+That missing direction prevents an external agent from:
 
 - Sharing the user's current browser tab.
 - Discovering semantic tools exposed by the current page.
@@ -151,7 +151,7 @@ The first version will not:
 - Replace the page-facing Web Agents API.
 - Replace direct MCP server configuration when an agent already has a more
   appropriate direct connection.
-- Add a vendor-specific Codex, Claude, Gemini, Copilot, or other agent adapter.
+- Add any vendor-specific agent adapter.
 - Enable Streamable HTTP before authentication and Origin validation are
   implemented.
 
@@ -398,7 +398,7 @@ The browser extension owns the canonical session state.
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │ Local MCP client                                            │
-│ Coding agent, desktop agent, MCP inspector, or another host │
+│ External agent, MCP inspector, or another compatible host   │
 └──────────────────────────────┬───────────────────────────────┘
                                │ MCP stdio
                                ▼

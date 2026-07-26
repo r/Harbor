@@ -12,7 +12,7 @@ import { rpcRequest } from '../../llm/native-bridge';
 const CLIENT_ID = 'client_1';
 const NATIVE_CLIENT = {
   id: CLIENT_ID,
-  displayName: 'Coding Agent',
+  displayName: 'Research Agent',
   createdAt: '2026-07-25T12:00:00.000Z',
   revoked: false,
 };
@@ -35,7 +35,7 @@ function authoritySnapshot(
     },
     pairedClients: [{
       clientId: CLIENT_ID,
-      displayName: 'Coding Agent',
+      displayName: 'Research Agent',
       principal: `agent-gateway:${CLIENT_ID}`,
       scopes: ['gateway:tabs.read', 'gateway:page.read'],
       pairedAt: NATIVE_CLIENT.createdAt,
@@ -157,7 +157,7 @@ describe('Agent Gateway control plane', () => {
 
   it('never passes the one-time pairing secret into extension persistence', async () => {
     const pairing = await controlPlane.pairClient(
-      'Coding Agent',
+      'Research Agent',
       '1.2.0',
       ['page:observe'],
     );
@@ -176,7 +176,7 @@ describe('Agent Gateway control plane', () => {
 
   it('requires an explicit read-only scope before native pairing', async () => {
     await expect(
-      controlPlane.pairClient('Coding Agent', undefined, []),
+      controlPlane.pairClient('Research Agent', undefined, []),
     ).rejects.toThrow('Select at least one read-only scope');
 
     expect(dependencies.nativeAdminRequest).not.toHaveBeenCalled();

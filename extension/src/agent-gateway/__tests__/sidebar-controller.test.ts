@@ -235,8 +235,8 @@ describe('Agent Gateway sidebar controller', () => {
   it('gates pairing and session approval on complete valid input', () => {
     expect(canPairGatewayAgent('', ['tabs:list'])).toBe(false);
     expect(canPairGatewayAgent('   ', ['tabs:list'])).toBe(false);
-    expect(canPairGatewayAgent('Coding Agent', [])).toBe(false);
-    expect(canPairGatewayAgent('Coding Agent', ['tabs:list'])).toBe(true);
+    expect(canPairGatewayAgent('Research Agent', [])).toBe(false);
+    expect(canPairGatewayAgent('Research Agent', ['tabs:list'])).toBe(true);
 
     expect(canStartGatewaySession({
       clientId: 'client_1',

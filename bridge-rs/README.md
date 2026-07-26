@@ -51,7 +51,7 @@ cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bri
 ## Harbor Agent Gateway
 
 `harbor-agent-gateway` is a vendor-neutral MCP stdio server that lets a paired
-local coding agent use a small, policy-controlled view of the browser. It is
+external agent use a small, policy-controlled view of the browser. It is
 installed with the native bridge but remains disabled until you explicitly
 enable it in Harbor.
 
@@ -66,7 +66,7 @@ requires the exact Harbor extension ID in its native messaging manifest.
 2. Enable the gateway.
 3. Choose **Pair client**, enter a recognizable client name, and approve the
    read-only scopes.
-4. Copy the client ID and one-time secret into the local agent's MCP
+4. Copy the client ID and one-time secret into the external agent's MCP
    configuration. Harbor persists an RFC 9807 OPAQUE server setup and a
    per-client OPAQUE registration record, not the raw credential, and does not
    show the credential again.

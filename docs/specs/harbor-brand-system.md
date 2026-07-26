@@ -81,7 +81,7 @@ The overhaul should retain:
 - Borders as the primary depth strategy
 - Minimal decorative color
 - Factual, non-hyped product voice
-- The Agent → Harbor → exact-tab trust-boundary rail
+- The External agent → Harbor → shared-tab trust-boundary rail
 - Clear separation between native authority, extension policy, and page state
 
 The visual overhaul must not weaken security comprehension for novelty.
@@ -145,7 +145,7 @@ state.
 
 The Harbor line can appear in:
 
-- The Agent → Harbor → tab trust rail
+- The External agent → Harbor → shared-tab trust rail
 - Provider → endpoint connection metadata
 - Model → capability → site relationships
 - Permission and session timelines
@@ -491,8 +491,8 @@ The first prototype should redesign one coherent operational journey:
 
 1. Bridge and gateway health
 2. Provider discovery and configuration
-3. Agent pairing
-4. Exact-tab approval
+3. External-agent pairing
+4. Shared-tab access
 5. Active-session trust rail
 6. Error and recovery state
 

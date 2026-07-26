@@ -10,7 +10,7 @@ describe('Agent Gateway approval metadata adapter', () => {
     const clients = adaptNativeAgentGatewayClients(
       [{
         id: 'client_1',
-        displayName: 'Coding Agent',
+        displayName: 'Research Agent',
         clientVersion: '1.2.0',
         createdAt: '2026-07-25T12:00:00.000Z',
         revoked: false,
@@ -20,7 +20,7 @@ describe('Agent Gateway approval metadata adapter', () => {
 
     expect(clients).toEqual([{
       clientId: 'client_1',
-      displayName: 'Coding Agent',
+      displayName: 'Research Agent',
       clientVersion: '1.2.0',
       pairedAt: '2026-07-25T12:00:00.000Z',
       scopes: [],
@@ -31,7 +31,7 @@ describe('Agent Gateway approval metadata adapter', () => {
     const clients = adaptNativeAgentGatewayClients(
       [{
         id: 'client_1',
-        displayName: 'Coding Agent',
+        displayName: 'Research Agent',
         createdAt: '2026-07-25T12:00:00.000Z',
         revoked: true,
         revokedAt: '2026-07-25T13:00:00.000Z',

@@ -36,8 +36,9 @@ machine-state discipline.
   blue actions, green connected states, amber pending states, and red failures.
 - Signature: connection metadata stays visible beside resource health. Provider
   names describe the human meaning, while endpoints use monospace typography.
-- Agent authority uses a visible trust-boundary rail: Agent → Harbor → exact
-  tab. Each stop names the principal or target and shows its current state.
+- Agent authority uses a visible trust-boundary rail: External agent → Harbor →
+  shared tab. Each stop names the principal or target and shows its current
+  state.
 - Avoid generic account cards, modal setup wizards, decorative icons, gradients,
   and disconnected settings pages.
 - Prefer one continuous operational canvas, docked sections, and ledger rows
@@ -90,13 +91,14 @@ transient menu:
 - Keep bridge health and Harbor identity visible in the panel header.
 - Preserve operational state when the developer interacts with the page.
 - Refresh tab-sensitive state when visibility or active-tab context changes.
-- Bind approvals to the exact tab shown in the trust-boundary rail. Never imply
-  that authority followed the developer to another tab.
+- Bind approvals to the exact browser tab shown as the shared tab in the
+  trust-boundary rail. Never imply that authority followed the developer to
+  another tab.
 - Open broad browsing surfaces such as the MCP directory in a full browser tab.
 - Keep the operational panel usable without horizontal scrolling from 320 to
   480 px.
-- At narrow widths, stack the Agent, Harbor, and exact-tab boundaries while
-  preserving their directional order.
+- At narrow widths, stack the external-agent, Harbor, and shared-tab
+  boundaries while preserving their directional order.
 - Do not maintain separate full popup and side-panel implementations.
 
 ## Port Authority Tokens
@@ -137,15 +139,16 @@ Configured remote providers should show:
 
 ## Agent Gateway Trust Boundary Pattern
 
-Agent access belongs inline in the Harbor operational panel as an approval
-surface, not in DevTools or a separate settings page.
+External-agent access belongs inline in the Harbor operational panel as an
+approval surface, not in DevTools or a separate settings page.
 
 The primary structure is the trust-boundary rail:
 
-1. Agent identifies the paired client by human-readable name and monospace ID.
+1. External agent identifies the paired client by human-readable name and
+   monospace ID.
 2. Harbor shows whether the native bridge and gateway authority are ready.
-3. Tab identifies the exact browser target by title, origin, window ID, and tab
-   ID.
+3. Shared tab identifies the exact browser target by title, origin, window ID,
+   and tab ID.
 
 An approval must always show:
 
@@ -190,8 +193,8 @@ account-card presentation for browser authority.
 - Saving: disable the primary action and replace its label with a concrete
   connection verb.
 - Connected: green status and a concise confirmation toast.
-- Active authority: green status only when the complete Agent → Harbor → tab
-  path is ready and the session is active.
+- Active authority: green status only when the complete External agent → Harbor
+  → shared tab path is ready and the session is active.
 - Enabled, paired, paused, expiring, or awaiting approval: amber status.
 - Disabled: muted neutral status, not an error.
 - Disconnected or failed authority: red status with a boundary-specific error.

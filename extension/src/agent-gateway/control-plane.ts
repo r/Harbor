@@ -254,14 +254,14 @@ export class AgentGatewayControlPlane {
       (candidate) => candidate.clientId === input.clientId && !candidate.revokedAt,
     );
     if (!client) {
-      throw new Error('Select a paired coding agent');
+      throw new Error('Select a paired external agent');
     }
     const scopes = normalizeApprovalScopes(input.requestedScopes);
     if (scopes.length === 0) {
       throw new Error('Select at least one read-only scope');
     }
     if (scopes.some((scope) => !client.scopes.includes(scope))) {
-      throw new Error('Session scope was not approved for this coding agent');
+      throw new Error('Session scope was not approved for this external agent');
     }
     const tab = state.tabs.find((candidate) => candidate.tabId === input.tabId);
     if (!tab) {

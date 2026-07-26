@@ -1435,7 +1435,7 @@
       <div class="panel-body">
         <div class="gateway-trust-rail" aria-label="Agent Gateway trust boundary">
           <div class="gateway-boundary">
-            <span class="gateway-boundary-label">Agent</span>
+            <span class="gateway-boundary-label">External agent</span>
             <span class="gateway-boundary-value" id="gateway-rail-agent">
               <span class="gateway-boundary-state" id="gateway-rail-agent-state"></span>none
             </span>
@@ -1449,7 +1449,7 @@
           </div>
           <span class="gateway-rail-arrow" aria-hidden="true">-&gt;</span>
           <div class="gateway-boundary">
-            <span class="gateway-boundary-label">Exact tab</span>
+            <span class="gateway-boundary-label">Shared tab</span>
             <span class="gateway-boundary-value" id="gateway-rail-tab">
               <span class="gateway-boundary-state" id="gateway-rail-tab-state"></span>none
             </span>
@@ -1488,7 +1488,7 @@
         <div class="gateway-view" id="gateway-enabled" hidden>
           <div class="gateway-section">
             <div class="gateway-section-heading">
-              <span class="gateway-section-title">Paired coding agents</span>
+              <span class="gateway-section-title">Paired external agents</span>
               <button class="btn btn-secondary btn-sm" id="gateway-show-pair" type="button">
                 Pair Agent
               </button>
@@ -1503,7 +1503,7 @@
                   id="gateway-agent-name"
                   type="text"
                   maxlength="128"
-                  placeholder="Claude Code on laptop"
+                  placeholder="Research agent on laptop"
                   autocomplete="off"
                 />
               </div>
@@ -1560,7 +1560,7 @@
               </div>
               <label class="gateway-scope">
                 <input type="checkbox" id="gateway-secret-acknowledged" />
-                <span>I saved this secret in the coding agent.</span>
+                <span>I saved this secret in the agent's MCP configuration.</span>
               </label>
               <div class="gateway-actions">
                 <button class="btn btn-primary btn-sm" id="gateway-finish-pair" type="button" disabled>
@@ -1572,18 +1572,18 @@
 
           <div class="gateway-section">
             <div class="gateway-section-heading">
-              <span class="gateway-section-title">Tab approval</span>
-              <span class="gateway-section-meta">read only</span>
+              <span class="gateway-section-title">Share a browser tab</span>
+              <span class="gateway-section-meta">read-only</span>
             </div>
             <div id="gateway-session-active" hidden></div>
             <div id="gateway-session-form">
-              <div class="form-label">Coding agent</div>
+              <div class="form-label">External agent</div>
               <div class="gateway-choice-list" id="gateway-session-clients"></div>
 
-              <div class="form-label" style="margin-top: var(--space-3);">Exact tab</div>
+              <div class="form-label" style="margin-top: var(--space-3);">Browser tab</div>
               <div class="gateway-choice-list" id="gateway-tab-list"></div>
 
-              <div class="form-label" style="margin-top: var(--space-3);">Session scopes</div>
+              <div class="form-label" style="margin-top: var(--space-3);">Access</div>
               <div class="gateway-scope-grid">
                 <label class="gateway-scope">
                   <input type="checkbox" name="gateway-session-scope" value="tabs:list" />
@@ -1595,7 +1595,7 @@
                 </label>
               </div>
 
-              <div class="form-label" style="margin-top: var(--space-3);">Expires after</div>
+              <div class="form-label" style="margin-top: var(--space-3);">Time limit</div>
               <div class="gateway-ttl-grid">
                 <label class="gateway-scope">
                   <input type="radio" name="gateway-session-ttl" value="300" />
@@ -1612,7 +1612,7 @@
               </div>
               <div class="gateway-actions">
                 <button class="btn btn-primary btn-sm" id="gateway-start-session" type="button">
-                  Approve Read-only Session
+                  Share Selected Tab
                 </button>
               </div>
             </div>
