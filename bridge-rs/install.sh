@@ -1,27 +1,59 @@
 #!/bin/bash
-# Harbor Bridge Installation Script
-# Builds the bridge binary and installs the native messaging manifest
+# Harbor Native Components Installation Script
+# Builds the bridge and agent gateway, then installs the browser manifest
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BINARY_NAME="harbor-bridge"
+GATEWAY_BINARY_NAME="harbor-agent-gateway"
+INSTALL_DIRECTORY="$HOME/.harbor/bin"
 
-# Parse arguments
 FIREFOX_ONLY=false
 SKIP_BUILD=false
-for arg in "$@"; do
-    case $arg in
+CHROME_EXTENSION_ID=""
+
+show_usage() {
+    echo "Usage: ./install.sh [--firefox-only] [--skip-build] [--chrome-extension-id ID]"
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         --firefox-only)
             FIREFOX_ONLY=true
+            shift
             ;;
         --skip-build)
             SKIP_BUILD=true
+            shift
+            ;;
+        --chrome-extension-id)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "Error: --chrome-extension-id requires a value." >&2
+                show_usage >&2
+                exit 1
+            fi
+            CHROME_EXTENSION_ID="$2"
+            shift 2
+            ;;
+        --help|-h)
+            show_usage
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown argument: $1" >&2
+            show_usage >&2
+            exit 1
             ;;
     esac
 done
 
-echo "=== Harbor Bridge Installer ==="
+if [ -n "$CHROME_EXTENSION_ID" ] && [[ ! "$CHROME_EXTENSION_ID" =~ ^[a-p]{32}$ ]]; then
+    echo "Error: Chrome extension IDs must contain 32 characters from a through p." >&2
+    exit 1
+fi
+
+echo "=== Harbor Native Components Installer ==="
 echo ""
 
 # Detect OS
@@ -41,44 +73,72 @@ case "$OS" in
         ;;
 esac
 
-# Build the release binary (unless --skip-build)
-BINARY_PATH="$SCRIPT_DIR/target/release/$BINARY_NAME"
+BUILD_BINARY_PATH="$SCRIPT_DIR/target/release/$BINARY_NAME"
+BUILD_GATEWAY_BINARY_PATH="$SCRIPT_DIR/target/release/$GATEWAY_BINARY_NAME"
+INSTALLED_BINARY_PATH="$INSTALL_DIRECTORY/$BINARY_NAME"
+INSTALLED_GATEWAY_BINARY_PATH="$INSTALL_DIRECTORY/$GATEWAY_BINARY_NAME"
+WRAPPER_PATH="$INSTALL_DIRECTORY/harbor-bridge-native"
 
 if [ "$SKIP_BUILD" = false ]; then
-    echo "Building harbor-bridge..."
+    if ! command -v cargo &> /dev/null; then
+        echo "Warning: 'cargo' is not installed or not in your PATH." >&2
+        echo "Looking in $HOME/.cargo..." >&2
+        if [ -f "$HOME/.cargo/.env" ]; then
+            source "$HOME/.cargo/.env"
+        elif [ -x "$HOME/.cargo/bin/cargo" ]; then
+            export PATH="$HOME/.cargo/bin:$PATH"
+        fi
+    fi
+
+    if ! command -v cargo &> /dev/null; then
+        echo "Error: cargo is required to build Harbor native components." >&2
+        exit 1
+    fi
+
+    echo "Building Harbor native components..."
     cd "$SCRIPT_DIR"
     cargo build --release
-    echo "Binary built: $BINARY_PATH"
+    echo "Binaries built in: $SCRIPT_DIR/target/release"
     echo ""
 else
     echo "Skipping build (--skip-build)"
-    if [ ! -f "$BINARY_PATH" ]; then
-        echo "Error: Binary not found at $BINARY_PATH"
-        echo "Run without --skip-build to build the binary first."
-        exit 1
-    fi
     echo ""
 fi
 
-# Create wrapper script that passes --native-messaging flag
-WRAPPER_PATH="$SCRIPT_DIR/target/release/harbor-bridge-native"
+if [ ! -x "$BUILD_BINARY_PATH" ]; then
+    echo "Error: Binary not found at $BUILD_BINARY_PATH"
+    echo "Run without --skip-build to build the binaries first."
+    exit 1
+fi
+if [ ! -x "$BUILD_GATEWAY_BINARY_PATH" ]; then
+    echo "Error: Binary not found at $BUILD_GATEWAY_BINARY_PATH"
+    echo "Run without --skip-build to build the binaries first."
+    exit 1
+fi
+
+mkdir -p "$INSTALL_DIRECTORY"
+chmod 700 "$INSTALL_DIRECTORY"
+install -m 755 "$BUILD_BINARY_PATH" "$INSTALLED_BINARY_PATH"
+install -m 755 "$BUILD_GATEWAY_BINARY_PATH" "$INSTALLED_GATEWAY_BINARY_PATH"
+
 cat > "$WRAPPER_PATH" << EOF
 #!/bin/bash
-exec "$BINARY_PATH" --native-messaging "\$@"
+exec "$INSTALLED_BINARY_PATH" --native-messaging "\$@"
 EOF
 chmod +x "$WRAPPER_PATH"
 
-echo "Created wrapper script: $WRAPPER_PATH"
+echo "Installed Harbor bridge: $INSTALLED_BINARY_PATH"
+echo "Installed Harbor Agent Gateway: $INSTALLED_GATEWAY_BINARY_PATH"
 echo ""
 
 # Function to install manifest for Firefox
 install_firefox_manifest() {
     local manifest_dir="$1"
-    
+
     if [ -d "$(dirname "$manifest_dir")" ]; then
         echo "Installing native messaging manifest for Firefox..."
         mkdir -p "$manifest_dir"
-        
+
         # Firefox uses allowed_extensions
         cat > "$manifest_dir/harbor_bridge.json" << EOF
 {
@@ -98,22 +158,18 @@ EOF
 # Function to install manifest for Chrome
 install_chrome_manifest() {
     local manifest_dir="$1"
-    local extension_id="${2:-}"  # Optional: specify extension ID
-    
+    local extension_id="$2"
+
     if [ -d "$(dirname "$manifest_dir")" ]; then
         echo "Installing native messaging manifest for Chrome..."
         mkdir -p "$manifest_dir"
-        
-        # Chrome uses allowed_origins with chrome-extension:// URLs
-        # Use * to allow any extension, or specify the extension ID
-        if [ -n "$extension_id" ]; then
-            ORIGIN="chrome-extension://${extension_id}/"
-        else
-            # When extension is loaded unpacked, the ID changes
-            # Use a placeholder that can be updated after loading
-            ORIGIN="chrome-extension://*/"
+
+        if [ -z "$extension_id" ]; then
+            echo "Error: Refusing to install a Chrome manifest without an exact extension ID." >&2
+            return 1
         fi
-        
+        ORIGIN="chrome-extension://${extension_id}/"
+
         cat > "$manifest_dir/harbor_bridge.json" << EOF
 {
   "name": "harbor_bridge",
@@ -124,15 +180,6 @@ install_chrome_manifest() {
 }
 EOF
         echo "  Manifest installed: $manifest_dir/harbor_bridge.json"
-        if [ -z "$extension_id" ]; then
-            echo ""
-            echo "  NOTE: Chrome requires a specific extension ID in allowed_origins."
-            echo "  After loading the extension in Chrome, get its ID from chrome://extensions"
-            echo "  and update the manifest file at:"
-            echo "    $manifest_dir/harbor_bridge.json"
-            echo "  Replace the 'allowed_origins' with:"
-            echo '    "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID/"]'
-        fi
     else
         echo "Skipping Chrome (not installed)"
     fi
@@ -143,16 +190,23 @@ install_firefox_manifest "$FIREFOX_MANIFEST_DIR"
 
 # Install for Chrome (unless --firefox-only)
 if [ "$FIREFOX_ONLY" = false ]; then
-    install_chrome_manifest "$CHROME_MANIFEST_DIR"
+    if [ -n "$CHROME_EXTENSION_ID" ]; then
+        install_chrome_manifest "$CHROME_MANIFEST_DIR" "$CHROME_EXTENSION_ID"
+    else
+        echo "Skipping Chrome native messaging manifest: an exact extension ID is required."
+        echo "After loading Harbor in Chrome, rerun:"
+        echo "  ./install.sh --chrome-extension-id YOUR_32_CHARACTER_EXTENSION_ID"
+    fi
 fi
 
 echo ""
 echo "=== Installation Complete ==="
 echo ""
 echo "The harbor-bridge will now start automatically when you open the Harbor extension."
+echo "The harbor-agent-gateway remains disabled until you enable and pair it in Harbor."
 echo ""
 echo "To test manually, run:"
-echo "  $BINARY_PATH"
+echo "  $INSTALLED_BINARY_PATH"
 echo ""
 echo "Log file location:"
 if [ "$OS" = "Darwin" ]; then

@@ -9,6 +9,8 @@ mod rpc;
 
 use std::env;
 
+use harbor_bridge::agent_gateway;
+
 #[tokio::main]
 async fn main() {
   // Check if running in native messaging mode (launched by browser extension)

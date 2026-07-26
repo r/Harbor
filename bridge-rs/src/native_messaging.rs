@@ -6,14 +6,17 @@
 //! Message types:
 //! - `rpc`: RPC request from extension, expects `rpc_response` back
 //! - `rpc_stream`: Streaming RPC request, sends multiple `stream` messages
+//! - `agent_gateway_response`: Browser result for an authenticated gateway request
 //! - `ping`: Health check, responds with `status`
 //! - `shutdown`: Graceful shutdown request
 
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 
+use crate::agent_gateway;
 use crate::llm;
 use crate::rpc::{self, RpcRequest};
 
@@ -35,6 +38,13 @@ struct IncomingMessage {
     error: Option<serde_json::Value>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum NativeReaderTermination {
+    Eof,
+    Error(String),
+    ConsumerClosed,
+}
+
 /// Payload for sending host_request to the extension (MCP server asked host to open tab / get content).
 pub type HostRequestSender = mpsc::Sender<HostRequestItem>;
 pub type HostRequestItem = (
@@ -44,6 +54,57 @@ pub type HostRequestItem = (
     serde_json::Value,
     tokio::sync::oneshot::Sender<Result<serde_json::Value, serde_json::Value>>,
 );
+
+type BrowserResponseSender =
+    tokio::sync::oneshot::Sender<Result<serde_json::Value, serde_json::Value>>;
+
+#[derive(Default)]
+struct PendingGatewayRequests {
+    requests: HashMap<String, BrowserResponseSender>,
+}
+
+impl PendingGatewayRequests {
+    fn insert(&mut self, request_id: String, response_tx: BrowserResponseSender) {
+        self.requests.insert(request_id, response_tx);
+    }
+
+    fn resolve(
+        &mut self,
+        request_id: &str,
+        outcome: Result<serde_json::Value, serde_json::Value>,
+    ) {
+        if let Some(response_tx) = self.requests.remove(request_id) {
+            let _ = response_tx.send(outcome);
+        }
+    }
+
+    fn expire(&mut self, request_id: &str) {
+        self.resolve(
+            request_id,
+            Err(serde_json::json!({
+                "code": "BROWSER_DISCONNECTED",
+                "message": "Timed out waiting for the Harbor extension",
+                "retryable": true,
+            })),
+        );
+    }
+
+    fn fail_all(&mut self) {
+        let pending_requests = std::mem::take(&mut self.requests);
+        for (_, response_tx) in pending_requests {
+            let _ = response_tx.send(Err(serde_json::json!({
+                "code": "BROWSER_DISCONNECTED",
+                "message": "The browser-connected Harbor host disconnected",
+                "retryable": true,
+            })));
+        }
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.requests.len()
+    }
+}
 
 /// Message to the browser extension
 #[derive(Debug, serde::Serialize)]
@@ -76,10 +137,10 @@ pub fn get_console_log_sender() -> broadcast::Sender<ConsoleLogMessage> {
 }
 
 /// Read a native messaging message from stdin
-fn read_message(stdin: &mut io::StdinLock) -> io::Result<Option<IncomingMessage>> {
+fn read_message(reader: &mut impl Read) -> io::Result<Option<IncomingMessage>> {
     // Read 4-byte length prefix (little-endian)
     let mut len_bytes = [0u8; 4];
-    match stdin.read_exact(&mut len_bytes) {
+    match reader.read_exact(&mut len_bytes) {
         Ok(_) => {}
         Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(e) => return Err(e),
@@ -97,13 +158,35 @@ fn read_message(stdin: &mut io::StdinLock) -> io::Result<Option<IncomingMessage>
     
     // Read the JSON payload
     let mut buffer = vec![0u8; len];
-    stdin.read_exact(&mut buffer)?;
+    reader.read_exact(&mut buffer)?;
     
     // Parse JSON
     let message: IncomingMessage = serde_json::from_slice(&buffer)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     
     Ok(Some(message))
+}
+
+fn read_native_input(
+    reader: &mut impl Read,
+    message_tx: mpsc::Sender<IncomingMessage>,
+    termination_tx: mpsc::Sender<NativeReaderTermination>,
+    browser_connected: Arc<AtomicBool>,
+) {
+    let termination = loop {
+        match read_message(reader) {
+            Ok(Some(message)) => {
+                if message_tx.blocking_send(message).is_err() {
+                    break NativeReaderTermination::ConsumerClosed;
+                }
+            }
+            Ok(None) => break NativeReaderTermination::Eof,
+            Err(error) => break NativeReaderTermination::Error(error.to_string()),
+        }
+    };
+
+    browser_connected.store(false, Ordering::SeqCst);
+    let _ = termination_tx.blocking_send(termination);
 }
 
 /// Write a native messaging message to stdout
@@ -175,6 +258,23 @@ impl MessageWriter {
             "context": context,
         })).await;
     }
+
+    async fn send_agent_gateway_request(
+        &self,
+        id: &str,
+        method: &str,
+        client_id: &str,
+        session_id: &str,
+        params: serde_json::Value,
+    ) {
+        self.send("agent_gateway_request", serde_json::json!({
+            "id": id,
+            "method": method,
+            "client_id": client_id,
+            "session_id": session_id,
+            "params": params,
+        })).await;
+    }
 }
 
 /// Run the native messaging event loop.
@@ -219,27 +319,37 @@ pub async fn run_native_messaging() {
     let (host_request_tx, mut host_request_rx) = mpsc::channel::<HostRequestItem>(32);
     let pending_host: Arc<RwLock<HashMap<String, tokio::sync::oneshot::Sender<Result<serde_json::Value, serde_json::Value>>>>> =
         Arc::new(RwLock::new(HashMap::new()));
+    let (browser_request_tx, mut browser_request_rx) =
+        mpsc::channel::<agent_gateway::BrowserRequest>(32);
+    let pending_gateway = Arc::new(RwLock::new(PendingGatewayRequests::default()));
+    let (gateway_timeout_tx, mut gateway_timeout_rx) = mpsc::channel::<String>(32);
+    let (reader_termination_tx, mut reader_termination_rx) =
+        mpsc::channel::<NativeReaderTermination>(1);
+    let browser_instance_id = agent_gateway::create_browser_instance_id();
+    let browser_connected = Arc::new(AtomicBool::new(true));
+    let server_browser_connected = browser_connected.clone();
+    let gateway_server_handle = tokio::spawn(async move {
+        if let Err(error) = agent_gateway::run_native_ipc_server(
+            browser_request_tx,
+            browser_instance_id,
+            server_browser_connected,
+        )
+        .await
+        {
+            tracing::error!("Agent gateway IPC server stopped: {}", error.message);
+        }
+    });
 
     // Spawn stdin reader task
+    let reader_browser_connected = browser_connected.clone();
     tokio::task::spawn_blocking(move || {
         let mut stdin = io::stdin().lock();
-        loop {
-            match read_message(&mut stdin) {
-                Ok(Some(msg)) => {
-                    if msg_tx.blocking_send(msg).is_err() {
-                        break;
-                    }
-                }
-                Ok(None) => {
-                    tracing::info!("Native messaging connection closed (EOF)");
-                    break;
-                }
-                Err(e) => {
-                    tracing::error!("Error reading native message: {}", e);
-                    break;
-                }
-            }
-        }
+        read_native_input(
+            &mut stdin,
+            msg_tx,
+            reader_termination_tx,
+            reader_browser_connected,
+        );
     });
 
     // Process incoming messages and host requests
@@ -258,6 +368,16 @@ pub async fn run_native_messaging() {
                             let _ = tx.send(outcome);
                         }
                     }
+                } else if msg.msg_type == "agent_gateway_response" {
+                    let id = msg.id.as_ref().and_then(|v| v.as_str()).map(String::from);
+                    if let Some(id) = id {
+                        let outcome = if let Some(error) = msg.error {
+                            Err(error)
+                        } else {
+                            Ok(msg.result.unwrap_or(serde_json::Value::Null))
+                        };
+                        pending_gateway.write().await.resolve(&id, outcome);
+                    }
                 } else {
                     let writer_clone = writer.clone();
                     let host_tx = host_request_tx.clone();
@@ -270,11 +390,65 @@ pub async fn run_native_messaging() {
                 pending_host.write().await.insert(id.clone(), response_tx);
                 writer.send_host_request(&id, &method, params, context).await;
             }
+            Some(request) = browser_request_rx.recv() => {
+                let request_id = agent_gateway::create_browser_request_id();
+                pending_gateway
+                    .write()
+                    .await
+                    .insert(request_id.clone(), request.response_tx);
+                let timeout_tx = gateway_timeout_tx.clone();
+                let timeout_request_id = request_id.clone();
+                let mut cancellation_rx = request.cancellation_rx;
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = tokio::time::sleep(agent_gateway::BROWSER_RESPONSE_TIMEOUT) => {}
+                        _ = &mut cancellation_rx => {}
+                    }
+                    let _ = timeout_tx.send(timeout_request_id).await;
+                });
+                writer
+                    .send_agent_gateway_request(
+                        &request_id,
+                        &request.method,
+                        &request.client_id,
+                        &request.session_id,
+                        request.params,
+                    )
+                    .await;
+            }
+            Some(request_id) = gateway_timeout_rx.recv() => {
+                pending_gateway.write().await.expire(&request_id);
+            }
+            termination = reader_termination_rx.recv() => {
+                match termination {
+                    Some(NativeReaderTermination::Eof) => {
+                        tracing::info!("Native messaging connection closed (EOF)");
+                    }
+                    Some(NativeReaderTermination::Error(error)) => {
+                        tracing::error!("Error reading native message: {}", error);
+                    }
+                    Some(NativeReaderTermination::ConsumerClosed) | None => {
+                        tracing::info!("Native messaging reader stopped");
+                    }
+                }
+                break;
+            }
             else => break,
         }
     }
 
     tracing::info!("Native messaging handler exiting");
+    browser_connected.store(false, Ordering::SeqCst);
+    pending_gateway.write().await.fail_all();
+    let pending_host_requests = std::mem::take(&mut *pending_host.write().await);
+    for (_, response_tx) in pending_host_requests {
+        let _ = response_tx.send(Err(serde_json::json!({
+            "code": "BROWSER_DISCONNECTED",
+            "message": "The Harbor extension disconnected",
+        })));
+    }
+    gateway_server_handle.abort();
+    let _ = gateway_server_handle.await;
     drop(write_handle);
 }
 
@@ -328,7 +502,15 @@ async fn handle_rpc(
     writer: Arc<MessageWriter>,
     host_request_tx: HostRequestSender,
 ) {
-    let response = if method == "js.call" {
+    let response = if method.starts_with("agent_gateway.") {
+        match agent_gateway::handle_native_admin(&method, params) {
+            Ok(value) => rpc::RpcResponse::success(id.clone(), value),
+            Err(error) => rpc::RpcResponse::error(
+                id.clone(),
+                rpc::RpcError::new(-32000, format!("{}: {}", error.code, error.message)),
+            ),
+        }
+    } else if method == "js.call" {
         match crate::js::call_server_with_host(params, host_request_tx).await {
             Ok(value) => rpc::RpcResponse::success(id.clone(), value),
             Err(e) => rpc::RpcResponse::error(id.clone(), e),
@@ -385,5 +567,66 @@ async fn handle_streaming_rpc(
                 })),
             ).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn gateway_timeout_removes_pending_correlation() {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let mut pending = PendingGatewayRequests::default();
+        pending.insert("bridge-request-1".to_string(), response_tx);
+
+        pending.expire("bridge-request-1");
+
+        assert_eq!(pending.len(), 0);
+        let outcome = response_rx.await.unwrap().unwrap_err();
+        assert_eq!(outcome["code"], "BROWSER_DISCONNECTED");
+    }
+
+    #[tokio::test]
+    async fn gateway_disconnect_fails_and_clears_every_pending_request() {
+        let (first_tx, first_rx) = tokio::sync::oneshot::channel();
+        let (second_tx, second_rx) = tokio::sync::oneshot::channel();
+        let mut pending = PendingGatewayRequests::default();
+        pending.insert("bridge-request-1".to_string(), first_tx);
+        pending.insert("bridge-request-2".to_string(), second_tx);
+
+        pending.fail_all();
+
+        assert_eq!(pending.len(), 0);
+        assert_eq!(
+            first_rx.await.unwrap().unwrap_err()["code"],
+            "BROWSER_DISCONNECTED"
+        );
+        assert_eq!(
+            second_rx.await.unwrap().unwrap_err()["code"],
+            "BROWSER_DISCONNECTED"
+        );
+    }
+
+    #[test]
+    fn reader_eof_marks_browser_disconnected_and_signals_shutdown() {
+        let mut input = std::io::Cursor::new(Vec::<u8>::new());
+        let (message_tx, mut message_rx) = mpsc::channel(1);
+        let (termination_tx, mut termination_rx) = mpsc::channel(1);
+        let browser_connected = Arc::new(AtomicBool::new(true));
+
+        read_native_input(
+            &mut input,
+            message_tx,
+            termination_tx,
+            browser_connected.clone(),
+        );
+
+        assert!(!browser_connected.load(Ordering::SeqCst));
+        assert_eq!(
+            termination_rx.try_recv().unwrap(),
+            NativeReaderTermination::Eof
+        );
+        assert!(message_rx.try_recv().is_err());
     }
 }
