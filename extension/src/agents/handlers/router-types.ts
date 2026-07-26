@@ -22,6 +22,7 @@ export interface RequestContext {
   senderExtensionId?: string;
   /** Firefox container ID - used to open new tabs in the same container as the parent */
   cookieStoreId?: string;
+  signal?: AbortSignal;
 }
 
 /**

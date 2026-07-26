@@ -4,9 +4,21 @@
 
 import type { RequestContext, ResponseSender } from './router-types';
 import { log } from './helpers';
-import { checkPermissions } from '../../policy/permissions';
+import { getPermissionStatus } from '../../policy/permissions';
 import { listServersWithStatus, callTool } from '../../mcp/host';
 import { bridgeRequest } from '../../llm/bridge-client';
+import type { PermissionStatus } from '../types';
+
+type AgentRunPayload = {
+  task: string;
+  tools?: string[];
+  useAllTools?: boolean;
+  maxToolCalls?: number;
+};
+
+type AgentRunAuthorization =
+  | { granted: true; allowedTools: Set<string> }
+  | { granted: false; message: string };
 
 /**
  * Handle agent.run - Execute an autonomous agent task.
@@ -16,12 +28,11 @@ export async function handleAgentRun(
   sender: ResponseSender,
 ): Promise<void> {
   log('handleAgentRun called for:', ctx.id);
-  
-  // Check permission for model:tools
-  const permCheck = await checkPermissions(ctx.origin, ['model:tools'], ctx.tabId);
-  log('Permission check result:', permCheck);
-  
-  if (!permCheck.granted) {
+
+  const payload = ctx.payload as AgentRunPayload;
+  const permissionStatus = await getPermissionStatus(ctx.origin, ctx.tabId);
+  const authorization = authorizeAgentRun(payload, permissionStatus);
+  if (!authorization.granted) {
     log('Permission denied, sending error stream event');
     sender.sendStreamEvent({
       id: ctx.id,
@@ -29,7 +40,7 @@ export async function handleAgentRun(
         type: 'error',
         error: {
           code: 'ERR_SCOPE_REQUIRED',
-          message: 'Permission "model:tools" is required. Call agent.requestPermissions() first.',
+          message: authorization.message,
         },
       },
       done: true,
@@ -37,15 +48,13 @@ export async function handleAgentRun(
     return;
   }
 
-  const payload = ctx.payload as {
-    task: string;
-    tools?: string[];
-    useAllTools?: boolean;
-    maxToolCalls?: number;
-  };
   log('Payload:', payload);
 
   try {
+    if (ctx.signal?.aborted) {
+      return;
+    }
+
     // Send status event
     log('Sending status event: Starting agent...');
     sender.sendStreamEvent({
@@ -72,8 +81,9 @@ export async function handleAgentRun(
       }
     }
 
-    // Filter tools if specific ones requested
-    let toolsToUse = availableTools;
+    let toolsToUse = availableTools.filter(
+      tool => authorization.allowedTools.has(tool.name),
+    );
     if (payload.tools && payload.tools.length > 0 && !payload.useAllTools) {
       toolsToUse = availableTools.filter(t => payload.tools!.includes(t.name));
     }
@@ -138,6 +148,10 @@ Available tools: ${toolNames}`
         tools: llmTools.length > 0 ? llmTools : undefined,
       });
 
+      if (ctx.signal?.aborted) {
+        return;
+      }
+
       log('LLM result received:', llmResult);
       
       // Extract response from choices[0].message (standard OpenAI format)
@@ -186,6 +200,10 @@ Available tools: ${toolNames}`
 
       // Process tool calls
       for (const toolCall of toolCalls) {
+        if (ctx.signal?.aborted) {
+          return;
+        }
+
         toolCallCount++;
         
         // Convert LLM-safe name back to original
@@ -224,6 +242,10 @@ Available tools: ${toolNames}`
           }
         } else {
           toolResult = { ok: false, error: `Tool not found: ${toolName}` };
+        }
+
+        if (ctx.signal?.aborted) {
+          return;
         }
 
         // Send tool_result event
@@ -279,6 +301,10 @@ Available tools: ${toolNames}`
               messages: summaryMessages,
               // NO tools - force text response
             });
+
+            if (ctx.signal?.aborted) {
+              return;
+            }
             
             const summaryContent = summaryResult.choices?.[0]?.message?.content || resultContent;
             log('Summary from LLM:', summaryContent);
@@ -336,4 +362,42 @@ Available tools: ${toolNames}`
       done: true,
     });
   }
+}
+
+export function authorizeAgentRun(
+  payload: AgentRunPayload,
+  permissionStatus: PermissionStatus,
+): AgentRunAuthorization {
+  const requiredScopes = [
+    'model:tools',
+    'mcp:tools.list',
+    'mcp:tools.call',
+  ] as const;
+  const hasRequiredScopes = requiredScopes.every(scope => {
+    const grant = permissionStatus.scopes[scope];
+    return grant === 'granted-once' || grant === 'granted-always';
+  });
+  if (!hasRequiredScopes) {
+    return {
+      granted: false,
+      message: 'Model and tool access must be approved before this run.',
+    };
+  }
+
+  const allowedTools = new Set(permissionStatus.allowedTools ?? []);
+  const requestedTools = payload.tools ?? [];
+  if (
+    requestedTools.length > 0
+    && requestedTools.some(tool => !allowedTools.has(tool))
+  ) {
+    return {
+      granted: false,
+      message: 'One or more requested tools are not approved for this run.',
+    };
+  }
+
+  return {
+    granted: true,
+    allowedTools,
+  };
 }
