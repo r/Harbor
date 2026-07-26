@@ -19,6 +19,7 @@ import {
   isProviderConfigurationReady,
 } from './llm/provider-readiness';
 import { initializeAgentGatewaySidebar } from './agent-gateway/sidebar-controller';
+import { launchSidebarChat } from './sidebar-chat-launcher';
 
 declare const __HARBOR_DEVELOPMENT__: boolean;
 
@@ -2421,13 +2422,9 @@ openDirectoryBtn.addEventListener('click', async () => {
   }
 });
 
-// Open Chat button - opens the chat demo in a new tab
 openChatBtn.addEventListener('click', async () => {
   try {
-    // The demo is at the extension root level
-    const chatUrl = browserAPI.runtime.getURL('demo/chat-poc/index.html');
-    console.log('[Sidebar] Opening chat at:', chatUrl);
-    await browserAPI.tabs.create({ url: chatUrl });
+    await launchSidebarChat(browserAPI);
   } catch (err) {
     console.error('[Sidebar] Failed to open chat:', err);
     showToast('Failed to open chat');
