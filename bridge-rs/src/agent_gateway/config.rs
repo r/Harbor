@@ -127,6 +127,10 @@ struct ClientRecord {
     opaque_registration_record: String,
     created_at: String,
     #[serde(default)]
+    scopes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_authenticated_at: Option<String>,
+    #[serde(default)]
     revoked: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     revoked_at: Option<String>,
@@ -139,6 +143,8 @@ impl ClientRecord {
             "displayName": self.display_name,
             "clientVersion": self.client_version,
             "createdAt": self.created_at,
+            "scopes": self.scopes,
+            "lastAuthenticatedAt": self.last_authenticated_at,
             "revoked": self.revoked,
             "revokedAt": self.revoked_at,
         })
@@ -234,6 +240,7 @@ impl GatewayConfigStore {
         &self,
         display_name: &str,
         client_version: Option<&str>,
+        requested_scopes: &[String],
     ) -> Result<serde_json::Value, GatewayError> {
         let mut authorization = authorization_guard()?;
         let normalized_name = display_name.trim();
@@ -256,6 +263,8 @@ impl GatewayConfigStore {
             client_version: client_version.map(str::to_string),
             opaque_registration_record: registration.registration_record,
             created_at: Utc::now().to_rfc3339(),
+            scopes: normalize_client_scopes(requested_scopes),
+            last_authenticated_at: None,
             revoked: false,
             revoked_at: None,
         };
@@ -316,6 +325,38 @@ impl GatewayConfigStore {
     ) -> Result<(), GatewayError> {
         let _authorization = authorization_guard()?;
         self.verify_client_registration_unlocked(client_id, registration_record)
+    }
+
+    pub(crate) fn record_client_authentication(
+        &self,
+        client_id: &str,
+        registration_record: &str,
+    ) -> Result<(), GatewayError> {
+        let _authorization = authorization_guard()?;
+        let mut config = self.load()?;
+        let client = config
+            .clients
+            .iter_mut()
+            .find(|client| client.id == client_id && !client.revoked)
+            .ok_or_else(|| {
+                GatewayError::new(
+                    "GATEWAY_NOT_PAIRED",
+                    "Client is not paired or its credential is invalid",
+                    false,
+                )
+            })?;
+        if !constant_time_equal(
+            client.opaque_registration_record.as_bytes(),
+            registration_record.as_bytes(),
+        ) {
+            return Err(GatewayError::new(
+                "GATEWAY_NOT_PAIRED",
+                "Client is not paired or its credential is invalid",
+                false,
+            ));
+        }
+        client.last_authenticated_at = Some(Utc::now().to_rfc3339());
+        self.save(&config)
     }
 
     pub(crate) fn with_authorized_registration_lease<ResultValue>(
@@ -445,7 +486,18 @@ fn handle_native_admin_with_store(
             let client_version = params
                 .get("clientVersion")
                 .and_then(serde_json::Value::as_str);
-            store.pair_client(display_name, client_version)
+            let requested_scopes = params
+                .get("scopes")
+                .and_then(serde_json::Value::as_array)
+                .map(|scopes| {
+                    scopes
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            store.pair_client(display_name, client_version, &requested_scopes)
         }
         "agent_gateway.revoke_client" => {
             let client_id = params
@@ -468,6 +520,16 @@ fn random_token(byte_count: usize) -> String {
     let mut bytes = vec![0_u8; byte_count];
     rand::thread_rng().fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
+}
+
+fn normalize_client_scopes(scopes: &[String]) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for scope in scopes {
+        if matches!(scope.as_str(), "tabs:list" | "page:observe") && !normalized.contains(scope) {
+            normalized.push(scope.clone());
+        }
+    }
+    normalized
 }
 
 fn authorization_guard() -> Result<MutexGuard<'static, AuthorizationState>, GatewayError> {
@@ -544,7 +606,11 @@ mod tests {
         store.set_enabled(true).unwrap();
 
         let pairing = store
-            .pair_client("Test Agent", Some("1.0.0"))
+            .pair_client(
+                "Test Agent",
+                Some("1.0.0"),
+                &["tabs:list".to_string(), "page:observe".to_string()],
+            )
             .expect("pairing should succeed");
         let client_id = pairing["client"]["id"].as_str().unwrap();
         let secret = pairing["secret"].as_str().unwrap();
@@ -554,8 +620,32 @@ mod tests {
         assert!(!persisted.contains(secret));
         assert!(!persisted.contains("secret_verifier"));
         assert!(persisted.contains("\"version\": 2"));
+        assert_eq!(
+            pairing["client"]["scopes"],
+            serde_json::json!(["tabs:list", "page:observe"]),
+        );
         assert!(!authorization.registration_record.is_empty());
 
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn successful_authentication_records_when_the_client_was_last_seen() {
+        let (directory, store) = test_store();
+        store.set_enabled(true).unwrap();
+        let pairing = store.pair_client("Test Agent", None, &[]).unwrap();
+        let client_id = pairing["client"]["id"].as_str().unwrap();
+        let authorization = store.begin_client_authentication(client_id).unwrap();
+
+        store
+            .record_client_authentication(client_id, &authorization.registration_record)
+            .unwrap();
+
+        let metadata = store.metadata().unwrap();
+        let last_authenticated_at = metadata["clients"][0]["lastAuthenticatedAt"]
+            .as_str()
+            .unwrap();
+        assert!(chrono::DateTime::parse_from_rfc3339(last_authenticated_at).is_ok());
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -563,7 +653,7 @@ mod tests {
     fn revoked_client_is_rejected_immediately() {
         let (directory, store) = test_store();
         store.set_enabled(true).unwrap();
-        let pairing = store.pair_client("Test Agent", None).unwrap();
+        let pairing = store.pair_client("Test Agent", None, &[]).unwrap();
         let client_id = pairing["client"]["id"].as_str().unwrap();
         store.revoke_client(client_id).unwrap();
 

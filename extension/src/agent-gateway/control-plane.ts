@@ -16,11 +16,14 @@ import {
   type NativeAgentGatewayPairing,
 } from './approval';
 import {
+  approveSessionRequest,
+  denySessionRequest,
   endSession,
   getAgentGatewayAuthoritySnapshot,
   invalidateGatewayAuthority,
   invalidatePairedClientAuthority,
   pauseSession,
+  rebindSession,
   resumeSession,
   revokePairedClient,
   setGatewayEnabled,
@@ -29,7 +32,10 @@ import {
   type AgentGatewayAuthoritySnapshot,
 } from './registry';
 import { sanitizeUrl } from './browser-adapter';
-import type { AgentGatewaySession } from './types';
+import type {
+  AgentGatewaySession,
+  AgentGatewaySessionRequest,
+} from './types';
 
 export interface AgentGatewaySelectableTab {
   tabId: number;
@@ -44,6 +50,7 @@ export interface AgentGatewayUiState {
   enabled: boolean;
   clients: ApprovedAgentGatewayClientMetadata[];
   sessions: AgentGatewaySession[];
+  sessionRequests: AgentGatewaySessionRequest[];
   tabs: AgentGatewaySelectableTab[];
   bridgeConnected: boolean;
 }
@@ -64,8 +71,11 @@ export interface AgentGatewayControlPlaneDependencies {
   invalidatePairedClientAuthority: typeof invalidatePairedClientAuthority;
   startSession: typeof startSession;
   pauseSession: typeof pauseSession;
+  rebindSession: typeof rebindSession;
   resumeSession: typeof resumeSession;
   endSession: typeof endSession;
+  approveSessionRequest: typeof approveSessionRequest;
+  denySessionRequest: typeof denySessionRequest;
   listTabs: () => Promise<chrome.tabs.Tab[]>;
 }
 
@@ -80,8 +90,11 @@ const defaultDependencies: AgentGatewayControlPlaneDependencies = {
   invalidatePairedClientAuthority,
   startSession,
   pauseSession,
+  rebindSession,
   resumeSession,
   endSession,
+  approveSessionRequest,
+  denySessionRequest,
   listTabs: () => browserAPI.tabs.query({ currentWindow: true }),
 };
 
@@ -172,6 +185,7 @@ export class AgentGatewayControlPlane {
         'agent_gateway.pair_client',
         {
           displayName: normalizedDisplayName,
+          scopes,
           ...(clientVersion?.trim()
             ? { clientVersion: clientVersion.trim() }
             : {}),
@@ -245,6 +259,7 @@ export class AgentGatewayControlPlane {
     tabId: number;
     requestedScopes: readonly string[];
     ttlSeconds: number;
+    requestId?: string;
   }): Promise<AgentGatewayUiState> {
     const state = await this.getLocalState();
     if (!state.enabled) {
@@ -268,7 +283,30 @@ export class AgentGatewayControlPlane {
       throw new Error('Select a controllable HTTP(S) tab');
     }
 
-    await this.dependencies.startSession({
+    const pendingRequest = input.requestId
+      ? state.sessionRequests.find(
+          (request) =>
+            request.requestId === input.requestId
+            && request.clientId === input.clientId
+            && request.status === 'pending',
+        )
+      : undefined;
+    if (input.requestId && !pendingRequest) {
+      throw new Error('External agent session request is no longer pending');
+    }
+    if (
+      pendingRequest
+      && (
+        scopes.some((scope) => !pendingRequest.requestedScopes.includes(
+          toGatewayScope(scope),
+        ))
+        || input.ttlSeconds > pendingRequest.requestedTtlSeconds
+      )
+    ) {
+      throw new Error('Approved session must not exceed the external agent request');
+    }
+
+    const session = await this.dependencies.startSession({
       clientId: client.clientId,
       tabId: tab.tabId,
       origin: tab.origin,
@@ -276,6 +314,59 @@ export class AgentGatewayControlPlane {
       allowedOrigins: [tab.origin],
       ttlSeconds: input.ttlSeconds,
     });
+    if (pendingRequest) {
+      this.dependencies.approveSessionRequest(
+        client.clientId,
+        pendingRequest.requestId,
+        session.sessionId,
+      );
+    }
+    return this.getLocalState();
+  }
+
+  async denyPendingSessionRequest(
+    clientId: string,
+    requestId: string,
+  ): Promise<AgentGatewayUiState> {
+    this.dependencies.denySessionRequest(clientId, requestId);
+    return this.getLocalState();
+  }
+
+  async approveTabBinding(input: {
+    clientId: string;
+    requestId: string;
+    tabId: number;
+  }): Promise<AgentGatewayUiState> {
+    const state = await this.getLocalState();
+    const request = state.sessionRequests.find(
+      (candidate) =>
+        candidate.requestId === input.requestId
+        && candidate.clientId === input.clientId
+        && candidate.kind === 'tab-bind'
+        && candidate.status === 'pending',
+    );
+    if (!request?.sessionId) {
+      throw new Error('External agent tab request is no longer pending');
+    }
+    const session = state.sessions.find(
+      (candidate) =>
+        candidate.sessionId === request.sessionId
+        && candidate.clientId === input.clientId,
+    );
+    if (!session) {
+      throw new Error('External agent session is no longer active');
+    }
+    const tab = state.tabs.find((candidate) => candidate.tabId === input.tabId);
+    if (!tab) {
+      throw new Error('Select a controllable HTTP(S) tab');
+    }
+
+    await this.dependencies.rebindSession(session.sessionId, tab.tabId, tab.origin);
+    this.dependencies.approveSessionRequest(
+      input.clientId,
+      request.requestId,
+      session.sessionId,
+    );
     return this.getLocalState();
   }
 
@@ -300,6 +391,9 @@ export class AgentGatewayControlPlane {
       clientId: client.clientId,
       displayName: client.displayName,
       pairedAt: client.pairedAt,
+      ...(client.lastAuthenticatedAt
+        ? { lastAuthenticatedAt: client.lastAuthenticatedAt }
+        : {}),
       scopes: client.scopes.map(toApprovalScope),
       ...(client.revokedAt ? { revokedAt: client.revokedAt } : {}),
     }));
@@ -320,6 +414,7 @@ export class AgentGatewayControlPlane {
       enabled: authority.configuration.enabled,
       clients,
       sessions: authority.sessions,
+      sessionRequests: authority.sessionRequests,
       tabs: tabs.flatMap(toSelectableTab),
       bridgeConnected: this.dependencies.getConnectionState().bridgeReady,
     };
@@ -416,6 +511,20 @@ function handleAgentGatewayUiMessage(
         tabId: Number(message.tabId),
         requestedScopes: Array.isArray(message.scopes) ? message.scopes : [],
         ttlSeconds: Number(message.ttlSeconds),
+        ...(typeof message.requestId === 'string'
+          ? { requestId: message.requestId }
+          : {}),
+      }).then((state) => ({ state }));
+    case 'agent_gateway.ui.deny_session_request':
+      return controller.denyPendingSessionRequest(
+        String(message.clientId ?? ''),
+        String(message.requestId ?? ''),
+      ).then((state) => ({ state }));
+    case 'agent_gateway.ui.approve_tab_binding':
+      return controller.approveTabBinding({
+        clientId: String(message.clientId ?? ''),
+        requestId: String(message.requestId ?? ''),
+        tabId: Number(message.tabId),
       }).then((state) => ({ state }));
     case 'agent_gateway.ui.pause_session':
       return controller.pauseApprovedSession(String(message.sessionId ?? ''))

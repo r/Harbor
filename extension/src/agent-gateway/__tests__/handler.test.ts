@@ -114,6 +114,142 @@ describe('Agent Gateway request handler', () => {
     expect(response.error?.code).toBe('GATEWAY_DISABLED');
   });
 
+  it('creates a bounded user approval request for a new session', async () => {
+    const response = await handleAgentGatewayRequest(
+      request('agentGateway.session.start', {
+        session_id: null,
+        params: {
+          requestedScopes: ['page:observe'],
+          ttlSeconds: 900,
+          reason: 'Review the selected page',
+        },
+      }),
+      { registry, browserAdapter: browserAdapter() },
+    );
+    const result = response.result as {
+      requestId: string;
+      status: string;
+      requestedScopes: string[];
+    };
+
+    expect(response.error).toBeUndefined();
+    expect(result.requestId).toMatch(/^request_/);
+    expect(result.status).toBe('pending');
+    expect(result.requestedScopes).toEqual(['page:observe']);
+    expect(registry.getAuthoritySnapshot().sessionRequests).toHaveLength(1);
+  });
+
+  it('reports approval state and lets the owning client end its session', async () => {
+    const startResponse = await handleAgentGatewayRequest(
+      request('agentGateway.session.start', {
+        session_id: null,
+        params: {
+          requestedScopes: ['tabs:list'],
+          ttlSeconds: 300,
+          reason: 'List the shared tab',
+        },
+      }),
+      { registry, browserAdapter: browserAdapter() },
+    );
+    const requestId = (startResponse.result as { requestId: string }).requestId;
+    registry.approveSessionRequest(CLIENT_ID, requestId, SESSION_ID);
+
+    const statusResponse = await handleAgentGatewayRequest(
+      request('agentGateway.session.status', {
+        session_id: null,
+        params: { requestId },
+      }),
+      { registry, browserAdapter: browserAdapter() },
+    );
+    expect(statusResponse.result).toEqual(expect.objectContaining({
+      requestId,
+      status: 'approved',
+      session: expect.objectContaining({ sessionId: SESSION_ID }),
+    }));
+
+    const endResponse = await handleAgentGatewayRequest(
+      request('agentGateway.session.end'),
+      { registry, browserAdapter: browserAdapter() },
+    );
+    expect(endResponse.result).toEqual({
+      sessionId: SESSION_ID,
+      status: 'ended',
+    });
+
+    const observeResponse = await handleAgentGatewayRequest(
+      request('agentGateway.page.observe'),
+      { registry, browserAdapter: browserAdapter() },
+    );
+    expect(observeResponse.error?.code).toBe('SESSION_NOT_FOUND');
+  });
+
+  it('turns a tab binding request into explicit user approval', async () => {
+    const response = await handleAgentGatewayRequest(
+      request('agentGateway.tabs.bind', {
+        params: { reason: 'Continue the review in the selected tab' },
+      }),
+      { registry, browserAdapter: browserAdapter() },
+    );
+    const result = response.result as {
+      requestId: string;
+      status: string;
+      sessionId: string;
+    };
+
+    expect(response.error).toBeUndefined();
+    expect(result.status).toBe('pending');
+    expect(result.sessionId).toBe(SESSION_ID);
+    expect(registry.getSessionRequest(CLIENT_ID, result.requestId)).toEqual(
+      expect.objectContaining({
+        kind: 'tab-bind',
+        sessionId: SESSION_ID,
+        status: 'pending',
+      }),
+    );
+  });
+
+  it('does not let a session request exceed paired client scopes', async () => {
+    registry.syncPairedClients([{
+      clientId: CLIENT_ID,
+      displayName: 'Test Agent',
+      scopes: [GATEWAY_TABS_READ_SCOPE],
+      pairedAt: new Date().toISOString(),
+    }]);
+
+    const response = await handleAgentGatewayRequest(
+      request('agentGateway.session.start', {
+        session_id: null,
+        params: {
+          requestedScopes: ['page:observe'],
+          ttlSeconds: 900,
+          reason: 'Read the selected page',
+        },
+      }),
+      { registry, browserAdapter: browserAdapter() },
+    );
+
+    expect(response.error?.code).toBe('SCOPE_NOT_GRANTED');
+  });
+
+  it('accepts only session lifetimes represented by the approval UI', async () => {
+    const response = await handleAgentGatewayRequest(
+      request('agentGateway.session.start', {
+        session_id: null,
+        params: {
+          requestedScopes: ['tabs:list'],
+          ttlSeconds: 600,
+          reason: 'List the selected tab',
+        },
+      }),
+      { registry, browserAdapter: browserAdapter() },
+    );
+
+    expect(response.error).toEqual({
+      code: 'INVALID_REQUEST',
+      message: 'Gateway session lifetime must be one of 300, 900, 3600 seconds',
+    });
+  });
+
   it('rejects missing session identity and unexpected parameters', async () => {
     const missingSessionResponse = await handleAgentGatewayRequest(
       request('agentGateway.tabs.list', { session_id: '' }),

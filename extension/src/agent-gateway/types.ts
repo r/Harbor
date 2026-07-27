@@ -26,6 +26,7 @@ export interface PairedAgentGatewayClient {
   principal: string;
   scopes: AgentGatewayScope[];
   pairedAt: string;
+  lastAuthenticatedAt?: string;
   revokedAt?: string;
 }
 
@@ -45,12 +46,37 @@ export interface AgentGatewaySession {
   snapshotSequence: number;
 }
 
+export type AgentGatewaySessionRequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'denied'
+  | 'expired';
+
+export interface AgentGatewaySessionRequest {
+  requestId: string;
+  kind: 'session-start' | 'tab-bind';
+  clientId: string;
+  requestedScopes: AgentGatewayScope[];
+  requestedTtlSeconds: number;
+  reason: string;
+  requestedAt: string;
+  expiresAt: string;
+  status: AgentGatewaySessionRequestStatus;
+  sessionId?: string;
+}
+
 export interface AgentGatewayRequest {
   type: 'agent_gateway_request';
   id: string;
-  method: 'agentGateway.tabs.list' | 'agentGateway.page.observe';
+  method:
+    | 'agentGateway.session.start'
+    | 'agentGateway.session.status'
+    | 'agentGateway.session.end'
+    | 'agentGateway.tabs.bind'
+    | 'agentGateway.tabs.list'
+    | 'agentGateway.page.observe';
   client_id: string;
-  session_id: string;
+  session_id?: string | null;
   params: Record<string, unknown>;
 }
 
@@ -65,6 +91,8 @@ export interface AgentGatewayError {
     | 'SESSION_PAUSED'
     | 'SESSION_CLIENT_MISMATCH'
     | 'SCOPE_NOT_GRANTED'
+    | 'REQUEST_NOT_FOUND'
+    | 'REQUEST_EXPIRED'
     | 'TOO_MANY_REQUESTS'
     | 'TARGET_UNAVAILABLE'
     | 'TARGET_CHANGED'

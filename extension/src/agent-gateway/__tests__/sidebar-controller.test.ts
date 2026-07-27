@@ -11,6 +11,7 @@ import {
   deriveGatewayActionPresentation,
   focusGatewayElement,
   gatewayCredentialCopyFailureMessage,
+  gatewayLastAuthenticatedLabel,
   gatewayFocusTargetAfterSessionAction,
   gatewayFocusTargetAfterTransition,
   gatewayStatusClass,
@@ -29,6 +30,7 @@ function gatewayState(
     bridgeConnected: true,
     clients: [],
     sessions: [],
+    sessionRequests: [],
     tabs: [],
     ...overrides,
   };
@@ -277,6 +279,22 @@ describe('Agent Gateway sidebar controller', () => {
     expect(gatewayCredentialCopyFailureMessage('secret')).toBe(
       'Could not copy the one-time secret',
     );
+  });
+
+  it('distinguishes pairing from an authenticated client connection', () => {
+    const now = Date.parse('2026-07-26T12:10:00.000Z');
+
+    expect(gatewayLastAuthenticatedLabel(undefined, now)).toBe(
+      'Not connected yet',
+    );
+    expect(gatewayLastAuthenticatedLabel(
+      '2026-07-26T12:09:30.000Z',
+      now,
+    )).toBe('Authenticated just now');
+    expect(gatewayLastAuthenticatedLabel(
+      '2026-07-26T12:05:00.000Z',
+      now,
+    )).toBe('Authenticated 5 min ago');
   });
 
   it('derives active, paused, and expired session status independently', () => {

@@ -264,7 +264,7 @@ impl MessageWriter {
         id: &str,
         method: &str,
         client_id: &str,
-        session_id: &str,
+        session_id: Option<&str>,
         params: serde_json::Value,
     ) {
         self.send("agent_gateway_request", serde_json::json!({
@@ -411,7 +411,7 @@ pub async fn run_native_messaging() {
                         &request_id,
                         &request.method,
                         &request.client_id,
-                        &request.session_id,
+                        request.session_id.as_deref(),
                         request.params,
                     )
                     .await;

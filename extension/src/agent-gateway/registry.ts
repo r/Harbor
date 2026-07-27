@@ -7,10 +7,12 @@ import {
   type AgentGatewayConfiguration,
   type AgentGatewayScope,
   type AgentGatewaySession,
+  type AgentGatewaySessionRequest,
   type PairedAgentGatewayClient,
 } from './types';
 
 const STORAGE_KEY = 'harbor_agent_gateway_v1';
+const SESSION_REQUEST_TTL_MS = 5 * 60 * 1000;
 
 const DEFAULT_CONFIGURATION: AgentGatewayConfiguration = {
   enabled: false,
@@ -35,6 +37,7 @@ export interface PairedClientMetadata {
   displayName: string;
   scopes: AgentGatewayScope[];
   pairedAt: string;
+  lastAuthenticatedAt?: string;
   revokedAt?: string;
 }
 
@@ -51,6 +54,7 @@ export interface AgentGatewayAuthoritySnapshot {
   configuration: AgentGatewayConfiguration;
   pairedClients: PairedAgentGatewayClient[];
   sessions: AgentGatewaySession[];
+  sessionRequests: AgentGatewaySessionRequest[];
 }
 
 export class AgentGatewayPolicyError extends Error {
@@ -64,6 +68,9 @@ export class AgentGatewayPolicyError extends Error {
       | 'SESSION_PAUSED'
       | 'SESSION_CLIENT_MISMATCH'
       | 'SCOPE_NOT_GRANTED'
+      | 'INVALID_REQUEST'
+      | 'REQUEST_NOT_FOUND'
+      | 'REQUEST_EXPIRED'
       | 'TOO_MANY_REQUESTS',
     message: string,
   ) {
@@ -75,6 +82,7 @@ export class AgentGatewayRegistry {
   private configuration: AgentGatewayConfiguration = { ...DEFAULT_CONFIGURATION };
   private pairedClients = new Map<string, PairedAgentGatewayClient>();
   private sessions = new Map<string, AgentGatewaySession>();
+  private sessionRequests = new Map<string, AgentGatewaySessionRequest>();
   private inFlightCalls = new Map<string, number>();
 
   getConfiguration(): AgentGatewayConfiguration {
@@ -89,6 +97,8 @@ export class AgentGatewayRegistry {
         scopes: [...client.scopes],
       })),
       sessions: Array.from(this.sessions.values()).map(cloneSession),
+      sessionRequests: Array.from(this.sessionRequests.values())
+        .map(cloneSessionRequest),
     };
   }
 
@@ -170,6 +180,7 @@ export class AgentGatewayRegistry {
     this.configuration = { ...this.configuration, enabled };
     if (!enabled) {
       this.sessions.clear();
+      this.sessionRequests.clear();
     }
   }
 
@@ -231,6 +242,12 @@ export class AgentGatewayRegistry {
         this.sessions.delete(sessionId);
       }
     }
+    for (const [requestId, request] of this.sessionRequests) {
+      const pairedClient = this.pairedClients.get(request.clientId);
+      if (!pairedClient || pairedClient.revokedAt) {
+        this.sessionRequests.delete(requestId);
+      }
+    }
   }
 
   revokeClient(clientId: string): void {
@@ -244,6 +261,229 @@ export class AgentGatewayRegistry {
         this.sessions.delete(sessionId);
       }
     }
+    for (const [requestId, request] of this.sessionRequests) {
+      if (request.clientId === clientId) {
+        this.sessionRequests.delete(requestId);
+      }
+    }
+  }
+
+  requestSession(input: {
+    clientId: string;
+    requestedScopes: AgentGatewayScope[];
+    requestedTtlSeconds: number;
+    reason: string;
+  }): AgentGatewaySessionRequest {
+    const client = this.requirePairedClient(input.clientId);
+    const requestedScopes = [...new Set(input.requestedScopes.filter(isGatewayScope))];
+    if (requestedScopes.length === 0) {
+      throw new AgentGatewayPolicyError(
+        'SCOPE_NOT_GRANTED',
+        'Gateway session request requires at least one approved scope',
+      );
+    }
+    if (requestedScopes.some((scope) => !client.scopes.includes(scope))) {
+      throw new AgentGatewayPolicyError(
+        'SCOPE_NOT_GRANTED',
+        'Gateway session requested a scope not granted to the paired client',
+      );
+    }
+    const supportedTtlSeconds = [300, 900, 3600].filter(
+      (ttlSeconds) => ttlSeconds <= this.configuration.maxSessionTtlSeconds,
+    );
+    if (!supportedTtlSeconds.includes(input.requestedTtlSeconds)) {
+      throw new AgentGatewayPolicyError(
+        'INVALID_REQUEST',
+        `Gateway session lifetime must be one of ${supportedTtlSeconds.join(', ')} seconds`,
+      );
+    }
+    const reason = input.reason.trim();
+    if (!reason || reason.length > 256) {
+      throw new AgentGatewayPolicyError(
+        'INVALID_REQUEST',
+        'Gateway session reason must contain between 1 and 256 characters',
+      );
+    }
+
+    for (const request of this.sessionRequests.values()) {
+      if (request.clientId === input.clientId && request.status === 'pending') {
+        request.status = 'expired';
+      }
+    }
+    const now = Date.now();
+    const request: AgentGatewaySessionRequest = {
+      requestId: `request_${crypto.randomUUID()}`,
+      kind: 'session-start',
+      clientId: input.clientId,
+      requestedScopes,
+      requestedTtlSeconds: input.requestedTtlSeconds,
+      reason,
+      requestedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + SESSION_REQUEST_TTL_MS).toISOString(),
+      status: 'pending',
+    };
+    this.sessionRequests.set(request.requestId, request);
+    return cloneSessionRequest(request);
+  }
+
+  requestTabBinding(input: {
+    clientId: string;
+    sessionId: string;
+    reason: string;
+  }): AgentGatewaySessionRequest {
+    const session = this.getClientSession(input.clientId, input.sessionId);
+    if (Date.parse(session.expiresAt) <= Date.now()) {
+      this.sessions.delete(session.sessionId);
+      throw new AgentGatewayPolicyError(
+        'SESSION_EXPIRED',
+        'Gateway session has expired',
+      );
+    }
+    const reason = input.reason.trim();
+    if (!reason || reason.length > 256) {
+      throw new AgentGatewayPolicyError(
+        'INVALID_REQUEST',
+        'Gateway tab binding reason must contain between 1 and 256 characters',
+      );
+    }
+
+    for (const request of this.sessionRequests.values()) {
+      if (request.clientId === input.clientId && request.status === 'pending') {
+        request.status = 'expired';
+      }
+    }
+    const now = Date.now();
+    const request: AgentGatewaySessionRequest = {
+      requestId: `request_${crypto.randomUUID()}`,
+      kind: 'tab-bind',
+      clientId: input.clientId,
+      requestedScopes: [...session.scopes],
+      requestedTtlSeconds: Math.max(
+        1,
+        Math.ceil((Date.parse(session.expiresAt) - now) / 1000),
+      ),
+      reason,
+      requestedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + SESSION_REQUEST_TTL_MS).toISOString(),
+      status: 'pending',
+      sessionId: session.sessionId,
+    };
+    this.sessionRequests.set(request.requestId, request);
+    return cloneSessionRequest(request);
+  }
+
+  getSessionRequest(
+    clientId: string,
+    requestId: string,
+  ): AgentGatewaySessionRequest {
+    this.requirePairedClient(clientId);
+    const request = this.sessionRequests.get(requestId);
+    if (!request || request.clientId !== clientId) {
+      throw new AgentGatewayPolicyError(
+        'REQUEST_NOT_FOUND',
+        'Gateway session request was not found',
+      );
+    }
+    if (request.status === 'pending' && Date.parse(request.expiresAt) <= Date.now()) {
+      request.status = 'expired';
+    }
+    return cloneSessionRequest(request);
+  }
+
+  approveSessionRequest(
+    clientId: string,
+    requestId: string,
+    sessionId: string,
+  ): AgentGatewaySessionRequest {
+    const request = this.getSessionRequest(clientId, requestId);
+    if (request.status === 'expired') {
+      throw new AgentGatewayPolicyError(
+        'REQUEST_EXPIRED',
+        'Gateway session request has expired',
+      );
+    }
+    if (request.status !== 'pending') {
+      throw new Error('Gateway session request is no longer pending');
+    }
+    const storedRequest = this.sessionRequests.get(requestId)!;
+    storedRequest.status = 'approved';
+    storedRequest.sessionId = sessionId;
+    return cloneSessionRequest(storedRequest);
+  }
+
+  denySessionRequest(
+    clientId: string,
+    requestId: string,
+  ): AgentGatewaySessionRequest {
+    const request = this.getSessionRequest(clientId, requestId);
+    if (request.status !== 'pending') {
+      return request;
+    }
+    const storedRequest = this.sessionRequests.get(requestId)!;
+    storedRequest.status = 'denied';
+    return cloneSessionRequest(storedRequest);
+  }
+
+  getClientSession(clientId: string, sessionId: string): AgentGatewaySession {
+    this.requirePairedClient(clientId);
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new AgentGatewayPolicyError(
+        'SESSION_NOT_FOUND',
+        'Gateway session not found',
+      );
+    }
+    if (session.clientId !== clientId) {
+      throw new AgentGatewayPolicyError(
+        'SESSION_CLIENT_MISMATCH',
+        'Gateway session belongs to a different client',
+      );
+    }
+    return cloneSession(session);
+  }
+
+  endClientSession(clientId: string, sessionId: string): AgentGatewaySession {
+    const session = this.getClientSession(clientId, sessionId);
+    this.sessions.delete(sessionId);
+    return session;
+  }
+
+  rebindSession(
+    sessionId: string,
+    tabId: number,
+    origin: string,
+    documentId: string,
+    documentFingerprint: string,
+  ): AgentGatewaySession {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new AgentGatewayPolicyError(
+        'SESSION_NOT_FOUND',
+        'Gateway session not found',
+      );
+    }
+    this.requirePairedClient(session.clientId);
+    if (Date.parse(session.expiresAt) <= Date.now()) {
+      this.sessions.delete(sessionId);
+      throw new AgentGatewayPolicyError(
+        'SESSION_EXPIRED',
+        'Gateway session has expired',
+      );
+    }
+    if (!documentId || !documentFingerprint) {
+      throw new AgentGatewayPolicyError(
+        'INVALID_REQUEST',
+        'Gateway tab binding requires an explicit document binding',
+      );
+    }
+    session.tabId = tabId;
+    session.origin = origin;
+    session.allowedOrigins = [origin];
+    session.documentId = documentId;
+    session.documentFingerprint = documentFingerprint;
+    session.paused = false;
+    session.snapshotSequence = 0;
+    return cloneSession(session);
   }
 
   registerSession(input: Omit<AgentGatewaySession, 'principal' | 'snapshotSequence'>): AgentGatewaySession {
@@ -422,6 +662,15 @@ function cloneSession(session: AgentGatewaySession): AgentGatewaySession {
   };
 }
 
+function cloneSessionRequest(
+  request: AgentGatewaySessionRequest,
+): AgentGatewaySessionRequest {
+  return {
+    ...request,
+    requestedScopes: [...request.requestedScopes],
+  };
+}
+
 export const agentGatewayRegistry = new AgentGatewayRegistry();
 
 let initializationPromise: Promise<void> | null = null;
@@ -542,6 +791,53 @@ export async function startSession(
 
 export function endSession(sessionId: string): void {
   agentGatewayRegistry.endSession(sessionId);
+}
+
+export function approveSessionRequest(
+  clientId: string,
+  requestId: string,
+  sessionId: string,
+): void {
+  agentGatewayRegistry.approveSessionRequest(clientId, requestId, sessionId);
+}
+
+export function denySessionRequest(
+  clientId: string,
+  requestId: string,
+): void {
+  agentGatewayRegistry.denySessionRequest(clientId, requestId);
+}
+
+export async function rebindSession(
+  sessionId: string,
+  tabId: number,
+  origin: string,
+): Promise<AgentGatewaySession> {
+  await initializeAgentGateway();
+  if (!Number.isInteger(tabId) || tabId < 0) {
+    throw new AgentGatewayPolicyError(
+      'INVALID_REQUEST',
+      'Agent Gateway session tab ID is invalid',
+    );
+  }
+  const normalizedOrigin = new URL(origin).origin;
+  if (normalizedOrigin !== origin) {
+    throw new AgentGatewayPolicyError(
+      'INVALID_REQUEST',
+      'Agent Gateway session origin is invalid',
+    );
+  }
+  const documentBinding = await captureDocumentBinding(tabId);
+  if (documentBinding.origin !== normalizedOrigin) {
+    throw new Error('Selected tab no longer matches the approved origin');
+  }
+  return agentGatewayRegistry.rebindSession(
+    sessionId,
+    tabId,
+    normalizedOrigin,
+    crypto.randomUUID(),
+    documentBinding.documentFingerprint,
+  );
 }
 
 export function pauseSession(sessionId: string): void {

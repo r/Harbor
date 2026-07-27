@@ -18,6 +18,7 @@ export type GatewayUiAction =
   | 'disable'
   | 'pair'
   | 'start'
+  | 'deny'
   | 'pause'
   | 'resume'
   | 'end'
@@ -104,6 +105,34 @@ export interface GatewayViewModel {
     | 'Active' | 'Paused' | 'Expired';
 }
 
+export function gatewayLastAuthenticatedLabel(
+  lastAuthenticatedAt: string | undefined,
+  now = Date.now(),
+): string {
+  if (!lastAuthenticatedAt) {
+    return 'Not connected yet';
+  }
+  const authenticatedAt = Date.parse(lastAuthenticatedAt);
+  if (!Number.isFinite(authenticatedAt)) {
+    return 'Last connection unavailable';
+  }
+  const elapsedMinutes = Math.max(
+    0,
+    Math.floor((now - authenticatedAt) / 60_000),
+  );
+  if (elapsedMinutes === 0) {
+    return 'Authenticated just now';
+  }
+  if (elapsedMinutes < 60) {
+    return `Authenticated ${elapsedMinutes} min ago`;
+  }
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) {
+    return `Authenticated ${elapsedHours} hr ago`;
+  }
+  return `Last authenticated ${new Date(authenticatedAt).toLocaleDateString()}`;
+}
+
 export interface GatewayActionPresentation {
   status: string | null;
   sessionLabel: string | null;
@@ -132,6 +161,8 @@ export function deriveGatewayActionPresentation(
       return { status: 'Pairing...', sessionLabel: null, revokeLabel: null };
     case 'start':
       return { status: 'Sharing...', sessionLabel: null, revokeLabel: null };
+    case 'deny':
+      return { status: 'Denying...', sessionLabel: null, revokeLabel: null };
     default:
       return { status: null, sessionLabel: null, revokeLabel: null };
   }
@@ -561,29 +592,68 @@ async function startSession(): Promise<void> {
   const tabId = Number(checkedValue('gateway-session-tab'));
   const scopes = checkedValues('gateway-session-scope');
   const ttlSeconds = Number(checkedValue('gateway-session-ttl'));
+  const pendingRequest = currentPendingSessionRequest();
+  const isTabBinding = pendingRequest?.kind === 'tab-bind';
   let succeeded = false;
-  setBusy(elements.startSession, true, 'Sharing...');
+  setBusy(elements.startSession, true, isTabBinding ? 'Moving...' : 'Sharing...');
   applyControlAvailability();
   clearError();
   try {
-    const response = await sendGatewayUiMessage({
-      type: 'agent_gateway.ui.start_session',
-      clientId,
-      tabId,
-      scopes,
-      ttlSeconds,
-    });
+    const response = await sendGatewayUiMessage(isTabBinding
+      ? {
+          type: 'agent_gateway.ui.approve_tab_binding',
+          clientId: pendingRequest.clientId,
+          requestId: pendingRequest.requestId,
+          tabId,
+        }
+      : {
+          type: 'agent_gateway.ui.start_session',
+          clientId,
+          tabId,
+          scopes,
+          ttlSeconds,
+          ...(pendingRequest ? { requestId: pendingRequest.requestId } : {}),
+        });
     gatewayState = requireGatewayState(response);
     succeeded = true;
   } catch (error) {
     showError(error);
   } finally {
     actionGate.finish('start');
-    setBusy(elements.startSession, false, 'Share Selected Tab');
+    setBusy(
+      elements.startSession,
+      false,
+      isTabBinding ? 'Move Session to Selected Tab' : 'Share Selected Tab',
+    );
     renderGateway();
     if (succeeded) {
       focusElement(gatewayFocusTargetAfterTransition('start-success'));
     }
+  }
+}
+
+async function denyPendingSessionRequest(
+  clientId: string,
+  requestId: string,
+): Promise<void> {
+  if (!actionGate.begin('deny')) {
+    return;
+  }
+  applyControlAvailability();
+  clearError();
+  try {
+    const response = await sendGatewayUiMessage({
+      type: 'agent_gateway.ui.deny_session_request',
+      clientId,
+      requestId,
+    });
+    gatewayState = requireGatewayState(response);
+  } catch (error) {
+    showError(error);
+  } finally {
+    actionGate.finish('deny');
+    renderGateway();
+    focusElement('gateway-start-session');
   }
 }
 
@@ -732,6 +802,7 @@ function renderClients(state: AgentGatewayUiState): void {
         <span class="gateway-choice-main">
           <span class="gateway-choice-name">${escapeHtml(client.displayName)}</span>
           <span class="gateway-choice-meta">${escapeHtml(client.clientId)} · ${client.scopes.map(escapeHtml).join(', ')}</span>
+          <span class="gateway-choice-meta">${escapeHtml(gatewayLastAuthenticatedLabel(client.lastAuthenticatedAt))}</span>
         </span>
         ${pendingRevokeClientId === client.clientId
           ? `<span class="gateway-actions">
@@ -775,8 +846,16 @@ function renderSessionApproval(
   sessionExpired: boolean,
 ): void {
   const session = state.sessions[0];
+  const pendingRequest = state.sessionRequests.find(
+    (request) =>
+      request.status === 'pending'
+      && Date.parse(request.expiresAt) > Date.now(),
+  );
+  const isTabBinding = pendingRequest?.kind === 'tab-bind';
   elements.sessionActive.hidden = !session;
-  elements.sessionForm.hidden = Boolean(session && !sessionExpired);
+  elements.sessionForm.hidden = Boolean(
+    session && !sessionExpired && !isTabBinding,
+  );
   if (session) {
     const client = state.clients.find((candidate) => candidate.clientId === session.clientId);
     const tab = state.tabs.find((candidate) => candidate.tabId === session.tabId);
@@ -830,12 +909,65 @@ function renderSessionApproval(
     elements.sessionActive.replaceChildren();
   }
 
+  elements.sessionRequest.hidden = !pendingRequest;
+  if (pendingRequest) {
+    const requestingClient = state.clients.find(
+      (client) => client.clientId === pendingRequest.clientId,
+    );
+    elements.sessionRequest.innerHTML = `
+      <div class="gateway-section-heading">
+        <span class="gateway-section-title">${
+          isTabBinding ? 'Tab change requested' : 'Tab access requested'
+        }</span>
+        <span class="gateway-section-meta">${
+          isTabBinding
+            ? 'same access'
+            : escapeHtml(`${Math.ceil(pendingRequest.requestedTtlSeconds / 60)} min`)
+        }</span>
+      </div>
+      <div class="gateway-status-copy">
+        <strong>${escapeHtml(
+          requestingClient?.displayName ?? pendingRequest.clientId,
+        )}</strong> asks to ${escapeHtml(pendingRequest.reason)}
+      </div>
+      <div class="gateway-status-copy">
+        ${pendingRequest.requestedScopes.map(scopeLabel).map(escapeHtml).join(', ')}
+      </div>
+      <div class="gateway-actions">
+        <button class="btn btn-secondary btn-sm" id="gateway-deny-request" type="button">
+          Deny
+        </button>
+      </div>
+    `;
+    document.getElementById('gateway-deny-request')?.addEventListener(
+      'click',
+      () => void denyPendingSessionRequest(
+        pendingRequest.clientId,
+        pendingRequest.requestId,
+      ),
+    );
+  } else {
+    elements.sessionRequest.replaceChildren();
+  }
+
+  elements.sessionAgentFields.hidden = isTabBinding;
+  elements.sessionAccessFields.hidden = isTabBinding;
+  elements.sessionTtlFields.hidden = isTabBinding;
+  elements.startSession.textContent = isTabBinding
+    ? 'Move Session to Selected Tab'
+    : 'Share Selected Tab';
+
   const clients = state.clients.filter((client) => !client.revokedAt);
   elements.sessionClients.innerHTML = clients.length === 0
     ? '<div class="gateway-empty">Pair an external agent before sharing a tab.</div>'
     : clients.map((client, index) => `
       <label class="gateway-choice">
-        <input type="radio" name="gateway-session-client" value="${escapeHtml(client.clientId)}" ${index === 0 ? 'checked' : ''} />
+        <input type="radio" name="gateway-session-client" value="${escapeHtml(client.clientId)}" ${
+          client.clientId === pendingRequest?.clientId
+          || (!pendingRequest && index === 0)
+            ? 'checked'
+            : ''
+        } />
         <span class="gateway-choice-main">
           <span class="gateway-choice-name">${escapeHtml(client.displayName)}</span>
           <span class="gateway-choice-meta">${client.scopes.map(escapeHtml).join(', ')}</span>
@@ -866,7 +998,24 @@ function renderSessionApproval(
     radio.addEventListener('change', applyControlAvailability);
   }
   updateSessionScopeAvailability();
-  elements.startSession.disabled = clients.length === 0 || defaultTabId === null;
+  if (pendingRequest) {
+    for (const checkbox of document.querySelectorAll<HTMLInputElement>(
+      'input[name="gateway-session-scope"]',
+    )) {
+      checkbox.checked = pendingRequest.requestedScopes
+        .map(scopeLabel)
+        .includes(checkbox.value);
+    }
+    const requestedTtl = document.querySelector<HTMLInputElement>(
+      `input[name="gateway-session-ttl"][value="${pendingRequest.requestedTtlSeconds}"]`,
+    );
+    if (requestedTtl) {
+      requestedTtl.checked = true;
+    }
+  }
+  elements.startSession.disabled = isTabBinding
+    ? defaultTabId === null
+    : clients.length === 0 || defaultTabId === null;
 }
 
 function updateSessionScopeAvailability(): void {
@@ -916,6 +1065,14 @@ function setBoundary(
 function pairedAgentSummary(state: AgentGatewayUiState | null): string {
   const pairedCount = state?.clients.filter((client) => !client.revokedAt).length ?? 0;
   return pairedCount > 0 ? `${pairedCount} paired` : 'none';
+}
+
+function currentPendingSessionRequest() {
+  return gatewayState?.sessionRequests.find(
+    (request) =>
+      request.status === 'pending'
+      && Date.parse(request.expiresAt) > Date.now(),
+  );
 }
 
 function focusElement(id: string): void {
@@ -1025,7 +1182,10 @@ function applyControlAvailability(): void {
     tabId: checkedValue('gateway-session-tab'),
     scopes: checkedValues('gateway-session-scope'),
     ttlSeconds: Number(checkedValue('gateway-session-ttl')),
-  });
+  }) && currentPendingSessionRequest()?.kind !== 'tab-bind';
+  if (currentPendingSessionRequest()?.kind === 'tab-bind') {
+    elements.startSession.disabled = !checkedValue('gateway-session-tab');
+  }
 }
 
 function showError(error: unknown): void {
@@ -1091,8 +1251,12 @@ function resolveElements() {
     secretAcknowledged: requireElement<HTMLInputElement>('gateway-secret-acknowledged'),
     finishPair: requireElement<HTMLButtonElement>('gateway-finish-pair'),
     sessionClients: requireElement<HTMLDivElement>('gateway-session-clients'),
+    sessionAgentFields: requireElement<HTMLDivElement>('gateway-session-agent-fields'),
+    sessionAccessFields: requireElement<HTMLDivElement>('gateway-session-access-fields'),
+    sessionTtlFields: requireElement<HTMLDivElement>('gateway-session-ttl-fields'),
     tabList: requireElement<HTMLDivElement>('gateway-tab-list'),
     sessionActive: requireElement<HTMLDivElement>('gateway-session-active'),
+    sessionRequest: requireElement<HTMLDivElement>('gateway-session-request'),
     sessionForm: requireElement<HTMLDivElement>('gateway-session-form'),
     startSession: requireElement<HTMLButtonElement>('gateway-start-session'),
     disable: requireElement<HTMLButtonElement>('gateway-disable'),

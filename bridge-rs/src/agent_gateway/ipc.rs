@@ -30,7 +30,7 @@ const CLIENT_SECRET_ENVIRONMENT_VARIABLE: &str = "HARBOR_AGENT_GATEWAY_SECRET";
 pub struct BrowserRequest {
     pub method: String,
     pub client_id: String,
-    pub session_id: String,
+    pub session_id: Option<String>,
     pub params: serde_json::Value,
     pub response_tx: oneshot::Sender<Result<serde_json::Value, serde_json::Value>>,
     pub cancellation_rx: oneshot::Receiver<()>,
@@ -308,6 +308,7 @@ async fn handle_ipc_connection(
         },
     )
     .await?;
+    store.record_client_authentication(&client_id, &registration_record)?;
 
     let message: IpcMessage = match read_framed_message(&mut stream).await {
         Ok(message) => message,
@@ -507,7 +508,15 @@ async fn forward_browser_request(
     session_id: Option<String>,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, GatewayError> {
-    if method != "agentGateway.tabs.list" && method != "agentGateway.page.observe" {
+    if !matches!(
+        method.as_str(),
+        "agentGateway.session.start"
+            | "agentGateway.session.status"
+            | "agentGateway.session.end"
+            | "agentGateway.tabs.bind"
+            | "agentGateway.tabs.list"
+            | "agentGateway.page.observe"
+    ) {
         return Err(GatewayError::new(
             "METHOD_NOT_FOUND",
             format!("Unsupported browser gateway method: {method}"),
@@ -515,15 +524,21 @@ async fn forward_browser_request(
         ));
     }
 
-    let session_id = session_id
-        .filter(|session_id| !session_id.trim().is_empty())
-        .ok_or_else(|| {
-            GatewayError::new(
-                "INVALID_PARAMS",
-                "sessionId is required for browser gateway calls",
-                false,
-            )
-        })?;
+    let session_id = session_id.filter(|session_id| !session_id.trim().is_empty());
+    if matches!(
+        method.as_str(),
+        "agentGateway.session.end"
+            | "agentGateway.tabs.bind"
+            | "agentGateway.tabs.list"
+            | "agentGateway.page.observe"
+    ) && session_id.is_none()
+    {
+        return Err(GatewayError::new(
+            "INVALID_PARAMS",
+            "sessionId is required for this browser gateway call",
+            false,
+        ));
+    }
     let (response_tx, response_rx) = oneshot::channel();
     let (_cancellation_tx, cancellation_rx) = oneshot::channel();
     browser_request_tx
@@ -1111,7 +1126,7 @@ mod tests {
             std::env::temp_dir().join(format!("harbor-gateway-ipc-test-{}", random_request_id()));
         let store = GatewayConfigStore::new(directory.join("agent_gateway.json"));
         store.set_enabled(true).unwrap();
-        let pairing = store.pair_client("Test Agent", None).unwrap();
+        let pairing = store.pair_client("Test Agent", None, &[]).unwrap();
         let credentials = GatewayCredentials {
             client_id: pairing["client"]["id"].as_str().unwrap().to_string(),
             secret: pairing["secret"].as_str().unwrap().to_string(),
@@ -1337,7 +1352,7 @@ mod tests {
             std::env::temp_dir().join(format!("harbor-gateway-ipc-test-{}", random_request_id()));
         let store = GatewayConfigStore::new(directory.join("agent_gateway.json"));
         store.set_enabled(true).unwrap();
-        let pairing = store.pair_client("Test Agent", None).unwrap();
+        let pairing = store.pair_client("Test Agent", None, &[]).unwrap();
         let client_id = pairing["client"]["id"].as_str().unwrap().to_string();
         let authorization = store.begin_client_authentication(&client_id).unwrap();
         let authorization_lease = authorization.lease;
@@ -1377,7 +1392,7 @@ mod tests {
             std::env::temp_dir().join(format!("harbor-gateway-ipc-test-{}", random_request_id()));
         let store = GatewayConfigStore::new(directory.join("agent_gateway.json"));
         store.set_enabled(true).unwrap();
-        let pairing = store.pair_client("Test Agent", None).unwrap();
+        let pairing = store.pair_client("Test Agent", None, &[]).unwrap();
         let client_id = pairing["client"]["id"].as_str().unwrap().to_string();
         let authorization = store.begin_client_authentication(&client_id).unwrap();
         let authorization_lease = authorization.lease;
@@ -1416,7 +1431,7 @@ mod tests {
             std::env::temp_dir().join(format!("harbor-gateway-ipc-test-{}", random_request_id()));
         let store = GatewayConfigStore::new(directory.join("agent_gateway.json"));
         store.set_enabled(true).unwrap();
-        let pairing = store.pair_client("Test Agent", None).unwrap();
+        let pairing = store.pair_client("Test Agent", None, &[]).unwrap();
         let client_id = pairing["client"]["id"].as_str().unwrap().to_string();
         let authorization = store.begin_client_authentication(&client_id).unwrap();
         let authorization_lease = authorization.lease;
@@ -1447,7 +1462,7 @@ mod tests {
             std::env::temp_dir().join(format!("harbor-gateway-ipc-test-{}", random_request_id()));
         let store = GatewayConfigStore::new(directory.join("agent_gateway.json"));
         store.set_enabled(true).unwrap();
-        let pairing = store.pair_client("Test Agent", None).unwrap();
+        let pairing = store.pair_client("Test Agent", None, &[]).unwrap();
         let client_id = pairing["client"]["id"].as_str().unwrap().to_string();
         let authorization = store.begin_client_authentication(&client_id).unwrap();
         let authorization_lease = authorization.lease;
@@ -1546,7 +1561,7 @@ mod tests {
             std::env::temp_dir().join(format!("harbor-gateway-ipc-test-{}", random_request_id()));
         let store = GatewayConfigStore::new(directory.join("agent_gateway.json"));
         store.set_enabled(true).unwrap();
-        let pairing = store.pair_client("Test Agent", None).unwrap();
+        let pairing = store.pair_client("Test Agent", None, &[]).unwrap();
         let credentials = GatewayCredentials {
             client_id: pairing["client"]["id"].as_str().unwrap().to_string(),
             secret: pairing["secret"].as_str().unwrap().to_string(),

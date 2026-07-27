@@ -1202,6 +1202,13 @@
       .gateway-session {
         border-color: var(--color-success);
       }
+      .gateway-session-request {
+        margin-bottom: var(--space-3);
+        padding: var(--space-3);
+        border: 1px solid var(--color-warning);
+        border-radius: var(--radius-sm);
+        background: var(--color-warning-subtle);
+      }
       .gateway-session.paused {
         border-color: var(--color-warning);
       }
@@ -1738,38 +1745,45 @@
             </div>
             <div id="gateway-session-active" hidden></div>
             <div id="gateway-session-form">
-              <div class="form-label">External agent</div>
-              <div class="gateway-choice-list" id="gateway-session-clients"></div>
+              <div class="gateway-session-request" id="gateway-session-request" hidden></div>
+              <div id="gateway-session-agent-fields">
+                <div class="form-label">External agent</div>
+                <div class="gateway-choice-list" id="gateway-session-clients"></div>
+              </div>
 
               <div class="form-label" style="margin-top: var(--space-3);">Browser tab</div>
               <div class="gateway-choice-list" id="gateway-tab-list"></div>
 
-              <div class="form-label" style="margin-top: var(--space-3);">Access</div>
-              <div class="gateway-scope-grid">
-                <label class="gateway-scope">
-                  <input type="checkbox" name="gateway-session-scope" value="tabs:list" />
-                  <span><code>tabs:list</code>Safe tab metadata</span>
-                </label>
-                <label class="gateway-scope">
-                  <input type="checkbox" name="gateway-session-scope" value="page:observe" />
-                  <span><code>page:observe</code>Readable page snapshot</span>
-                </label>
+              <div id="gateway-session-access-fields">
+                <div class="form-label" style="margin-top: var(--space-3);">Access</div>
+                <div class="gateway-scope-grid">
+                  <label class="gateway-scope">
+                    <input type="checkbox" name="gateway-session-scope" value="tabs:list" />
+                    <span><code>tabs:list</code>Safe tab metadata</span>
+                  </label>
+                  <label class="gateway-scope">
+                    <input type="checkbox" name="gateway-session-scope" value="page:observe" />
+                    <span><code>page:observe</code>Readable page snapshot</span>
+                  </label>
+                </div>
               </div>
 
-              <div class="form-label" style="margin-top: var(--space-3);">Time limit</div>
-              <div class="gateway-ttl-grid">
-                <label class="gateway-scope">
-                  <input type="radio" name="gateway-session-ttl" value="300" />
-                  <span><code>5 min</code></span>
-                </label>
-                <label class="gateway-scope">
-                  <input type="radio" name="gateway-session-ttl" value="900" checked />
-                  <span><code>15 min</code></span>
-                </label>
-                <label class="gateway-scope">
-                  <input type="radio" name="gateway-session-ttl" value="3600" />
-                  <span><code>60 min</code></span>
-                </label>
+              <div id="gateway-session-ttl-fields">
+                <div class="form-label" style="margin-top: var(--space-3);">Time limit</div>
+                <div class="gateway-ttl-grid">
+                  <label class="gateway-scope">
+                    <input type="radio" name="gateway-session-ttl" value="300" />
+                    <span><code>5 min</code></span>
+                  </label>
+                  <label class="gateway-scope">
+                    <input type="radio" name="gateway-session-ttl" value="900" checked />
+                    <span><code>15 min</code></span>
+                  </label>
+                  <label class="gateway-scope">
+                    <input type="radio" name="gateway-session-ttl" value="3600" />
+                    <span><code>60 min</code></span>
+                  </label>
+                </div>
               </div>
               <div class="gateway-actions">
                 <button class="btn btn-primary btn-sm" id="gateway-start-session" type="button">

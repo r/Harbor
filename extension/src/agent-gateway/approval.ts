@@ -18,6 +18,8 @@ export interface NativeAgentGatewayClientMetadata {
   displayName: string;
   clientVersion?: string | null;
   createdAt: string;
+  scopes?: string[];
+  lastAuthenticatedAt?: string | null;
   revoked: boolean;
   revokedAt?: string | null;
 }
@@ -32,6 +34,7 @@ export interface ApprovedAgentGatewayClientMetadata {
   displayName: string;
   clientVersion?: string;
   pairedAt: string;
+  lastAuthenticatedAt?: string;
   scopes: AgentGatewayApprovalScope[];
   revokedAt?: string;
 }
@@ -46,12 +49,18 @@ export function adaptNativeAgentGatewayClients(
   scopeApprovals: ReadonlyMap<string, readonly AgentGatewayApprovalScope[]>,
 ): ApprovedAgentGatewayClientMetadata[] {
   return nativeClients.map((client) => {
-    const approvedScopes = scopeApprovals.get(client.id) ?? [];
+    const nativeScopes = normalizeApprovalScopes(client.scopes ?? []);
+    const approvedScopes = nativeScopes.length > 0
+      ? nativeScopes
+      : scopeApprovals.get(client.id) ?? [];
     return {
       clientId: client.id,
       displayName: client.displayName,
       ...(client.clientVersion ? { clientVersion: client.clientVersion } : {}),
       pairedAt: client.createdAt,
+      ...(client.lastAuthenticatedAt
+        ? { lastAuthenticatedAt: client.lastAuthenticatedAt }
+        : {}),
       scopes: normalizeApprovalScopes(approvedScopes),
       ...(client.revoked
         ? { revokedAt: client.revokedAt ?? client.createdAt }
@@ -67,6 +76,9 @@ export function toRegistryClientMetadata(
     clientId: client.clientId,
     displayName: client.displayName,
     pairedAt: client.pairedAt,
+    ...(client.lastAuthenticatedAt
+      ? { lastAuthenticatedAt: client.lastAuthenticatedAt }
+      : {}),
     scopes: client.scopes.map(toGatewayScope),
     ...(client.revokedAt ? { revokedAt: client.revokedAt } : {}),
   };

@@ -41,6 +41,7 @@ function authoritySnapshot(
       pairedAt: NATIVE_CLIENT.createdAt,
     }],
     sessions: [],
+    sessionRequests: [],
     ...overrides,
   };
 }
@@ -93,6 +94,7 @@ function createDependencies(
         ...snapshot,
         configuration: { ...snapshot.configuration, enabled: false },
         sessions: [],
+        sessionRequests: [],
       };
     }),
     invalidatePairedClientAuthority: vi.fn((clientId: string) => {
@@ -124,10 +126,15 @@ function createDependencies(
       snapshotSequence: 0,
     } satisfies AgentGatewaySession)),
     pauseSession: vi.fn(),
+    rebindSession: vi.fn(async () => {
+      throw new Error('not used');
+    }),
     resumeSession: vi.fn(async () => {
       throw new Error('not used');
     }),
     endSession: vi.fn(),
+    approveSessionRequest: vi.fn(),
+    denySessionRequest: vi.fn(),
     listTabs: vi.fn(async () => [{
       id: 42,
       index: 0,
@@ -315,6 +322,62 @@ describe('Agent Gateway control plane', () => {
     expect(dependencies.pauseSession).toHaveBeenCalledWith('session_1');
     expect(dependencies.resumeSession).toHaveBeenCalledWith('session_1');
     expect(dependencies.endSession).toHaveBeenCalledWith('session_1');
+  });
+
+  it('moves an existing session only after the user approves its tab request', async () => {
+    const session: AgentGatewaySession = {
+      sessionId: 'session_1',
+      clientId: CLIENT_ID,
+      principal: `agent-gateway:${CLIENT_ID}`,
+      tabId: 41,
+      documentId: 'document_1',
+      documentFingerprint: 'fingerprint_1',
+      origin: 'https://before.example',
+      scopes: ['gateway:page.read'],
+      allowedOrigins: ['https://before.example'],
+      createdAt: new Date(Date.now() - 1_000).toISOString(),
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+      paused: false,
+      snapshotSequence: 0,
+    };
+    dependencies = createDependencies(authoritySnapshot({
+      sessions: [session],
+      sessionRequests: [{
+        requestId: 'request_1',
+        kind: 'tab-bind',
+        clientId: CLIENT_ID,
+        requestedScopes: ['gateway:page.read'],
+        requestedTtlSeconds: 900,
+        reason: 'Continue in another tab',
+        requestedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 300_000).toISOString(),
+        status: 'pending',
+        sessionId: session.sessionId,
+      }],
+    }));
+    vi.mocked(dependencies.rebindSession).mockResolvedValueOnce({
+      ...session,
+      tabId: 42,
+      origin: 'https://example.com',
+    });
+    controlPlane = new AgentGatewayControlPlane(dependencies);
+
+    await controlPlane.approveTabBinding({
+      clientId: CLIENT_ID,
+      requestId: 'request_1',
+      tabId: 42,
+    });
+
+    expect(dependencies.rebindSession).toHaveBeenCalledWith(
+      'session_1',
+      42,
+      'https://example.com',
+    );
+    expect(dependencies.approveSessionRequest).toHaveBeenCalledWith(
+      CLIENT_ID,
+      'request_1',
+      'session_1',
+    );
   });
 
   it('does not accept external pages as gateway administrators', () => {

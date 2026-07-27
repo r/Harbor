@@ -13,6 +13,8 @@ describe('Agent Gateway approval metadata adapter', () => {
         displayName: 'Research Agent',
         clientVersion: '1.2.0',
         createdAt: '2026-07-25T12:00:00.000Z',
+        scopes: ['page:observe', 'admin:everything'],
+        lastAuthenticatedAt: '2026-07-25T12:05:00.000Z',
         revoked: false,
       }],
       new Map(),
@@ -23,7 +25,8 @@ describe('Agent Gateway approval metadata adapter', () => {
       displayName: 'Research Agent',
       clientVersion: '1.2.0',
       pairedAt: '2026-07-25T12:00:00.000Z',
-      scopes: [],
+      lastAuthenticatedAt: '2026-07-25T12:05:00.000Z',
+      scopes: ['page:observe'],
     }]);
   });
 
