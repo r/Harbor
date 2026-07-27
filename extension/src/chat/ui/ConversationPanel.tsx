@@ -2,6 +2,7 @@ import type {
   ConversationMessage,
   ConversationToolActivity,
 } from '../features/conversation/conversation-types';
+import { MarkdownMessage } from './MarkdownMessage';
 import { PortLight } from './PortLight';
 import { SectionHeading } from './SectionHeading';
 
@@ -75,7 +76,13 @@ export function ConversationPanel({
                     {formatMessageTime(message.createdAt)}
                   </time>
                 </div>
-                <p>{message.content}</p>
+                {message.role === 'assistant' ? (
+                  <MarkdownMessage content={message.content} />
+                ) : (
+                  <p className="conversation-message__plain-text">
+                    {message.content}
+                  </p>
+                )}
               </li>
             ))}
           </ol>

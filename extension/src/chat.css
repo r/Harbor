@@ -426,13 +426,151 @@ summary:focus-visible {
   text-transform: uppercase;
 }
 
-.conversation-message p {
+.conversation-message__plain-text,
+.markdown-message {
   max-width: 70ch;
   margin: 0;
+}
+
+.conversation-message__plain-text {
   white-space: pre-wrap;
 }
 
-.conversation-message[data-message-state="streaming"] p::after {
+.markdown-message > :first-child {
+  margin-top: 0;
+}
+
+.markdown-message > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-message p,
+.markdown-message ul,
+.markdown-message ol,
+.markdown-message blockquote,
+.markdown-message pre,
+.markdown-message table {
+  margin-top: 0;
+  margin-bottom: var(--harbor-space-4);
+}
+
+.markdown-message h1,
+.markdown-message h2,
+.markdown-message h3,
+.markdown-message h4,
+.markdown-message h5,
+.markdown-message h6 {
+  margin: var(--harbor-space-5) 0 var(--harbor-space-2);
+  color: var(--harbor-text-primary);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.markdown-message h1 {
+  font-size: 20px;
+}
+
+.markdown-message h2 {
+  font-size: 18px;
+}
+
+.markdown-message h3 {
+  font-size: 16px;
+}
+
+.markdown-message h4,
+.markdown-message h5,
+.markdown-message h6 {
+  font-size: 14px;
+}
+
+.markdown-message ul,
+.markdown-message ol {
+  padding-left: var(--harbor-space-5);
+}
+
+.markdown-message li + li {
+  margin-top: var(--harbor-space-1);
+}
+
+.markdown-message blockquote {
+  padding-left: var(--harbor-space-4);
+  border-left: 2px solid var(--harbor-brand-signal);
+  color: var(--harbor-text-secondary);
+}
+
+.markdown-message code {
+  padding: 1px var(--harbor-space-1);
+  border: 1px solid var(--harbor-border-soft);
+  border-radius: var(--harbor-radius-control);
+  background: var(--harbor-surface-inset);
+  font-family: var(--harbor-font-code);
+  font-size: .9em;
+}
+
+.markdown-message pre {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: var(--harbor-space-4);
+  border: 1px solid var(--harbor-border-default);
+  background: var(--harbor-surface-inset);
+}
+
+.markdown-message pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.markdown-message a {
+  color: var(--harbor-brand-signal);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.markdown-message a:hover {
+  color: var(--harbor-text-primary);
+}
+
+.markdown-message table {
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.markdown-message th,
+.markdown-message td {
+  padding: var(--harbor-space-2) var(--harbor-space-3);
+  border: 1px solid var(--harbor-border-default);
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown-message th {
+  background: var(--harbor-surface-inset);
+  font-family: var(--harbor-font-code);
+  font-size: 10px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.markdown-message hr {
+  margin: var(--harbor-space-5) 0;
+  border: 0;
+  border-top: 1px solid var(--harbor-border-default);
+}
+
+.markdown-message__image-link {
+  font-family: var(--harbor-font-code);
+  font-size: 11px;
+}
+
+.conversation-message[data-message-state="streaming"]
+  .conversation-message__plain-text::after,
+.conversation-message[data-message-state="streaming"]
+  .markdown-message > :last-child::after {
   width: 6px;
   height: 13px;
   display: inline-block;

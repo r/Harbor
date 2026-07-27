@@ -49,4 +49,36 @@ describe('ConversationPanel', () => {
     expect(screen.getByText('browser-tools/search')).toBeTruthy();
     expect(screen.getByText('Complete')).toBeTruthy();
   });
+
+  it('renders assistant Markdown while keeping user prompts literal', () => {
+    render(
+      <ConversationPanel
+        messages={[
+          {
+            id: 'message-1',
+            role: 'user',
+            content: '**Keep this literal**',
+            createdAt: '2026-07-26T12:00:00.000Z',
+            state: 'complete',
+          },
+          {
+            id: 'message-2',
+            role: 'assistant',
+            content: '## Route ready\n\n- **Model** connected\n- Tools available',
+            createdAt: '2026-07-26T12:01:00.000Z',
+            state: 'complete',
+          },
+        ]}
+        onStarterAction={vi.fn()}
+        starterActions={[]}
+        toolActivity={[]}
+      />,
+    );
+
+    expect(screen.getByText('**Keep this literal**').tagName).toBe('P');
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Route ready' }),
+    ).toBeTruthy();
+    expect(screen.getByText('Model').tagName).toBe('STRONG');
+  });
 });
