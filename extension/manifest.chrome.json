@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "minimum_chrome_version": "114",
   "name": "Harbor",
   "version": "0.1.0",
   "description": "Infrastructure extension for AI and MCP capabilities. Provides LLM access and tool execution for other extensions.",
@@ -17,7 +18,8 @@
     "activeTab",
     "tabs",
     "nativeMessaging",
-    "cookies"
+    "cookies",
+    "sidePanel"
   ],
   "omnibox": {
     "keyword": "h"
@@ -56,12 +58,14 @@
   },
   "action": {
     "default_title": "Harbor",
-    "default_popup": "dist/sidebar.html",
     "default_icon": {
       "16": "assets/icon-16.png",
       "32": "assets/icon-32.png",
       "48": "assets/icon-48.png"
     }
+  },
+  "side_panel": {
+    "default_path": "dist/sidebar.html"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"

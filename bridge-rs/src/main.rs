@@ -9,16 +9,19 @@ mod rpc;
 
 use std::env;
 
+use harbor_bridge::agent_gateway;
+
 #[tokio::main]
 async fn main() {
+  let launch_arguments = env::args().collect::<Vec<_>>();
   // Check if running in native messaging mode (launched by browser extension)
-  let native_mode = env::args().any(|arg| arg == "--native-messaging");
+  let native_mode = launch_arguments.iter().any(|arg| arg == "--native-messaging");
   // Check if running in HTTP server mode (for Safari)
-  let http_mode = env::args().any(|arg| arg == "--http-server");
+  let http_mode = launch_arguments.iter().any(|arg| arg == "--http-server");
   
   // Get HTTP port from args or use default
-  let http_port = env::args()
-    .skip_while(|arg| arg != "--port")
+  let http_port = launch_arguments.iter()
+    .skip_while(|arg| (*arg).as_str() != "--port")
     .nth(1)
     .and_then(|p| p.parse().ok())
     .unwrap_or(http_server::DEFAULT_PORT);
@@ -66,6 +69,8 @@ async fn main() {
   } else {
     // Native messaging mode for Firefox/Chrome
     tracing::info!("Harbor bridge starting (native_mode={})", native_mode);
-    native_messaging::run_native_messaging().await;
+    let browser_host =
+      agent_gateway::BrowserHostIdentity::from_launch_arguments(&launch_arguments);
+    native_messaging::run_native_messaging(browser_host).await;
   }
 }

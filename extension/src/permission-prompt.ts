@@ -1,239 +1,243 @@
-/**
- * Permission Prompt Handler
- *
- * Runs in the permission prompt popup window.
- * Uses the same design tokens as the sidebar for consistency.
- */
-
-import { browserAPI } from './browser-compat';
-import { SCOPE_DESCRIPTIONS } from './policy/permissions';
 import type { PermissionScope } from './agents/types';
-
-// Icons for each scope category
-const SCOPE_ICONS: Record<string, string> = {
-  'model:prompt': '🤖',
-  'model:tools': '🔧',
-  'model:list': '📋',
-  'mcp:tools.list': '🔌',
-  'mcp:tools.call': '⚡',
-  'mcp:servers.register': '📡',
-  'browser:activeTab.read': '📄',
-  'browser:activeTab.interact': '👆',
-  'browser:activeTab.screenshot': '📸',
-  'chat:open': '💬',
-  'web:fetch': '🌐',
-  'addressBar:suggest': '🔍',
-};
-
-// =============================================================================
-// Theme Management (synced with sidebar)
-// =============================================================================
+import { browserAPI } from './browser-compat';
+import {
+  createCapabilityBadge,
+  createScopeLedgerRow,
+  createToolSelectionRow,
+  describePermissionPrincipal,
+} from './permission-prompt-view';
+import { SCOPE_DESCRIPTIONS } from './policy/permissions';
 
 type Theme = 'light' | 'dark' | 'system';
 
-function getSystemTheme(): 'light' | 'dark' {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function applyTheme(theme: Theme): void {
-  const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
-  document.documentElement.setAttribute('data-theme', effectiveTheme);
-}
-
-function initTheme(): void {
-  const saved = localStorage.getItem('harbor-theme') as Theme | null;
-  const theme = saved || 'system';
-  applyTheme(theme);
-
-  // Listen for system theme changes
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const current = localStorage.getItem('harbor-theme') as Theme | null;
-    if (current === 'system' || !current) {
-      applyTheme('system');
-    }
-  });
-
-  // Listen for theme changes from other windows (sidebar)
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'harbor-theme' && e.newValue) {
-      applyTheme(e.newValue as Theme);
-    }
-  });
-}
-
-// Initialize theme immediately
-initTheme();
-
-// =============================================================================
-// Permission Prompt Logic
-// =============================================================================
-
-// Parse URL params
-const params = new URLSearchParams(window.location.search);
-const origin = params.get('origin') || 'Unknown';
-const scopesParam = params.get('scopes') || '';
-const reason = params.get('reason') || '';
-const toolsParam = params.get('tools') || '';
-const sessionName = params.get('sessionName') || '';
-const sessionType = params.get('sessionType') || '';
-const requestedLLM = params.get('llm') === 'true';
-const requestedTools = params.get('toolsCount') || '0';
-const requestedBrowser = params.get('browser') || '';
-
-const scopes = scopesParam.split(',').filter(Boolean) as PermissionScope[];
-const tools = toolsParam.split(',').filter(Boolean);
-
-// Render origin
-const originEl = document.getElementById('origin');
-if (originEl) {
-  originEl.textContent = origin;
-}
-
-// Render session context (for explicit sessions)
-if (sessionName || sessionType === 'explicit') {
-  const sessionContext = document.getElementById('session-context');
-  const sessionNameEl = document.getElementById('session-name');
-  const sessionBadges = document.getElementById('session-badges');
-  
-  if (sessionContext && sessionNameEl && sessionBadges) {
-    sessionContext.style.display = 'block';
-    sessionNameEl.textContent = sessionName || 'Agent Session';
-    
-    // Add capability badges
-    const badges: string[] = [];
-    if (sessionType === 'explicit') {
-      badges.push('<span class="session-badge explicit">Explicit Session</span>');
-    }
-    if (requestedLLM) {
-      badges.push('<span class="session-badge llm">LLM</span>');
-    }
-    if (parseInt(requestedTools, 10) > 0) {
-      badges.push(`<span class="session-badge tools">${requestedTools} Tools</span>`);
-    }
-    if (requestedBrowser) {
-      const browserCaps = requestedBrowser.split(',').filter(Boolean);
-      if (browserCaps.length > 0) {
-        badges.push(`<span class="session-badge browser">Browser: ${browserCaps.join(', ')}</span>`);
-      }
-    }
-    
-    sessionBadges.innerHTML = badges.join('');
-  }
-}
-
-// Render reason
-if (reason) {
-  const reasonContainer = document.getElementById('reason-container');
-  const reasonEl = document.getElementById('reason');
-  if (reasonContainer && reasonEl) {
-    reasonContainer.style.display = 'block';
-    reasonEl.textContent = reason;
-  }
-}
-
-// Render scopes
-const scopesList = document.getElementById('scopes-list');
-if (scopesList) {
-  if (scopes.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'scopes-empty';
-    empty.textContent = 'No specific permissions requested';
-    scopesList.appendChild(empty);
-  } else {
-    for (const scope of scopes) {
-      const info = SCOPE_DESCRIPTIONS[scope];
-      const icon = SCOPE_ICONS[scope] || '🔐';
-      
-      const item = document.createElement('div');
-      item.className = 'scope-item';
-      
-      if (info) {
-        item.innerHTML = `
-          <div class="scope-header">
-            <span class="scope-icon">${icon}</span>
-            <span class="scope-title">${info.title}</span>
-            <span class="risk-badge risk-${info.risk}">${info.risk}</span>
-          </div>
-          <div class="scope-description">${info.description}</div>
-        `;
-      } else {
-        // Fallback for unknown scopes
-        item.innerHTML = `
-          <div class="scope-header">
-            <span class="scope-icon">${icon}</span>
-            <span class="scope-title">${scope}</span>
-          </div>
-          <div class="scope-description">Access to ${scope}</div>
-        `;
-      }
-      scopesList.appendChild(item);
-    }
-  }
-}
-
-// Render tools
-if (tools.length > 0) {
-  const toolsSection = document.getElementById('tools-section');
-  const toolsList = document.getElementById('tools-list');
-  if (toolsSection && toolsList) {
-    toolsSection.style.display = 'block';
-
-    for (const tool of tools) {
-      const item = document.createElement('div');
-      item.className = 'tool-item';
-      item.innerHTML = `
-        <input type="checkbox" id="tool-${tool}" data-tool="${tool}" checked>
-        <label for="tool-${tool}" class="tool-name">${tool}</label>
-      `;
-      toolsList.appendChild(item);
-    }
-  }
-}
-
-// Handle deny button
-const btnDeny = document.getElementById('btn-deny');
-btnDeny?.addEventListener('click', () => {
-  sendResponse({ granted: false, explicitDeny: true });
-});
-
-// Handle allow button
-const btnAllow = document.getElementById('btn-grant');
-btnAllow?.addEventListener('click', () => {
-  const grantOnce = (document.getElementById('grant-once') as HTMLInputElement)?.checked;
-  const grantType = grantOnce ? 'granted-once' : 'granted-always';
-
-  // Collect selected tools
-  const selectedTools: string[] = [];
-  const toolCheckboxes = document.querySelectorAll<HTMLInputElement>('#tools-list input[type="checkbox"]');
-  for (const checkbox of toolCheckboxes) {
-    if (checkbox.checked) {
-      const toolName = checkbox.dataset.tool;
-      if (toolName) selectedTools.push(toolName);
-    }
-  }
-
-  sendResponse({
-    granted: true,
-    grantType,
-    allowedTools: selectedTools.length > 0 ? selectedTools : undefined,
-  });
-});
-
-// Send response to background script
-function sendResponse(response: {
+type PermissionPromptResponse = {
   granted: boolean;
   grantType?: 'granted-once' | 'granted-always';
   allowedTools?: string[];
   explicitDeny?: boolean;
-}): void {
-  console.log('[Permission Prompt] Sending response:', response);
-  browserAPI.runtime.sendMessage({
+};
+
+function getSystemTheme(): Exclude<Theme, 'system'> {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light';
+}
+
+function applyTheme(theme: Theme): void {
+  const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
+  document.documentElement.dataset.harborTheme = effectiveTheme;
+  document.documentElement.dataset.theme = effectiveTheme;
+}
+
+function initializeTheme(): void {
+  const savedTheme = localStorage.getItem('harbor-theme') as Theme | null;
+  applyTheme(savedTheme ?? 'system');
+
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener(
+    'change',
+    () => {
+      const currentTheme = localStorage.getItem('harbor-theme') as Theme | null;
+      if (!currentTheme || currentTheme === 'system') {
+        applyTheme('system');
+      }
+    },
+  );
+
+  window.addEventListener('storage', event => {
+    if (event.key === 'harbor-theme' && event.newValue) {
+      applyTheme(event.newValue as Theme);
+    }
+  });
+}
+
+function parseList(value: string): string[] {
+  return value.split(',').filter(Boolean);
+}
+
+function renderPrincipal(origin: string): void {
+  const principal = describePermissionPrincipal(origin);
+  const nameElement = document.getElementById('principal-name');
+  const originElement = document.getElementById('origin');
+
+  if (nameElement) {
+    nameElement.textContent = principal.name;
+  }
+  if (originElement) {
+    originElement.textContent = principal.detail;
+  }
+}
+
+function renderSessionContext(params: URLSearchParams): void {
+  const sessionName = params.get('sessionName') ?? '';
+  const sessionType = params.get('sessionType') ?? '';
+  if (!sessionName && sessionType !== 'explicit') {
+    return;
+  }
+
+  const container = document.getElementById('session-context');
+  const nameElement = document.getElementById('session-name');
+  const badgesElement = document.getElementById('session-badges');
+  if (!container || !nameElement || !badgesElement) {
+    return;
+  }
+
+  container.hidden = false;
+  nameElement.textContent = sessionName || 'Agent session';
+
+  if (sessionType === 'explicit') {
+    badgesElement.append(
+      createCapabilityBadge(document, 'Explicit session', 'neutral'),
+    );
+  }
+  if (params.get('llm') === 'true') {
+    badgesElement.append(
+      createCapabilityBadge(document, 'Model', 'model'),
+    );
+  }
+
+  const requestedTools = Number.parseInt(
+    params.get('toolsCount') ?? '0',
+    10,
+  );
+  if (requestedTools > 0) {
+    badgesElement.append(
+      createCapabilityBadge(
+        document,
+        `${requestedTools} tools`,
+        'tools',
+      ),
+    );
+  }
+
+  const browserCapabilities = parseList(params.get('browser') ?? '');
+  if (browserCapabilities.length > 0) {
+    badgesElement.append(
+      createCapabilityBadge(
+        document,
+        `Page: ${browserCapabilities.join(', ')}`,
+        'browser',
+      ),
+    );
+  }
+}
+
+function renderReason(reason: string): void {
+  if (!reason) {
+    return;
+  }
+
+  const container = document.getElementById('reason-container');
+  const reasonElement = document.getElementById('reason');
+  if (container && reasonElement) {
+    container.hidden = false;
+    reasonElement.textContent = reason;
+  }
+}
+
+function renderScopes(scopes: PermissionScope[]): void {
+  const list = document.getElementById('scopes-list');
+  const count = document.getElementById('scope-count');
+  if (!list || !count) {
+    return;
+  }
+
+  count.textContent = `${scopes.length} ${
+    scopes.length === 1 ? 'capability' : 'capabilities'
+  }`;
+
+  if (scopes.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'scopes-empty';
+    empty.textContent = 'No additional capabilities requested.';
+    list.appendChild(empty);
+    return;
+  }
+
+  scopes.forEach((scope, index) => {
+    list.appendChild(createScopeLedgerRow(
+      document,
+      scope,
+      index,
+      SCOPE_DESCRIPTIONS[scope],
+    ));
+  });
+}
+
+function renderTools(tools: string[]): void {
+  if (tools.length === 0) {
+    return;
+  }
+
+  const section = document.getElementById('tools-section');
+  const list = document.getElementById('tools-list');
+  const count = document.getElementById('tool-count');
+  if (!section || !list || !count) {
+    return;
+  }
+
+  section.hidden = false;
+  count.textContent = `${tools.length} selected`;
+  tools.forEach((tool, index) => {
+    list.appendChild(createToolSelectionRow(document, tool, index));
+  });
+}
+
+function selectedToolNames(): string[] {
+  const selectedTools: string[] = [];
+  const checkboxes = document.querySelectorAll<HTMLInputElement>(
+    '#tools-list input[type="checkbox"]',
+  );
+
+  for (const checkbox of checkboxes) {
+    if (checkbox.checked && checkbox.dataset.tool) {
+      selectedTools.push(checkbox.dataset.tool);
+    }
+  }
+  return selectedTools;
+}
+
+function sendResponse(response: PermissionPromptResponse): void {
+  void browserAPI.runtime.sendMessage({
     type: 'permission_prompt_response',
     response,
   });
 }
 
-// Handle window close (user dismissed)
-window.addEventListener('beforeunload', () => {
-  // This may not always fire, but the background script handles window close events
-});
+function initializeActions(): void {
+  document.getElementById('btn-deny')?.addEventListener('click', () => {
+    sendResponse({ granted: false, explicitDeny: true });
+  });
+
+  document.getElementById('btn-grant')?.addEventListener('click', () => {
+    const grantOnce = (
+      document.getElementById('grant-once') as HTMLInputElement | null
+    )?.checked;
+    const tools = selectedToolNames();
+
+    sendResponse({
+      granted: true,
+      grantType: grantOnce ? 'granted-once' : 'granted-always',
+      allowedTools: tools.length > 0 ? tools : undefined,
+    });
+  });
+}
+
+function initializePermissionPrompt(): void {
+  initializeTheme();
+
+  const params = new URLSearchParams(window.location.search);
+  const origin = params.get('origin') || 'Unknown';
+  const scopes = parseList(
+    params.get('scopes') ?? '',
+  ) as PermissionScope[];
+  const tools = parseList(params.get('tools') ?? '');
+
+  renderPrincipal(origin);
+  renderSessionContext(params);
+  renderReason(params.get('reason') ?? '');
+  renderScopes(scopes);
+  renderTools(tools);
+  initializeActions();
+}
+
+initializePermissionPrompt();

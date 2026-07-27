@@ -14,6 +14,8 @@ import { cleanupExpiredGrants } from './policy/permissions';
 import { initializeExtensionApi } from './extension-api';
 import { initializeRouter } from './agents/background-router';
 import { initializeHandlers } from './handlers';
+import { initializeAgentGateway } from './agent-gateway';
+import { initializePanelLauncher, type PanelLauncherAPI } from './panel-launcher';
 
 console.log(`[Harbor] Extension starting on ${getBrowserName()}...`);
 console.log('[Harbor] Browser features:', getFeatureSummary());
@@ -49,6 +51,8 @@ initializeBridgeClient();
 initializeMcpHost();
 initializeExtensionApi();
 initializeRouter();
+initializePanelLauncher(browserAPI as unknown as PanelLauncherAPI);
+void initializeAgentGateway();
 cleanupExpiredGrants();
 
 // Register all message handlers

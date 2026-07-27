@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title description">
+  <title id="title">Harbor mark</title>
+  <desc id="description">Two piers joined by a bridge with an open channel and beacon light.</desc>
+  <path
+    fill="#17262B"
+    d="M18 12h36v38h20V12h36v104H74V78H54v38H18V12Z"
+  />
+  <circle cx="64" cy="64" r="7" fill="#B65331"/>
+</svg>

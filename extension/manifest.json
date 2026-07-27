@@ -62,7 +62,6 @@
   },
   "action": {
     "default_title": "Harbor",
-    "default_popup": "dist/directory.html",
     "default_icon": {
       "16": "assets/icon.svg",
       "32": "assets/icon.svg",
@@ -72,6 +71,7 @@
   "sidebar_action": {
     "default_title": "Harbor",
     "default_panel": "dist/sidebar.html",
+    "open_at_install": false,
     "default_icon": {
       "16": "assets/icon.svg",
       "32": "assets/icon.svg",

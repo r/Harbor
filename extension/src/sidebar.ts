@@ -1,7 +1,27 @@
 // Make this a module to avoid global scope conflicts
 export {};
 
-import { browserAPI } from './browser-compat';
+import { browserAPI, getBrowserName } from './browser-compat';
+import { getExtensionManagementTarget } from './developer-tools';
+import {
+  deriveGatewayAttention,
+  derivePanelAttention,
+  HARBOR_PANEL_MODES,
+  isHarborPanelMode,
+  nextHarborPanelMode,
+  type HarborPanelMode,
+  type PanelAttention,
+  type PanelNavigationKey,
+} from './panel-navigation';
+import { validateRemoteOllamaConfiguration } from './llm/provider-form';
+import {
+  isConfiguredProviderInstance,
+  isProviderConfigurationReady,
+} from './llm/provider-readiness';
+import { initializeAgentGatewaySidebar } from './agent-gateway/sidebar-controller';
+import { launchSidebarChat } from './sidebar-chat-launcher';
+
+declare const __HARBOR_DEVELOPMENT__: boolean;
 
 type SecretDecl = { name: string; label: string; type?: 'text' | 'password' };
 
@@ -34,6 +54,7 @@ type ProviderInfo = {
   is_local: boolean;
   is_default: boolean;
   is_type_default: boolean;
+  is_configured_instance?: boolean;
   has_api_key: boolean;
   base_url?: string;
   available?: boolean;
@@ -66,9 +87,6 @@ type ConfiguredModel = {
   model_id: string;
   is_default: boolean;
 };
-
-// Header elements
-const headerLogo = document.getElementById('header-logo') as HTMLDivElement;
 
 // Server elements
 const serversEl = document.getElementById('servers') as HTMLDivElement;
@@ -104,7 +122,8 @@ const setupStatusList = document.getElementById('setup-status-list') as HTMLDivE
 const setupStatusBody = document.getElementById('setup-status-body') as HTMLDivElement;
 const setupStatusToggle = document.getElementById('setup-status-toggle') as HTMLSpanElement;
 const setupStatusHeader = document.getElementById('setup-status-header') as HTMLDivElement;
-const openDebuggingLink = document.getElementById('open-debugging-link') as HTMLAnchorElement;
+const developerToolsActions = document.getElementById('developer-tools-actions') as HTMLDivElement;
+const developerToolsButton = document.getElementById('developer-tools-button') as HTMLButtonElement;
 
 // LLM elements
 const llmPanelHeader = document.getElementById('llm-panel-header') as HTMLDivElement;
@@ -123,11 +142,22 @@ const apiKeyProviderName = document.getElementById('api-key-provider-name') as H
 const apiKeyInput = document.getElementById('api-key-input') as HTMLInputElement;
 const apiKeySaveBtn = document.getElementById('api-key-save') as HTMLButtonElement;
 const apiKeyCancelBtn = document.getElementById('api-key-cancel') as HTMLButtonElement;
+const addRemoteOllamaBtn = document.getElementById('add-remote-ollama') as HTMLButtonElement;
+const remoteOllamaConfig = document.getElementById('remote-ollama-config') as HTMLDivElement;
+const remoteOllamaFormTitle = document.getElementById('remote-ollama-form-title') as HTMLSpanElement;
+const remoteOllamaNameInput = document.getElementById('remote-ollama-name') as HTMLInputElement;
+const remoteOllamaUrlInput = document.getElementById('remote-ollama-url') as HTMLInputElement;
+const remoteOllamaSaveBtn = document.getElementById('remote-ollama-save') as HTMLButtonElement;
+const remoteOllamaCancelBtn = document.getElementById('remote-ollama-cancel') as HTMLButtonElement;
+const remoteOllamaFormCancelBtn = document.getElementById('remote-ollama-form-cancel') as HTMLButtonElement;
+const providerManagementStatus = document.getElementById('provider-management-status') as HTMLDivElement;
 const serversPanelHeader = document.getElementById('servers-panel-header') as HTMLDivElement;
 const serversPanelToggle = document.getElementById('servers-panel-toggle') as HTMLSpanElement;
 
 // Track which provider is being configured
 let configuringProviderId: string | null = null;
+let configuringRemoteOllamaProviderId: string | null = null;
+let providerConfigurationReady = false;
 
 // OAuth App Credentials elements
 const oauthPanelHeader = document.getElementById('oauth-panel-header') as HTMLDivElement;
@@ -166,6 +196,7 @@ function getSystemTheme(): 'light' | 'dark' {
 function applyTheme(theme: Theme): void {
   const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
   document.documentElement.setAttribute('data-theme', effectiveTheme);
+  document.documentElement.setAttribute('data-harbor-theme', effectiveTheme);
   localStorage.setItem('harbor-theme', theme);
   updateThemeToggle(theme);
 }
@@ -174,9 +205,10 @@ function updateThemeToggle(theme: Theme): void {
   const btn = document.getElementById('theme-toggle');
   if (!btn) return;
   
-  const icons: Record<Theme, string> = { light: '☀️', dark: '🌙', system: '🖥️' };
-  btn.textContent = icons[theme];
-  btn.title = `Theme: ${theme} (click to change)`;
+  const labels: Record<Theme, string> = { light: 'Light', dark: 'Dark', system: 'Auto' };
+  btn.textContent = labels[theme];
+  btn.title = `Appearance: ${labels[theme]}`;
+  btn.setAttribute('aria-label', `Appearance: ${labels[theme]}. Click to change.`);
 }
 
 function initTheme(): void {
@@ -220,8 +252,273 @@ function cycleTheme(): void {
   applyTheme(next);
 }
 
-// Initialize theme on load
+const PANEL_MODE_STORAGE_KEY = 'harbor-panel-mode';
+let currentPanelMode: HarborPanelMode = 'overview';
+
+function initializePanelNavigation(): void {
+  const modePanels = new Map<HarborPanelMode, HTMLElement>(
+    HARBOR_PANEL_MODES.map((mode) => [
+      mode,
+      requireSidebarElement(`harbor-mode-${mode}`),
+    ]),
+  );
+  const modeTabs = new Map<HarborPanelMode, HTMLButtonElement>(
+    HARBOR_PANEL_MODES.map((mode) => [
+      mode,
+      requireSidebarElement<HTMLButtonElement>(`harbor-mode-tab-${mode}`),
+    ]),
+  );
+
+  for (const panel of document.querySelectorAll<HTMLElement>(
+    '[data-harbor-mode-panel]',
+  )) {
+    const mode = panel.dataset.harborModePanel;
+    if (isHarborPanelMode(mode ?? null)) {
+      modePanels.get(mode)?.append(panel);
+    }
+  }
+
+  const storedMode = readStoredPanelMode();
+  currentPanelMode = isHarborPanelMode(storedMode) ? storedMode : 'overview';
+
+  const activateMode = (
+    mode: HarborPanelMode,
+    options: { focusTab?: boolean; resetScroll?: boolean } = {},
+  ): void => {
+    currentPanelMode = mode;
+    for (const candidate of HARBOR_PANEL_MODES) {
+      const isActive = candidate === mode;
+      const tab = modeTabs.get(candidate);
+      const panel = modePanels.get(candidate);
+      if (tab) {
+        tab.classList.toggle('is-active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+        tab.tabIndex = isActive ? 0 : -1;
+      }
+      if (panel) {
+        panel.hidden = !isActive;
+      }
+    }
+    storePanelMode(mode);
+    if (options.focusTab) {
+      modeTabs.get(mode)?.focus();
+    }
+    if (options.resetScroll) {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  };
+
+  for (const [mode, tab] of modeTabs) {
+    tab.addEventListener('click', () => {
+      activateMode(mode, { resetScroll: true });
+    });
+    tab.addEventListener('keydown', (event) => {
+      if (!isPanelNavigationKey(event.key)) {
+        return;
+      }
+      event.preventDefault();
+      activateMode(nextHarborPanelMode(mode, event.key), {
+        focusTab: true,
+        resetScroll: true,
+      });
+    });
+  }
+
+  for (const target of document.querySelectorAll<HTMLButtonElement>(
+    '[data-harbor-mode-target]',
+  )) {
+    target.addEventListener('click', () => {
+      const mode = target.dataset.harborModeTarget;
+      if (isHarborPanelMode(mode ?? null)) {
+        activateMode(mode, { focusTab: true, resetScroll: true });
+      }
+    });
+  }
+
+  activateMode(currentPanelMode);
+  initializeOverviewSummary();
+}
+
+function initializeOverviewSummary(): void {
+  const observedElements = [
+    bridgeStatusIndicator,
+    bridgeStatusText,
+    llmStatusIndicator,
+    llmStatusText,
+    document.getElementById('gateway-status-indicator'),
+    document.getElementById('gateway-status-text'),
+    document.getElementById('gateway-rail-agent'),
+    document.getElementById('gateway-rail-harbor'),
+    document.getElementById('gateway-rail-tab'),
+    document.getElementById('sessions-count'),
+  ].filter((element): element is HTMLElement => element instanceof HTMLElement);
+
+  const observer = new MutationObserver(updateOverviewSummary);
+  for (const element of observedElements) {
+    observer.observe(element, {
+      attributes: true,
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+  }
+  updateOverviewSummary();
+}
+
+function updateOverviewSummary(): void {
+  const gatewayStatusIndicator = document.getElementById('gateway-status-indicator');
+  const gatewayStatusText = document.getElementById('gateway-status-text');
+  const sessionsCountElement = document.getElementById('sessions-count');
+
+  setSidebarText(
+    'overview-connections-summary',
+    `Bridge ${statusText(bridgeStatusText)} · Models ${statusText(llmStatusText)}`,
+  );
+  setSidebarText(
+    'overview-access-summary',
+    `Gateway ${statusText(gatewayStatusText)} · ${statusText(sessionsCountElement)} sessions`,
+  );
+
+  const connectionAttention = derivePanelAttention([
+    bridgeStatusIndicator.className,
+    llmStatusIndicator.className,
+  ]);
+  const accessAttention = deriveGatewayAttention(statusText(gatewayStatusText));
+
+  updateOverviewLedgerState(
+    'overview-connections-state',
+    connectionAttention,
+    [bridgeStatusIndicator, llmStatusIndicator],
+  );
+  updateOverviewLedgerState(
+    'overview-access-state',
+    accessAttention,
+    gatewayStatusIndicator ? [gatewayStatusIndicator] : [],
+  );
+  updateModeSignal('connections', connectionAttention);
+  updateModeSignal('access', accessAttention);
+
+  copyGatewayBoundary('agent');
+  copyGatewayBoundary('harbor');
+  copyGatewayBoundary('tab');
+
+  const routeState = document.getElementById('overview-route-state');
+  const gatewayStatus = statusText(gatewayStatusText);
+  if (routeState) {
+    routeState.textContent = gatewayStatus === 'Active'
+      ? 'Active'
+      : gatewayStatus === 'Disconnected'
+        ? 'Unavailable'
+        : gatewayStatus;
+  }
+}
+
+function copyGatewayBoundary(boundary: 'agent' | 'harbor' | 'tab'): void {
+  const source = document.getElementById(`gateway-rail-${boundary}`);
+  const sourceState = document.getElementById(`gateway-rail-${boundary}-state`);
+  const targetValue = document.getElementById(`overview-route-${boundary}-value`);
+  const targetState = document.getElementById(`overview-route-${boundary}-state`);
+  if (!source || !sourceState || !targetValue || !targetState) {
+    return;
+  }
+  targetValue.textContent = statusText(source);
+  targetState.className = sourceState.className;
+}
+
+function updateOverviewLedgerState(
+  elementId: string,
+  attention: PanelAttention,
+  sourceIndicators: HTMLElement[],
+): void {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    return;
+  }
+  const allConnected = sourceIndicators.length > 0
+    && sourceIndicators.every((source) => source.classList.contains('connected'));
+  element.className = [
+    'overview-ledger-state',
+    attention === 'error'
+      ? 'disconnected'
+      : attention === 'warning'
+        ? 'connecting'
+        : allConnected
+          ? 'connected'
+          : '',
+  ].filter(Boolean).join(' ');
+}
+
+function updateModeSignal(
+  mode: Exclude<HarborPanelMode, 'overview'>,
+  attention: PanelAttention,
+): void {
+  const signal = document.getElementById(`harbor-mode-signal-${mode}`);
+  const tab = document.getElementById(`harbor-mode-tab-${mode}`);
+  if (!signal) {
+    return;
+  }
+  signal.hidden = attention === 'none';
+  signal.className = [
+    'harbor-mode-signal',
+    attention === 'error' ? 'error' : '',
+  ].filter(Boolean).join(' ');
+  tab?.setAttribute(
+    'aria-label',
+    attention === 'none'
+      ? capitalizePanelMode(mode)
+      : `${capitalizePanelMode(mode)} needs attention`,
+  );
+}
+
+function setSidebarText(elementId: string, value: string): void {
+  const element = document.getElementById(elementId);
+  if (element) {
+    element.textContent = value;
+  }
+}
+
+function statusText(element: Element | null): string {
+  return element?.textContent?.trim() || 'Unknown';
+}
+
+function isPanelNavigationKey(key: string): key is PanelNavigationKey {
+  return key === 'ArrowLeft'
+    || key === 'ArrowRight'
+    || key === 'Home'
+    || key === 'End';
+}
+
+function readStoredPanelMode(): string | null {
+  try {
+    return sessionStorage.getItem(PANEL_MODE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storePanelMode(mode: HarborPanelMode): void {
+  try {
+    sessionStorage.setItem(PANEL_MODE_STORAGE_KEY, mode);
+  } catch {
+    return;
+  }
+}
+
+function capitalizePanelMode(mode: HarborPanelMode): string {
+  return mode.charAt(0).toUpperCase() + mode.slice(1);
+}
+
+function requireSidebarElement<T extends HTMLElement = HTMLElement>(id: string): T {
+  const element = document.getElementById(id);
+  if (!element) {
+    throw new Error(`Missing Harbor panel element: ${id}`);
+  }
+  return element as T;
+}
+
 initTheme();
+initializePanelNavigation();
+initializeAgentGatewaySidebar();
 
 // =============================================================================
 // Toast notification helper
@@ -238,25 +535,6 @@ function showToast(message: string, type: 'info' | 'error' | 'success' = 'info',
 
   setTimeout(() => toast.remove(), duration);
 }
-
-// =============================================================================
-// Header Logo - Open about:debugging or copy to clipboard
-// =============================================================================
-
-const DEBUGGING_URL = 'about:debugging#/runtime/this-firefox';
-
-headerLogo.addEventListener('click', async () => {
-  try {
-    // Try to open the URL in a new tab
-    // Note: Firefox extensions cannot directly open about: URLs via tabs.create
-    // So we copy to clipboard as the fallback
-    await navigator.clipboard.writeText(DEBUGGING_URL);
-    showToast('Copied debugging URL to clipboard');
-  } catch (err) {
-    console.error('[Sidebar] Failed to copy to clipboard:', err);
-    showToast('Failed to copy URL');
-  }
-});
 
 function updateBridgeStatusUI(connected: boolean, error?: string | null): void {
   if (connected) {
@@ -323,6 +601,7 @@ async function checkBridgeStatus(): Promise<void> {
 
     // If bridge just became fully ready, refresh all data immediately
     if (isReady && !wasReady) {
+      setProviderConfigurationState('checking');
       console.log('[Sidebar] Bridge fully ready - refreshing all data...');
       // Refresh all data in parallel
       Promise.all([
@@ -331,6 +610,8 @@ async function checkBridgeStatus(): Promise<void> {
         loadPermissions().catch(e => console.error('[Sidebar] Failed to load permissions:', e)),
         loadSessions().catch(e => console.error('[Sidebar] Failed to load sessions:', e)),
       ]);
+    } else if (!isReady) {
+      setProviderConfigurationState('bridge-unavailable');
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
@@ -341,6 +622,7 @@ async function checkBridgeStatus(): Promise<void> {
     updateBridgeStatusUI(false, errorMsg);
     renderSetupStatus();
     lastBridgeConnected = false;
+    setProviderConfigurationState('bridge-unavailable');
   }
 }
 
@@ -831,16 +1113,25 @@ setupPanelToggle(llmPanelHeader, llmPanelToggle, llmPanelBody);
 if (setupStatusHeader && setupStatusToggle && setupStatusBody) {
   setupPanelToggle(setupStatusHeader, setupStatusToggle, setupStatusBody);
 }
-openDebuggingLink?.addEventListener('click', async (e) => {
-  e.preventDefault();
-  try {
-    await navigator.clipboard.writeText(DEBUGGING_URL);
-    showToast('Copied about:debugging URL — paste in address bar');
-  } catch (err) {
-    console.error('[Sidebar] Failed to copy URL:', err);
-    showToast('Failed to copy URL');
+
+if (typeof __HARBOR_DEVELOPMENT__ !== 'undefined' && __HARBOR_DEVELOPMENT__) {
+  const extensionManagementTarget = getExtensionManagementTarget(getBrowserName());
+
+  if (extensionManagementTarget) {
+    developerToolsButton.textContent = extensionManagementTarget.buttonLabel;
+    developerToolsActions.hidden = false;
+    developerToolsButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(extensionManagementTarget.clipboardValue);
+        showToast(extensionManagementTarget.successMessage);
+      } catch (error) {
+        console.error('[Sidebar] Failed to copy extension management target:', error);
+        showToast('Failed to copy extension management target', 'error');
+      }
+    });
   }
-});
+}
+
 setupPanelToggle(serversPanelHeader, serversPanelToggle, serversEl);
 
 // =============================================================================
@@ -864,12 +1155,66 @@ function capitalizeFirst(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+type ProviderConfigurationState = 'checking' | 'ready' | 'waiting-for-connection' | 'bridge-unavailable';
+
+function setProviderConfigurationState(state: ProviderConfigurationState): void {
+  providerConfigurationReady = state === 'ready';
+  document.querySelectorAll<HTMLButtonElement>('.provider-add-trigger').forEach(button => {
+    button.disabled = !providerConfigurationReady;
+  });
+
+  const statusMessages: Record<Exclude<ProviderConfigurationState, 'ready'>, string> = {
+    checking: 'Checking model and provider connections...',
+    'waiting-for-connection': 'Waiting for models to load or a configured provider to connect.',
+    'bridge-unavailable': 'Connect the Harbor bridge to add providers.',
+  };
+
+  providerManagementStatus.hidden = providerConfigurationReady;
+  if (!providerConfigurationReady) {
+    providerManagementStatus.textContent = statusMessages[state];
+  }
+}
+
+function showRemoteOllamaConfig(provider?: ProviderInfo): void {
+  configuringProviderId = null;
+  apiKeyConfig.style.display = 'none';
+  apiKeyInput.value = '';
+  configuringRemoteOllamaProviderId = provider?.id ?? null;
+  remoteOllamaFormTitle.textContent = provider ? 'Edit Remote Ollama' : 'Ollama';
+  remoteOllamaNameInput.value = provider?.name ?? '';
+  remoteOllamaUrlInput.value = provider?.base_url ?? '';
+  remoteOllamaSaveBtn.textContent = provider ? 'Save Changes' : 'Save Provider';
+  remoteOllamaConfig.style.display = 'block';
+  addRemoteOllamaBtn.style.display = 'none';
+  hideApiKeyConfig();
+  remoteOllamaNameInput.focus();
+}
+
+function hideRemoteOllamaConfig(): void {
+  configuringRemoteOllamaProviderId = null;
+  remoteOllamaConfig.style.display = 'none';
+  remoteOllamaNameInput.value = '';
+  remoteOllamaUrlInput.value = '';
+  remoteOllamaSaveBtn.textContent = 'Save Provider';
+  addRemoteOllamaBtn.style.display = configuringProviderId ? 'none' : '';
+}
+
+function getProviderEndpointLabel(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return baseUrl;
+  }
+}
+
 // Show API key configuration for a cloud provider
 function showApiKeyConfig(providerType: string): void {
+  hideRemoteOllamaConfig();
   configuringProviderId = providerType;
   apiKeyProviderName.textContent = `Configure ${capitalizeFirst(providerType)}`;
   apiKeyInput.value = '';
   apiKeyConfig.style.display = 'block';
+  addRemoteOllamaBtn.style.display = 'none';
   apiKeyInput.focus();
 }
 
@@ -878,6 +1223,8 @@ function hideApiKeyConfig(): void {
   configuringProviderId = null;
   apiKeyConfig.style.display = 'none';
   apiKeyInput.value = '';
+  const remoteOllamaFormIsOpen = remoteOllamaConfig.style.display === 'block';
+  addRemoteOllamaBtn.style.display = remoteOllamaFormIsOpen ? 'none' : '';
 }
 
 // API Key save button
@@ -917,8 +1264,83 @@ apiKeyCancelBtn.addEventListener('click', () => {
   hideApiKeyConfig();
 });
 
+addRemoteOllamaBtn.addEventListener('click', () => {
+  if (!providerConfigurationReady) return;
+  showRemoteOllamaConfig();
+});
+
+remoteOllamaCancelBtn.addEventListener('click', hideRemoteOllamaConfig);
+remoteOllamaFormCancelBtn.addEventListener('click', hideRemoteOllamaConfig);
+
+remoteOllamaSaveBtn.addEventListener('click', async () => {
+  const validationResult = validateRemoteOllamaConfiguration(
+    remoteOllamaNameInput.value,
+    remoteOllamaUrlInput.value,
+  );
+  if (!validationResult.ok) {
+    showToast(validationResult.error, 'error');
+    return;
+  }
+
+  remoteOllamaSaveBtn.disabled = true;
+  remoteOllamaSaveBtn.textContent = 'Connecting...';
+
+  try {
+    const providerIdentity = configuringRemoteOllamaProviderId
+      ? { id: configuringRemoteOllamaProviderId }
+      : { provider: 'ollama' };
+    const response = await browserAPI.runtime.sendMessage({
+      type: 'llm_configure_provider',
+      ...providerIdentity,
+      name: validationResult.value.name,
+      base_url: validationResult.value.baseUrl,
+      enabled: true,
+    }) as { ok: boolean; id?: string; error?: string };
+
+    if (!response.ok || !response.id) {
+      showToast(`Failed to save provider: ${response.error || 'Unknown error'}`, 'error');
+      return;
+    }
+
+    configuringRemoteOllamaProviderId = response.id;
+    const healthResponse = await browserAPI.runtime.sendMessage({
+      type: 'llm_check_provider',
+      provider: response.id,
+    }) as {
+      ok: boolean;
+      status?: { available: boolean; error?: string };
+      error?: string;
+    };
+
+    await Promise.all([
+      loadLlmProviders(),
+      refreshAvailableModels(),
+    ]);
+
+    if (healthResponse.ok && healthResponse.status?.available) {
+      showToast(`Connected to ${validationResult.value.name}`, 'success');
+      hideRemoteOllamaConfig();
+    } else {
+      const connectionError = healthResponse.status?.error || healthResponse.error || 'Connection failed';
+      showToast(`Provider saved, but Harbor could not connect: ${connectionError}`, 'error', 5000);
+      remoteOllamaSaveBtn.textContent = 'Retry Connection';
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast(`Failed to save provider: ${message}`, 'error');
+  } finally {
+    remoteOllamaSaveBtn.disabled = false;
+    if (remoteOllamaSaveBtn.textContent === 'Connecting...') {
+      remoteOllamaSaveBtn.textContent = configuringRemoteOllamaProviderId
+        ? 'Save Changes'
+        : 'Save Provider';
+    }
+  }
+});
+
 async function loadLlmProviders(): Promise<void> {
   console.log('[Sidebar] loadLlmProviders starting...');
+  setProviderConfigurationState('checking');
   try {
     // Load configured models, available models, and providers in parallel
     const [configuredModelsRes, modelsRes, providersRes] = await Promise.all([
@@ -955,10 +1377,13 @@ async function loadLlmProviders(): Promise<void> {
 
     // Handle providers
     const providers = providersRes.ok ? (providersRes.providers || []) : [];
-    const availableCount = providers.filter(p => p.available || (p.is_local && p.configured)).length;
+    const availableCount = providers.filter(p => p.available).length;
     
     providersCountEl.textContent = String(availableCount);
     renderProviders(providers);
+    const configurationReady = lastBridgeConnected
+      && isProviderConfigurationReady(modelsRes.ok, providers);
+    setProviderConfigurationState(configurationReady ? 'ready' : 'waiting-for-connection');
 
     // Update header status based on configured models
     if (configuredModels.length > 0) {
@@ -981,6 +1406,7 @@ async function loadLlmProviders(): Promise<void> {
     llmStatusText.className = 'status-text disconnected';
     llmStatusText.textContent = 'Offline';
     configuredModelsEl.innerHTML = '<div class="no-models">Bridge not connected</div>';
+    setProviderConfigurationState('bridge-unavailable');
   }
 }
 
@@ -1006,9 +1432,9 @@ function renderConfiguredModels(models: ConfiguredModel[]): void {
         <div class="configured-model-id">${model.model_id}</div>
       </div>
       <div class="configured-model-actions">
-        <button class="btn btn-ghost btn-sm test-model-btn" data-model="${model.model_id}" title="Test connection">⚡</button>
-        ${!model.is_default ? `<button class="btn btn-ghost btn-sm set-default-model-btn" data-name="${model.name}" title="Set as default">★</button>` : ''}
-        <button class="btn btn-ghost btn-sm remove-model-btn" data-name="${model.name}" title="Remove">✕</button>
+        <button class="btn btn-ghost btn-sm test-model-btn" data-model="${model.model_id}">Test</button>
+        ${!model.is_default ? `<button class="btn btn-ghost btn-sm set-default-model-btn" data-name="${model.name}">Set default</button>` : ''}
+        <button class="btn btn-ghost btn-sm remove-model-btn" data-name="${model.name}">Remove</button>
       </div>
     `;
     
@@ -1096,8 +1522,9 @@ function renderProviders(providers: ProviderInfo[]): void {
   const cloudProviders = providers.filter(p => !p.is_local);
   
   for (const provider of [...localProviders, ...cloudProviders]) {
-    const isAvailable = provider.available || (provider.is_local && provider.configured);
+    const isAvailable = provider.available === true;
     const needsConfig = !provider.is_local && !provider.has_api_key;
+    const isRemoteOllama = provider.type === 'ollama' && Boolean(provider.base_url);
     
     const el = document.createElement('div');
     el.className = `detected-provider ${isAvailable ? 'available' : needsConfig ? 'needs-config' : 'unavailable'}`;
@@ -1105,8 +1532,11 @@ function renderProviders(providers: ProviderInfo[]): void {
     let statusText = '';
     let statusClass = '';
     if (isAvailable) {
-      statusText = '● Running';
+      statusText = isRemoteOllama ? '● Connected' : '● Running';
       statusClass = 'available';
+    } else if (isRemoteOllama) {
+      statusText = '○ Unreachable';
+      statusClass = 'unavailable';
     } else if (provider.is_local) {
       statusText = '○ Not detected';
       statusClass = 'unavailable';
@@ -1119,14 +1549,24 @@ function renderProviders(providers: ProviderInfo[]): void {
     }
     
     let actionHtml = '';
-    if (needsConfig) {
-      actionHtml = `<button class="btn btn-secondary btn-sm configure-provider-btn" data-provider="${provider.type}">Configure</button>`;
+    if (isRemoteOllama) {
+      actionHtml = `<button class="btn btn-secondary btn-sm edit-remote-ollama-btn" data-provider-id="${escapeHtml(provider.id)}">Edit</button>`;
+    } else if (needsConfig) {
+      actionHtml = `<button class="btn btn-secondary btn-sm configure-provider-btn provider-add-trigger" data-provider="${provider.type}">Configure</button>`;
     }
+    if (isConfiguredProviderInstance(provider)) {
+      actionHtml += `<button class="btn btn-danger btn-sm delete-provider-btn" data-provider-id="${escapeHtml(provider.id)}">Delete</button>`;
+    }
+
+    const endpointHtml = provider.base_url
+      ? `<div class="provider-endpoint" title="${escapeHtml(provider.base_url)}">Remote · ${escapeHtml(getProviderEndpointLabel(provider.base_url))}</div>`
+      : '';
     
     el.innerHTML = `
       <div class="detected-provider-info">
-        <div class="detected-provider-name">${provider.name}</div>
+        <div class="detected-provider-name">${escapeHtml(provider.name)}</div>
         <div class="detected-provider-status ${statusClass}">${statusText}</div>
+        ${endpointHtml}
       </div>
       <div class="detected-provider-action">${actionHtml}</div>
     `;
@@ -1139,6 +1579,58 @@ function renderProviders(providers: ProviderInfo[]): void {
     btn.addEventListener('click', () => {
       const providerType = (btn as HTMLElement).dataset.provider;
       if (providerType) showApiKeyConfig(providerType);
+    });
+  });
+
+  detectedProvidersEl.querySelectorAll('.edit-remote-ollama-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const providerId = (btn as HTMLElement).dataset.providerId;
+      const provider = providers.find(candidate => candidate.id === providerId);
+      if (provider) showRemoteOllamaConfig(provider);
+    });
+  });
+
+  detectedProvidersEl.querySelectorAll('.delete-provider-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const providerId = (btn as HTMLElement).dataset.providerId;
+      const provider = providers.find(candidate => candidate.id === providerId);
+      if (!providerId || !provider) return;
+      if (!confirm(`Delete provider "${provider.name}"?`)) return;
+
+      const deleteButton = btn as HTMLButtonElement;
+      deleteButton.disabled = true;
+      deleteButton.textContent = 'Deleting...';
+
+      try {
+        const response = await browserAPI.runtime.sendMessage({
+          type: 'llm_remove_provider',
+          id: providerId,
+        }) as { ok: boolean; error?: string };
+
+        if (!response.ok) {
+          showToast(`Failed to delete provider: ${response.error || 'Unknown error'}`, 'error');
+          return;
+        }
+
+        if (configuringRemoteOllamaProviderId === providerId) {
+          hideRemoteOllamaConfig();
+        }
+        if (configuringProviderId === provider.type) {
+          hideApiKeyConfig();
+        }
+
+        await Promise.all([
+          loadLlmProviders(),
+          refreshAvailableModels(),
+        ]);
+        showToast(`Deleted provider "${provider.name}"`, 'success');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        showToast(`Failed to delete provider: ${message}`, 'error');
+      } finally {
+        deleteButton.disabled = false;
+        deleteButton.textContent = 'Delete';
+      }
     });
   });
 }
@@ -1168,7 +1660,7 @@ refreshModelsBtn.addEventListener('click', async () => {
     showToast('Models refreshed', 'success');
   } finally {
     refreshModelsBtn.disabled = false;
-    refreshModelsBtn.textContent = '↻';
+    refreshModelsBtn.textContent = 'Refresh';
   }
 });
 
@@ -1288,12 +1780,12 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
         const label = scope.split(':')[1] || scope;
         const isOnce = status === 'granted-once';
         const badgeClass = isOnce ? 'permission-scope-badge temporary' : 'permission-scope-badge';
-        const suffix = isOnce ? ' <span class="permission-temp-label">⏱</span>' : '';
+        const suffix = isOnce ? ' <span class="permission-temp-label">Once</span>' : '';
         return `<span class="${badgeClass}">${escapeHtml(label)}${suffix}</span>`;
       }),
       ...deniedScopes.map((scope) => {
         const label = scope.split(':')[1] || scope;
-        return `<span class="permission-scope-badge denied">${escapeHtml(label)} ✕</span>`;
+        return `<span class="permission-scope-badge denied">${escapeHtml(label)} denied</span>`;
       }),
     ].join('');
 
@@ -1617,7 +2109,9 @@ async function loadActivity(): Promise<void> {
     }
     // Render newest first.
     const rows = recordsResp.records.slice().reverse().map((r) => {
-      const labels = r.labelsOut.length ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">⛳ ${escapeHtml(r.labelsOut.join(','))}</span>` : '';
+      const labels = r.labelsOut.length
+        ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">Labels ${escapeHtml(r.labelsOut.join(','))}</span>`
+        : '';
       const tier = `<span style="font-size:10px;color:var(--color-text-muted);">tier ${r.tier}</span>`;
       const rule = r.rule ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">rule:${escapeHtml(r.rule.id)}</span>` : '';
       const recordJson = encodeURIComponent(JSON.stringify(r));
@@ -1688,17 +2182,15 @@ loadActivity();
 // OAuth App Credentials Panel
 // =============================================================================
 
-const oauthProviderConfigs: Array<{ id: string; name: string; icon: string; helpUrl: string }> = [
+const oauthProviderConfigs: Array<{ id: string; name: string; helpUrl: string }> = [
   {
     id: 'google',
     name: 'Google',
-    icon: '🔵',
     helpUrl: 'https://console.cloud.google.com/apis/credentials',
   },
   {
     id: 'github',
     name: 'GitHub',
-    icon: '⚫',
     helpUrl: 'https://github.com/settings/developers',
   },
 ];
@@ -1757,12 +2249,12 @@ function renderOAuthProviders(providers: Record<string, { configured: boolean; c
     const statusClass = isConfigured ? 'available' : 'needs-config';
     
     const actionHtml = isConfigured
-      ? `<button class="btn btn-ghost btn-sm oauth-remove-btn" data-provider="${config.id}" title="Remove credentials">✕</button>`
+      ? `<button class="btn btn-ghost btn-sm oauth-remove-btn" data-provider="${config.id}">Remove</button>`
       : `<button class="btn btn-secondary btn-sm oauth-configure-btn" data-provider="${config.id}">Configure</button>`;
     
     el.innerHTML = `
       <div class="detected-provider-info">
-        <div class="detected-provider-name">${config.icon} ${config.name}</div>
+        <div class="detected-provider-name">${config.name}</div>
         <div class="detected-provider-status ${statusClass}">${statusText}</div>
       </div>
       <div class="detected-provider-action">${actionHtml}</div>
@@ -1911,18 +2403,12 @@ setupPanelToggle(oauthPanelHeader, oauthPanelToggle, oauthPanelBody);
 })();
 
 // =============================================================================
-// Quick Actions Panel
+// Panel destinations
 // =============================================================================
 
-const quickActionsHeader = document.getElementById('quick-actions-header') as HTMLDivElement;
-const quickActionsToggle = document.getElementById('quick-actions-toggle') as HTMLSpanElement;
-const quickActionsBody = document.getElementById('quick-actions-body') as HTMLDivElement;
 const openDirectoryBtn = document.getElementById('open-directory-btn') as HTMLButtonElement;
 const openChatBtn = document.getElementById('open-chat-btn') as HTMLButtonElement;
 const reloadExtensionBtn = document.getElementById('reload-extension-btn') as HTMLButtonElement;
-
-// Set up panel toggle
-setupPanelToggle(quickActionsHeader, quickActionsToggle, quickActionsBody);
 
 // Open Directory button - opens the MCP server directory
 openDirectoryBtn.addEventListener('click', async () => {
@@ -1936,13 +2422,9 @@ openDirectoryBtn.addEventListener('click', async () => {
   }
 });
 
-// Open Chat button - opens the chat demo in a new tab
 openChatBtn.addEventListener('click', async () => {
   try {
-    // The demo is at the extension root level
-    const chatUrl = browserAPI.runtime.getURL('demo/chat-poc/index.html');
-    console.log('[Sidebar] Opening chat at:', chatUrl);
-    await browserAPI.tabs.create({ url: chatUrl });
+    await launchSidebarChat(browserAPI);
   } catch (err) {
     console.error('[Sidebar] Failed to open chat:', err);
     showToast('Failed to open chat');
@@ -2411,8 +2893,8 @@ function renderSessions(sessions: SessionSummary[]): void {
           ${capBadges.length > 0 ? capBadges.join('') : '<span style="color: var(--color-text-muted); font-size: 10px;">No capabilities</span>'}
         </div>
         <div class="session-stats">
-          <span class="session-stat">💬 ${session.usage.promptCount} prompts</span>
-          <span class="session-stat">⚡ ${session.usage.toolCallCount} tool calls</span>
+          <span class="session-stat">${session.usage.promptCount} prompts</span>
+          <span class="session-stat">${session.usage.toolCallCount} tool calls</span>
         </div>
         ${session.status === 'active' ? `
           <div class="session-actions" style="display:flex;gap:6px;align-items:center;">
@@ -2514,4 +2996,3 @@ loadSessions();
 
 // Auto-refresh sessions every 30 seconds
 setInterval(loadSessions, 30000);
-

@@ -553,11 +553,13 @@ export type MessageType =
   | 'agent.browser.tabs.close'
   // Extension 2: Spawned tab operations (operate on tabs we created)
   | 'agent.browser.tab.readability'
+  | 'agent.browser.tab.getHtml'
   | 'agent.browser.tab.click'
   | 'agent.browser.tab.fill'
   | 'agent.browser.tab.scroll'
   | 'agent.browser.tab.screenshot'
   | 'agent.browser.tab.navigate'
+  | 'agent.browser.tab.waitForNavigation'
   // Extension 2: Web Fetch
   | 'agent.fetch'
   | 'agent.run'

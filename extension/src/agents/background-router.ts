@@ -11,6 +11,14 @@ import type { RequestContext, ResponseSender } from './handlers/router-types';
 import { handlePermissionPromptResponse } from '../policy/permissions';
 import { initializeTabManager } from '../tabs/manager';
 import { initializeAgentRegistry } from '../multi-agent/registry';
+import {
+  CHAT_TRANSPORT_PORT_NAME,
+  type ChatTransportMessage,
+} from '../chat/runtime/transport-protocol';
+import {
+  isTrustedChatPage,
+  resolveChatTransportIdentity,
+} from '../chat/runtime/transport-context';
 
 // Import all handlers
 import {
@@ -335,6 +343,11 @@ async function routeMessage(ctx: RequestContext, sender: ResponseSender): Promis
 // =============================================================================
 
 function handlePortConnection(port: ReturnType<typeof browserAPI.runtime.connect>): void {
+  if (port.name === CHAT_TRANSPORT_PORT_NAME) {
+    handleChatPortConnection(port);
+    return;
+  }
+
   if (port.name !== 'web-agent-transport') {
     return;
   }
@@ -402,6 +415,68 @@ function handlePortConnection(port: ReturnType<typeof browserAPI.runtime.connect
 
   port.onDisconnect.addListener(() => {
     log('web-agent-transport disconnected from tab:', tabId);
+  });
+}
+
+function handleChatPortConnection(
+  port: ReturnType<typeof browserAPI.runtime.connect>,
+): void {
+  const chatPageUrl = browserAPI.runtime.getURL('chat.html');
+  const requestControllers = new Map<string, AbortController>();
+  if (!isTrustedChatPage(port.sender?.url, chatPageUrl)) {
+    port.disconnect();
+    return;
+  }
+
+  port.onMessage.addListener(async (message: ChatTransportMessage) => {
+    if (message.type === 'abort') {
+      requestControllers.get(message.id)?.abort();
+      requestControllers.delete(message.id);
+      return;
+    }
+
+    const requestController = new AbortController();
+    requestControllers.set(message.id, requestController);
+    try {
+      const identity = await resolveChatTransportIdentity(
+        message.source,
+        chatPageUrl,
+        port.sender?.tab?.id,
+        tabId => browserAPI.tabs.get(tabId),
+      );
+      const ctx: RequestContext = {
+        id: message.id,
+        type: message.type as MessageType,
+        payload: message.payload,
+        origin: identity.origin,
+        tabId: identity.tabId,
+        signal: requestController.signal,
+      };
+      const sender: ResponseSender = {
+        sendResponse: response => port.postMessage(response),
+        sendStreamEvent: event => port.postMessage(event),
+      };
+
+      await routeMessage(ctx, sender);
+    } catch (error) {
+      port.postMessage({
+        id: message.id,
+        ok: false,
+        error: {
+          code: (error as { code?: string }).code ?? 'ERR_INTERNAL',
+          message: error instanceof Error ? error.message : 'Internal error',
+        },
+      });
+    } finally {
+      requestControllers.delete(message.id);
+    }
+  });
+
+  port.onDisconnect.addListener(() => {
+    for (const controller of requestControllers.values()) {
+      controller.abort();
+    }
+    requestControllers.clear();
   });
 }
 

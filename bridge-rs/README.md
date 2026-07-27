@@ -19,7 +19,8 @@ The bridge is a Rust binary that runs locally and communicates with the browser 
 cargo build --release
 ```
 
-The binary is created at `target/release/harbor-bridge`.
+The binaries are created at `target/release/harbor-bridge` and
+`target/release/harbor-agent-gateway`.
 
 ### Install (Firefox and Chrome)
 
@@ -28,8 +29,10 @@ The binary is created at `target/release/harbor-bridge`.
 ```
 
 This script:
-1. Copies the binary to `~/.harbor/bin/harbor-bridge`
-2. Creates native messaging manifests for Firefox and Chrome
+1. Copies `harbor-bridge` and `harbor-agent-gateway` to `~/.harbor/bin/`
+2. Creates the Firefox native messaging manifest
+3. Creates a Chrome manifest only when `--chrome-extension-id` supplies the
+   exact Harbor extension ID
 
 ### Verify Installation
 
@@ -40,10 +43,80 @@ cat ~/Library/Application\ Support/Mozilla/NativeMessagingHosts/harbor_bridge.js
 
 **Chrome:**
 ```bash
-cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
 ```
 
 ---
+
+## Harbor Agent Gateway
+
+`harbor-agent-gateway` is a vendor-neutral MCP stdio server that lets a paired
+external agent use a small, policy-controlled view of the browser. It is
+installed with the native bridge but remains disabled until you explicitly
+enable it in Harbor.
+
+Firefox is the primary target. Load both Firefox extensions, install the native
+components, and confirm that the Harbor sidebar reports the bridge as connected
+before pairing an agent client. Chrome is supported secondarily and still
+requires the exact Harbor extension ID in its native messaging manifest.
+
+### Pair a client
+
+1. Open the **Agent Gateway** panel in the Harbor sidebar.
+2. Enable the gateway.
+3. Choose **Pair client**, enter a recognizable client name, and approve the
+   read-only scopes.
+4. Copy the client ID and one-time secret into the external agent's MCP
+   configuration. Harbor persists an RFC 9807 OPAQUE server setup and a
+   per-client OPAQUE registration record, not the raw credential, and does not
+   show the credential again.
+5. Approve a tab-bound session in Harbor before calling a browser read tool.
+
+The client receives only these MCP tools:
+
+- `harbor.gateway.health`, checks authenticated gateway and browser status
+- `harbor.tabs.list`, lists safe metadata for tabs approved by the session
+- `harbor.page.observe`, returns a bounded, sanitized observation of the
+  session's bound document
+
+### Vendor-neutral MCP stdio configuration
+
+The exact outer configuration shape depends on the MCP client. Register a stdio
+server using the installed executable and environment variables equivalent to:
+
+```json
+{
+  "mcpServers": {
+    "harbor": {
+      "command": "<path-to-harbor-agent-gateway>",
+      "env": {
+        "HARBOR_AGENT_GATEWAY_CLIENT_ID": "<client-id-from-harbor>",
+        "HARBOR_AGENT_GATEWAY_SECRET": "<one-time-secret-from-harbor>"
+      }
+    }
+  }
+}
+```
+
+Keep the secret in the client's protected environment or secret store. Do not
+put it in command arguments, shell history, logs, or a committed configuration
+file. `harbor.tabs.list` and `harbor.page.observe` also require the approved
+`sessionId` shown by Harbor.
+
+Gateway IPC uses RFC 9807 OPAQUE mutual authentication. The raw pairing
+credential is never sent over the socket. Each login uses fresh client and
+server protocol randomness to derive a new session key, and the client verifies
+a server confirmation bound to its client ID and browser instance. Captured
+login messages cannot be replayed as a later authenticated connection.
+
+The fixed socket path is a discovery location, not a trusted identity. The MCP
+client treats any listener there as untrusted until its server proof verifies,
+and the native host does not replace a reachable listener merely because it
+occupies the expected path.
+
+To revoke access, use **Revoke** for the paired client in the Agent Gateway
+panel. Revocation ends its active sessions and invalidates the credential. You
+can also disable the gateway to end all sessions and reject every client.
 
 ## Browser-Specific Setup
 
@@ -60,11 +133,11 @@ Firefox native messaging works automatically after running `install.sh`. The man
 Chrome requires your specific extension ID in the native messaging manifest. After loading the extension:
 
 1. Get your extension ID from `chrome://extensions`
-2. Edit the manifest file:
+2. Install the exact native messaging origin:
    ```bash
-   nano ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+   ./install.sh --chrome-extension-id YOUR_32_CHARACTER_EXTENSION_ID
    ```
-3. Update `allowed_origins` with your extension ID:
+3. Verify `allowed_origins` contains only your extension ID:
    ```json
    "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID_HERE/"]
    ```
@@ -147,7 +220,7 @@ cargo test
    cat ~/Library/Application\ Support/Mozilla/NativeMessagingHosts/harbor_bridge.json
    
    # Chrome
-   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
    ```
 
 3. **Check the path in the manifest** points to the correct binary location
@@ -159,13 +232,56 @@ cargo test
 
 5. **Restart the browser completely** (quit and reopen, not just close tabs)
 
+### Agent Gateway reports `BROWSER_DISCONNECTED`
+
+The MCP process does not launch or impersonate a browser extension. Keep a
+Firefox window open with Harbor loaded and confirm that the sidebar reports the
+native bridge as connected. If the browser or extension restarts, reconnect it
+and approve a new session before retrying browser tools.
+
+### Agent Gateway reports `GATEWAY_SOCKET_OCCUPIED`
+
+The fixed gateway socket has a reachable listener, but Harbor has not verified
+that listener's identity. Another Harbor browser instance or profile may be
+connected, or an unrelated local process may occupy the path. Close the expected
+Harbor instance cleanly, then reopen the intended browser. If the error remains,
+inspect the listening process. Do not trust the listener as Harbor and do not
+delete the socket while it is active. Harbor removes the socket only when no
+process is listening.
+
+### Agent Gateway is disabled or not paired
+
+The default state is disabled. Open Harbor's Agent Gateway panel, enable the
+gateway, pair the MCP client, and update both gateway environment variables. If
+the client was revoked, create a new pairing rather than reusing its old secret.
+
+### Agent Gateway reports `GATEWAY_CONFIGURATION_MIGRATION_REQUIRED`
+
+Harbor found a legacy version 1 gateway configuration. Its old credential
+hashes cannot be converted into RFC 9807 OPAQUE registration records, so the
+gateway fails closed.
+
+1. Close every Harbor browser instance and gateway MCP client.
+2. In the OS user-local configuration directory, move
+   `harbor/agent_gateway.json` to
+   `harbor/agent_gateway.v1.backup.json`. Keep the backup until recovery is
+   verified.
+3. Restart Harbor. It creates a version 2 configuration with the gateway
+   disabled.
+4. Enable Agent Gateway and explicitly pair every client again.
+5. Replace each client's ID and one-time credential environment values.
+6. Verify the new pairing, then remove the backup when it is no longer needed.
+
+Do not copy version 1 hashes into the new file or try to edit them into OPAQUE
+records.
+
 ### Chrome: Extension ID Mismatch
 
 The most common Chrome issue. The extension ID in the manifest must exactly match your loaded extension's ID.
 
 ```bash
 # Check what ID is in the manifest
-grep allowed_origins ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+grep allowed_origins ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
 
 # Compare with your extension ID from chrome://extensions
 ```

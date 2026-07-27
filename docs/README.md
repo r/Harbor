@@ -92,6 +92,9 @@
 | Document | Description |
 |----------|-------------|
 | [Architecture](../ARCHITECTURE.md) | System design and components |
+| [Harbor Agent Gateway](specs/harbor-agent-gateway.md) | Draft MCP gateway for user-approved external agents |
+| [Harbor Brand Guide](specs/harbor-brand-guide.md) | Normative Port Authority identity and interface system |
+| [Harbor Brand Direction](specs/harbor-brand-system.md) | Brand audit, visual directions, and approved host-aware theme proposal |
 | [Contributing Guide](../CONTRIBUTING.md) | Development setup and workflow |
 | [MCP Host](MCP_HOST.md) | MCP execution environment internals |
 | [Test Suite](../tests/README.md) | Run and write Harbor's unit and E2E tests |
