@@ -153,7 +153,38 @@ pub fn create_browser_instance_id() -> String {
     format!("browser_{}", URL_SAFE_NO_PAD.encode(bytes))
 }
 
-pub(crate) fn default_socket_path() -> Result<PathBuf, GatewayError> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserHostIdentity {
+    pub browser_id: String,
+    pub browser_name: String,
+}
+
+impl BrowserHostIdentity {
+    pub fn from_launch_arguments(arguments: &[String]) -> Self {
+        if arguments
+            .iter()
+            .any(|argument| argument.starts_with("chrome-extension://"))
+        {
+            return Self::named("chrome", "Chrome");
+        }
+        if arguments.iter().any(|argument| {
+            argument.ends_with("harbor_bridge.json")
+                || (argument.contains('@') && !argument.contains(std::path::MAIN_SEPARATOR))
+        }) {
+            return Self::named("firefox", "Firefox");
+        }
+        Self::named("browser", "Browser")
+    }
+
+    fn named(browser_id: &str, browser_name: &str) -> Self {
+        Self {
+            browser_id: browser_id.to_string(),
+            browser_name: browser_name.to_string(),
+        }
+    }
+}
+
+fn socket_path_for_browser(browser_id: &str) -> Result<PathBuf, GatewayError> {
     let config_directory = dirs::config_dir().ok_or_else(|| {
         GatewayError::new(
             "GATEWAY_CONFIGURATION_ERROR",
@@ -161,19 +192,89 @@ pub(crate) fn default_socket_path() -> Result<PathBuf, GatewayError> {
             false,
         )
     })?;
-    Ok(config_directory.join("harbor").join("agent-gateway.sock"))
+    let file_name = match browser_id {
+        "chrome" => "agent-gateway-chrome.sock",
+        "firefox" => "agent-gateway-firefox.sock",
+        "browser" => "agent-gateway.sock",
+        _ => {
+            return Err(GatewayError::new(
+                "BROWSER_NOT_FOUND",
+                format!("Unknown Harbor browser target: {browser_id}"),
+                false,
+            ))
+        }
+    };
+    Ok(config_directory.join("harbor").join(file_name))
+}
+
+fn browser_host_candidates() -> Result<Vec<(BrowserHostIdentity, PathBuf)>, GatewayError> {
+    let known_hosts = [
+        BrowserHostIdentity::named("firefox", "Firefox"),
+        BrowserHostIdentity::named("chrome", "Chrome"),
+        BrowserHostIdentity::named("browser", "Browser"),
+    ];
+    let mut candidates = Vec::new();
+    for host in known_hosts {
+        let socket_path = socket_path_for_browser(&host.browser_id)?;
+        if socket_path.exists() {
+            candidates.push((host, socket_path));
+        }
+    }
+    Ok(candidates)
+}
+
+fn resolve_browser_host(
+    browser_id: Option<&str>,
+) -> Result<(BrowserHostIdentity, PathBuf), GatewayError> {
+    let candidates = browser_host_candidates()?;
+    select_browser_host(candidates, browser_id)
+}
+
+fn select_browser_host(
+    candidates: Vec<(BrowserHostIdentity, PathBuf)>,
+    browser_id: Option<&str>,
+) -> Result<(BrowserHostIdentity, PathBuf), GatewayError> {
+    if let Some(browser_id) = browser_id {
+        return candidates
+            .into_iter()
+            .find(|(host, _)| host.browser_id == browser_id)
+            .ok_or_else(|| {
+                GatewayError::new(
+                    "BROWSER_NOT_FOUND",
+                    format!("Harbor is not connected to {browser_id}"),
+                    true,
+                )
+            });
+    }
+    match candidates.len() {
+        0 => Err(GatewayError::new(
+            "BROWSER_DISCONNECTED",
+            "No browser-connected Harbor host is available",
+            true,
+        )),
+        1 => Ok(candidates
+            .into_iter()
+            .next()
+            .expect("one browser candidate")),
+        _ => Err(GatewayError::new(
+            "BROWSER_SELECTION_REQUIRED",
+            "Multiple Harbor browsers are connected; select one before requesting access",
+            false,
+        )),
+    }
 }
 
 #[cfg(unix)]
 pub async fn run_native_ipc_server(
     browser_request_tx: BrowserRequestSender,
     browser_instance_id: String,
+    browser_host: BrowserHostIdentity,
     browser_connected: Arc<AtomicBool>,
 ) -> Result<(), GatewayError> {
     use std::os::unix::fs::PermissionsExt;
     use tokio::net::UnixListener;
 
-    let socket_path = default_socket_path()?;
+    let socket_path = socket_path_for_browser(&browser_host.browser_id)?;
     prepare_socket_directory(&socket_path)?;
     remove_stale_socket(&socket_path)?;
 
@@ -199,6 +300,7 @@ pub async fn run_native_ipc_server(
         let (stream, _) = listener.accept().await?;
         let client_request_tx = browser_request_tx.clone();
         let client_browser_instance_id = browser_instance_id.clone();
+        let client_browser_host = browser_host.clone();
         let client_authentication_rate_limiter = authentication_rate_limiter.clone();
         let client_browser_connected = browser_connected.clone();
         tokio::spawn(async move {
@@ -207,6 +309,7 @@ pub async fn run_native_ipc_server(
                 stream,
                 client_request_tx,
                 client_browser_instance_id,
+                client_browser_host,
                 client_authentication_rate_limiter,
                 client_browser_connected,
             )
@@ -226,6 +329,7 @@ fn create_connection_admission() -> std::sync::Arc<Semaphore> {
 pub async fn run_native_ipc_server(
     _browser_request_tx: BrowserRequestSender,
     _browser_instance_id: String,
+    _browser_host: BrowserHostIdentity,
     _browser_connected: Arc<AtomicBool>,
 ) -> Result<(), GatewayError> {
     Err(GatewayError::new(
@@ -240,6 +344,7 @@ async fn handle_ipc_connection(
     mut stream: tokio::net::UnixStream,
     browser_request_tx: BrowserRequestSender,
     browser_instance_id: String,
+    browser_host: BrowserHostIdentity,
     authentication_rate_limiter: Arc<Mutex<AuthenticationRateLimiter>>,
     browser_connected: Arc<AtomicBool>,
 ) -> Result<(), GatewayError> {
@@ -351,6 +456,8 @@ async fn handle_ipc_connection(
             "authenticated": true,
             "browserConnected": true,
             "browserInstanceId": browser_instance_id,
+            "browserId": browser_host.browser_id,
+            "browserName": browser_host.browser_name,
         }))
     } else {
         let browser_call = forward_browser_request(
@@ -672,13 +779,57 @@ fn ensure_browser_connected(browser_connected: &AtomicBool) -> Result<(), Gatewa
 #[cfg(unix)]
 pub(crate) async fn call_native_host(
     credentials: &GatewayCredentials,
+    browser_id: Option<&str>,
+    method: &str,
+    session_id: Option<&str>,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, GatewayError> {
+    let (browser_host, socket_path) = resolve_browser_host(browser_id)?;
+    call_native_host_at_path(
+        credentials,
+        &browser_host,
+        &socket_path,
+        method,
+        session_id,
+        params,
+    )
+    .await
+}
+
+#[cfg(unix)]
+pub(crate) async fn list_native_hosts(
+    credentials: &GatewayCredentials,
+) -> Result<Vec<serde_json::Value>, GatewayError> {
+    let candidates = browser_host_candidates()?;
+    let mut hosts = Vec::new();
+    for (browser_host, socket_path) in candidates {
+        let health = call_native_host_at_path(
+            credentials,
+            &browser_host,
+            &socket_path,
+            "gateway.health",
+            None,
+            serde_json::json!({}),
+        )
+        .await;
+        if let Ok(health) = health {
+            hosts.push(health);
+        }
+    }
+    Ok(hosts)
+}
+
+#[cfg(unix)]
+async fn call_native_host_at_path(
+    credentials: &GatewayCredentials,
+    browser_host: &BrowserHostIdentity,
+    socket_path: &Path,
     method: &str,
     session_id: Option<&str>,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, GatewayError> {
     use tokio::net::UnixStream;
 
-    let socket_path = default_socket_path()?;
     let mut stream = tokio::time::timeout(IPC_CONNECT_TIMEOUT, UnixStream::connect(socket_path))
         .await
         .map_err(|_| {
@@ -726,7 +877,14 @@ pub(crate) async fn call_native_host(
             if let Some(error) = error {
                 Err(error)
             } else {
-                Ok(result.unwrap_or(serde_json::Value::Null))
+                let result = result.unwrap_or(serde_json::Value::Null);
+                if method == "gateway.health"
+                    && result.get("browserId").and_then(serde_json::Value::as_str)
+                        != Some(browser_host.browser_id.as_str())
+                {
+                    return Err(server_authentication_error());
+                }
+                Ok(result)
             }
         }
         IpcMessage::Error { error } => Err(error),
@@ -820,10 +978,22 @@ where
 #[cfg(not(unix))]
 pub(crate) async fn call_native_host(
     _credentials: &GatewayCredentials,
+    _browser_id: Option<&str>,
     _method: &str,
     _session_id: Option<&str>,
     _params: serde_json::Value,
 ) -> Result<serde_json::Value, GatewayError> {
+    Err(GatewayError::new(
+        "GATEWAY_UNSUPPORTED",
+        "Harbor Agent Gateway IPC is currently supported on macOS and Linux",
+        false,
+    ))
+}
+
+#[cfg(not(unix))]
+pub(crate) async fn list_native_hosts(
+    _credentials: &GatewayCredentials,
+) -> Result<Vec<serde_json::Value>, GatewayError> {
     Err(GatewayError::new(
         "GATEWAY_UNSUPPORTED",
         "Harbor Agent Gateway IPC is currently supported on macOS and Linux",
@@ -1025,6 +1195,60 @@ pub fn create_browser_request_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_host_identity_distinguishes_native_messaging_launchers() {
+        let chrome = BrowserHostIdentity::from_launch_arguments(&[
+            "harbor-bridge".to_string(),
+            "--native-messaging".to_string(),
+            "chrome-extension://abcdefghijklmnop/".to_string(),
+        ]);
+        let firefox = BrowserHostIdentity::from_launch_arguments(&[
+            "harbor-bridge".to_string(),
+            "--native-messaging".to_string(),
+            "/tmp/harbor_bridge.json".to_string(),
+            "harbor@example.test".to_string(),
+        ]);
+        let unknown = BrowserHostIdentity::from_launch_arguments(&[
+            "harbor-bridge".to_string(),
+            "--native-messaging".to_string(),
+        ]);
+
+        assert_eq!(chrome, BrowserHostIdentity::named("chrome", "Chrome"));
+        assert_eq!(firefox, BrowserHostIdentity::named("firefox", "Firefox"));
+        assert_eq!(unknown, BrowserHostIdentity::named("browser", "Browser"));
+    }
+
+    #[test]
+    fn browser_selection_is_explicit_when_multiple_hosts_are_connected() {
+        let firefox = (
+            BrowserHostIdentity::named("firefox", "Firefox"),
+            PathBuf::from("/tmp/firefox.sock"),
+        );
+        let chrome = (
+            BrowserHostIdentity::named("chrome", "Chrome"),
+            PathBuf::from("/tmp/chrome.sock"),
+        );
+
+        let selection_error =
+            select_browser_host(vec![firefox.clone(), chrome.clone()], None).unwrap_err();
+        let selected = select_browser_host(vec![firefox, chrome.clone()], Some("chrome")).unwrap();
+
+        assert_eq!(selection_error.code, "BROWSER_SELECTION_REQUIRED");
+        assert_eq!(selected, chrome);
+    }
+
+    #[test]
+    fn a_single_connected_browser_is_selected_automatically() {
+        let firefox = (
+            BrowserHostIdentity::named("firefox", "Firefox"),
+            PathBuf::from("/tmp/firefox.sock"),
+        );
+
+        let selected = select_browser_host(vec![firefox.clone()], None).unwrap();
+
+        assert_eq!(selected, firefox);
+    }
 
     #[tokio::test]
     async fn framed_messages_round_trip() {

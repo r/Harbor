@@ -278,7 +278,7 @@ impl MessageWriter {
 }
 
 /// Run the native messaging event loop.
-pub async fn run_native_messaging() {
+pub async fn run_native_messaging(browser_host: agent_gateway::BrowserHostIdentity) {
     tracing::info!("Starting native messaging handler");
     
     // Create message writer
@@ -332,6 +332,7 @@ pub async fn run_native_messaging() {
         if let Err(error) = agent_gateway::run_native_ipc_server(
             browser_request_tx,
             browser_instance_id,
+            browser_host,
             server_browser_connected,
         )
         .await
