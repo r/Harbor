@@ -31,6 +31,12 @@
  */
 
 // =============================================================================
+// Constants
+// =============================================================================
+
+const BOTTOM_STICKY_THRESHOLD = 8;  // Pixels from bottom to auto-stick
+
+// =============================================================================
 // State
 // =============================================================================
 
@@ -39,6 +45,7 @@ let messages = [];
 let useTools = true;
 let isProcessing = false;
 let availableTools = [];
+let stickToBottom = true;
 
 // =============================================================================
 // DOM Elements
@@ -65,6 +72,8 @@ const toolsModal = document.getElementById('tools-modal');
 const toolsModalClose = document.getElementById('tools-modal-close');
 const toolsModalContent = document.getElementById('tools-modal-content');
 const toolsModalCount = document.getElementById('tools-modal-count');
+
+const jumpToLatestBtn = document.getElementById('jump-to-latest');
 
 // =============================================================================
 // Status Checking
@@ -336,16 +345,53 @@ function removeThinking() {
   if (el) el.remove();
 }
 
-function scrollToBottom() {
+function scrollToBottom(force = false) {
+  if (!force && !stickToBottom) return;
   chatContainer.scrollTop = chatContainer.scrollHeight;
 }
+
+function setStickToBottom(nowStuck) {
+  if (nowStuck === stickToBottom) return;
+  stickToBottom = nowStuck;
+  jumpToLatestBtn.classList.toggle('visible', !nowStuck);
+}
+
+chatContainer.addEventListener('scroll', () => {
+  const distance = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight;
+  setStickToBottom(distance < BOTTOM_STICKY_THRESHOLD);
+}, { passive: true });
+
+function hasScrollableContent() {
+  return chatContainer.scrollHeight > chatContainer.clientHeight;
+}
+
+// Catch user intent BEFORE the scroll event lands — otherwise a token arriving
+// in the same tick can call scrollToBottom() and clobber the user's wheel before
+// our scroll listener ever sees the new position.
+chatContainer.addEventListener('wheel', (e) => {
+  if (e.deltaY < 0 && hasScrollableContent()) setStickToBottom(false);
+}, { passive: true });
+
+chatContainer.addEventListener('keydown', (e) => {
+  if ((e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') && hasScrollableContent()) {
+    setStickToBottom(false);
+  }
+});
+
+jumpToLatestBtn.addEventListener('click', () => {
+  scrollToBottom(true);
+  setStickToBottom(true);
+});
 
 function clearChat() {
   messages.length = 0;
   messagesEl.innerHTML = '';
   messagesEl.appendChild(emptyState);
   emptyState.style.display = 'flex';
-  
+
+  stickToBottom = true;
+  jumpToLatestBtn.classList.remove('visible');
+
   // Destroy and reset session
   if (session) {
     session.destroy();
