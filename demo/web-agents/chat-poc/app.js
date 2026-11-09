@@ -53,6 +53,7 @@ const sendBtn = document.getElementById('send-btn');
 const toolsToggle = document.getElementById('tools-toggle');
 const tabToggle = document.getElementById('tab-toggle');
 const clearBtn = document.getElementById('clear-btn');
+const copyBtn = document.getElementById('copy-btn');
 const themeToggle = document.getElementById('theme-toggle');
 const docsToggle = document.getElementById('docs-toggle');
 const docsPanel = document.getElementById('docs-panel');
@@ -318,6 +319,68 @@ function updateToolCallUI(toolEl, status, result) {
   
   const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
   contentEl.textContent += '\n\nResult: ' + resultStr;
+}
+
+// =============================================================================
+// Copy Transcript
+// =============================================================================
+
+/**
+ * Build a plain-text transcript of the conversation as shown on screen,
+ * including tool calls (args + results) and a header with the current status.
+ * Meant for pasting into bug reports.
+ */
+function buildTranscript() {
+  const lines = [
+    `Harbor Agent Chat transcript — ${new Date().toISOString()}`,
+    [
+      llmStatusText.textContent,
+      toolsStatusText.textContent,
+      `Tools toggle: ${useTools ? 'on' : 'off'}`,
+      `Tab context: ${useTabContext ? 'on' : 'off'}`,
+      sessionText.textContent,
+    ].join(' | '),
+    '',
+  ];
+
+  for (const el of messagesEl.children) {
+    if (el.id === 'thinking') continue; // transient "Thinking…" indicator
+
+    if (el.classList.contains('message')) {
+      const role = el.querySelector('.message-role')?.textContent || '';
+      const time = el.querySelector('.message-time')?.textContent || '';
+      const body = [...el.querySelectorAll('.message-body p')]
+        .map(p => p.textContent.replace(/ /g, ''))
+        .join('\n');
+      lines.push(`${role} (${time}):`, body, '');
+    } else if (el.classList.contains('tool-call')) {
+      const name = el.querySelector('.tool-call-name')?.textContent || '';
+      const status = el.querySelector('.tool-call-status')?.textContent || '';
+      const content = el.querySelector('.tool-call-content')?.textContent || '';
+      lines.push(`🔧 ${name} — ${status}`, ...content.split('\n').map(l => (l ? `   ${l}` : '')), '');
+    }
+    // Anything else (the empty state) is skipped.
+  }
+
+  return lines.join('\n').trimEnd() + '\n';
+}
+
+async function copyTranscript() {
+  const text = buildTranscript();
+  const label = copyBtn.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    copyBtn.textContent = '✓';
+    copyBtn.title = 'Copied!';
+  } catch (err) {
+    console.error('[Chat POC] Copy failed:', err);
+    copyBtn.textContent = '✕';
+    copyBtn.title = 'Copy failed (see console)';
+  }
+  setTimeout(() => {
+    copyBtn.textContent = label;
+    copyBtn.title = 'Copy conversation as text';
+  }, 1500);
 }
 
 function addThinkingUI(initialText = 'Thinking...') {
@@ -666,6 +729,7 @@ tabToggle.addEventListener('click', () => {
 });
 
 clearBtn.addEventListener('click', clearChat);
+copyBtn.addEventListener('click', copyTranscript);
 
 themeToggle.addEventListener('click', toggleTheme);
 
