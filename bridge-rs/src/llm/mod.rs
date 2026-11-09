@@ -102,7 +102,7 @@ pub async fn chat(params: serde_json::Value) -> Result<serde_json::Value, RpcErr
 
     // Use provided model or fall back to default
     let model = request.model.or_else(|| {
-        get_config().and_then(|c| c.default_model.clone())
+        get_config().and_then(|c| c.effective_default_model())
     }).ok_or_else(|| RpcError {
         code: -32602,
         message: "No model specified and no default model configured".to_string(),
@@ -847,7 +847,7 @@ pub async fn chat_stream(
         Ok(request) => {
             // Use provided model or fall back to default
             let model = match request.model.or_else(|| {
-                get_config().and_then(|c| c.default_model.clone())
+                get_config().and_then(|c| c.effective_default_model())
             }) {
                 Some(m) => m,
                 None => {
