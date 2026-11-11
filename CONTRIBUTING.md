@@ -9,7 +9,8 @@ This guide is for developers who want to contribute to Harbor itself. If you're 
 3. [Development Workflow](#development-workflow)
 4. [Testing](#testing)
 5. [Code Style](#code-style)
-6. [Pull Request Process](#pull-request-process)
+6. [How We Track Work](#how-we-track-work)
+7. [Pull Request Process](#pull-request-process)
 
 ---
 
@@ -285,19 +286,60 @@ if (DEBUG) console.log('Debug info:', data);
 
 ### Commit Messages
 
-Use conventional commits:
+Start the subject line with a short prefix, then say what changed. Most commits use a [conventional commit](https://www.conventionalcommits.org/) type, optionally with a scope:
 
 ```
 feat: add tool router for intelligent server selection
-fix: handle server crash during tool call
+fix(extension): handle server crash during tool call
 docs: update developer guide with new APIs
-test: add integration tests for permissions
 chore: upgrade dependencies
 ```
+
+Naming the area you changed works too, especially for a series of commits in one area:
+
+```
+bridge: honor configured default model
+permissions: sidebar Activity panel surfaces every policy decision
+```
+
+Use the body to explain why the change was needed and how you tested it.
+
+---
+
+## How We Track Work
+
+The maintainers plan and track work in an internal tracker (Linear). Its tickets have IDs like `HBR-123`, and you'll see those IDs in PR descriptions and commits. You don't need access to that tracker to contribute, and nothing in this repo should depend on it.
+
+- **GitHub Issues are open.** Bug reports and feature requests from anyone are welcome there.
+- **Ticket IDs go in the PR body, not the title.** Put a line like `Fixes HBR-123` in the description. This links the PR to the ticket without cluttering the title. Outside contributors can skip it.
+- **Everything a reviewer needs lives in the PR.** A ticket link supplements the description; it never replaces it. See [Writing the Description](#writing-the-description).
 
 ---
 
 ## Pull Request Process
+
+### Writing the Description
+
+A PR should make sense to someone who can't see any ticket, chat thread, or meeting notes. Write the description for that reader:
+
+- **The problem.** What was broken or missing, and how it showed up. Include the error message or the steps that reproduce it.
+- **The change.** What you changed and why you chose that approach. If the change touches several areas, group the explanation by file or component.
+- **The testing.** What you actually ran and what happened, for example "`cargo test` passes" or "tried it in Firefox with llama3.2: 1 tool call instead of 5". Also say what you didn't test.
+- **What's left.** Known limits and follow-ups that this PR doesn't fix.
+
+If you mention another internal ticket, describe it in a few words, for example "(the Ollama provider drops `tool_calls`, HBR-10)", so the reference still means something to readers who can't open it.
+
+### Keeping PRs Independent
+
+- Base each PR on `main` and keep it to one change, so PRs can be reviewed and merged in any order.
+- If a PR has to build on another one, say so at the top of the description and target that PR's branch.
+- Don't mix unrelated cleanups into a fix. Open a separate PR for them.
+
+### AI-Assisted Contributions
+
+AI-assisted contributions are welcome. [AGENTS.md](AGENTS.md) gives instructions to coding agents working in this repo.
+
+The bar is the same as for any other PR. You're responsible for what you submit, so make sure you understand the change and have actually tested it. A `Co-Authored-By` trailer naming the tool is a welcome way to say a commit was AI-assisted.
 
 ### Before Submitting
 
@@ -326,10 +368,12 @@ chore: upgrade dependencies
 
 ```markdown
 ## Description
-<!-- What does this PR do? -->
+<!-- What was wrong or missing, and what this PR changes. It should make sense without any linked ticket. -->
+
+<!-- Maintainers: add "Fixes HBR-123" here if there's a ticket. -->
 
 ## Testing
-<!-- How did you test this? -->
+<!-- What you ran and what happened. Also note what you didn't test. -->
 
 ## Checklist
 - [ ] Tests pass (`cargo test`, `npm test`)
