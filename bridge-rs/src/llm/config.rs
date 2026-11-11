@@ -101,7 +101,7 @@ pub struct ModelAlias {
 }
 
 /// Global LLM configuration.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmConfig {
     /// Config version for migration detection
     #[serde(default = "default_version")]
@@ -128,6 +128,21 @@ fn default_version() -> u32 {
     2
 }
 
+// Hand-written so a freshly created config carries the current version.
+// `#[derive(Default)]` would produce version 0, which `load()` then treats as
+// legacy and migrates — dropping every configured model.
+impl Default for LlmConfig {
+    fn default() -> Self {
+        Self {
+            version: default_version(),
+            default_model: None,
+            default_provider: None,
+            providers: HashMap::new(),
+            models: Vec::new(),
+        }
+    }
+}
+
 impl LlmConfig {
     /// Get the configuration file path.
     pub fn config_path() -> PathBuf {
@@ -145,15 +160,30 @@ impl LlmConfig {
         }
 
         let contents = std::fs::read_to_string(&path)?;
+        let (config, migrated) = Self::parse(&contents)?;
+        if migrated {
+            // Save migrated config
+            if let Err(e) = config.save() {
+                tracing::warn!("Failed to save migrated config: {}", e);
+            }
+        }
+        Ok(config)
+    }
 
+    /// Parse config file contents. Returns the config and whether it was
+    /// migrated from the legacy (v1) format and so needs saving.
+    fn parse(contents: &str) -> Result<(Self, bool), std::io::Error> {
         // Try to detect config version
-        let raw: serde_json::Value = serde_json::from_str(&contents)
+        let raw: serde_json::Value = serde_json::from_str(contents)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         // Check if it's the new format (has version field >= 2)
         let version = raw.get("version").and_then(|v| v.as_u64()).unwrap_or(1);
 
-        if version >= 2 {
+        // Legacy (v1) files never had a `models` list. Its presence means the
+        // file was written by the current code, even if an older build saved
+        // it with a bogus `version: 0`.
+        if version >= 2 || raw.get("models").is_some() {
             // New format - parse directly
             let mut config: Self = serde_json::from_value(raw)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -166,19 +196,12 @@ impl LlmConfig {
                 }
             }
             
-            Ok(config)
+            Ok((config, false))
         } else {
             // Legacy format - migrate
             let legacy: LegacyLlmConfig = serde_json::from_value(raw)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            let migrated = Self::migrate_from_legacy(legacy);
-            
-            // Save migrated config
-            if let Err(e) = migrated.save() {
-                tracing::warn!("Failed to save migrated config: {}", e);
-            }
-            
-            Ok(migrated)
+            Ok((Self::migrate_from_legacy(legacy), true))
         }
     }
 
@@ -392,6 +415,14 @@ impl LlmConfig {
             .or_else(|| self.models.first())
     }
 
+    /// Model ID to use when a request doesn't name one: the legacy
+    /// `default_model` field if set, otherwise the configured default model.
+    pub fn effective_default_model(&self) -> Option<String> {
+        self.default_model
+            .clone()
+            .or_else(|| self.get_default_model().map(|m| m.model_id.clone()))
+    }
+
     /// Add a new model alias.
     pub fn add_model(&mut self, model_id: &str, name: Option<&str>) -> String {
         // Auto-generate name if not provided
@@ -487,5 +518,69 @@ fn get_provider_display_name(provider_type: &str) -> String {
                 None => other.to_string(),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_serializes_current_version() {
+        let json = serde_json::to_value(LlmConfig::default()).unwrap();
+        assert_eq!(json["version"], 2);
+    }
+
+    #[test]
+    fn first_added_model_is_effective_default() {
+        let mut cfg = LlmConfig::default();
+        assert_eq!(cfg.effective_default_model(), None);
+        cfg.add_model("ollama:llama3.2:latest", None);
+        assert_eq!(
+            cfg.effective_default_model().as_deref(),
+            Some("ollama:llama3.2:latest")
+        );
+    }
+
+    #[test]
+    fn legacy_default_model_field_takes_precedence() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_model("ollama:llama3.2:latest", None);
+        cfg.default_model = Some("openai:gpt-4o".to_string());
+        assert_eq!(cfg.effective_default_model().as_deref(), Some("openai:gpt-4o"));
+    }
+    #[test]
+    fn version_zero_file_with_models_keeps_its_models() {
+        // What an older build wrote after the first model was added.
+        let mut cfg = LlmConfig::default();
+        cfg.version = 0;
+        cfg.add_model("ollama:llama3.2:latest", None);
+        let contents = serde_json::to_string(&cfg).unwrap();
+
+        let (loaded, migrated) = LlmConfig::parse(&contents).unwrap();
+        assert!(!migrated);
+        assert_eq!(loaded.models.len(), 1);
+        assert_eq!(
+            loaded.effective_default_model().as_deref(),
+            Some("ollama:llama3.2:latest")
+        );
+    }
+
+    #[test]
+    fn current_version_file_round_trips() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_model("ollama:llama3.2:latest", None);
+        let (loaded, migrated) = LlmConfig::parse(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert!(!migrated);
+        assert_eq!(loaded.models.len(), 1);
+    }
+
+    #[test]
+    fn legacy_file_without_models_is_migrated() {
+        let contents = r#"{"default_model":"ollama:llama3.2","providers":{}}"#;
+        let (loaded, migrated) = LlmConfig::parse(contents).unwrap();
+        assert!(migrated);
+        assert_eq!(loaded.version, 2);
+        assert_eq!(loaded.default_model.as_deref(), Some("ollama:llama3.2"));
     }
 }
