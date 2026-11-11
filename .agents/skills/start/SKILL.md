@@ -36,7 +36,9 @@ Rules: [the workflow](../../../docs/agent-workflow.md). This skill ends with a c
    - Run `git submodule update --init` in it, plus `npm install` in each package you'll build.
    - Record in the ledger the ports and the Firefox profile you'll use, and whether you'll need the [shared bridge registration](../../../docs/agent-workflow.md#shared-local-resources).
    - Use absolute paths in every brief.
-   - Title your tab after the task (`hbr-<n>-<slug>`) where the harness allows. In Rex a tab is a window: `rex window rename "$(rex block inspect "$REX_BLOCK" | awk '/^window:/{print $2}')" hbr-<n>-<slug>`. Never rename the Rex session; every tab shares it.
+   - Name the current session or tab after the task (`hbr-<n>-<slug>`) where the harness allows:
+     - **Codex:** Set the current chat title with the available `set_thread_title` tool, using `title: "hbr-<n>-<slug>"` and omitting `threadId` to target the calling chat. Discover the tool if needed. If unavailable, report that the title could not be set and continue intake.
+     - **Rex:** A tab is a window: `rex window rename "$(rex block inspect "$REX_BLOCK" | awk '/^window:/{print $2}')" hbr-<n>-<slug>`. Never rename the Rex session; every tab shares it.
 6. **Write the ledger** in the HBR description, using the workflow's template: outcomes, exclusions, base SHA, worktree, acceptance source, expected files and size, and open decisions. Anything on the [maintainer-decides list](../../../docs/agent-workflow.md#what-the-maintainer-decides) goes to the maintainer before coding.
 7. **Hand off** to orchestrate, which sizes the work. Intake alone finishes nothing, unless the request was explicitly intake-only.
 
