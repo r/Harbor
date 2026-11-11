@@ -52,6 +52,7 @@ const sendBtn = document.getElementById('send-btn');
 const toolsToggle = document.getElementById('tools-toggle');
 const clearBtn = document.getElementById('clear-btn');
 const copyBtn = document.getElementById('copy-btn');
+const COPY_LABEL = copyBtn.textContent;
 
 const extensionStatus = document.getElementById('extension-status');
 const extensionStatusText = document.getElementById('extension-status-text');
@@ -318,7 +319,8 @@ function buildTranscript() {
       const role = el.querySelector('.message-role')?.textContent || '';
       const time = el.querySelector('.message-time')?.textContent || '';
       const body = [...el.querySelectorAll('.message-body p')]
-        .map(p => p.textContent.replace(/ /g, ''))
+        // Blank lines render as &nbsp;; drop it so they copy as empty lines.
+        .map(p => p.textContent.replace(/\u00a0/g, ''))
         .join('\n');
       lines.push(`${role} (${time}):`, body, '');
     } else if (el.classList.contains('tool-call')) {
@@ -333,9 +335,12 @@ function buildTranscript() {
   return lines.join('\n').trimEnd() + '\n';
 }
 
+let copyResetTimer = null;
+
 async function copyTranscript() {
   const text = buildTranscript();
-  const label = copyBtn.textContent;
+  // Fixed label: reading textContent here would pick up "✓" on a second quick click.
+  const label = COPY_LABEL;
   try {
     await navigator.clipboard.writeText(text);
     copyBtn.textContent = '✓ Copied';
@@ -343,7 +348,8 @@ async function copyTranscript() {
     console.error('[Chat POC] Copy failed:', err);
     copyBtn.textContent = '✕ Copy failed';
   }
-  setTimeout(() => { copyBtn.textContent = label; }, 1500);
+  clearTimeout(copyResetTimer);
+  copyResetTimer = setTimeout(() => { copyBtn.textContent = label; }, 1500);
 }
 
 function addThinkingUI(initialText = 'Thinking...') {

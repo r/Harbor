@@ -54,6 +54,7 @@ const toolsToggle = document.getElementById('tools-toggle');
 const tabToggle = document.getElementById('tab-toggle');
 const clearBtn = document.getElementById('clear-btn');
 const copyBtn = document.getElementById('copy-btn');
+const COPY_LABEL = copyBtn.textContent;
 const themeToggle = document.getElementById('theme-toggle');
 const docsToggle = document.getElementById('docs-toggle');
 const docsPanel = document.getElementById('docs-panel');
@@ -350,7 +351,8 @@ function buildTranscript() {
       const role = el.querySelector('.message-role')?.textContent || '';
       const time = el.querySelector('.message-time')?.textContent || '';
       const body = [...el.querySelectorAll('.message-body p')]
-        .map(p => p.textContent.replace(/ /g, ''))
+        // Blank lines render as &nbsp;; drop it so they copy as empty lines.
+        .map(p => p.textContent.replace(/\u00a0/g, ''))
         .join('\n');
       lines.push(`${role} (${time}):`, body, '');
     } else if (el.classList.contains('tool-call')) {
@@ -365,9 +367,12 @@ function buildTranscript() {
   return lines.join('\n').trimEnd() + '\n';
 }
 
+let copyResetTimer = null;
+
 async function copyTranscript() {
   const text = buildTranscript();
-  const label = copyBtn.textContent;
+  // Fixed label: reading textContent here would pick up "✓" on a second quick click.
+  const label = COPY_LABEL;
   try {
     await navigator.clipboard.writeText(text);
     copyBtn.textContent = '✓';
@@ -377,7 +382,8 @@ async function copyTranscript() {
     copyBtn.textContent = '✕';
     copyBtn.title = 'Copy failed (see console)';
   }
-  setTimeout(() => {
+  clearTimeout(copyResetTimer);
+  copyResetTimer = setTimeout(() => {
     copyBtn.textContent = label;
     copyBtn.title = 'Copy conversation as text';
   }, 1500);
