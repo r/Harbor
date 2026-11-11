@@ -78,7 +78,7 @@ The repo is public and the tracker (Linear, `HBR-123`) is internal. PRs, commits
 Every commit an AI agent writes or substantially helps write ends with a `Co-Authored-By` trailer naming both the model that did the work and the harness that ran it. This applies in any harness (Claude Code, Codex, Pi, Cursor, or another), and to workers that commit under a coordinator's brief.
 
 ```text
-Co-Authored-By: <model> (<harness>) <model vendor's no-reply address>
+Co-Authored-By: <model> (<harness>) <model vendor's address>
 ```
 
 For example:
@@ -86,6 +86,12 @@ For example:
 ```text
 Co-Authored-By: Claude Opus 5.5 (Claude Code) <noreply@anthropic.com>
 Co-Authored-By: Claude Sonnet 5.5 (Pi) <noreply@anthropic.com>
+Co-Authored-By: gpt-6.1-sol (Codex) <codex@openai.com>
 ```
 
-Name the model that actually ran, not the one you asked for. Use the address of the model's vendor, not the harness's. If your harness adds its own trailer, replace it with one in this format rather than adding a second trailer. Older commits use other forms, such as `Cursor <cursoragent@cursor.com>`; leave them as they are. PRs opened by an agent say so at the end of the description, naming the harness.
+Name the model that actually ran, not the one you asked for. Use the address of the model's vendor, not the harness's:
+
+- Anthropic models use `noreply@anthropic.com`, which maps to GitHub's `claude` account.
+- OpenAI models use `codex@openai.com`, which maps to GitHub's `codex` account.
+
+Those mappings make GitHub show the right co-author avatar. For other vendors, use the address of their official GitHub account if one exists. If your harness adds its own trailer, replace it with one in this format rather than adding a second trailer. Older commits use other forms, such as `Cursor <cursoragent@cursor.com>`; leave them as they are. PRs opened by an agent say so at the end of the description, naming the harness.
