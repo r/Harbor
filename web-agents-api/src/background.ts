@@ -15,6 +15,7 @@ import {
   getHarborState,
 } from './harbor-client';
 import { getFeatureFlags } from './policy/feature-flags';
+import { toolResultText } from './tool-messages';
 import type { TransportResponse, TransportStreamEvent } from './types';
 
 // Import handler registry and utilities
@@ -147,24 +148,6 @@ async function handleSessionPromptStreaming(
       done: true,
     });
   }
-}
-
-/**
- * Render an MCP tool result as text for a `tool` message. MCP results look like
- * `{ content: [{ type: 'text', text: '…' }] }`; send the text itself rather than
- * the JSON wrapper. Anything else (including `{ error }`) is sent as JSON.
- */
-function toolResultText(result: unknown): string {
-  const content = (result as { content?: unknown } | null)?.content;
-  if (Array.isArray(content)) {
-    const text = content
-      .filter((c): c is { type: 'text'; text: string } =>
-        c?.type === 'text' && typeof c.text === 'string')
-      .map(c => c.text)
-      .join('\n');
-    if (text) return text;
-  }
-  return typeof result === 'string' ? result : JSON.stringify(result);
 }
 
 async function handleAgentRun(
