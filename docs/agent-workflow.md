@@ -135,6 +135,15 @@ Worktrees isolate source, not the machine. These are shared, so serialize them a
 - **Ollama and its models.** Don't pull or delete models without the maintainer's say.
 - **Firefox.** Use a temporary profile per session. Never touch the user's own profile.
 
+## Known pitfalls
+
+Each of these has cost a real session time or produced a wrong result. They're recorded so they don't happen again.
+
+- **Give each worktree its own Cargo target directory.** If several worktrees share one `CARGO_TARGET_DIR`, Cargo can reuse another checkout's build without recompiling, and report that checkout's results as this one's. Use one directory per worktree, for example `CARGO_TARGET_DIR=../target-<worktree>`. Check that the test count matches the branch, especially when a change adds tests.
+- **zsh doesn't split variables on spaces.** In `for p in "6 abc123"; do set -- $p; ...`, the variable stays one word, so `$2` is empty. `git worktree add` then checks out the current HEAD into a directory with a space in its name. Pass separate arguments, or use arrays.
+- **Agent presets aren't always available right away.** A running session picks up new or changed `harbor-*` presets on its own schedule, and can lose them when the checkout switches to a branch without them. A restart loads them reliably. If a preset isn't available and you can't wait, run the built-in general-purpose agent at the preset's model, give it the role brief and the read-only instructions, and record the deviation in the ledger.
+- **Firefox may try to update itself when an agent launches it.** macOS then reports that the terminal app (for example "Rex Server") tried to modify an application, and blocks it. Leave the block in place; the test browser still runs.
+
 ## What the maintainer decides
 
 Ask before, not after:
