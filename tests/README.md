@@ -39,7 +39,7 @@ tests/
 Unit tests live within each package:
 - `extension/src/__tests__/` - Harbor extension unit tests
 - `web-agents-api/src/__tests__/` - Web Agents API unit tests
-- `bridge-ts/src/any-llm-ts/src/__tests__/` - LLM provider unit tests
+- `bridge-rs/` - Rust bridge unit tests (run with Cargo)
 
 ## Prerequisites
 
@@ -78,16 +78,16 @@ cargo build --release
 ### Unit Tests
 
 ```bash
-# TypeScript tests (vitest)
+# TypeScript tests (Vitest in both extension packages)
 npm run test:unit:ts
 
 # Rust tests
 npm run test:unit:rust
 
-# Or run tests for a specific package
-cd extension && npm test
-cd web-agents-api && npm test
-cd bridge-ts/src/any-llm-ts && npm test
+# Or run tests for a specific package from the repository root
+npm test --prefix extension
+npm test --prefix web-agents-api
+cargo test --manifest-path bridge-rs/Cargo.toml
 ```
 
 ### E2E Tests
