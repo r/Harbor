@@ -72,3 +72,20 @@ cd tests/e2e && npm run test:browser:keep-open
 Agents working on a tracked task follow [docs/agent-workflow.md](docs/agent-workflow.md): **start → orchestrate → finalize → maintainer-approved merge**, plus **pre-close** when ending a session. The skills are in `.agents/skills/` (also available as `.claude/skills/`). Worker roles are in `.agents/roles/`, and their harness bindings are in [docs/harness-agents.md](docs/harness-agents.md).
 
 The repo is public and the tracker (Linear, `HBR-123`) is internal. PRs, commits and docs must stand on their own; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Commit Attribution
+
+Every commit an AI agent writes or substantially helps write ends with a `Co-Authored-By` trailer naming the model that did the work, whatever the harness (Claude Code, Codex, Pi, Cursor, or another). Workers that commit under a coordinator's brief add it too.
+
+```text
+Co-Authored-By: <model name> <vendor no-reply address>
+```
+
+Examples from this repo's history:
+
+```text
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-authored-by: Cursor <cursoragent@cursor.com>
+```
+
+Name the model that actually ran, not the harness. A Pi session running a Claude model gets a Claude trailer. If your harness adds its own trailer, keep it and don't add a duplicate. PRs opened by an agent say so at the end of the description.
