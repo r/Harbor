@@ -51,6 +51,8 @@ const messageInput = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
 const toolsToggle = document.getElementById('tools-toggle');
 const clearBtn = document.getElementById('clear-btn');
+const copyBtn = document.getElementById('copy-btn');
+const COPY_LABEL = copyBtn.textContent;
 
 const extensionStatus = document.getElementById('extension-status');
 const extensionStatusText = document.getElementById('extension-status-text');
@@ -292,6 +294,62 @@ function updateToolCallUI(toolEl, status, result) {
   
   const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
   contentEl.textContent += '\n\nResult: ' + resultStr;
+}
+
+// =============================================================================
+// Copy Transcript
+// =============================================================================
+
+/**
+ * Build a plain-text transcript of the conversation as shown on screen,
+ * including tool calls (args + results) and a header with the current status.
+ * Meant for pasting into bug reports.
+ */
+function buildTranscript() {
+  const lines = [
+    `Harbor Chat transcript — ${new Date().toISOString()}`,
+    `${llmStatusText.textContent} | ${toolsStatusText.textContent} | Tools toggle: ${useTools ? 'on' : 'off'}`,
+    '',
+  ];
+
+  for (const el of messagesEl.children) {
+    if (el.id === 'thinking') continue; // transient "Thinking…" indicator
+
+    if (el.classList.contains('message')) {
+      const role = el.querySelector('.message-role')?.textContent || '';
+      const time = el.querySelector('.message-time')?.textContent || '';
+      const body = [...el.querySelectorAll('.message-body p')]
+        // Blank lines render as &nbsp;; drop it so they copy as empty lines.
+        .map(p => p.textContent.replace(/\u00a0/g, ''))
+        .join('\n');
+      lines.push(`${role} (${time}):`, body, '');
+    } else if (el.classList.contains('tool-call')) {
+      const name = el.querySelector('.tool-call-name')?.textContent || '';
+      const status = el.querySelector('.tool-call-status')?.textContent || '';
+      const content = el.querySelector('.tool-call-content')?.textContent || '';
+      lines.push(`🔧 ${name} — ${status}`, ...content.split('\n').map(l => (l ? `   ${l}` : '')), '');
+    }
+    // Anything else (the empty state) is skipped.
+  }
+
+  return lines.join('\n').trimEnd() + '\n';
+}
+
+let copyResetTimer = null;
+
+async function copyTranscript() {
+  const text = buildTranscript();
+  // Fixed label: reading textContent here would pick up "✓" on a second quick click.
+  const label = COPY_LABEL;
+  try {
+    await navigator.clipboard.writeText(text);
+    copyBtn.textContent = '✓ Copied';
+  } catch (err) {
+    console.error('[Chat POC] Copy failed:', err);
+    copyBtn.textContent = '✕ Copy failed';
+  }
+  clearTimeout(copyResetTimer);
+  copyResetTimer = setTimeout(() => { copyBtn.textContent = label; }, 1500);
 }
 
 function addThinkingUI(initialText = 'Thinking...') {
@@ -612,6 +670,7 @@ toolsToggle.addEventListener('click', () => {
 });
 
 clearBtn.addEventListener('click', clearChat);
+copyBtn.addEventListener('click', copyTranscript);
 
 // Tools modal
 toolsStatusItem.addEventListener('click', showToolsModal);
