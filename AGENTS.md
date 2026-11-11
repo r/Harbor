@@ -66,3 +66,9 @@ cd tests/e2e && npm run test:browser:keep-open
 1. **Don't use Chromium for testing** - Use Firefox
 2. **Don't forget both extensions** - Most features need both Harbor AND Web Agents API
 3. **Check native bridge connection** - Many features require the Rust bridge running
+
+## Agentic Workflow
+
+Agents working on a tracked task follow [docs/agent-workflow.md](docs/agent-workflow.md): **start → orchestrate → finalize → maintainer-approved merge**, plus **pre-close** when ending a session. The skills are in `.agents/skills/` (also available as `.claude/skills/`). Worker roles are in `.agents/roles/`, and their harness bindings are in [docs/harness-agents.md](docs/harness-agents.md).
+
+The repo is public and the tracker (Linear, `HBR-123`) is internal. PRs, commits and docs must stand on their own; see [CONTRIBUTING.md](CONTRIBUTING.md).
