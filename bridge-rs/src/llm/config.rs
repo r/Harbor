@@ -160,9 +160,21 @@ impl LlmConfig {
         }
 
         let contents = std::fs::read_to_string(&path)?;
+        let (config, migrated) = Self::parse(&contents)?;
+        if migrated {
+            // Save migrated config
+            if let Err(e) = config.save() {
+                tracing::warn!("Failed to save migrated config: {}", e);
+            }
+        }
+        Ok(config)
+    }
 
+    /// Parse config file contents. Returns the config and whether it was
+    /// migrated from the legacy (v1) format and so needs saving.
+    fn parse(contents: &str) -> Result<(Self, bool), std::io::Error> {
         // Try to detect config version
-        let raw: serde_json::Value = serde_json::from_str(&contents)
+        let raw: serde_json::Value = serde_json::from_str(contents)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         // Check if it's the new format (has version field >= 2)
@@ -184,19 +196,12 @@ impl LlmConfig {
                 }
             }
             
-            Ok(config)
+            Ok((config, false))
         } else {
             // Legacy format - migrate
             let legacy: LegacyLlmConfig = serde_json::from_value(raw)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            let migrated = Self::migrate_from_legacy(legacy);
-            
-            // Save migrated config
-            if let Err(e) = migrated.save() {
-                tracing::warn!("Failed to save migrated config: {}", e);
-            }
-            
-            Ok(migrated)
+            Ok((Self::migrate_from_legacy(legacy), true))
         }
     }
 
@@ -543,5 +548,39 @@ mod tests {
         cfg.add_model("ollama:llama3.2:latest", None);
         cfg.default_model = Some("openai:gpt-4o".to_string());
         assert_eq!(cfg.effective_default_model().as_deref(), Some("openai:gpt-4o"));
+    }
+    #[test]
+    fn version_zero_file_with_models_keeps_its_models() {
+        // What an older build wrote after the first model was added.
+        let mut cfg = LlmConfig::default();
+        cfg.version = 0;
+        cfg.add_model("ollama:llama3.2:latest", None);
+        let contents = serde_json::to_string(&cfg).unwrap();
+
+        let (loaded, migrated) = LlmConfig::parse(&contents).unwrap();
+        assert!(!migrated);
+        assert_eq!(loaded.models.len(), 1);
+        assert_eq!(
+            loaded.effective_default_model().as_deref(),
+            Some("ollama:llama3.2:latest")
+        );
+    }
+
+    #[test]
+    fn current_version_file_round_trips() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_model("ollama:llama3.2:latest", None);
+        let (loaded, migrated) = LlmConfig::parse(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert!(!migrated);
+        assert_eq!(loaded.models.len(), 1);
+    }
+
+    #[test]
+    fn legacy_file_without_models_is_migrated() {
+        let contents = r#"{"default_model":"ollama:llama3.2","providers":{}}"#;
+        let (loaded, migrated) = LlmConfig::parse(contents).unwrap();
+        assert!(migrated);
+        assert_eq!(loaded.version, 2);
+        assert_eq!(loaded.default_model.as_deref(), Some("ollama:llama3.2"));
     }
 }
