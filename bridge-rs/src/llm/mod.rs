@@ -7,7 +7,7 @@ pub use config::{LlmConfig, ProviderInstance};
 use crate::rpc::RpcError;
 use any_llm::{
     check_provider, completion, completion_stream, get_supported_providers, list_models as any_llm_list_models,
-    CompletionRequest, Message, ProviderConfig, Tool, ToolFunction,
+    CompletionRequest, Message, ProviderConfig, Tool, ToolCall, ToolFunction,
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -115,16 +115,7 @@ pub async fn chat(params: serde_json::Value) -> Result<serde_json::Value, RpcErr
         messages.push(Message::system(system_prompt.clone()));
     }
     
-    for m in request.messages {
-        let msg = match m.role.as_str() {
-            "system" => Message::system(m.content),
-            "user" => Message::user(m.content),
-            "assistant" => Message::assistant(m.content),
-            "tool" => Message::tool(m.tool_call_id.unwrap_or_default(), m.content),
-            _ => Message::user(m.content),
-        };
-        messages.push(msg);
-    }
+    messages.extend(request.messages.into_iter().map(to_llm_message));
 
     // Convert tool definitions to any-llm format
     let tools: Option<Vec<Tool>> = request.tools.map(|defs| {
@@ -224,6 +215,28 @@ pub struct ChatMessage {
     /// For tool responses
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    /// For assistant messages: the tool calls the model made (as returned in
+    /// `choices[0].message.tool_calls`). Providers like OpenAI and Anthropic
+    /// require these before any `tool` message that answers them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+}
+
+/// Convert an RPC chat message into an any-llm message.
+fn to_llm_message(m: ChatMessage) -> Message {
+    match m.role.as_str() {
+        "system" => Message::system(m.content),
+        "user" => Message::user(m.content),
+        "assistant" => match m.tool_calls {
+            Some(calls) if !calls.is_empty() => {
+                let content = (!m.content.is_empty()).then_some(m.content);
+                Message::assistant_with_tool_calls(content, calls)
+            }
+            _ => Message::assistant(m.content),
+        },
+        "tool" => Message::tool(m.tool_call_id.unwrap_or_default(), m.content),
+        _ => Message::user(m.content),
+    }
 }
 
 /// Tool definition for the chat API
@@ -870,12 +883,7 @@ pub async fn chat_stream(
             let messages: Vec<Message> = request
                 .messages
                 .into_iter()
-                .map(|m| match m.role.as_str() {
-                    "system" => Message::system(m.content),
-                    "user" => Message::user(m.content),
-                    "assistant" => Message::assistant(m.content),
-                    _ => Message::user(m.content),
-                })
+                .map(to_llm_message)
                 .collect();
 
             let provider_config = get_provider_config_for_model(&model);
@@ -965,5 +973,47 @@ pub async fn chat_stream(
                 })),
             }).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod message_tests {
+    use super::*;
+    use any_llm::MessageRole;
+
+    fn msg(json: serde_json::Value) -> Message {
+        to_llm_message(serde_json::from_value(json).unwrap())
+    }
+
+    #[test]
+    fn assistant_tool_calls_are_passed_through() {
+        let m = msg(serde_json::json!({
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": { "name": "time_now", "arguments": "{}" }
+            }]
+        }));
+        assert!(matches!(m.role, MessageRole::Assistant));
+        let calls = m.tool_calls.expect("tool_calls kept");
+        assert_eq!(calls[0].id, "call_1");
+        assert_eq!(calls[0].function.name, "time_now");
+    }
+
+    #[test]
+    fn plain_assistant_message_has_no_tool_calls() {
+        let m = msg(serde_json::json!({ "role": "assistant", "content": "hi" }));
+        assert!(m.tool_calls.is_none());
+    }
+
+    #[test]
+    fn tool_message_keeps_role_and_call_id() {
+        let m = msg(serde_json::json!({
+            "role": "tool", "content": "12:00", "tool_call_id": "call_1"
+        }));
+        assert!(matches!(m.role, MessageRole::Tool));
+        assert_eq!(m.tool_call_id.as_deref(), Some("call_1"));
     }
 }

@@ -15,6 +15,7 @@ import {
   getHarborState,
 } from './harbor-client';
 import { getFeatureFlags } from './policy/feature-flags';
+import { toolResultText } from './tool-messages';
 import type { TransportResponse, TransportStreamEvent } from './types';
 
 // Import handler registry and utilities
@@ -209,7 +210,13 @@ async function handleAgentRun(
     });
 
     // Agentic loop
-    const messages: Array<{ role: string; content: string }> = [];
+    type LLMToolCall = { id: string; type?: string; function: { name: string; arguments: string } };
+    const messages: Array<{
+      role: string;
+      content: string;
+      tool_calls?: LLMToolCall[];
+      tool_call_id?: string;
+    }> = [];
     messages.push({ role: 'system', content: systemPrompt || 'You are a helpful assistant that can use tools to help users.' });
     messages.push({ role: 'user', content: task });
 
@@ -222,7 +229,7 @@ async function handleAgentRun(
           message: {
             role: string;
             content: string;
-            tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+            tool_calls?: LLMToolCall[];
           };
           finish_reason?: string;
         }>;
@@ -257,6 +264,22 @@ async function handleAgentRun(
           messages.push({ role: 'user', content: 'Tool calling is not permitted. Please provide an answer without using tools.' });
           continue;
         }
+
+        // Record the model's tool calls as a real assistant turn, then answer each
+        // with a `tool` message. Sending results back as plain user text ("Tool X
+        // returned: …") makes local models call the same tool again until they
+        // hit maxToolCalls.
+        //
+        // The text summary is still needed alongside tool_calls: any-llm's Ollama
+        // provider drops assistant tool_calls, and without the summary llama3.2
+        // ignores the tool result ("the current time is not available").
+        messages.push({
+          role: 'assistant',
+          content: responseContent || toolCalls
+            .map(tc => `[Called tool: ${tc.function.name}(${tc.function.arguments || '{}'})]`)
+            .join('\n'),
+          tool_calls: toolCalls.map(tc => ({ ...tc, type: tc.type || 'function' })),
+        });
 
         for (const tc of toolCalls) {
           const llmToolName = tc.function.name;
@@ -294,8 +317,11 @@ async function handleAgentRun(
             event: { type: 'token', token: JSON.stringify({ type: 'tool_result', tool: displayName, result: toolResult }) },
           });
 
-          messages.push({ role: 'assistant', content: `[Called tool: ${displayName}(${JSON.stringify(args)})]` });
-          messages.push({ role: 'user', content: `Tool "${displayName}" returned: ${JSON.stringify(toolResult)}` });
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: toolResultText(toolResult),
+          });
 
           toolCallCount++;
         }
