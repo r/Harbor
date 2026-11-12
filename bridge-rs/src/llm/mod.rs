@@ -660,7 +660,7 @@ pub async fn get_configuration() -> Result<serde_json::Value, RpcError> {
 
     Ok(serde_json::json!({
         "version": cfg.version,
-        "default_model": cfg.default_model,
+        "default_model": cfg.effective_default_model(),
         "default_provider": cfg.default_provider,
         "providers": providers
     }))
@@ -991,6 +991,23 @@ mod message_tests {
             "tools": [{ "name": "time_now", "description": "Get time" }]
         }))
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn configuration_reports_default_used_by_both_chat_modes() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_model("ollama:old", Some("old"));
+        cfg.add_model("ollama:next", Some("next"));
+        cfg.default_model = Some("ollama:old".into());
+        cfg.remove_model("old");
+        set_config(cfg);
+        assert_eq!(get_configuration().await.unwrap()["default_model"], "ollama:next");
+        for stream in [false, true] {
+            let mut req = request();
+            req.model = None;
+            assert_eq!(prepare_completion_request(req, stream).unwrap().model, "ollama:next");
+        }
+        set_config(LlmConfig::default());
     }
 
     #[test]
