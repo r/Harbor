@@ -61,6 +61,18 @@ This produces `extension/dist-firefox/` and `web-agents-api/dist-firefox/`.
 For Chrome, run `npm run build:chrome` instead; for Safari, `npm run build:safari`.
 The outputs are the corresponding `dist-chrome/` or `dist-safari/` directories.
 
+On macOS with Homebrew's libvips installed, sharp may try to build from source
+and fail with `Please add node-addon-api to your dependencies`. Retry the
+extension installs using sharp's prebuilt binaries:
+
+```bash
+SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --prefix extension
+SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --prefix web-agents-api
+```
+
+Run these from the repository root, then retry `npm run build`.
+See [sharp's installation guide](https://sharp.pixelplumbing.com/install/#building-from-source).
+
 ### 3. Build the Native Bridge
 
 ```bash
