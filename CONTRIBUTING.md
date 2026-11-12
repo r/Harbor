@@ -64,7 +64,27 @@ cd ..
 
 ### Load Extensions for Testing (Firefox)
 
-Both extensions must be loaded together:
+Build both extensions, then launch them together in a fresh temporary Firefox profile:
+
+```bash
+npm install --prefix tests/e2e
+npm run build
+npm run dev:firefox
+# Optional starting page:
+npm run dev:firefox -- http://localhost:8000/web-agents/
+```
+
+Start the demo server separately (`cd demo && npm start`). The launcher does not
+build or watch files; restart it after rebuilding. Set `FIREFOX` to a Firefox
+binary path if needed. The native bridge must already be built and registered.
+Close the launched Firefox instance or press Ctrl+C to stop it. Your normal
+Firefox profile is not used.
+
+The browser test runner (`cd tests/e2e && npm run test:browser`) uses the same
+launcher. `--keep-open` waits for you to close Firefox or press Ctrl+C after the
+results arrive. Closing Firefox exits with the test result; Ctrl+C interrupts the run.
+
+Alternatively, load both extensions manually:
 
 1. Open Firefox and go to `about:debugging#/runtime/this-firefox`.
 2. Click **Load Temporary Add-on…** and select `extension/dist-firefox/manifest.json` (the Harbor extension).
