@@ -23,123 +23,13 @@ Harbor is a browser extension that implements the **Web Agent API** — a propos
 
 ---
 
-## Requirements
+## Installation and First-Time Setup
 
-| Requirement | Details |
-|-------------|---------|
-| **Node.js 18+** | [nodejs.org](https://nodejs.org) — for building extensions |
-| **Rust** | [rustup.rs](https://rustup.rs) — for building the native bridge |
-| **Browser** | Firefox 109+ (recommended), Chrome 120+, or Safari 16+ (macOS) |
-| **Ollama** | [ollama.com](https://ollama.com) — local LLM provider |
-| **Xcode** | Required for Safari only (macOS) |
+Follow **[the canonical Quickstart](../QUICKSTART.md)** for requirements, installation, model configuration, permissions and demo verification. It covers all browsers and explicitly adds and tests a default model under **LLM Providers → Configured Models** before the first agent run.
 
-### Setting up Ollama
+Once setup is verified, continue here for everyday use and server management.
 
-Harbor uses Ollama to run local AI models:
-
-```bash
-# Install Ollama (macOS)
-brew install ollama
-
-# Start Ollama
-ollama serve
-
-# Pull a model
-ollama pull llama3.2
-```
-
----
-
-## Installation
-
-Harbor consists of **two browser extensions** that work together:
-- **Harbor** — Core platform (MCP servers, native bridge, chat sidebar)
-- **Web Agents API** — Injects `window.ai` and `window.agent` into web pages
-
-### Build from Source
-
-```bash
-# 1. Clone the repository
-git clone --recurse-submodules https://github.com/r/harbor.git
-cd harbor
-
-# 2. Build Harbor extension
-cd extension
-npm install
-npm run build          # Firefox
-npm run build:chrome   # Chrome
-cd ..
-
-# 3. Build Web Agents API extension
-cd web-agents-api
-npm install
-npm run build          # Firefox
-npm run build:chrome   # Chrome
-cd ..
-
-# 4. Build the native bridge
-cd bridge-rs
-cargo build --release
-./install.sh
-cd ..
-```
-
-### Load Extensions in Your Browser
-
-**Firefox:**
-1. Go to `about:debugging#/runtime/this-firefox`
-2. Click "Load Temporary Add-on..."
-3. Select `extension/dist-firefox/manifest.json`
-4. Repeat for `web-agents-api/dist-firefox/manifest.json`
-
-**Chrome:**
-1. Go to `chrome://extensions`
-2. Enable "Developer mode"
-3. Click "Load unpacked" → select `extension/dist-chrome/`
-4. Repeat for `web-agents-api/dist-chrome/`
-5. **Important:** Update native messaging manifest with your extension ID — see [Chrome Setup](QUICKSTART_CHROME.md#step-5-configure-native-messaging)
-
-**Safari (Experimental):**
-See [Safari Setup](QUICKSTART_SAFARI.md) — requires Xcode and building a macOS app.
-
-### Detailed Setup Guides
-
-→ **[Firefox Setup](QUICKSTART_FIREFOX.md)** — Primary browser, recommended  
-→ **[Chrome Setup](QUICKSTART_CHROME.md)** — Requires extension ID configuration  
-→ **[Safari Setup](QUICKSTART_SAFARI.md)** — Experimental, macOS only
-
----
-
-## First-Time Setup
-
-After installation, let's make sure everything is working:
-
-### 1. Open the Harbor Sidebar
-
-Click the **Harbor icon** in your Firefox sidebar (or press the sidebar shortcut).
-
-You should see:
-- Connection status indicator
-- "Curated Servers" section with recommended MCP servers
-- "My Servers" section (empty at first)
-
-### 2. Verify Bridge Connection
-
-The sidebar should show **"Connected"** in green. If you see "Disconnected":
-- Make sure the bridge is installed correctly
-- Check the Firefox Browser Console (`Cmd+Shift+J` on Mac) for errors
-- Try rebuilding the bridge if you installed manually
-
-### 3. Set Up Your LLM
-
-1. Click the **Settings** (gear icon) in the sidebar
-2. Under "LLM Provider", click **"Detect"**
-3. Harbor will find available LLM providers:
-   - **Ollama** at `localhost:11434`
-   - **llamafile** at `localhost:8080`
-4. Select your preferred provider
-
-### 4. Install Your First MCP Server
+### Install Your First MCP Server
 
 MCP servers give the AI tools like file access, memory, or web search.
 

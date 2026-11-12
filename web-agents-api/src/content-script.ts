@@ -109,7 +109,7 @@ interface FeatureFlags {
 
 const DEFAULT_FLAGS: FeatureFlags = {
   textGeneration: true,
-  toolCalling: false,
+  toolCalling: true,
   toolAccess: true,
   browserInteraction: false,
   browserControl: false,
@@ -123,7 +123,7 @@ async function getFeatureFlags(): Promise<FeatureFlags> {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ type: 'getFeatureFlags' }, (response) => {
       if (chrome.runtime.lastError || !response) {
-        // Default to safe mode if we can't get flags
+        // Use the default capabilities if we can't get flags
         resolve(DEFAULT_FLAGS);
       } else {
         resolve(response as FeatureFlags);

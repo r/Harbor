@@ -38,8 +38,8 @@ export interface FeatureFlags {
 
   /**
    * Enable tool calling APIs (agent.run).
-   * LLM-driven tool calling loops.
-   * Default: false
+   * LLM-driven tool calling loops. Websites still need permission.
+   * Default: true
    */
   toolCalling: boolean;
 
@@ -73,7 +73,7 @@ export interface FeatureFlags {
 
 export const DEFAULT_FLAGS: FeatureFlags = {
   textGeneration: true,
-  toolCalling: false,
+  toolCalling: true,
   toolAccess: true,
   browserInteraction: false,
   browserControl: false,
