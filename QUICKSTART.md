@@ -155,7 +155,7 @@ A detected provider is not enough: Harbor needs a configured default model.
 The Getting Started demo ends with `agent.run()`, which needs all of the following:
 
 - A working [configured default model](#configure-a-model).
-- A connected MCP server with a time tool for the demo's time question. Check **MCP Servers** in the Harbor sidebar; if no tools are available, see [Troubleshooting](#no-tools-available).
+- A connected MCP server with a time tool for the demo's time question. In the Harbor sidebar under **MCP Servers**, find **Time Server** and click **Start** if it is stopped. Confirm it is running before continuing; if no tools are available, see [Troubleshooting](#no-tools-available).
 - **Agentic Tool Use** enabled in the **Web Agents API** sidebar, under **Browser Agent Capabilities**. Manual **Tool Access** allows listing and calling tools directly; it does not enable `agent.run()`. Agentic Tool Use is on by default for new installs. Existing saved choices are preserved: if yours is off, turn it on for this demo, then reload the demo page so it picks up the setting.
 - Permission granted to the demo's origin when it asks for `model:prompt`, `model:tools`, `mcp:tools.list` and `mcp:tools.call`. Enabling an API does not grant websites permission to use it.
 
@@ -375,7 +375,7 @@ Enable **Agentic Tool Use** in the Web Agents API sidebar and reload the demo pa
 
 ### "No tools available"
 
-The built-in `time-wasm` server should be available by default. Check the MCP Servers section in the Harbor sidebar.
+The built-in **Time Server** provides `time.now`, but a listed server may be stopped. In the Harbor sidebar under **MCP Servers**, click **Start** on Time Server, then retry **Check Available Tools** in the demo.
 
 ---
 
