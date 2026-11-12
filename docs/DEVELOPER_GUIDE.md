@@ -744,6 +744,26 @@ const results = await catalog.search('github', 100);
 
 ## LLM Integration
 
+### Internal bridge chat contract
+
+The native bridge accepts `llm.chat` and `llm.chat_stream` requests with
+`messages`, optional `model`, `system_prompt`, `tools`, `temperature`, and
+`max_tokens`. Both modes use the same request preparation: `system_prompt`
+is prepended as a system message, and tool definitions use
+`{ name, description?, input_schema }`. Existing assistant tool calls and tool
+response IDs are preserved. Streaming forwards tools to the provider; its
+existing token/done/error events do not expose tool-call deltas.
+
+The cross-extension API keeps its `system` field and maps it to the bridge's
+`system_prompt`. Non-streaming bridge replies are OpenAI-compatible
+`{ choices, model, ... }` completions. Harbor consumers use the shared
+`llm/chat-response.ts` normalizer, directly or through `bridgeChat`, for text,
+message/tool calls, model and finish reason. Null content in a tool-only reply
+becomes empty text while the message and original choices are preserved;
+malformed completions fail instead of appearing to succeed with no reply.
+Extension pages keep their background RPC transport and share only the parser.
+
+
 Harbor supports multiple LLM providers for local inference.
 
 ### Supported Providers

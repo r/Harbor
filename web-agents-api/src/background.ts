@@ -236,7 +236,7 @@ async function handleAgentRun(
 
     while (toolCallCount < maxToolCalls) {
       type LLMResponse = {
-        content?: string;
+        content: string;
         choices?: Array<{
           message: {
             role: string;
@@ -267,7 +267,7 @@ async function handleAgentRun(
       }
 
       const choice = result.choices?.[0];
-      const responseContent = choice?.message?.content || result.content || '';
+      const responseContent = result.content;
       const toolCalls = choice?.message?.tool_calls;
 
       if (toolCalls && toolCalls.length > 0) {
@@ -349,8 +349,8 @@ async function handleAgentRun(
 
     // Max tool calls reached
     messages.push({ role: 'user', content: 'Please provide your final answer based on the information gathered.' });
-    const finalResult = await harborRequest<{ content?: string; choices?: Array<{ message: { content: string } }> }>('llm.chat', { messages });
-    const finalContent = finalResult.choices?.[0]?.message?.content || finalResult.content || '';
+    const finalResult = await harborRequest<{ content: string }>('llm.chat', { messages });
+    const finalContent = finalResult.content;
     
     sendEvent({
       id: ctx.id,

@@ -2,6 +2,7 @@
  * Agent run handler - autonomous task execution with tool calling.
  */
 
+import { bridgeChat } from '../../llm/chat';
 import type { RequestContext, ResponseSender } from './router-types';
 import { log } from './helpers';
 import { checkPermissions } from '../../policy/permissions';
@@ -124,33 +125,18 @@ Available tools: ${toolNames}`
 
       // Call LLM
       log('Calling LLM with messages:', messages.length, 'tools:', llmTools.length);
-      const llmResult = await bridgeRequest<{
-        choices?: Array<{
-          message: {
-            role: string;
-            content: string;
-            tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
-          };
-          finish_reason?: string;
-        }>;
-      }>('llm.chat', {
+      const llmResult = await bridgeChat({
         messages,
         tools: llmTools.length > 0 ? llmTools : undefined,
       });
 
       log('LLM result received:', llmResult);
       
-      // Extract response from choices[0].message (standard OpenAI format)
-      const choice = llmResult.choices?.[0];
-      if (!choice) {
-        throw new Error('No response from LLM');
-      }
-      
-      const response = choice.message;
+      const response = llmResult.message;
       const toolCalls = response.tool_calls;
       log('Response:', response);
       log('Tool calls:', toolCalls);
-      log('Finish reason:', choice.finish_reason);
+      log('Finish reason:', llmResult.finish_reason);
 
       // Add assistant message to history
       // WORKAROUND: Bridge doesn't support tool_calls in messages, so we encode 
@@ -273,14 +259,12 @@ Available tools: ${toolNames}`
           ];
           
           try {
-            const summaryResult = await bridgeRequest<{
-              choices?: Array<{ message: { content: string } }>;
-            }>('llm.chat', {
+            const summaryResult = await bridgeChat({
               messages: summaryMessages,
               // NO tools - force text response
             });
             
-            const summaryContent = summaryResult.choices?.[0]?.message?.content || resultContent;
+            const summaryContent = summaryResult.content || resultContent;
             log('Summary from LLM:', summaryContent);
             
             sender.sendStreamEvent({

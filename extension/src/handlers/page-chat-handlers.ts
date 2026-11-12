@@ -4,9 +4,9 @@
  * Handlers for the built-in page chat feature.
  */
 
+import { bridgeChat } from '../llm/chat';
 import { registerHandler, errorResponse } from './types';
 import { browserAPI } from '../browser-compat';
-import { bridgeRequest } from '../llm/bridge-client';
 
 export function registerPageChatHandlers(): void {
   // Ping handler for connectivity check
@@ -41,19 +41,12 @@ export function registerPageChatHandlers(): void {
 
         const toolsUsed: Array<{ name: string }> = [];
 
-        const result = await bridgeRequest<{
-          choices?: Array<{ message?: { content?: string; role?: string } }>;
-          message?: { content?: string };
-          content?: string;
-        }>('llm.chat', {
+        const result = await bridgeChat({
           messages,
           max_tokens: 2000,
         });
 
-        const responseText = result.choices?.[0]?.message?.content
-          || result.message?.content
-          || result.content
-          || '';
+        const responseText = result.content;
 
         console.log('[Harbor] page_chat_message response:', responseText.slice(0, 100));
 

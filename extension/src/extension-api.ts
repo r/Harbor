@@ -8,6 +8,7 @@
  *   chrome.runtime.sendMessage(HARBOR_EXTENSION_ID, { type: '...', payload: {...} })
  */
 
+import { bridgeChat, type BridgeChatRequest } from './llm/chat';
 import { browserAPI } from './browser-compat';
 import { bridgeRequest, bridgeStreamRequest, getBridgeConnectionState, checkBridgeHealth } from './llm/bridge-client';
 import { listServersWithStatus, callTool, startServer, stopServer, listTools } from './mcp/host';
@@ -127,41 +128,17 @@ async function handleLlmChat(payload: unknown): Promise<ExtensionApiResponse> {
 
   try {
     // Build request with optional tools
-    const request: Record<string, unknown> = { messages, model, max_tokens, temperature, system };
+    const request: BridgeChatRequest = { messages, model, max_tokens, temperature, system_prompt: system };
     if (tools && tools.length > 0) {
       request.tools = tools;
       log('LLM chat with tools:', tools.map(t => t.name));
     }
 
-    const result = await bridgeRequest<{
-      response?: { role: string; content: string };
-      message?: { content: string };
-      content?: string;
-      model?: string;
-      choices?: Array<{
-        message: {
-          role: string;
-          content: string;
-          tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
-        };
-        finish_reason?: string;
-      }>;
-    }>('llm.chat', request);
+    const result = await bridgeChat(request);
 
     log('LLM chat result:', JSON.stringify(result).substring(0, 500));
 
-    // If response has choices (OpenAI format with tool_calls), return full structure
-    if (result.choices && result.choices.length > 0) {
-      return success({ 
-        content: result.choices[0].message.content || '',
-        model: result.model,
-        choices: result.choices,
-      });
-    }
-
-    // Normalize simple response format
-    const content = result.response?.content || result.message?.content || result.content || '';
-    return success({ content, model: result.model });
+    return success({ content: result.content, model: result.model, choices: result.choices });
   } catch (e) {
     return failure(e);
   }
@@ -885,12 +862,13 @@ async function handleStreamingChat(
   });
   
   const { payload, requestId } = message;
-  const { messages, model, max_tokens, temperature, system } = (payload || {}) as {
+  const { messages, model, max_tokens, temperature, system, tools } = (payload || {}) as {
     messages?: Array<{ role: string; content: string }>;
     model?: string;
     max_tokens?: number;
     temperature?: number;
     system?: string;
+    tools?: BridgeChatRequest['tools'];
   };
 
   log('handleStreamingChat payload:', {
@@ -917,7 +895,7 @@ async function handleStreamingChat(
     log('handleStreamingChat: Starting bridgeStreamRequest with llm.chat_stream');
     let tokenCount = 0;
     
-    for await (const event of bridgeStreamRequest('llm.chat_stream', { messages, model, max_tokens, temperature, system })) {
+    for await (const event of bridgeStreamRequest('llm.chat_stream', { messages, model, max_tokens, temperature, system_prompt: system, tools })) {
       if (event.type === 'token') {
         tokenCount++;
       }

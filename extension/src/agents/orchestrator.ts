@@ -9,6 +9,7 @@
  * - maxToolCalls limit
  */
 
+import { bridgeChat } from '../llm/chat';
 import type {
   AgentRunOptions,
   RunEvent,
@@ -16,7 +17,6 @@ import type {
   Citation,
 } from './types';
 
-import { bridgeRequest } from '../llm/bridge-client';
 import { listServersWithStatus, callTool, startServer } from '../mcp/host';
 import { isToolAllowed } from '../policy/permissions';
 
@@ -121,17 +121,7 @@ async function callLLMWithTools(
 }> {
   // For now, use basic chat and parse tool calls from the response
   // TODO: Use proper function calling when bridge supports it
-  const response = await bridgeRequest<{
-    message: {
-      content: string;
-      tool_calls?: Array<{
-        id: string;
-        type: string;
-        function: { name: string; arguments: string };
-      }>;
-    };
-    finish_reason: string;
-  }>('llm.chat', {
+  const response = await bridgeChat({
     model: model || 'default',
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
     temperature,
@@ -139,8 +129,8 @@ async function callLLMWithTools(
   });
 
   // Parse tool calls from content if not provided
-  const content = response.message?.content || '';
-  const rawToolCalls = response.message?.tool_calls;
+  const content = response.content;
+  const rawToolCalls = response.message.tool_calls;
   
   // Normalize tool_calls to have type: 'function'
   let toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> | undefined;

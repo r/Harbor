@@ -74,4 +74,33 @@ describe('agent.run receiving boundary', () => {
     expect(mocks.harborRequest).toHaveBeenCalledWith('llm.chat', expect.anything());
     expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ done: true, event: { type: 'done' } }));
   });
+  it('uses normalized content as the text contract across the Harbor boundary', async () => {
+    mocks.harborRequest.mockImplementation(async (method) => method === 'mcp.listTools'
+      ? { tools: [] } : { content: 'Canonical reply', choices: [{ message: { role: 'assistant', content: 'Raw provider text' } }] });
+    await run();
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      event: { type: 'token', token: JSON.stringify({ type: 'final', output: 'Canonical reply' }) },
+    }));
+  });
+
+  it('preserves tool-only replies and uses normalized text after the tool budget', async () => {
+    const toolCall = { id: 'call-1', function: { name: 'clock_time', arguments: '{}' } };
+    let calls = 0;
+    mocks.harborRequest.mockImplementation(async (method) => {
+      if (method === 'mcp.listTools') return { tools: [{ name: 'time', serverId: 'clock', description: 'Time', inputSchema: {} }] };
+      if (method === 'mcp.callTool') return { content: [{ type: 'text', text: 'noon' }] };
+      if (method === 'llm.chat') {
+        calls++;
+        return calls === 1
+          ? { content: '', choices: [{ message: { role: 'assistant', content: null, tool_calls: [toolCall] } }] }
+          : { content: 'Noon', choices: [{ message: { role: 'assistant', content: 'Raw text' } }] };
+      }
+    });
+    await receive({ id: 'tool-run', type: 'agent.run', origin: 'https://example.test', payload: { task: 'What time is it?', maxToolCalls: 1 } });
+    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.callTool', expect.anything());
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      event: { type: 'token', token: JSON.stringify({ type: 'final', output: 'Noon' }) },
+    }));
+  });
+
 });
