@@ -7,17 +7,17 @@ import { describe, expect, it, vi } from 'vitest';
 const source = readFileSync(new URL('../injected.ts', import.meta.url), 'utf8');
 const script = transformSync(source, { loader: 'ts', format: 'iife' }).code;
 
-function page(flags?: string) {
+function page(flags) {
   const window = {
     addEventListener: vi.fn(), dispatchEvent: vi.fn(), postMessage: vi.fn(),
-  } as any;
+  };
   runInNewContext(script, {
     window, navigator: {}, crypto: webcrypto, console: { debug: vi.fn(), warn: vi.fn() },
     document: {
       querySelector: () => null,
       getElementById: () => flags === undefined ? null : { textContent: flags },
     },
-    CustomEvent: class { constructor(public type: string, public options: unknown) {} },
+    CustomEvent: class { constructor(type, options) { this.type = type; this.options = options; } },
     setTimeout, clearTimeout, Map, Set, Date, Math,
   });
   return window;
