@@ -185,16 +185,8 @@ impl LlmConfig {
         // it with a bogus `version: 0`.
         if version >= 2 || raw.get("models").is_some() {
             // New format - parse directly
-            let mut config: Self = serde_json::from_value(raw)
+            let config: Self = serde_json::from_value(raw)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            
-            // Ensure default_model is set if there's a default configured model
-            // This syncs the configured models system with the legacy default_model field
-            if config.default_model.is_none() {
-                if let Some(default_model) = config.models.iter().find(|m| m.is_default) {
-                    config.default_model = Some(default_model.model_id.clone());
-                }
-            }
             
             Ok((config, false))
         } else {
@@ -588,6 +580,17 @@ mod tests {
         cfg.default_model = Some("ollama:old".into());
         assert!(cfg.remove_model("old"));
         assert_eq!(cfg.effective_default_model(), None);
+    }
+
+    #[test]
+    fn unavailable_default_stays_unavailable_after_reload() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_model("openai:gpt-4o", None);
+        let (loaded, _) = LlmConfig::parse(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(loaded.effective_default_model(), None);
+        cfg.add_model("ollama:next", None);
+        let (loaded, _) = LlmConfig::parse(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(loaded.effective_default_model().as_deref(), Some("ollama:next"));
     }
 
     #[test]
