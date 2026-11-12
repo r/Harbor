@@ -85,7 +85,7 @@ You don't need to run `install.sh` for Safari; just build and run the Xcode proj
 
 ## Default model selection
 
-Chat and streaming requests share the same default resolver. An explicit request
+Chat, streaming, and the `llm.get_config` response share the same default resolver. An explicit request
 model wins, followed by the legacy `default_model` field, then a configured
 model marked as default, then the first usable configured model. Configured
 fallbacks require an enabled provider with credentials for remote providers;
