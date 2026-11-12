@@ -88,10 +88,12 @@ The extension exposes different APIs based on feature flags. Users control these
 |------|---------|--------------|
 | `textGeneration` | ✅ On | `window.ai.*` |
 | `toolAccess` | ✅ On | `agent.tools.list()`, `agent.tools.call()` |
-| `toolCalling` | ❌ Off | `agent.run()` |
+| `toolCalling` | ✅ On | `agent.run()` |
 | `browserInteraction` | ❌ Off | `agent.browser.activeTab.*` (click, fill, scroll) |
 | `browserControl` | ❌ Off | `agent.browser.navigate()`, `agent.browser.tabs.*`, `agent.browser.fetch()` |
 | `multiAgent` | ❌ Off | `agent.agents.*` |
+
+Agentic Tool Use (`toolCalling`) is enabled by default when no saved value exists. Saved choices, including an explicit off setting, are preserved. Feature availability does not grant site permissions: model and tool requests still go through the existing permission checks. Browser interaction, browser control and multi-agent features remain off by default.
 
 When a feature is disabled, calling its APIs throws an error with code `ERR_FEATURE_DISABLED`.
 
@@ -111,7 +113,7 @@ if (window.ai && window.agent) {
 window.addEventListener('agent-ready', (event) => {
   console.log('Version:', event.detail.version);
   console.log('Features:', event.detail.features);
-  // { textGeneration: true, toolCalling: false, ... }
+  // { textGeneration: true, toolCalling: true, ... }
 });
 ```
 
@@ -228,8 +230,8 @@ Tools, browser access, sessions, and multi-agent capabilities.
 All agent capabilities require user permission. The permission system is **per-origin** — each website must request and be granted permissions separately.
 
 > **Recommended for new code:** call
-> [`agent.requestCapabilities()`](#agentrequestcapabilities) and
-> [`agent.upgradeSession()`](#agentupgradesession) instead of the
+> [`agent.requestCapabilities()`](#agentrequestcapabilitiesoptions) and
+> [`agent.upgradeSession()`](#agentupgradesessionsessionid-options) instead of the
 > legacy `requestPermissions` flow. The new APIs operate in the same
 > typed-action vocabulary as the policy engine, so what you ask for,
 > what the user sees, and what the audit log records all line up.

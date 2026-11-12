@@ -16,82 +16,9 @@ This guide is for developers who want to contribute to Harbor itself. If you're 
 
 ## Getting Started
 
-### Prerequisites
+Use **[the canonical Quickstart](QUICKSTART.md)** to install prerequisites, build both extensions and the native bridge, load Firefox, configure and test a default model, and run the demos. Browser-specific instructions are linked from that guide.
 
-- **Rust** (latest stable, for the native bridge)
-- **Node.js** 18+ (with npm, for the extension)
-- **Firefox** 109+ or **Chrome** 120+ (for testing the extension)
-- **Python 3.9+** with uvx (for Python MCP servers)
-- **Docker** (optional, for isolated server execution)
-- **Git** (with submodule support)
-
-### Initial Setup
-
-```bash
-# Clone with submodules
-git clone --recurse-submodules https://github.com/r/harbor.git
-cd harbor
-
-# If you already cloned without submodules:
-git submodule update --init --recursive
-```
-
-### Full Build
-
-Harbor is **two extensions plus a native bridge**. You need to build all three.
-
-```bash
-# 1. Build the Rust bridge
-cd bridge-rs
-cargo build --release
-./install.sh        # installs the native messaging manifest
-cd ..
-
-# 2. Build the Harbor extension (LLM/MCP infrastructure)
-cd extension
-npm install
-npm run build       # outputs to dist-firefox/ (default); also: build:chrome, build:safari
-cd ..
-
-# 3. Build the Web Agents API extension (window.ai / window.agent)
-cd web-agents-api
-npm install
-npm run build       # outputs to dist-firefox/
-cd ..
-```
-
-> Firefox is the primary target. Use `npm run build:chrome` (or `build:all`) when you need Chrome builds. See `AGENTS.md`.
-
-### Load Extensions for Testing (Firefox)
-
-Build both extensions, then launch them together in a fresh temporary Firefox profile:
-
-```bash
-npm install --prefix tests/e2e
-npm run build
-npm run dev:firefox
-# Optional starting page:
-npm run dev:firefox -- http://localhost:8000/web-agents/
-```
-
-Start the demo server separately (`cd demo && npm start`). The launcher does not
-build or watch files; restart it after rebuilding. Set `FIREFOX` to a Firefox
-binary path if needed. The native bridge must already be built and registered.
-Close the launched Firefox instance or press Ctrl+C to stop it. Your normal
-Firefox profile is not used.
-
-The browser test runner (`cd tests/e2e && npm run test:browser`) uses the same
-launcher. `--keep-open` waits for you to close Firefox or press Ctrl+C after the
-results arrive. Closing Firefox exits with the test result; Ctrl+C interrupts the run.
-
-Alternatively, load both extensions manually:
-
-1. Open Firefox and go to `about:debugging#/runtime/this-firefox`.
-2. Click **Load Temporary Add-on…** and select `extension/dist-firefox/manifest.json` (the Harbor extension).
-3. Click **Load Temporary Add-on…** again and select `web-agents-api/dist-firefox/manifest.json` (the Web Agents API extension).
-4. The Harbor sidebar icon should appear. Open it and confirm "Bridge: Connected".
-
-For Chrome, use `dist-chrome/` instead and follow `docs/QUICKSTART_CHROME.md` (Chrome requires updating the native messaging manifest with the extension ID).
+Then continue below for source layout, watch mode and contribution checks.
 
 ---
 
@@ -174,6 +101,29 @@ harbor/
 ---
 
 ## Development Workflow
+
+### Launch Both Firefox Extensions
+
+After completing the [Quickstart](QUICKSTART.md), build both extensions and launch
+them together in a fresh temporary Firefox profile:
+
+```bash
+npm install --prefix tests/e2e
+npm run build
+npm run dev:firefox
+# Optional starting page:
+npm run dev:firefox -- http://localhost:8000/web-agents/
+```
+
+Start the demo server separately (`cd demo && npm start`). The launcher does not
+build or watch files; restart it after rebuilding. Set `FIREFOX` to a Firefox
+binary path if needed. The native bridge must already be built and registered.
+Close the launched Firefox instance or press Ctrl+C to stop it. Your normal
+Firefox profile is not used.
+
+The browser test runner (`cd tests/e2e && npm run test:browser`) uses the same
+launcher. `--keep-open` waits for you to close Firefox or press Ctrl+C after the
+results arrive. Closing Firefox exits with the test result; Ctrl+C interrupts the run.
 
 ### Watch Mode
 

@@ -56,7 +56,7 @@ interface FeatureFlags {
 function getFeatureFlags(): FeatureFlags {
   const defaults: FeatureFlags = {
     textGeneration: true,
-    toolCalling: false,
+    toolCalling: true,
     toolAccess: true,
     browserInteraction: false,
     browserControl: false,

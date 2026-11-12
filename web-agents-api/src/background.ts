@@ -162,14 +162,26 @@ async function handleAgentRun(
 
   console.log('[Web Agents API] agent.run starting:', { task, maxToolCalls, origin: ctx.origin });
 
-  // Check permissions
-  if (!await hasPermission(ctx.origin, 'model:prompt')) {
+  // Enforce the setting at the receiver: a page can send transport messages
+  // directly, without going through the injected API's disabled wrapper.
+  if (!(await getFeatureFlags()).toolCalling) {
     sendEvent({
       id: ctx.id,
-      event: { type: 'error', error: { code: 'ERR_PERMISSION_DENIED', message: 'Permission model:prompt required' } },
+      event: { type: 'error', error: { code: 'ERR_FEATURE_DISABLED', message: 'Agentic Tool Use is disabled' } },
       done: true,
     });
     return;
+  }
+
+  for (const scope of ['model:prompt', 'model:tools'] as const) {
+    if (!await hasPermission(ctx.origin, scope)) {
+      sendEvent({
+        id: ctx.id,
+        event: { type: 'error', error: { code: 'ERR_PERMISSION_DENIED', message: `Permission ${scope} required` } },
+        done: true,
+      });
+      return;
+    }
   }
 
   try {

@@ -10,10 +10,10 @@
 → **[Web Agent API Overview](../spec/README.md)** — Why this exists, the problem it solves, and how it works
 
 ### Try the demos
-→ **[Quickstart](../QUICKSTART.md)** — Install Harbor and run demos in 5 minutes
+→ **[Quickstart](../QUICKSTART.md)** — Canonical installation, model configuration and demo guide
 
 ### Build an app using the API
-→ **[Quickstart Part 2](../QUICKSTART.md#part-2-build-your-first-app)** — Write your first AI-powered web app
+→ **[Quickstart Part 2](../QUICKSTART.md#build-your-first-app)** — Write your first AI-powered web app
 
 → **[Web Agents API Reference](WEB_AGENTS_API.md)** — Complete API documentation
 
@@ -23,7 +23,7 @@
 → **[Testing your app](TESTING_YOUR_APP.md)** — Generate a test harness (mock + Playwright E2E) with `node scripts/generate-test-harness.mjs <target-dir>` from the Harbor repo
 
 ### Create custom tools (MCP servers)
-→ **[Quickstart Part 3](../QUICKSTART.md#part-3-create-your-own-tools)** — Build your first MCP server in 15 minutes
+→ **[Quickstart Part 3](../QUICKSTART.md#create-your-own-tools)** — Build your first MCP server in 15 minutes
 
 → **[MCP Authoring Guide](../mcp-servers/AUTHORING_GUIDE.md)** — Complete guide to writing MCP servers
 
@@ -43,8 +43,8 @@
 |----------|-------------|
 | [README](../README.md) | Project overview and quick links |
 | [Quickstart](../QUICKSTART.md) | Build, install, run demos, create your first app |
-| [Firefox Setup](QUICKSTART_FIREFOX.md) | Detailed Firefox setup (primary browser) |
-| [Chrome Setup](QUICKSTART_CHROME.md) | Detailed Chrome/Chromium setup |
+| [Firefox Setup](QUICKSTART_FIREFOX.md) | Links to canonical Firefox setup |
+| [Chrome Setup](QUICKSTART_CHROME.md) | Chrome-specific loading and native messaging |
 | [Safari Setup](QUICKSTART_SAFARI.md) | Safari setup (experimental) |
 
 ### For Developers (Building ON the API)
@@ -63,7 +63,7 @@
 
 | Document | Description |
 |----------|-------------|
-| **[Quickstart Part 3](../QUICKSTART.md#part-3-create-your-own-tools)** | Create your first tool in 15 minutes |
+| **[Quickstart Part 3](../QUICKSTART.md#create-your-own-tools)** | Create your first tool in 15 minutes |
 | **[MCP Authoring Guide](../mcp-servers/AUTHORING_GUIDE.md)** | Complete guide (JS and WASM) |
 | **[OAuth Guide](OAUTH_GUIDE.md)** | OAuth setup, integration, and troubleshooting |
 | [JS Template](../mcp-servers/templates/javascript/) | Copy-paste JavaScript starter |
@@ -139,15 +139,15 @@
 
 | Task | Document |
 |------|----------|
-| Install Harbor | [User Guide](USER_GUIDE.md#installation) |
-| Set up Ollama | [User Guide](USER_GUIDE.md#setting-up-an-llm-provider) |
+| Install Harbor | [Quickstart](../QUICKSTART.md) |
+| Set up Ollama | [Quickstart](../QUICKSTART.md#configure-a-model) |
 | Request permissions | [Web Agents API](WEB_AGENTS_API.md#permissions) |
 | Create a chat session | [Web Agents API](WEB_AGENTS_API.md#windowai-api) |
 | Call MCP tools | [Web Agents API](WEB_AGENTS_API.md#tools) |
 | Run autonomous agents | [Web Agents API](WEB_AGENTS_API.md#autonomous-agent) |
 | Understand feature flags | [Web Agents API](WEB_AGENTS_API.md#feature-flags) |
 | **Test your app** (mock + E2E) | [Testing your app](TESTING_YOUR_APP.md) |
-| **Create a JS MCP server** | [Quickstart Part 3](../QUICKSTART.md#part-3-create-your-own-tools) |
+| **Create a JS MCP server** | [Quickstart Part 3](../QUICKSTART.md#create-your-own-tools) |
 | **Create a WASM MCP server** | [MCP Authoring Guide](../mcp-servers/AUTHORING_GUIDE.md#wasm-servers-rust) |
 | **Add OAuth to MCP server** | [OAuth Guide](OAUTH_GUIDE.md#for-mcp-server-authors) |
 | **Set up OAuth credentials** | [OAuth Guide](OAUTH_GUIDE.md#for-developers-setting-up-harbor) |
