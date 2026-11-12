@@ -83,6 +83,23 @@ You don't need to run `install.sh` for Safari; just build and run the Xcode proj
 
 ---
 
+## Default model selection
+
+Chat and streaming requests share the same default resolver. An explicit request
+model wins, followed by the legacy `default_model` field, then a configured
+model marked as default, then the first usable configured model. Configured
+fallbacks require an enabled provider with credentials for remote providers;
+local Ollama, Llamafile, and LM Studio can be auto-detected when no instance is
+configured. This checks configuration, not whether the provider is online.
+
+Removing a configured model clears a matching legacy default, so later requests
+use the remaining default rather than the removed model. Removing the last model
+leaves no default unless a different legacy default was configured. If no usable
+default remains, a request without a model fails with "No model specified and no
+default model configured".
+
+---
+
 ## Development
 
 ### Run Directly (for testing)

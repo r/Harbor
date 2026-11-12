@@ -411,8 +411,23 @@ impl LlmConfig {
     /// Get the default model.
     #[allow(dead_code)]
     pub fn get_default_model(&self) -> Option<&ModelAlias> {
-        self.models.iter().find(|m| m.is_default)
-            .or_else(|| self.models.first())
+        self.models.iter().find(|m| m.is_default && self.model_provider_configured(&m.model_id))
+            .or_else(|| self.models.iter().find(|m| self.model_provider_configured(&m.model_id)))
+    }
+
+    /// Match the provider used by request routing, without contacting it.
+    /// Local providers can be auto-detected unless an instance is configured.
+    fn model_provider_configured(&self, model_id: &str) -> bool {
+        let Some((provider, _)) = model_id.split_once(':') else {
+            return false;
+        };
+        if let Some(instance) = self.resolve_provider(provider) {
+            instance.enabled && (matches!(instance.provider_type.as_str(), "ollama" | "llamafile" | "lmstudio")
+                || instance.api_key.as_ref().is_some_and(|key| !key.trim().is_empty()))
+        } else {
+            matches!(provider, "ollama" | "llamafile" | "lmstudio")
+                && self.get_instances_by_type(provider).is_empty()
+        }
     }
 
     /// Model ID to use when a request doesn't name one: the legacy
@@ -458,11 +473,15 @@ impl LlmConfig {
 
     /// Remove a model by name.
     pub fn remove_model(&mut self, name: &str) -> bool {
+        let removed_model_id = self.get_model(name).map(|model| model.model_id.clone());
         let initial_len = self.models.len();
         self.models.retain(|m| m.name != name);
         
         let removed = self.models.len() < initial_len;
-        
+        if removed && self.default_model == removed_model_id {
+            self.default_model = None;
+        }
+
         // If we removed the default, set a new default
         if removed && !self.models.iter().any(|m| m.is_default) {
             if let Some(first) = self.models.first_mut() {
@@ -549,6 +568,80 @@ mod tests {
         cfg.default_model = Some("openai:gpt-4o".to_string());
         assert_eq!(cfg.effective_default_model().as_deref(), Some("openai:gpt-4o"));
     }
+    #[test]
+    fn removing_default_clears_legacy_and_uses_remaining_model() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_model("ollama:old", Some("old"));
+        cfg.add_model("ollama:next", Some("next"));
+        cfg.default_model = Some("ollama:old".into());
+        assert!(cfg.remove_model("old"));
+        assert_eq!(cfg.default_model, None);
+        assert_eq!(cfg.effective_default_model().as_deref(), Some("ollama:next"));
+        let (loaded, _) = LlmConfig::parse(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(loaded.effective_default_model().as_deref(), Some("ollama:next"));
+    }
+
+    #[test]
+    fn removing_last_model_clears_legacy_default() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_model("ollama:old", Some("old"));
+        cfg.default_model = Some("ollama:old".into());
+        assert!(cfg.remove_model("old"));
+        assert_eq!(cfg.effective_default_model(), None);
+    }
+
+    #[test]
+    fn unrelated_removal_preserves_legacy_default() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_model("ollama:other", Some("other"));
+        cfg.default_model = Some("ollama:legacy".into());
+        assert!(!cfg.remove_model("missing"));
+        assert!(cfg.remove_model("other"));
+        assert_eq!(cfg.effective_default_model().as_deref(), Some("ollama:legacy"));
+    }
+
+    #[test]
+    fn fallback_skips_missing_or_disabled_remote_provider() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_model("openai:gpt-4o", None);
+        assert_eq!(cfg.effective_default_model(), None);
+        let mut instance = ProviderInstance::with_id("openai", "openai", "Test");
+        instance.api_key = Some("test-key".into());
+        instance.enabled = false;
+        cfg.add_instance(instance);
+        assert_eq!(cfg.effective_default_model(), None);
+        cfg.providers.get_mut("openai").unwrap().enabled = true;
+        assert_eq!(cfg.effective_default_model().as_deref(), Some("openai:gpt-4o"));
+    }
+
+    #[test]
+    fn fallback_skips_remote_provider_without_credentials() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_instance(ProviderInstance::with_id("openai", "openai", "Test"));
+        cfg.add_model("openai:gpt-4o", None);
+        assert_eq!(cfg.effective_default_model(), None);
+    }
+
+    #[test]
+    fn unmarked_fallback_skips_unavailable_model() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_model("openai:gpt-4o", None);
+        cfg.add_model("ollama:next", None);
+        cfg.models.iter_mut().for_each(|m| m.is_default = false);
+        assert_eq!(cfg.effective_default_model().as_deref(), Some("ollama:next"));
+    }
+
+    #[test]
+    fn fallback_respects_disabled_local_provider() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_model("ollama:local", None);
+        assert_eq!(cfg.effective_default_model().as_deref(), Some("ollama:local"));
+        let mut local = ProviderInstance::with_id("ollama", "ollama", "Local");
+        local.enabled = false;
+        cfg.add_instance(local);
+        assert_eq!(cfg.effective_default_model(), None);
+    }
+
     #[test]
     fn version_zero_file_with_models_keeps_its_models() {
         // What an older build wrote after the first model was added.
