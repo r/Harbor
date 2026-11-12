@@ -100,21 +100,37 @@ pub async fn chat(params: serde_json::Value) -> Result<serde_json::Value, RpcErr
         message: format!("Invalid params: {}", e),
     })?;
 
-    // Use provided model or fall back to default
-    let model = request.model.or_else(|| {
-        get_config().and_then(|c| c.effective_default_model())
-    }).ok_or_else(|| RpcError {
-        code: -32602,
-        message: "No model specified and no default model configured".to_string(),
+    let completion_request = prepare_completion_request(request, false)?;
+
+    let response = completion(completion_request).await.map_err(|e| RpcError {
+        code: -32001,
+        message: format!("LLM error: {}", e),
     })?;
+
+    Ok(serde_json::to_value(response).unwrap())
+}
+
+/// Build the provider request used by chat and chat_stream.
+fn prepare_completion_request(
+    request: ChatRequest,
+    stream: bool,
+) -> Result<CompletionRequest, RpcError> {
+    // Use provided model or fall back to default
+    let model = request
+        .model
+        .or_else(|| get_config().and_then(|c| c.effective_default_model()))
+        .ok_or_else(|| RpcError {
+            code: -32602,
+            message: "No model specified and no default model configured".to_string(),
+        })?;
 
     // Build messages, prepending system prompt if provided
     let mut messages: Vec<Message> = Vec::new();
-    
+
     if let Some(system_prompt) = &request.system_prompt {
         messages.push(Message::system(system_prompt.clone()));
     }
-    
+
     messages.extend(request.messages.into_iter().map(to_llm_message));
 
     // Convert tool definitions to any-llm format
@@ -133,22 +149,16 @@ pub async fn chat(params: serde_json::Value) -> Result<serde_json::Value, RpcErr
 
     let provider_config = get_provider_config_for_model(&model);
 
-    let completion_request = CompletionRequest {
+    Ok(CompletionRequest {
         model,
         messages,
         tools,
         temperature: request.temperature,
         max_tokens: request.max_tokens,
         api_key: provider_config.and_then(|c| c.api_key.flatten()),
+        stream: stream.then_some(true),
         ..Default::default()
-    };
-
-    let response = completion(completion_request).await.map_err(|e| RpcError {
-        code: -32001,
-        message: format!("LLM error: {}", e),
-    })?;
-
-    Ok(serde_json::to_value(response).unwrap())
+    })
 }
 
 /// Get provider configuration for a specific provider instance or type.
@@ -858,12 +868,9 @@ pub async fn chat_stream(
     
     match request {
         Ok(request) => {
-            // Use provided model or fall back to default
-            let model = match request.model.or_else(|| {
-                get_config().and_then(|c| c.effective_default_model())
-            }) {
-                Some(m) => m,
-                None => {
+            let completion_request = match prepare_completion_request(request, true) {
+                Ok(request) => request,
+                Err(error) => {
                     let _ = event_tx.send(StreamEvent {
                         id: request_id,
                         event_type: "error".to_string(),
@@ -871,32 +878,14 @@ pub async fn chat_stream(
                         finish_reason: None,
                         model: None,
                         error: Some(serde_json::json!({
-                            "code": -32602,
-                            "message": "No model specified and no default model configured"
+                            "code": error.code,
+                            "message": error.message
                         })),
                     }).await;
                     return;
                 }
             };
-
-            // Build completion request
-            let messages: Vec<Message> = request
-                .messages
-                .into_iter()
-                .map(to_llm_message)
-                .collect();
-
-            let provider_config = get_provider_config_for_model(&model);
-
-            let completion_request = CompletionRequest {
-                model: model.clone(),
-                messages,
-                temperature: request.temperature,
-                max_tokens: request.max_tokens,
-                api_key: provider_config.and_then(|c| c.api_key.flatten()),
-                stream: Some(true),
-                ..Default::default()
-            };
+            let model = completion_request.model.clone();
 
             // Try to create stream
             match completion_stream(completion_request).await {
@@ -983,6 +972,97 @@ mod message_tests {
 
     fn msg(json: serde_json::Value) -> Message {
         to_llm_message(serde_json::from_value(json).unwrap())
+    }
+
+    fn request() -> ChatRequest {
+        serde_json::from_value(serde_json::json!({
+            "model": "ollama:test",
+            "system_prompt": "Answer briefly.",
+            "temperature": 0.25,
+            "max_tokens": 32,
+            "messages": [
+                { "role": "user", "content": "What time is it?" },
+                { "role": "assistant", "content": "", "tool_calls": [{
+                    "id": "call_1", "type": "function",
+                    "function": { "name": "time_now", "arguments": "{}" }
+                }] },
+                { "role": "tool", "content": "12:00", "tool_call_id": "call_1" }
+            ],
+            "tools": [{ "name": "time_now", "description": "Get time" }]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn streaming_request_prepends_system_prompt() {
+        let prepared = prepare_completion_request(request(), true).unwrap();
+        assert!(matches!(prepared.messages[0].role, MessageRole::System));
+        assert_eq!(
+            serde_json::to_value(&prepared.messages[0]).unwrap()["content"],
+            "Answer briefly."
+        );
+    }
+
+    #[test]
+    fn streaming_request_keeps_tool_definitions() {
+        let prepared = prepare_completion_request(request(), true).unwrap();
+        let tools = prepared.tools.expect("streaming tools kept");
+        assert_eq!(tools[0].tool_type, "function");
+        assert_eq!(tools[0].function.name, "time_now");
+        assert_eq!(tools[0].function.description.as_deref(), Some("Get time"));
+        assert_eq!(tools[0].function.parameters, default_input_schema());
+    }
+
+    #[test]
+    fn chat_modes_prepare_identical_options_and_tool_history() {
+        let chat = prepare_completion_request(request(), false).unwrap();
+        let mut stream = prepare_completion_request(request(), true).unwrap();
+        assert_eq!(stream.stream, Some(true));
+        assert_eq!(stream.temperature, Some(0.25));
+        assert_eq!(stream.max_tokens, Some(32));
+        assert_eq!(stream.model, "ollama:test");
+        stream.stream = None;
+        assert_eq!(
+            serde_json::to_value(chat).unwrap(),
+            serde_json::to_value(&stream).unwrap()
+        );
+        assert_eq!(
+            stream.messages[2].tool_calls.as_ref().unwrap()[0].id,
+            "call_1"
+        );
+        assert_eq!(stream.messages[3].tool_call_id.as_deref(), Some("call_1"));
+    }
+
+    #[test]
+    fn requests_without_optional_fields_keep_the_user_message() {
+        for stream in [false, true] {
+            let request = serde_json::from_value(serde_json::json!({
+                "model": "ollama:test",
+                "messages": [{ "role": "user", "content": "hello" }]
+            }))
+            .unwrap();
+            let prepared = prepare_completion_request(request, stream).unwrap();
+            assert_eq!(prepared.messages.len(), 1);
+            assert!(matches!(prepared.messages[0].role, MessageRole::User));
+            assert!(prepared.tools.is_none());
+            assert_eq!(prepared.stream, stream.then_some(true));
+        }
+    }
+
+    #[tokio::test]
+    async fn chat_modes_reject_invalid_request_fields() {
+        let params = serde_json::json!({
+            "model": "ollama:test", "messages": "not an array"
+        });
+        let error = chat(params.clone()).await.unwrap_err();
+        assert_eq!(error.code, -32602);
+        assert!(error.message.starts_with("Invalid params:"));
+        let (tx, mut rx) = mpsc::channel(1);
+        chat_stream(serde_json::json!("invalid-request"), params, tx).await;
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.event_type, "error");
+        assert_eq!(event.id, "invalid-request");
+        assert_eq!(event.error.unwrap()["code"], -32602);
     }
 
     #[test]
