@@ -31,6 +31,7 @@
     "test:e2e": "npm test --prefix tests/e2e",
     "test:e2e:debug": "npm run test:debug --prefix tests/e2e",
     "test:e2e:ui": "npm run test:ui --prefix tests/e2e",
-    "test:setup": "npm run build && cd bridge-rs && cargo build --release && ./install.sh --firefox-only --skip-build"
+    "test:setup": "npm run build && cd bridge-rs && cargo build --release && ./install.sh --firefox-only --skip-build",
+    "dev:firefox": "node scripts/dev-firefox.mjs"
   }
 }

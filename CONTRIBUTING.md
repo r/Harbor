@@ -102,6 +102,29 @@ harbor/
 
 ## Development Workflow
 
+### Launch Both Firefox Extensions
+
+After completing the [Quickstart](QUICKSTART.md), build both extensions and launch
+them together in a fresh temporary Firefox profile:
+
+```bash
+npm install --prefix tests/e2e
+npm run build
+npm run dev:firefox
+# Optional starting page:
+npm run dev:firefox -- http://localhost:8000/web-agents/
+```
+
+Start the demo server separately (`cd demo && npm start`). The launcher does not
+build or watch files; restart it after rebuilding. Set `FIREFOX` to a Firefox
+binary path if needed. The native bridge must already be built and registered.
+Close the launched Firefox instance or press Ctrl+C to stop it. Your normal
+Firefox profile is not used.
+
+The browser test runner (`cd tests/e2e && npm run test:browser`) uses the same
+launcher. `--keep-open` waits for you to close Firefox or press Ctrl+C after the
+results arrive. Closing Firefox exits with the test result; Ctrl+C interrupts the run.
+
 ### Watch Mode
 
 For active development:

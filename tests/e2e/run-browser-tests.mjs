@@ -4,47 +4,27 @@
  * 
  * This script:
  * 1. Starts a local server to serve test pages
- * 2. Launches Firefox with web-ext and the Web Agents API extension
+ * 2. Launches Firefox with both Harbor and Web Agents API extensions
  * 3. Captures results via HTTP endpoint
  * 4. Exits with appropriate code
  * 
- * Note: This test verifies that the Web Agents API extension can inject
- * window.ai and window.agent into web pages. For full functionality tests,
- * both Harbor and Web Agents API extensions need to be installed.
+ * Both Firefox builds are installed in a fresh temporary profile.
+ * The native bridge must already be registered for full functionality tests.
  * 
  * Usage:
  *   node run-browser-tests.mjs [--timeout=60000] [--keep-open]
  */
 
-import { spawn, exec } from 'child_process';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { launchFirefox } from '../../scripts/firefox-runner.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Track child processes for cleanup
-let childProcesses = [];
-
-// Kill process tree (works on macOS/Linux)
-function killProcessTree(pid) {
-  return new Promise((resolve) => {
-    exec(`pkill -P ${pid}`, () => {
-      try {
-        process.kill(pid, 'SIGTERM');
-      } catch (e) {}
-      resolve();
-    });
-  });
-}
-
-// Kill all Firefox processes started by web-ext (temporary profiles)
-function killWebExtFirefox() {
-  return new Promise((resolve) => {
-    exec(`pkill -f 'firefox.*firefox-profile'`, () => resolve());
-  });
-}
+let firefoxSession;
+let interrupted = false;
+const controller = new AbortController();
 
 // Parse args
 const args = process.argv.slice(2);
@@ -202,98 +182,35 @@ function checkBuilds() {
   console.log('[build] ✓ Web Agents API extension ready (Firefox)');
 }
 
-// Launch Firefox with web-ext
-function launchFirefox(testUrl, testResultsPromise) {
-  return new Promise((resolve, reject) => {
-    console.log(`[firefox] Launching with web-ext...`);
-    
-    // Use web-ext to load the Web Agents API extension
-    // This extension injects window.ai and window.agent into pages
-    const webExtArgs = [
-      'web-ext', 'run',
-      '--source-dir', config.webAgentsExtPath,
-      '--start-url', testUrl,
-      '--no-reload',
-    ];
-    
-    console.log(`[firefox] Command: npx ${webExtArgs.join(' ')}`);
-    console.log(`[firefox] Note: Loading Web Agents API extension (provides window.ai/window.agent)`);
-    
-    const webExt = spawn('npx', webExtArgs, {
-      cwd: __dirname,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env },
-    });
-    
-    childProcesses.push(webExt);
-    console.log(`[firefox] Process started (PID: ${webExt.pid})`);
-    
-    let extensionLoaded = false;
-    
-    const processOutput = (data) => {
-      const text = data.toString();
-      
-      for (const line of text.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        
-        // Check for extension loading
-        if (line.includes('Installed') && line.includes('temporary add-on')) {
-          if (!extensionLoaded) {
-            extensionLoaded = true;
-            console.log('[firefox] ✓ Web Agents API extension loaded');
-          }
-        }
-        
-        // Log errors
-        if (line.includes('error') || line.includes('Error')) {
-          console.log(`[web-ext] ${trimmed}`);
-        }
-      }
-    };
-    
-    webExt.stdout.on('data', processOutput);
-    webExt.stderr.on('data', processOutput);
-    
-    webExt.on('error', (err) => {
-      reject(err);
-    });
-    
-    async function cleanup() {
-      if (webExt.pid) {
-        await killProcessTree(webExt.pid);
-      }
-      await killWebExtFirefox();
-    }
-    
-    // Set up timeout
-    const timeout = setTimeout(async () => {
-      console.log(`\n[timeout] Test timed out after ${config.timeout/1000}s`);
-      console.log('[timeout] This may mean the extension did not load properly.');
-      console.log('[timeout] Try running with --keep-open to investigate.');
-      await cleanup();
-      reject(new Error('Test timed out'));
+// The same two-extension launcher used by npm run dev:firefox.
+async function runBrowserTests(testUrl, testResultsPromise) {
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(`Test timed out after ${config.timeout / 1000}s`);
+      controller.abort(error);
+      reject(error);
     }, config.timeout);
-    
-    // Wait for test results from HTTP endpoint
-    testResultsPromise.then(async (results) => {
-      clearTimeout(timeout);
-      
-      if (!config.keepOpen) {
-        await cleanup();
-        resolve(results);
-      } else {
-        console.log('\n[keep-open] Tests complete. Firefox stays open for manual inspection.');
-        console.log('[keep-open] Press Ctrl+C to exit.\n');
-        resolve(results);
-      }
-    });
-    
-    webExt.on('exit', (code, signal) => {
-      console.log(`[firefox] Process exited (code: ${code}, signal: ${signal})`);
-      clearTimeout(timeout);
-    });
   });
+  try {
+    firefoxSession = await Promise.race([
+      launchFirefox({ startUrl: testUrl, signal: controller.signal }), deadline,
+    ]);
+    const results = await Promise.race([
+      testResultsPromise,
+      firefoxSession.closed.then(() => { throw new Error('Firefox closed before test results arrived'); }),
+      deadline,
+    ]);
+    clearTimeout(timer);
+    if (config.keepOpen) {
+      console.log('[keep-open] Tests complete. Close Firefox or press Ctrl+C to exit.');
+      await firefoxSession.closed;
+    }
+    return results;
+  } finally {
+    clearTimeout(timer);
+    await firefoxSession?.close();
+  }
 }
 
 // Main
@@ -314,34 +231,33 @@ async function main() {
       console.log('[test] Keep-open mode: Firefox will stay open for manual testing\n');
     }
     
-    const results = await launchFirefox(testUrl, testResultsPromise);
+    const results = await runBrowserTests(testUrl, testResultsPromise);
     
     server.close();
     
+    if (interrupted) return;
     if (results.failed === 0) {
       console.log('\n✅ All browser tests passed!');
-      process.exit(0);
+      process.exitCode = 0;
     } else {
       console.log('\n❌ Some browser tests failed');
-      process.exit(1);
+      process.exitCode = 1;
     }
   } catch (err) {
     server.close();
     console.error('\n❌ Test error:', err.message);
-    process.exit(1);
+    if (!interrupted) process.exitCode = 1;
   }
 }
 
-// Handle Ctrl+C
-process.on('SIGINT', async () => {
-  console.log('\n[interrupted] Cleaning up...');
-  await killWebExtFirefox();
-  for (const proc of childProcesses) {
-    if (proc.pid) {
-      await killProcessTree(proc.pid);
-    }
-  }
-  process.exit(130);
-});
+// Only close the browser owned by this invocation.
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, async () => {
+    interrupted = true;
+    process.exitCode = signal === 'SIGINT' ? 130 : 143;
+    controller.abort(new Error(`Interrupted by ${signal}`));
+    if (firefoxSession) await firefoxSession.close();
+  });
+}
 
 main();
