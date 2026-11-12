@@ -5,6 +5,7 @@
  * Integrates with the Rust bridge for LLM operations.
  */
 
+import { bridgeChat } from '../llm/chat';
 import type {
   TextSessionOptions,
   AILanguageModelCreateOptions,
@@ -167,17 +168,13 @@ export async function prompt(sessionId: string, origin: string, input: string): 
   }
 
   // Call bridge
-  const response = await bridgeRequest<{
-    message: { content: string };
-    model: string;
-    finish_reason: string;
-  }>('llm.chat', {
+  const response = await bridgeChat({
     model,
     messages,
     temperature: session.options.temperature,
   });
 
-  const assistantContent = response.message?.content || '';
+  const assistantContent = response.content;
 
   // Update session history
   session.history.push({ role: 'user', content: input });
@@ -262,17 +259,13 @@ export async function* promptStreaming(
   } catch (error) {
     // Fallback to non-streaming if SSE fails
     try {
-      const response = await bridgeRequest<{
-        message: { content: string };
-        model: string;
-        finish_reason: string;
-      }>('llm.chat', {
+      const response = await bridgeChat({
         model,
         messages,
         temperature: session.options.temperature,
       });
 
-      const assistantContent = response.message?.content || '';
+      const assistantContent = response.content;
       session.history.push({ role: 'assistant', content: assistantContent });
 
       // Emit content in chunks

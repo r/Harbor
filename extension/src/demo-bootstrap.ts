@@ -8,6 +8,7 @@
 // Make this a module to avoid global scope conflicts
 export {};
 
+import { normalizeChatResponse } from './llm/chat-response';
 import { browserAPI } from './browser-compat';
 
 // Types
@@ -195,14 +196,10 @@ const ai = {
         }
         
         // Bridge returns CompletionResponse in OpenAI-compatible format
-        const result = await bridgeRequest<{ 
-          content?: string; 
-          message?: { content?: string; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> };
-          choices?: Array<{ message?: { content?: string; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }; finish_reason?: string }>;
-        }>('llm.chat', requestParams);
+        const result = normalizeChatResponse(await bridgeRequest<unknown>('llm.chat', requestParams));
         
         // Check for native tool calls
-        const toolCalls = result.choices?.[0]?.message?.tool_calls || result.message?.tool_calls;
+        const toolCalls = result.message.tool_calls;
         if (toolCalls && toolCalls.length > 0) {
           // Return the tool call as JSON so it can be parsed
           const tc = toolCalls[0];
@@ -219,14 +216,8 @@ const ai = {
           return content;
         }
         
-        // Handle different response formats:
-        // 1. OpenAI format: choices[0].message.content
-        // 2. Simple format: content
-        // 3. Message format: message.content
-        const content = result.choices?.[0]?.message?.content 
-          || result.content 
-          || result.message?.content;
-          
+        const content = result.content;
+
         if (!content) {
           console.error('[demo-bootstrap] Unexpected LLM response format:', result);
           throw new Error('LLM returned empty or unexpected response');

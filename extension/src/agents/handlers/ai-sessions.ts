@@ -2,6 +2,7 @@
  * AI session and provider handlers.
  */
 
+import { bridgeChat } from '../../llm/chat';
 import type { RequestContext, ResponseSender } from './router-types';
 import { log, requireAction } from './helpers';
 import { bridgeRequest } from '../../llm/bridge-client';
@@ -134,22 +135,12 @@ export async function handleSessionPrompt(
     session.history.push({ role: 'user', content: payload.input });
 
     // Call LLM
-    const result = await bridgeRequest<{
-      choices?: Array<{ message?: { role: string; content: string } }>;
-      response?: { role: string; content: string };
-      message?: { role: string; content: string };
-      content?: string;
-    }>('llm.chat', {
+    const result = await bridgeChat({
       messages: session.history,
-      model: session.options.model,
+      model: typeof session.options.model === 'string' ? session.options.model : undefined,
     });
 
-    // Extract content - bridge returns in choices[0].message.content format
-    const content = result.choices?.[0]?.message?.content 
-      || result.response?.content 
-      || result.message?.content 
-      || result.content 
-      || '';
+    const content = result.content;
 
     log('Session prompt result:', content.slice(0, 100));
 

@@ -4,6 +4,7 @@
  * Handlers for LLM provider and model management.
  */
 
+import { bridgeChat } from '../llm/chat';
 import { registerHandler, errorResponse } from './types';
 import { bridgeRequest } from '../llm/bridge-client';
 
@@ -176,13 +177,13 @@ export function registerLlmHandlers(): void {
       return true;
     }
     console.log('[Harbor] Testing model:', model);
-    bridgeRequest<{ message?: { content?: string }; content?: string }>('llm.chat', {
+    bridgeChat({
       model,
       messages: [{ role: 'user', content: 'Say "hello" in exactly one word.' }],
       max_tokens: 10,
     })
       .then((result) => {
-        const response = result.message?.content || result.content || '';
+        const response = result.content;
         console.log('[Harbor] Test result:', response);
         sendResponse({ ok: true, response });
       })
@@ -203,8 +204,8 @@ export function registerLlmHandlers(): void {
       sendResponse({ ok: false, error: 'Missing messages' });
       return true;
     }
-    bridgeRequest<{ response: { role: string; content: string }; model: string }>('llm.chat', { messages, model })
-      .then((result) => sendResponse({ ok: true, response: result.response, model: result.model }))
+    bridgeChat({ messages, model })
+      .then((result) => sendResponse({ ok: true, response: result.message, model: result.model }))
       .catch((error) => sendResponse(errorResponse(error)));
     return true;
   });
