@@ -160,6 +160,18 @@ cd ..
 
 → See [Firefox Setup](QUICKSTART_FIREFOX.md) or [Chrome Setup](QUICKSTART_CHROME.md) for detailed instructions.
 
+On macOS with Homebrew's libvips installed, sharp may try to build from source
+and fail with `Please add node-addon-api to your dependencies`. Retry the
+extension installs using sharp's prebuilt binaries:
+
+```bash
+SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --prefix extension
+SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --prefix web-agents-api
+```
+
+Run these from the repository root, then retry `npm run build`.
+See [sharp's installation guide](https://sharp.pixelplumbing.com/install/#building-from-source).
+
 ### Quick Test
 
 ```javascript
