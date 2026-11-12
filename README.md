@@ -50,80 +50,11 @@ With the Web Agent API:
 
 **Get Harbor running in 10 minutes.**
 
-### Prerequisites
+Follow **[QUICKSTART.md](QUICKSTART.md)** for the canonical setup: build both extensions and the bridge, load Firefox, add a default model under **LLM Providers → Configured Models**, test it, and run the demos.
 
-| Tool | Install |
-|------|---------|
-| **Node.js 18+** | [nodejs.org](https://nodejs.org) |
-| **Rust** | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| **Ollama** | [ollama.com](https://ollama.com) or `brew install ollama` |
-| **Firefox 109+** or **Chrome 120+** | Firefox recommended |
+The guide also covers the Getting Started demo's **Agentic Tool Use** setting and site permissions. A detected Ollama provider alone does not mean a model is configured.
 
-### 1. Clone and Build
-
-```bash
-git clone --recurse-submodules https://github.com/r/harbor.git
-cd harbor
-
-# If you already cloned without --recurse-submodules:
-git submodule update --init --recursive
-```
-
-```bash
-# Build the Harbor extension
-cd extension && npm install && npm run build && cd ..
-
-# Build the Web Agents API extension
-cd web-agents-api && npm install && npm run build && cd ..
-
-# Build and install the native bridge
-cd bridge-rs && cargo build --release && ./install.sh && cd ..
-```
-
-### 2. Start Ollama
-
-```bash
-ollama serve &
-ollama pull llama3.2
-```
-
-### 3. Load Extensions
-
-The system requires **two extensions** working together:
-- **Harbor** — Infrastructure layer (LLM provider connections, MCP server hosting, native bridge, chat sidebar)
-- **Web Agents API** — Web Agent API implementation (injects `window.ai` / `window.agent` into web pages, delegates to Harbor for LLM/MCP)
-
-**Firefox:**
-1. Go to `about:debugging#/runtime/this-firefox`
-2. Click "Load Temporary Add-on..."
-3. Select `extension/dist-firefox/manifest.json` (Harbor)
-4. Click "Load Temporary Add-on..." again
-5. Select `web-agents-api/dist-firefox/manifest.json` (Web Agents API)
-
-**Chrome:**
-1. Go to `chrome://extensions`
-2. Enable "Developer mode"
-3. Click "Load unpacked" → select `extension/dist-chrome/`
-4. Click "Load unpacked" → select `web-agents-api/dist-chrome/`
-5. **Important:** Note the Harbor extension ID and update native messaging — see [Chrome Quickstart](docs/QUICKSTART_CHROME.md#step-5-configure-native-messaging)
-
-### 4. Verify Setup
-
-1. Open the Harbor sidebar (Firefox: `Cmd+B`, Chrome: click toolbar icon)
-2. Check for "Bridge: Connected" (green indicator)
-3. Check for "LLM: Ollama" 
-
-### 5. Run the Demos
-
-```bash
-cd demo && npm install && npm start
-```
-
-Open http://localhost:8000 and try the interactive demos.
-
-→ **[Detailed Firefox Setup](docs/QUICKSTART_FIREFOX.md)** | **[Detailed Chrome Setup](docs/QUICKSTART_CHROME.md)**
-
-> **Safari (Experimental):** Safari support is checked into the repo under `installer/safari/Harbor/` but is not fully supported. See [Safari Setup](docs/QUICKSTART_SAFARI.md) if you want to experiment.
+For browser-specific details, use the [Chrome](docs/QUICKSTART_CHROME.md) or experimental [Safari](docs/QUICKSTART_SAFARI.md) supplement as directed by the quickstart.
 
 ---
 
@@ -194,7 +125,7 @@ cd my-tool && edit server.js
 
 | Document | Description |
 |----------|-------------|
-| **[Tool Creation Quickstart](QUICKSTART.md#part-3-create-your-own-tools)** | Build your first tool in 15 minutes |
+| **[Tool Creation Quickstart](QUICKSTART.md#create-your-own-tools)** | Build your first tool in 15 minutes |
 | **[MCP Authoring Guide](mcp-servers/AUTHORING_GUIDE.md)** | Complete guide (JS and WASM) |
 | **[Example: Gmail Integration](mcp-servers/examples/gmail/)** | Real-world OAuth example |
 

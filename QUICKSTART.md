@@ -1,6 +1,8 @@
 # Quickstart
 
-**Get Harbor running and build your first AI-powered web app.**
+**The canonical guide to installing Harbor, configuring a model, and running your first demo.**
+
+Start here for every browser. Firefox is the primary target; the Chrome and Safari guides cover only their browser-specific steps.
 
 This guide covers:
 1. [Prerequisites](#prerequisites)
@@ -9,9 +11,10 @@ This guide covers:
 4. [Set Up Chrome](#set-up-chrome)
 5. [Set Up Safari](#set-up-safari-experimental) (experimental)
 6. [Verify Your Setup](#verify-your-setup)
-7. [Run the Demos](#run-the-demos)
-8. [Build Your First App](#build-your-first-app)
-9. [Create Your Own Tools](#create-your-own-tools)
+7. [Configure a Model](#configure-a-model)
+8. [Run the Demos](#run-the-demos)
+9. [Build Your First App](#build-your-first-app)
+10. [Create Your Own Tools](#create-your-own-tools)
 
 > **Using an AI coding assistant?** Point it to **[docs/LLMS.txt](docs/LLMS.txt)** — a compact reference designed for Claude, Cursor, Copilot, and other AI tools to quickly understand and build with the API.
 
@@ -44,60 +47,42 @@ cd harbor
 
 Harbor uses git submodules for shared libraries (like `bridge-rs/any-llm-rust`). The build will fail if submodules are missing.
 
-### 2. Build the Harbor Extension
+### 2. Build Both Extensions
 
-This is the core extension that provides the chat sidebar, MCP server management, and native bridge connection.
+Harbor provides the models, tools and native bridge connection. Web Agents API exposes `window.ai` and `window.agent` to pages. You need both extensions.
 
 ```bash
-cd extension
-npm install
-npm run build          # Firefox (default)
-npm run build:chrome   # Chrome/Edge/Brave/Arc
-cd ..
+npm install --prefix extension
+npm install --prefix web-agents-api
+npm run build
 ```
 
-**Output:**
-- Firefox: `extension/dist-firefox/`
-- Chrome: `extension/dist-chrome/`
+This produces `extension/dist-firefox/` and `web-agents-api/dist-firefox/`.
+For Chrome, run `npm run build:chrome` instead; for Safari, `npm run build:safari`.
+The outputs are the corresponding `dist-chrome/` or `dist-safari/` directories.
 
-### 3. Build the Web Agents API Extension
-
-This extension injects `window.ai` and `window.agent` into web pages. It communicates with the Harbor extension to provide AI capabilities to websites.
+### 3. Build the Native Bridge
 
 ```bash
-cd web-agents-api
-npm install
-npm run build          # Firefox (default)
-npm run build:chrome   # Chrome
-cd ..
+cargo build --release --manifest-path bridge-rs/Cargo.toml
 ```
 
-**Output:**
-- Firefox: `web-agents-api/dist-firefox/`
-- Chrome: `web-agents-api/dist-chrome/`
+### 4. Start Ollama and Download a Model
 
-### 4. Build the Native Bridge
-
-The bridge connects the browser extension to local resources (Ollama, MCP servers, filesystem).
+If Ollama is not already running, start it in a separate terminal:
 
 ```bash
-cd bridge-rs
-cargo build --release
-cd ..
+ollama serve
 ```
 
-### 5. Start Ollama
+In another terminal, download a model and verify that Ollama lists it:
 
 ```bash
-ollama serve &
-ollama pull llama3.2    # or: mistral, codellama, phi3
-```
-
-Verify it's running:
-
-```bash
+ollama pull llama3.2
 curl http://localhost:11434/api/tags
 ```
+
+Downloading a model makes it available to Ollama. You must also [add it to Harbor's Configured Models](#configure-a-model) before running an agent.
 
 ---
 
@@ -109,7 +94,7 @@ Firefox is the primary supported browser with the best developer experience.
 
 ```bash
 cd bridge-rs
-./install.sh
+./install.sh --firefox-only --skip-build
 cd ..
 ```
 
@@ -141,110 +126,40 @@ Both extensions should now appear in the list.
 
 ## Set Up Chrome
 
-Chrome requires an extra step to configure native messaging with your extension ID.
-
-### Load Both Extensions
-
-1. Open Chrome and go to `chrome://extensions`
-2. Enable **"Developer mode"** (toggle in top right)
-
-3. **Load Harbor:**
-   - Click "Load unpacked"
-   - Select `extension/dist-chrome/`
-   - **Copy the extension ID** (32-character string like `abcdefgh...`)
-
-4. **Load Web Agents API:**
-   - Click "Load unpacked"
-   - Select `web-agents-api/dist-chrome/`
-
-### Install and Configure the Native Bridge
-
-```bash
-cd bridge-rs
-./install.sh
-cd ..
-```
-
-**Important:** Chrome's native messaging requires your specific extension ID. Edit the manifest:
-
-**macOS:**
-```bash
-nano ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
-```
-
-**Linux:**
-```bash
-nano ~/.config/google-chrome/NativeMessagingHosts/harbor_bridge_host.json
-```
-
-Update the `allowed_origins` with your Harbor extension ID:
-
-```json
-{
-  "name": "harbor_bridge_host",
-  "description": "Harbor Bridge",
-  "path": "/path/to/harbor-bridge",
-  "type": "stdio",
-  "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID_HERE/"]
-}
-```
-
-**Restart Chrome** for changes to take effect.
-
-→ **[Detailed Chrome guide with troubleshooting](docs/QUICKSTART_CHROME.md)**
+After [building everything](#build-everything) with `npm run build:chrome`, follow the [Chrome-specific loading and native messaging steps](docs/QUICKSTART_CHROME.md). Then return to [Verify Your Setup](#verify-your-setup) below.
 
 ---
 
 ## Set Up Safari (Experimental)
 
-> ⚠️ **Safari support is experimental.** The code is checked into the repository but is not fully supported.
-
-Safari requires building a native macOS app that contains the extensions.
-
-### Build the Safari App
-
-The Safari project is an Xcode project located at `installer/safari/Harbor/`.
-
-```bash
-cd installer/safari/Harbor
-open Harbor.xcodeproj
-```
-
-In Xcode:
-1. Select the "Harbor" scheme
-2. Build and run (⌘R)
-
-### Enable the Extensions
-
-1. Open Safari
-2. Go to **Safari → Settings → Extensions**
-3. Enable both **Harbor** and **Web Agents API**
-4. For unsigned builds: **Safari → Develop → Allow Unsigned Extensions**
-
-> **Note:** The Safari app bundles the native bridge inside the app itself, so you don't need to run `install.sh` separately.
+After [building everything](#build-everything) with `npm run build:safari`, follow the [Safari app and extension steps](docs/QUICKSTART_SAFARI.md). Then return to [Verify Your Setup](#verify-your-setup) below. Safari support is experimental.
 
 ---
 
 ## Verify Your Setup
 
-After loading both extensions:
+Open the **Harbor** sidebar using its toolbar icon or Firefox's sidebar selector. Confirm **Bridge: Connected**. If disconnected, see [Troubleshooting](#troubleshooting).
 
-1. **Open the Harbor sidebar:**
-   - Firefox: Press `Cmd+B` (macOS) or `Ctrl+B` (Linux/Windows), then click the Harbor icon
-   - Chrome: Click the Harbor icon in the toolbar (or puzzle piece menu → Harbor)
+### Configure a Model
 
-2. **Check the status indicators:**
-   - **Bridge: Connected** (green) — Native bridge is working
-   - **LLM: Ollama** — AI provider is detected
+A detected provider is not enough: Harbor needs a configured default model.
 
-3. **If "Bridge: Disconnected":**
-   - Re-run `./install.sh` in `bridge-rs/`
-   - Restart your browser
-   - For Chrome: verify the extension ID in the native messaging manifest
+1. In the Harbor sidebar, expand **LLM Providers** and find **Configured Models**.
+2. In **Select a model to add...**, select the Ollama model you downloaded (for example, `llama3.2`). If it is missing, click the refresh button next to **Add** and check that Ollama is running.
+3. Click **Add**. Confirm the model now appears under **Configured Models**. The header should show a model count rather than **No models configured**.
+4. Confirm the model has the **Default** badge. If necessary, click its star button (**Set as default**); the demos use the default when no model is specified.
+5. Click the lightning button (**Test connection**) next to the model and confirm the **Model works!** message before opening the demo.
 
-4. **If "No LLM Provider":**
-   - Make sure Ollama is running: `ollama serve`
-   - Verify with: `curl http://localhost:11434/api/tags`
+### Check Tools and Agentic Tool Use
+
+The Getting Started demo ends with `agent.run()`, which needs all of the following:
+
+- A working [configured default model](#configure-a-model).
+- A connected MCP server with a time tool for the demo's time question. Check **MCP Servers** in the Harbor sidebar; if no tools are available, see [Troubleshooting](#no-tools-available).
+- **Agentic Tool Use** enabled in the **Web Agents API** sidebar, under **Browser Agent Capabilities**. Manual **Tool Access** allows listing and calling tools directly; it does not enable `agent.run()`. Agentic Tool Use is on by default for new installs. Existing saved choices are preserved: if yours is off, turn it on for this demo, then reload the demo page so it picks up the setting.
+- Permission granted to the demo's origin when it asks for `model:prompt`, `model:tools`, `mcp:tools.list` and `mcp:tools.call`. Enabling an API does not grant websites permission to use it.
+
+Detection, permissions and tool listing can succeed without a model or Agentic Tool Use. Check these prerequisites before **Run Agent** so the final step is ready too.
 
 ---
 
@@ -410,7 +325,7 @@ async function handleToolCall(toolName, args) {
 ### 3. Load in Harbor
 
 1. Open Harbor sidebar → "MCP Servers"
-2. Click "Add Server"
+2. Click **+ File**
 3. Select your `manifest.json` file
 
 ### 4. Use Your Tool
@@ -437,9 +352,9 @@ const result = await window.agent.tools.call({
 ### "Bridge Disconnected"
 
 ```bash
-cd bridge-rs && ./install.sh
+cd bridge-rs && ./install.sh --firefox-only --skip-build
 ```
-Then restart your browser.
+For Firefox, restart the browser and reload both temporary add-ons. For Chrome, follow the [native messaging instructions](docs/QUICKSTART_CHROME.md#step-5-configure-native-messaging).
 
 For Chrome: verify the extension ID in the native messaging manifest matches your actual extension ID.
 
@@ -449,6 +364,14 @@ For Chrome: verify the extension ID in the native messaging manifest matches you
 ollama serve
 curl http://localhost:11434/api/tags  # Should return models
 ```
+
+### "No models configured"
+
+A running Ollama provider is not a configured model. Follow [Configure a Model](#configure-a-model), including the default selection and connection test.
+
+### "Feature disabled: toolCalling"
+
+Enable **Agentic Tool Use** in the Web Agents API sidebar and reload the demo page. This is separate from manual Tool Access and from granting site permissions.
 
 ### "No tools available"
 

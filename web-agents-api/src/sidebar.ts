@@ -200,7 +200,7 @@ async function checkHarborConnection(): Promise<void> {
 
 const DEFAULT_FLAGS: FeatureFlags = {
   textGeneration: true,
-  toolCalling: false,
+  toolCalling: true,
   toolAccess: true,
   browserInteraction: false,
   browserControl: false,
