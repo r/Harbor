@@ -372,6 +372,9 @@ build_bridge() {
     
     # Copy binary to payload
     cp "$BUILD_DIR/harbor-bridge" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
+    if [ -f "target/$RUST_TARGET/release/harbor-apple-model" ]; then
+        cp "target/$RUST_TARGET/release/harbor-apple-model" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
+    fi
     
     echo_success "Bridge built: $BUILD_DIR/harbor-bridge"
 }
@@ -458,6 +461,11 @@ sign_binaries() {
         echo "    ✓ harbor-bridge signed"
     fi
     
+    local APPLE_MODEL="$PAYLOAD_DIR/Library/Application Support/Harbor/harbor-apple-model"
+    if [ -f "$APPLE_MODEL" ]; then
+        codesign --force --options runtime --timestamp --sign "$APP_SIGN_IDENTITY" "$APPLE_MODEL"
+    fi
+
     # Sign Uninstall Harbor.app with hardened runtime
     local UNINSTALLER_APP="$PAYLOAD_DIR/Library/Application Support/Harbor/Uninstall Harbor.app"
     if [ -d "$UNINSTALLER_APP" ]; then
@@ -624,6 +632,9 @@ build_universal() {
     
     # Copy to payload
     cp "$BUILD_DIR/harbor-bridge" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
+    if [ -f "target/aarch64-apple-darwin/release/harbor-apple-model" ]; then
+        cp "target/aarch64-apple-darwin/release/harbor-apple-model" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
+    fi
     
     echo_success "Universal binary created: $BUILD_DIR/harbor-bridge"
 }

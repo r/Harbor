@@ -19,7 +19,7 @@ The bridge is a Rust binary that runs locally and communicates with the browser 
 cargo build --release
 ```
 
-The binary is created at `target/release/harbor-bridge`.
+The binary is created at `target/release/harbor-bridge`. On Apple silicon, building with the macOS 26 SDK or later also produces `harbor-apple-model`. Keep the two executables together. The companion uses Apple’s Foundation Models framework on-device.
 
 ### Install (Firefox and Chrome)
 
@@ -94,7 +94,7 @@ configured. This checks configuration, not whether the provider is online.
 
 Removing a configured model clears a matching legacy default, so later requests
 use the remaining default rather than the removed model. Removing the last model
-leaves no default unless a different legacy default was configured. If no usable
+restores the automatic Apple Intelligence default when the system model is ready, unless a different legacy default was configured. If no usable
 default remains, a request without a model fails with "No model specified and no
 default model configured".
 
