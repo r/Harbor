@@ -122,7 +122,7 @@ async function callLLMWithTools(
   // For now, use basic chat and parse tool calls from the response
   // TODO: Use proper function calling when bridge supports it
   const response = await bridgeChat({
-    model: model || 'default',
+    model: model === 'apple' ? 'apple:system' : model,
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
     temperature,
     // tools, // TODO: Add when bridge supports it

@@ -414,10 +414,10 @@ impl LlmConfig {
             return false;
         };
         if let Some(instance) = self.resolve_provider(provider) {
-            instance.enabled && (matches!(instance.provider_type.as_str(), "ollama" | "llamafile" | "lmstudio")
+            instance.enabled && (matches!(instance.provider_type.as_str(), "ollama" | "llamafile" | "lmstudio" | "apple")
                 || instance.api_key.as_ref().is_some_and(|key| !key.trim().is_empty()))
         } else {
-            matches!(provider, "ollama" | "llamafile" | "lmstudio")
+            matches!(provider, "ollama" | "llamafile" | "lmstudio" | "apple")
                 && self.get_instances_by_type(provider).is_empty()
         }
     }

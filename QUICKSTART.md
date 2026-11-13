@@ -26,7 +26,7 @@ This guide covers:
 |------|---------|-----|
 | **Node.js 18+** | [nodejs.org](https://nodejs.org) | Build the extensions |
 | **Rust** | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` | Build the native bridge |
-| **Ollama** | [ollama.com](https://ollama.com) or `brew install ollama` | Local LLM provider |
+| **Ollama** | [ollama.com](https://ollama.com) or `brew install ollama` | Optional local LLM provider |
 | **Browser** | Firefox 109+ (recommended) or Chrome 120+ | Run the extensions |
 
 ---
@@ -79,7 +79,11 @@ See [sharp's installation guide](https://sharp.pixelplumbing.com/install/#buildi
 cargo build --release --manifest-path bridge-rs/Cargo.toml
 ```
 
-### 4. Start Ollama and Download a Model
+### 4. Choose a Local Model
+
+On Apple silicon with macOS 26 or later, Harbor uses Apple Intelligence automatically when the system model is ready. Source builds need the macOS 26 SDK or later for this option. If you use Apple Intelligence, continue to browser setup.
+
+#### Using Ollama
 
 If Ollama is not already running, start it in a separate terminal:
 
@@ -154,7 +158,7 @@ Open the **Harbor** sidebar using its toolbar icon or Firefox's sidebar selector
 
 ### Configure a Model
 
-A detected provider is not enough: Harbor needs a configured default model.
+When Apple Intelligence is available, you can use it immediately. To use another model, configure it below. Harbor honors your saved default.
 
 1. In the Harbor sidebar, expand **LLM Providers** and find **Configured Models**.
 2. In **Select a model to add...**, select the Ollama model you downloaded (for example, `llama3.2`). If it is missing, click the refresh button next to **Add** and check that Ollama is running.
@@ -166,7 +170,7 @@ A detected provider is not enough: Harbor needs a configured default model.
 
 The Getting Started demo ends with `agent.run()`, which needs all of the following:
 
-- A working [configured default model](#configure-a-model).
+- A working [default model](#configure-a-model).
 - A connected MCP server with a time tool for the demo's time question. In the Harbor sidebar under **MCP Servers**, find **Time Server** and click **Start** if it is stopped. Confirm it is running before continuing; if no tools are available, see [Troubleshooting](#no-tools-available).
 - **Agentic Tool Use** enabled in the **Web Agents API** sidebar, under **Browser Agent Capabilities**. Manual **Tool Access** allows listing and calling tools directly; it does not enable `agent.run()`. Agentic Tool Use is on by default for new installs. Existing saved choices are preserved: if yours is off, turn it on for this demo, then reload the demo page so it picks up the setting.
 - Permission granted to the demo's origin when it asks for `model:prompt`, `model:tools`, `mcp:tools.list` and `mcp:tools.call`. Enabling an API does not grant websites permission to use it.

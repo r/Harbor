@@ -50,7 +50,7 @@ With the Web Agent API:
 
 **Get Harbor running in 10 minutes.**
 
-Follow **[QUICKSTART.md](QUICKSTART.md)** for the canonical setup: build both extensions and the bridge, load Firefox, add a default model under **LLM Providers → Configured Models**, test it, and run the demos.
+Follow **[QUICKSTART.md](QUICKSTART.md)** for the canonical setup: build both extensions and the bridge, load Firefox, and run the demos. On supported Macs, Apple Intelligence supplies a default as soon as the on-device model is ready. For another provider, add and test a model under **LLM Providers → Configured Models**.
 
 The guide also covers the Getting Started demo's **Agentic Tool Use** setting and site permissions. A detected Ollama provider alone does not mean a model is configured.
 
