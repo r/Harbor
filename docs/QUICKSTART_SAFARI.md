@@ -2,7 +2,7 @@
 
 Safari support is experimental and requires macOS and Xcode. Firefox is the primary target.
 
-Start with **[the canonical Quickstart](../QUICKSTART.md#build-everything)**: clone, build both extensions with `npm run build:safari`, build the native bridge and start Ollama. Safari bundles the bridge in its macOS app, so skip the Firefox native messaging installer.
+Start with **[the canonical Quickstart](../QUICKSTART.md#build-everything)**: clone, build both extensions with `npm run build:safari`, and build the native bridge. Apple Intelligence can supply the default model on a supported Mac. Safari bundles the bridge in its macOS app, so skip the Firefox native messaging installer.
 
 ## Step 4: Open the Xcode Project
 
@@ -14,6 +14,12 @@ open Harbor.xcodeproj
 ```
 
 ---
+
+In the Harbor app target, add a **Run Script** build phase after **Copy Bundle Resources** to embed the current native bridge and its Apple Intelligence companion. The Xcode project is maintained outside this checkout. Use this script in the project that builds your app:
+
+```sh
+"$SRCROOT/../embed-bridge.sh"
+```
 
 ## Step 5: Build and Run
 
@@ -51,4 +57,4 @@ If you're running a development build (not signed with an Apple Developer certif
 
 ## Return to the Quickstart
 
-Continue with **[Verify Your Setup](../QUICKSTART.md#verify-your-setup)** to add and test a configured default model, prepare Agentic Tool Use and run the demos. All common setup and troubleshooting live there.
+Continue with **[Verify Your Setup](../QUICKSTART.md#verify-your-setup)** to check the default model, prepare Agentic Tool Use and run the demos. All common setup and troubleshooting live there.
