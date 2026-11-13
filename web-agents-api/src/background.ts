@@ -281,15 +281,9 @@ async function handleAgentRun(
         // with a `tool` message. Sending results back as plain user text ("Tool X
         // returned: …") makes local models call the same tool again until they
         // hit maxToolCalls.
-        //
-        // The text summary is still needed alongside tool_calls: any-llm's Ollama
-        // provider drops assistant tool_calls, and without the summary llama3.2
-        // ignores the tool result ("the current time is not available").
         messages.push({
           role: 'assistant',
-          content: responseContent || toolCalls
-            .map(tc => `[Called tool: ${tc.function.name}(${tc.function.arguments || '{}'})]`)
-            .join('\n'),
+          content: responseContent || '',
           tool_calls: toolCalls.map(tc => ({ ...tc, type: tc.type || 'function' })),
         });
 
