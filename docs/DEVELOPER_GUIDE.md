@@ -754,6 +754,12 @@ is prepended as a system message, and tool definitions use
 response IDs are preserved. Streaming forwards tools to the provider; its
 existing token/done/error events do not expose tool-call deltas.
 
+Ollama history includes assistant tool calls with structured JSON arguments in
+both chat modes. Tool-only assistant turns keep empty text; the page agent loop
+uses the structured calls followed by tool results without a synthetic text
+summary. Ollama tool-call arguments must encode a JSON object; malformed or
+non-object arguments fail as an invalid request before inference.
+
 The cross-extension API keeps its `system` field and maps it to the bridge's
 `system_prompt`. Non-streaming bridge replies are OpenAI-compatible
 `{ choices, model, ... }` completions. Harbor consumers use the shared

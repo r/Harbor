@@ -83,6 +83,29 @@ describe('agent.run receiving boundary', () => {
     }));
   });
 
+  it.each(['', 'Checking the clock.'])('keeps structured tool history without a synthetic summary (%j)', async (content) => {
+    const toolCall = { id: 'call-clock', function: { name: 'clock_time', arguments: '{}' } };
+    const history: unknown[] = [];
+    mocks.harborRequest.mockImplementation(async (method, params) => {
+      if (method === 'mcp.listTools') return { tools: [{ name: 'time', serverId: 'clock' }] };
+      if (method === 'mcp.callTool') return { result: { content: [{ type: 'text', text: 'Noon' }] } };
+      if (method === 'llm.chat') {
+        history.push(structuredClone(params.messages));
+        return history.length === 1
+          ? { content, choices: [{ message: { role: 'assistant', content, tool_calls: [toolCall] } }] }
+          : { content: 'It is noon.' };
+      }
+    });
+    await run();
+    expect(history).toHaveLength(2);
+    expect(history[1]).toEqual([
+      { role: 'system', content: 'You are a helpful assistant that can use tools to help users.' },
+      { role: 'user', content: 'What time is it?' },
+      { role: 'assistant', content, tool_calls: [{ ...toolCall, type: 'function' }] },
+      { role: 'tool', tool_call_id: 'call-clock', content: 'Noon' },
+    ]);
+  });
+
   it('preserves tool-only replies and uses normalized text after the tool budget', async () => {
     const toolCall = { id: 'call-1', function: { name: 'clock_time', arguments: '{}' } };
     let calls = 0;
