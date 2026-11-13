@@ -92,19 +92,19 @@
 <!-- ===================== PROPOSAL ===================== -->
 <section class="section section-tint" id="proposal">
   <div class="wrap">
-    <h2>What if you could use your own AI on your local paper’s site?</h2>
-    <p class="lead">Your grandmother sold tickets at Union Station. You’ve told your agent
-      about her. You open your local paper’s archive.</p>
+    <h2>What if you could use your own AI on the sites you visit?</h2>
+    <p class="lead">You search the web for the guitar chords to a song you love.
+      You find a version you can play, until you get to the chorus.</p>
     <div class="prose measure">
-      <p>You choose “Search with my AI” and ask, “What did people say when the old station closed?” Your browser asks, “Let the paper use your AI to answer this question?”</p>
-      <p>You allow it. Your agent picks three words, <em>Union Station closure</em>, and sends them to the archive.
-        The paper sends back matching stories. Your agent points you to the ticket clerks’
-        recollections because it knows about your grandmother. Her name never appeared
-        in the search.</p>
-      <p>Now suppose your agent wants to search for her by name. Does that permission cover sending her name,
-        or would you want it to show you the search and ask again before sending her name
-        to the newspaper?</p>
-      <p><a class="link" href="#invite">What would you want your own agent to keep to itself? →</a></p>
+      <p>Imagine you click “Learn this song with my AI” and ask your agent, “Can I play the chorus
+        with the chords I know? Use my last lesson note for this song.” Your browser asks whether to let the site use your AI
+        to work out a version you can play. You choose “This time only.”</p>
+      <p>The site supplies the arrangement. Your agent looks up the note you saved together last week,
+        spots a chord you practiced,
+        and shows you an easier way to play the chorus with it. You can switch between the two
+        versions and hear what changes.</p>
+      <p>Next week you come back ready to learn the harder part.</p>
+      <p><a class="link" href="#invite">Who decides whether last week’s lesson should shape what you see today? →</a></p>
     </div>
 
     <div class="grid-3">
@@ -113,21 +113,19 @@
         <h4>Your model.</h4>
         <p>Today you connect Harbor to a model on your computer or through a provider.
           Choosing a model doesn’t import another assistant’s conversations or memories.
-          Your agent could learn about your grandmother from this conversation or from a saved note
-          you give it permission to read.</p>
+          The guitar example imagines an agent that already has access to your lesson notes.</p>
       </div>
       <div>
         <p class="num">B.</p>
         <h4>Your context.</h4>
-        <p>With a model running on your computer, the prompt is processed on your device.
-          With a hosted model, the provider receives the prompt, including any conversation or
-          saved-note text sent with it. If that text mentions your grandmother, the provider sees
-          that detail. In this example, the newspaper receives just the search terms.</p>
+        <p>The music site sees what you ask and how your agent answers, so it can see any lesson details that come up in their exchange.
+          If you use a hosted model, its provider receives your question, the arrangement, and any lesson notes or chat history included in the request.</p>
       </div>
       <div>
         <p class="num">C.</p>
-        <h4>Mediated by the browser.</h4>
-        <p>When a site asks to use your agent, you decide what to allow. Your browser enforces your choice. As with camera access, you can give one site permission and take it back later.</p>
+        <h4>Controlled by you.</h4>
+        <p>Your browser asks whether the music site may use your AI.
+          You tell your agent which lesson to draw on for this song.</p>
       </div>
     </div>
   </div>
@@ -153,7 +151,7 @@
 
       <div class="codecard">
         <div class="codecard-head"><span>2 · run an agent that can call tools the user has approved</span><span class="num">window.agent</span></div>
-<pre><code><span class="tk-k">for await</span> (<span class="tk-k">const</span> <span class="tk-n">ev</span> <span class="tk-k">of</span> <span class="tk-n">window</span>.<span class="tk-p">agent</span>.<span class="tk-f">run</span>({ <span class="tk-p">task</span>: <span class="tk-s">"find recent press on quantum chips"</span> })) {
+<pre><code><span class="tk-k">for await</span> (<span class="tk-k">const</span> <span class="tk-n">ev</span> <span class="tk-k">of</span> <span class="tk-n">window</span>.<span class="tk-p">agent</span>.<span class="tk-f">run</span>({ <span class="tk-p">task</span>: <span class="tk-s">"find a fingering for an F chord on guitar"</span> })) {
   <span class="tk-k">if</span> (<span class="tk-n">ev</span>.<span class="tk-p">type</span> === <span class="tk-s">"tool_call"</span>) <span class="tk-n">console</span>.<span class="tk-f">log</span>(<span class="tk-s">"→"</span>, <span class="tk-n">ev</span>.<span class="tk-p">tool</span>);
   <span class="tk-k">if</span> (<span class="tk-n">ev</span>.<span class="tk-p">type</span> === <span class="tk-s">"final"</span>)     <span class="tk-n">console</span>.<span class="tk-f">log</span>(<span class="tk-n">ev</span>.<span class="tk-p">output</span>);
 }</code></pre>
@@ -162,10 +160,10 @@
       <div class="codecard">
         <div class="codecard-head"><span>3 · a page declares its own tool · Harbor API</span><span class="num">navigator.modelContext</span></div>
 <pre><code><span class="tk-n">navigator</span>.<span class="tk-p">modelContext</span>.<span class="tk-f">addTool</span>({
-  <span class="tk-p">name</span>:        <span class="tk-s">"search_archive"</span>,
-  <span class="tk-p">description</span>: <span class="tk-s">"Search our 20-year archive"</span>,
-  <span class="tk-p">inputSchema</span>: { <span class="tk-p">type</span>: <span class="tk-s">"object"</span>, <span class="tk-p">properties</span>: { <span class="tk-p">query</span>: { <span class="tk-p">type</span>: <span class="tk-s">"string"</span> } } },
-  <span class="tk-p">handler</span>:     ({ <span class="tk-n">query</span> }) =&gt; <span class="tk-f">searchArchive</span>(<span class="tk-n">query</span>),
+  <span class="tk-p">name</span>:        <span class="tk-s">"get_chords"</span>,
+  <span class="tk-p">description</span>: <span class="tk-s">"Get the chords for a section of this song"</span>,
+  <span class="tk-p">inputSchema</span>: { <span class="tk-p">type</span>: <span class="tk-s">"object"</span>, <span class="tk-p">properties</span>: { <span class="tk-p">section</span>: { <span class="tk-p">type</span>: <span class="tk-s">"string"</span> } } },
+  <span class="tk-p">handler</span>:     ({ <span class="tk-n">section</span> }) =&gt; <span class="tk-f">getChords</span>(<span class="tk-n">section</span>),
 });</code></pre>
       </div>
     </div>
@@ -190,7 +188,7 @@
       <h2>Harbor is the working sketch of the proposal.</h2>
       <p>
         You can try your model today with the <a class="link" href="#get-started">Page Summarizer in Firefox</a>.
-        The newspaper archive is an example of what a site could build.
+        The guitar lesson is an example of what a music site could build.
       </p>
       <p style="margin-top: 18px;">
         <a class="link" href="spec.html">Read the spec →</a><br/>
@@ -303,7 +301,7 @@
 <section class="section section-sunken" id="security">
   <div class="wrap">
     <h2 style="max-width: 22ch">A smaller surface, by design.</h2>
-    <p class="lead">We assume a model can be fooled by something it reads. In the proposal, a site asks for specific actions. You could allow an agent to search a news archive without giving it permission to edit a story. You can revoke a site’s access.</p>
+    <p class="lead">We assume a model can be fooled by something it reads. In the proposal, a site asks for specific actions. You could allow an agent to read a song’s chords without giving it permission to change the published arrangement. You can revoke a site’s access.</p>
     <p><a class="link" href="spec.html#threat-model">Read the threat model →</a></p>
   </div>
 </section>
