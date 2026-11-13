@@ -10,7 +10,6 @@ This supplement covers Chrome-specific extension loading and native messaging. S
 3. **Load Harbor:**
    - Click **"Load unpacked"**
    - Select the `extension/dist-chrome/` folder
-   - **⚠️ Copy the extension ID** — you'll need it in Step 5
 
 4. **Load Web Agents API:**
    - Click **"Load unpacked"** again
@@ -18,24 +17,11 @@ This supplement covers Chrome-specific extension loading and native messaging. S
 
 Both extensions should appear in your extensions list.
 
-### Finding Your Extension ID
-
-The extension ID is a 32-character string that looks like:
-```
-abcdefghijklmnopabcdefghijklmnop
-```
-
-You can find it:
-- Displayed under the extension name in `chrome://extensions`
-- In the URL when you click "Details" on the extension
-
-**Write down the Harbor extension ID** — you need it for native messaging.
-
 ---
 
 ## Step 5: Configure Native Messaging
 
-This is the critical step that differs from Firefox. Chrome's native messaging requires the exact extension ID.
+Chrome's native messaging requires an exact extension origin. Harbor's checked-in manifest key gives it the stable ID `ljnciidcajlichemnbohopnlaonhkpgm`; the installer registers this ID automatically, including for unpacked builds.
 
 ### Install the Bridge
 
@@ -47,40 +33,30 @@ cd bridge-rs
 cd ..
 ```
 
-### Update the Native Messaging Manifest
+### Installed Native Messaging Manifest
 
-**macOS:**
-```bash
-nano ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
-```
+The installer writes `harbor_bridge.json` in Chrome's user-level native messaging directory:
 
-**Linux:**
-```bash
-nano ~/.config/google-chrome/NativeMessagingHosts/harbor_bridge_host.json
-```
+- **macOS:** `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`
+- **Linux:** `~/.config/google-chrome/NativeMessagingHosts/`
 
-**Windows:**
-The manifest is at `%LOCALAPPDATA%\Google\Chrome\User Data\NativeMessagingHosts\harbor_bridge_host.json`
+The installer supports macOS and Linux. It does not configure Windows or other Chromium browsers.
 
-### Edit the Manifest
-
-Find the `allowed_origins` line and replace `YOUR_EXTENSION_ID_HERE` with your actual Harbor extension ID:
+No manual extension ID edits are needed. The generated manifest has this form (the installer fills in your absolute checkout path):
 
 ```json
 {
-  "name": "harbor_bridge_host",
+  "name": "harbor_bridge",
   "description": "Harbor Bridge - Local LLM and MCP server for Harbor extension",
-  "path": "/Users/you/.harbor/bin/harbor-bridge",
+  "path": "/absolute/path/to/harbor/bridge-rs/target/release/harbor-bridge-native",
   "type": "stdio",
-  "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID_HERE/"]
+  "allowed_origins": ["chrome-extension://ljnciidcajlichemnbohopnlaonhkpgm/"]
 }
 ```
 
-**Example:** If your extension ID is `abcdefghijklmnopabcdefghijklmnop`:
+The executable wrapper launches `harbor-bridge` with `--native-messaging`. Keep the checkout in place, or rerun the installer from its new location after moving it.
 
-```json
-"allowed_origins": ["chrome-extension://abcdefghijklmnopabcdefghijklmnop/"]
-```
+If you deliberately replace or remove `extension/manifest.chrome.json`'s key, the extension ID can differ. Such custom builds need a matching explicit origin in their native host manifest; the installer targets the repository's key.
 
 ### Restart Chrome
 

@@ -98,21 +98,12 @@ EOF
 # Function to install manifest for Chrome
 install_chrome_manifest() {
     local manifest_dir="$1"
-    local extension_id="${2:-}"  # Optional: specify extension ID
+    # Stable ID derived from the key in extension/manifest.chrome.json.
+    local extension_id="ljnciidcajlichemnbohopnlaonhkpgm"
     
     if [ -d "$(dirname "$manifest_dir")" ]; then
         echo "Installing native messaging manifest for Chrome..."
         mkdir -p "$manifest_dir"
-        
-        # Chrome uses allowed_origins with chrome-extension:// URLs
-        # Use * to allow any extension, or specify the extension ID
-        if [ -n "$extension_id" ]; then
-            ORIGIN="chrome-extension://${extension_id}/"
-        else
-            # When extension is loaded unpacked, the ID changes
-            # Use a placeholder that can be updated after loading
-            ORIGIN="chrome-extension://*/"
-        fi
         
         cat > "$manifest_dir/harbor_bridge.json" << EOF
 {
@@ -120,19 +111,10 @@ install_chrome_manifest() {
   "description": "Harbor Bridge - Local LLM and MCP server for Harbor extension",
   "path": "$WRAPPER_PATH",
   "type": "stdio",
-  "allowed_origins": ["$ORIGIN"]
+  "allowed_origins": ["chrome-extension://${extension_id}/"]
 }
 EOF
         echo "  Manifest installed: $manifest_dir/harbor_bridge.json"
-        if [ -z "$extension_id" ]; then
-            echo ""
-            echo "  NOTE: Chrome requires a specific extension ID in allowed_origins."
-            echo "  After loading the extension in Chrome, get its ID from chrome://extensions"
-            echo "  and update the manifest file at:"
-            echo "    $manifest_dir/harbor_bridge.json"
-            echo "  Replace the 'allowed_origins' with:"
-            echo '    "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID/"]'
-        fi
     else
         echo "Skipping Chrome (not installed)"
     fi

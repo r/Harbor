@@ -155,7 +155,7 @@ cd ..
 # Chrome: chrome://extensions → Developer mode → Load unpacked
 #   - extension/dist-chrome/
 #   - web-agents-api/dist-chrome/
-#   - Then update native messaging with your extension ID
+#   - Run bridge-rs/install.sh to register the stable Harbor extension ID
 ```
 
 → See [Firefox Setup](QUICKSTART_FIREFOX.md) or [Chrome Setup](QUICKSTART_CHROME.md) for detailed instructions.
