@@ -1,5 +1,7 @@
 # Harbor public site design
 
+This revision builds on the Harbor site Raffi Krikorian shipped in May 2026. It keeps the four-page structure, code examples, architecture diagram, and invitation to debate. The homepage now opens with the reader’s choice of agent and uses a newspaper archive to explore what permission should mean. The [May design notes](https://github.com/r/Harbor/blob/532a688/whitepaper/DESIGN_NOTES.md) explain the choices behind the earlier edition.
+
 The four pages share the editorial hierarchy of [The State of Open Source AI](https://stateofopensource.ai/) and draw on the high-contrast public-facing design of [Mozilla](https://www.mozilla.org/en-US/). Harbor’s wordmark and coastal artwork identify the project. The proposal, technical examples and status language follow [the positioning document](../docs/POSITIONING.md).
 
 ## Type and color
