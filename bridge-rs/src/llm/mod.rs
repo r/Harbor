@@ -129,6 +129,8 @@ pub async fn chat(params: serde_json::Value) -> Result<serde_json::Value, RpcErr
 
 /// Preserve explicit and configured choices before trying an on-device default.
 async fn resolve_model(requested: Option<String>) -> Option<String> {
+    // The Web Agents API accepts "default" as an explicit request for the current default.
+    let requested = requested.filter(|model| model != "default");
     let configured = get_config().and_then(|config| config.effective_default_model());
     let apple_available = requested.is_none() && configured.is_none() && apple::is_available().await;
     choose_model(requested, configured, apple_available)
@@ -1179,12 +1181,11 @@ mod message_tests {
             "ollama:next"
         );
         for stream in [false, true] {
-            let mut req = request();
-            req.model = None;
-            assert_eq!(
-                prepare_completion_request(req, stream).await.unwrap().model,
-                "ollama:next"
-            );
+            for model in [None, Some("default".to_string())] {
+                let mut req = request();
+                req.model = model;
+                assert_eq!(prepare_completion_request(req, stream).await.unwrap().model, "ollama:next");
+            }
         }
         let mut disabled = LlmConfig::default();
         let mut provider = ProviderInstance::with_id("apple-legacy", "apple", "Apple Intelligence");
