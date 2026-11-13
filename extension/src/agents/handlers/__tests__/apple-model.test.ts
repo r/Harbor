@@ -55,6 +55,11 @@ describe('Apple Intelligence sessions', () => {
     expect(await listProviders()).toEqual([expect.objectContaining({ id: 'apple', supportsTools: true })]);
   });
 
+  it('respects the bridge availability when Apple Intelligence is disabled', async () => {
+    vi.mocked(bridgeRequest).mockResolvedValue({ providers: [{ id: 'apple', type: 'apple', name: 'Apple Intelligence', is_local: true, available: false, configured: false }] });
+    expect(await listProviders()).toEqual([expect.objectContaining({ id: 'apple', available: false })]);
+  });
+
   it('exposes the automatic model as the active provider without a saved provider', async () => {
     vi.mocked(bridgeRequest).mockResolvedValue({ default_model: 'apple:system', providers: {} });
     expect(await getActiveProvider()).toEqual({ provider: 'apple', model: 'system' });

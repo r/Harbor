@@ -136,6 +136,16 @@ export async function getLanguageModelCapabilities(): Promise<AILanguageModelCap
   };
 }
 
+/** Keep an omitted selection available for the bridge's configured or automatic default. */
+function sessionModel(options: TextSessionOptions): string | undefined {
+  const model = options.model || undefined;
+  if (!options.provider || model?.includes(':')) {
+    return model;
+  }
+  const providerModel = model ?? (options.provider === 'apple' ? 'system' : 'default');
+  return `${options.provider}:${providerModel}`;
+}
+
 /**
  * Send a prompt to the LLM and get a complete response.
  */
@@ -158,14 +168,7 @@ export async function prompt(sessionId: string, origin: string, input: string): 
   // Add current user message
   messages.push({ role: 'user', content: input });
 
-  // Determine model to use
-  let model = session.options.model || 'default';
-  if (session.options.provider) {
-    // If provider specified, prefix with provider
-    if (!model.includes(':')) {
-      model = `${session.options.provider}:${model}`;
-    }
-  }
+  const model = sessionModel(session.options);
 
   // Call bridge
   const response = await bridgeChat({
@@ -210,13 +213,7 @@ export async function* promptStreaming(
   // Add current user message
   messages.push({ role: 'user', content: input });
 
-  // Determine model to use
-  let model = session.options.model || 'default';
-  if (session.options.provider) {
-    if (!model.includes(':')) {
-      model = `${session.options.provider}:${model}`;
-    }
-  }
+  const model = sessionModel(session.options);
 
   // Add user message to history now
   session.history.push({ role: 'user', content: input });
@@ -295,6 +292,7 @@ export async function* promptStreaming(
 // =============================================================================
 
 interface BridgeProviderInfo {
+  available?: boolean;
   id: string;
   type: string;
   name: string;
@@ -350,7 +348,7 @@ export async function listProviders(): Promise<LLMProviderInfo[]> {
       id: p.id,
       type: p.type,
       name: p.name,
-      available: p.configured || p.is_local,
+      available: p.available ?? (p.configured || p.is_local),
       baseUrl: p.base_url,
       isDefault: p.is_default,
       isTypeDefault: p.is_type_default,
