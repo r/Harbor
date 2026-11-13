@@ -93,7 +93,7 @@ async function handleRequest(text) {
       throw new Error('Model permission was denied. Allow this origin in Web Agents API, then send your request again.');
     }
     const manifest = await manifestPromise;
-    const catalog = enrichCatalogWithSchema({ actions: new SemanticParser().discoverActions(form), url: location.href, timestamp: new Date().toISOString() }, manifest);
+    const catalog = enrichCatalogWithSchema({ actions: new SemanticParser().discoverActions(document.body), url: location.href, timestamp: new Date().toISOString() }, manifest);
     connection.textContent = 'Preparing invoice details…';
     const { result } = await planner.plan(text, catalog);
     if (result.kind === 'answer') {

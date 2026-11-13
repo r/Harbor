@@ -22,7 +22,7 @@ try {
   assert.equal(await page.evaluate(() => localStorage.getItem('billing-app-invoices')), null);
   const invoice = { customer_email: 'alice@example.com', amount: 120, currency: 'EUR' };
   await page.addInitScript(({ invoice }) => {
-    window.audit = { permissions: [], sessions: [], destroyed: 0 };
+    window.audit = { permissions: [], sessions: [], prompts: [], destroyed: 0 };
     window.agent = {
       async requestPermissions({ scopes }) {
         window.audit.permissions.push(scopes);
@@ -32,6 +32,7 @@ try {
     window.ai = {
       async createTextSession(options) {
         window.audit.sessions.push(Object.keys(options));
+        window.audit.prompts.push(options.systemPrompt);
         if (window.mode === 'offline') throw new Error('Provider offline');
         return {
           async prompt() {
@@ -84,6 +85,12 @@ try {
   const audit = await page.evaluate(() => window.audit);
   assert.ok(audit.permissions.every(scopes => scopes.join() === 'model:prompt'));
   assert.ok(audit.sessions.every(keys => keys.join() === 'systemPrompt'));
+  for (const prompt of audit.prompts) {
+    assert.match(prompt, /ACTION: invoice\.create\b/);
+    for (const field of ['customer_email', 'amount', 'currency', 'memo']) {
+      assert.ok(prompt.includes(' - ' + field + ' ('), 'Planner must describe ' + field);
+    }
+  }
   assert.equal(audit.sessions.length - 1, audit.destroyed, 'Every successfully created session was destroyed');
   assert.deepEqual(errors, []);
   console.log('Firefox passed permission denial, atomic validation, manual submission, draft storage and session cleanup.');
