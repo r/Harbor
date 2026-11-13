@@ -32,9 +32,13 @@ try {
     window.ai = {
       async createTextSession(options) {
         window.audit.sessions.push(Object.keys(options));
+        if (window.mode === 'offline') throw new Error('Provider offline');
         return {
           async prompt() {
-            const args = window.mode === 'invalid' ? { ...invoice, currency: 'BAD' } : invoice;
+            const args = { ...invoice };
+            if (window.mode === 'invalid') args.currency = 'BAD';
+            if (window.mode === 'extra') args.unexpected = 'ignore me';
+            if (window.mode === 'precision') args.amount = 12.345;
             return JSON.stringify({ action: 'invoice.create', args });
           },
           destroy() { window.audit.destroyed++; }
@@ -55,10 +59,16 @@ try {
   await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('denied'));
   assert.equal(await email.inputValue(), 'original@example.org');
   assert.equal(await page.evaluate(() => window.audit.sessions.length), 0);
-  await send('invalid');
-  await page.waitForFunction(() => window.audit.destroyed > 0 && !document.querySelector('#invoice-fields').disabled);
-  assert.equal(await email.inputValue(), 'original@example.org');
-  assert.deepEqual(await drafts(), []);
+  for (const mode of ['invalid', 'extra', 'precision', 'offline']) {
+    const attempts = await page.evaluate(() => window.audit.sessions.length);
+    await send(mode);
+    await page.waitForFunction(previous => window.audit.sessions.length > previous
+      && !document.querySelector('#invoice-fields').disabled, attempts);
+    assert.equal(await page.evaluate(() => window.audit.sessions.length), attempts + 1);
+    assert.equal(await email.inputValue(), 'original@example.org');
+    assert.equal(await page.locator('#amount').inputValue(), '');
+    assert.deepEqual(await drafts(), []);
+  }
   await send('valid');
   await page.waitForFunction(() => document.querySelector('[data-agent-field="customer_email"]').value === 'alice@example.com');
   assert.equal(await page.locator('#amount').inputValue(), '120');
@@ -74,7 +84,7 @@ try {
   const audit = await page.evaluate(() => window.audit);
   assert.ok(audit.permissions.every(scopes => scopes.join() === 'model:prompt'));
   assert.ok(audit.sessions.every(keys => keys.join() === 'systemPrompt'));
-  assert.equal(audit.sessions.length, audit.destroyed);
+  assert.equal(audit.sessions.length - 1, audit.destroyed, 'Every successfully created session was destroyed');
   assert.deepEqual(errors, []);
   console.log('Firefox passed permission denial, atomic validation, manual submission, draft storage and session cleanup.');
 } finally {
