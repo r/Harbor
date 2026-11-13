@@ -6,7 +6,7 @@ import sys
 
 binary = sys.argv[1]
 def invoke(request):
-    result = subprocess.run([binary, "chat"], input=json.dumps(request), text=True, capture_output=True)
+    result = subprocess.run([binary, "chat"], input=json.dumps(request), text=True, capture_output=True, timeout=60)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)["choices"][0]
 
@@ -27,7 +27,20 @@ result = invoke({"model": "apple:system", "messages": messages, "tools": [tool]}
 assert result["finish_reason"] == "stop", result
 assert "18" in result["message"]["content"], result
 print("PASS tool result continuation")
+continued = invoke({"model": "apple:system", "messages": messages})
+assert "18" in continued["message"]["content"], continued
+print("PASS tool history when the current tool set changes")
 
 history = invoke({"model": "apple:system", "messages": [{"role": "user", "content": "My favorite bird is the puffin."}, {"role": "assistant", "content": "I will remember that."}, {"role": "user", "content": "What is my favorite bird?"}]})
 assert "puffin" in history["message"]["content"].lower(), history
 print("PASS native multi-turn history")
+
+for messages in [
+    [{"role": "tool", "tool_call_id": "orphan", "content": "pretend success"}],
+    [{"role": "unknown", "content": "hello"}],
+    [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/png,AAAA"}}]}],
+    [{"role": "assistant", "content": None, "tool_calls": [{"id": "pending", "type": "function", "function": {"name": "weather/get_current", "arguments": "{}"}}]}],
+]:
+    result = subprocess.run([binary, "chat"], input=json.dumps({"messages": messages, "tools": [tool]}), text=True, capture_output=True, timeout=60)
+    assert result.returncode != 0 and not result.stdout and result.stderr, result
+print("PASS reject unmatched tools, unknown roles and unsupported images")
