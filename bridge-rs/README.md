@@ -28,7 +28,7 @@ The binary is created at `target/release/harbor-bridge`.
 ```
 
 This script:
-1. Copies the binary to `~/.harbor/bin/harbor-bridge`
+1. Builds `target/release/harbor-bridge` and creates the executable `target/release/harbor-bridge-native` wrapper
 2. Creates native messaging manifests for Firefox and Chrome
 
 ### Verify Installation
@@ -40,7 +40,7 @@ cat ~/Library/Application\ Support/Mozilla/NativeMessagingHosts/harbor_bridge.js
 
 **Chrome:**
 ```bash
-cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
 ```
 
 ---
@@ -57,18 +57,15 @@ Firefox native messaging works automatically after running `install.sh`. The man
 
 ### Chrome / Chromium Browsers
 
-Chrome requires your specific extension ID in the native messaging manifest. After loading the extension:
+The checked-in Chrome manifest key pins Harbor's ID to `ljnciidcajlichemnbohopnlaonhkpgm`. The installer automatically writes:
 
-1. Get your extension ID from `chrome://extensions`
-2. Edit the manifest file:
-   ```bash
-   nano ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
-   ```
-3. Update `allowed_origins` with your extension ID:
-   ```json
-   "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID_HERE/"]
-   ```
-4. Restart Chrome completely
+```json
+"allowed_origins": ["chrome-extension://ljnciidcajlichemnbohopnlaonhkpgm/"]
+```
+
+No manual ID edits are needed for repository builds. The native host is `harbor_bridge`, and its manifest points to this checkout's `target/release/harbor-bridge-native` wrapper, which passes `--native-messaging` to the binary. Keep the checkout in place or rerun the installer after moving it. See the [Chrome setup guide](../docs/QUICKSTART_CHROME.md) for loading both extensions and verifying the connection.
+
+The installer registers Firefox and Google Chrome on macOS and Linux. Other Chromium browsers require separate registration:
 
 **Manifest locations for other Chromium browsers:**
 - **Edge:** `~/Library/Application Support/Microsoft Edge/NativeMessagingHosts/`
@@ -155,7 +152,7 @@ cargo test
 
 1. **Verify the binary exists:**
    ```bash
-   ls -la ~/.harbor/bin/harbor-bridge
+   ls -la target/release/harbor-bridge target/release/harbor-bridge-native
    ```
 
 2. **Verify the manifest exists:**
@@ -164,10 +161,10 @@ cargo test
    cat ~/Library/Application\ Support/Mozilla/NativeMessagingHosts/harbor_bridge.json
    
    # Chrome
-   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
    ```
 
-3. **Check the path in the manifest** points to the correct binary location
+3. **Check the path in the manifest** points to this checkout’s executable `target/release/harbor-bridge-native` wrapper
 
 4. **Re-run the install script:**
    ```bash
@@ -178,11 +175,11 @@ cargo test
 
 ### Chrome: Extension ID Mismatch
 
-The most common Chrome issue. The extension ID in the manifest must exactly match your loaded extension's ID.
+The origin must match the loaded Harbor extension. Repository builds use `ljnciidcajlichemnbohopnlaonhkpgm`; rerun `./install.sh --skip-build` to refresh an older registration. Custom builds that change the manifest key need their own matching explicit origin.
 
 ```bash
 # Check what ID is in the manifest
-grep allowed_origins ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+grep allowed_origins ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
 
 # Compare with your extension ID from chrome://extensions
 ```
@@ -239,5 +236,5 @@ The bridge reads configuration from:
 
 - [Main Quickstart](../QUICKSTART.md) — Full setup guide
 - [Firefox Setup](../docs/QUICKSTART_FIREFOX.md) — Firefox-specific instructions
-- [Chrome Setup](../docs/QUICKSTART_CHROME.md) — Chrome-specific instructions (extension ID config)
+- [Chrome Setup](../docs/QUICKSTART_CHROME.md) — Chrome-specific loading and native messaging
 - [Architecture](../ARCHITECTURE.md) — System design overview

@@ -142,7 +142,7 @@ Some MCP servers require API keys (e.g., GitHub, Brave Search):
 
 1. **Check the native messaging manifest**:
    ```bash
-   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+   cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
    ```
 
 2. **Verify the extension ID** in `allowed_origins` matches your Harbor extension ID from `chrome://extensions`
@@ -245,7 +245,7 @@ rm -rf ~/.harbor
    rm ~/Library/Application\ Support/Mozilla/NativeMessagingHosts/harbor_bridge.json
    
    # Chrome
-   rm ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge_host.json
+   rm ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json
    ```
 
 3. **Remove user data:**
