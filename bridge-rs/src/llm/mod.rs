@@ -1,5 +1,6 @@
 //! LLM module using any-llm for multi-provider support.
 
+mod apple;
 mod config;
 
 pub use config::{LlmConfig, ProviderInstance};
@@ -7,7 +8,7 @@ pub use config::{LlmConfig, ProviderInstance};
 use crate::rpc::RpcError;
 use any_llm::{
     check_provider, completion, completion_stream, get_supported_providers, list_models as any_llm_list_models,
-    CompletionRequest, Message, ProviderConfig, Tool, ToolCall, ToolFunction,
+    ChatCompletion, CompletionRequest, Message, ProviderConfig, ProviderStatus, Tool, ToolCall, ToolFunction,
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -39,6 +40,16 @@ pub async fn health() -> Result<serde_json::Value, RpcError> {
         statuses.push(status);
     }
 
+    if apple::is_available().await {
+        statuses.push(ProviderStatus {
+            provider: "apple".to_string(),
+            available: true,
+            error: None,
+            version: None,
+            models: None,
+        });
+    }
+
     Ok(serde_json::json!({
         "status": "ok",
         "providers": statuses
@@ -48,6 +59,15 @@ pub async fn health() -> Result<serde_json::Value, RpcError> {
 /// List available models from all configured providers.
 pub async fn list_models() -> Result<serde_json::Value, RpcError> {
     let mut all_models: Vec<serde_json::Value> = Vec::new();
+    if apple::is_available().await {
+        all_models.push(serde_json::json!({
+            "id": apple::MODEL_ID,
+            "name": "Apple Intelligence",
+            "provider": "apple",
+            "owned_by": "Apple",
+            "supportsTools": true,
+        }));
+    }
 
     // Check local providers first (Ollama, Llamafile)
     for provider in &["ollama", "llamafile"] {
@@ -100,29 +120,50 @@ pub async fn chat(params: serde_json::Value) -> Result<serde_json::Value, RpcErr
         message: format!("Invalid params: {}", e),
     })?;
 
-    let completion_request = prepare_completion_request(request, false)?;
+    let completion_request = prepare_completion_request(request, false).await?;
 
-    let response = completion(completion_request).await.map_err(|e| RpcError {
-        code: -32001,
-        message: format!("LLM error: {}", e),
-    })?;
+    let response = run_completion(completion_request).await?;
 
     Ok(serde_json::to_value(response).unwrap())
 }
 
+/// Preserve explicit and configured choices before trying an on-device default.
+async fn resolve_model(requested: Option<String>) -> Option<String> {
+    let configured = get_config().and_then(|config| config.effective_default_model());
+    let apple_available = requested.is_none() && configured.is_none() && apple::is_available().await;
+    choose_model(requested, configured, apple_available)
+}
+
+fn choose_model(
+    requested: Option<String>,
+    configured: Option<String>,
+    apple_available: bool,
+) -> Option<String> {
+    requested
+        .or(configured)
+        .or_else(|| apple_available.then(|| apple::MODEL_ID.to_string()))
+}
+
+async fn run_completion(request: CompletionRequest) -> Result<ChatCompletion, RpcError> {
+    if request.model.starts_with("apple:") {
+        return apple::complete(request).await;
+    }
+    completion(request).await.map_err(|error| RpcError {
+        code: -32001,
+        message: format!("LLM error: {}", error),
+    })
+}
+
 /// Build the provider request used by chat and chat_stream.
-fn prepare_completion_request(
+async fn prepare_completion_request(
     request: ChatRequest,
     stream: bool,
 ) -> Result<CompletionRequest, RpcError> {
     // Use provided model or fall back to default
-    let model = request
-        .model
-        .or_else(|| get_config().and_then(|c| c.effective_default_model()))
-        .ok_or_else(|| RpcError {
-            code: -32602,
-            message: "No model specified and no default model configured".to_string(),
-        })?;
+    let model = resolve_model(request.model).await.ok_or_else(|| RpcError {
+        code: -32602,
+        message: "No model specified and no default model configured".to_string(),
+    })?;
 
     // Build messages, prepending system prompt if provided
     let mut messages: Vec<Message> = Vec::new();
@@ -269,7 +310,10 @@ fn default_input_schema() -> serde_json::Value {
 
 /// List supported provider types (for UI dropdown).
 pub async fn list_provider_types() -> Result<serde_json::Value, RpcError> {
-    let types = get_supported_providers();
+    let mut types = get_supported_providers();
+    if apple::is_available().await {
+        types.push("apple".to_string());
+    }
     let cfg = get_config();
 
     let type_info: Vec<serde_json::Value> = types
@@ -281,13 +325,14 @@ pub async fn list_provider_types() -> Result<serde_json::Value, RpcError> {
                 .unwrap_or(0);
 
             let needs_api_key = matches!(t.as_str(), "openai" | "anthropic" | "mistral" | "groq");
-            let is_local = matches!(t.as_str(), "ollama" | "llamafile" | "lmstudio");
+            let is_local = matches!(t.as_str(), "ollama" | "llamafile" | "lmstudio" | "apple");
 
             serde_json::json!({
                 "type": t,
                 "needs_api_key": needs_api_key,
                 "is_local": is_local,
                 "instance_count": instance_count,
+                "automatic": t == "apple",
             })
         })
         .collect();
@@ -297,7 +342,11 @@ pub async fn list_provider_types() -> Result<serde_json::Value, RpcError> {
 
 /// List all configured provider instances.
 pub async fn list_providers() -> Result<serde_json::Value, RpcError> {
-    let supported_types = get_supported_providers();
+    let mut supported_types = get_supported_providers();
+    let apple_available = apple::is_available().await;
+    if apple_available {
+        supported_types.push("apple".to_string());
+    }
     let cfg = get_config().unwrap_or_default();
 
     // Check which local providers are actually running
@@ -309,18 +358,23 @@ pub async fn list_providers() -> Result<serde_json::Value, RpcError> {
         }
     }
 
+    if apple_available {
+        local_available.insert("apple".to_string());
+    }
+
     let mut provider_info: Vec<serde_json::Value> = Vec::new();
 
     // Add configured instances
     for instance in cfg.providers.values() {
         let needs_api_key = matches!(instance.provider_type.as_str(), "openai" | "anthropic" | "mistral" | "groq");
-        let is_local = matches!(instance.provider_type.as_str(), "ollama" | "llamafile" | "lmstudio");
+        let is_local = matches!(instance.provider_type.as_str(), "ollama" | "llamafile" | "lmstudio" | "apple");
         let is_global_default = cfg.default_provider.as_deref() == Some(&instance.id);
         let is_available = is_local && local_available.contains(&instance.provider_type);
 
         provider_info.push(serde_json::json!({
             "id": instance.id,
             "type": instance.provider_type,
+            "automatic": instance.provider_type == "apple",
             "name": instance.name,
             "configured": instance.enabled && (is_local || instance.api_key.is_some()),
             "needs_api_key": needs_api_key,
@@ -339,7 +393,7 @@ pub async fn list_providers() -> Result<serde_json::Value, RpcError> {
         let has_instance = cfg.get_instances_by_type(ptype).len() > 0;
         if !has_instance {
             let needs_api_key = matches!(ptype.as_str(), "openai" | "anthropic" | "mistral" | "groq");
-            let is_local = matches!(ptype.as_str(), "ollama" | "llamafile" | "lmstudio");
+            let is_local = matches!(ptype.as_str(), "ollama" | "llamafile" | "lmstudio" | "apple");
             let is_available = local_available.contains(ptype.as_str());
             
             // Auto-detected local providers show as configured
@@ -348,6 +402,7 @@ pub async fn list_providers() -> Result<serde_json::Value, RpcError> {
             provider_info.push(serde_json::json!({
                 "id": ptype,
                 "type": ptype,
+                "automatic": ptype == "apple",
                 "name": if auto_configured { format!("{} (auto-detected)", get_type_display_name(ptype)) } else { get_type_display_name(ptype) },
                 "configured": auto_configured,
                 "needs_api_key": needs_api_key,
@@ -369,6 +424,7 @@ pub async fn list_providers() -> Result<serde_json::Value, RpcError> {
 /// Get display name for a provider type
 fn get_type_display_name(provider_type: &str) -> String {
     match provider_type {
+        "apple" => "Apple Intelligence".to_string(),
         "ollama" => "Ollama".to_string(),
         "llamafile" => "Llamafile".to_string(),
         "openai" => "OpenAI".to_string(),
@@ -401,6 +457,10 @@ pub async fn check_provider_status(params: serde_json::Value) -> Result<serde_js
     let provider_type = resolve_provider_type(provider_param)
         .unwrap_or_else(|| provider_param.to_string());
     
+    if provider_type == "apple" {
+        let available = apple::is_available().await;
+        return Ok(serde_json::json!({ "provider": "apple", "available": available }));
+    }
     let config = get_provider_config(provider_param);
     let status = check_provider(&provider_type, config).await;
 
@@ -413,6 +473,9 @@ pub async fn check_provider_status(params: serde_json::Value) -> Result<serde_js
 pub async fn configure_provider(params: serde_json::Value) -> Result<serde_json::Value, RpcError> {
     let instance_id = params.get("id").and_then(|v| v.as_str());
     let provider_type = params.get("provider").and_then(|v| v.as_str());
+    if provider_type == Some("apple") {
+        return Err(automatic_provider_error());
+    }
     let name = params.get("name").and_then(|v| v.as_str());
     let api_key = params.get("api_key").and_then(|v| v.as_str()).map(String::from);
     let base_url = params.get("base_url").and_then(|v| v.as_str()).map(String::from);
@@ -494,6 +557,14 @@ pub async fn configure_provider(params: serde_json::Value) -> Result<serde_json:
     }))
 }
 
+fn automatic_provider_error() -> RpcError {
+    RpcError {
+        code: -32602,
+        message: "Apple Intelligence is detected automatically and needs no provider configuration"
+            .to_string(),
+    }
+}
+
 /// Add a new provider instance.
 pub async fn add_provider(params: serde_json::Value) -> Result<serde_json::Value, RpcError> {
     let provider_type = params
@@ -503,6 +574,10 @@ pub async fn add_provider(params: serde_json::Value) -> Result<serde_json::Value
             code: -32602,
             message: "Missing 'type' parameter".to_string(),
         })?;
+
+    if provider_type == "apple" {
+        return Err(automatic_provider_error());
+    }
 
     let name = params
         .get("name")
@@ -660,7 +735,7 @@ pub async fn get_configuration() -> Result<serde_json::Value, RpcError> {
 
     Ok(serde_json::json!({
         "version": cfg.version,
-        "default_model": cfg.effective_default_model(),
+        "default_model": resolve_model(None).await,
         "default_provider": cfg.default_provider,
         "providers": providers
     }))
@@ -698,21 +773,56 @@ pub async fn set_default_model(params: serde_json::Value) -> Result<serde_json::
 pub async fn list_configured_models() -> Result<serde_json::Value, RpcError> {
     let cfg = get_config().unwrap_or_default();
     
-    let models: Vec<serde_json::Value> = cfg.models.iter().map(|m| {
-        serde_json::json!({
-            "name": m.name,
-            "model_id": m.model_id,
-            "is_default": m.is_default,
+    let models = configured_model_rows(&cfg, apple::is_available().await);
+    Ok(serde_json::json!({ "models": models }))
+}
+
+fn configured_model_rows(cfg: &LlmConfig, apple_available: bool) -> Vec<serde_json::Value> {
+    let default_model = cfg.effective_default_model();
+    let default_alias = cfg
+        .models
+        .iter()
+        .find(|model| model.is_default && Some(&model.model_id) == default_model.as_ref())
+        .or_else(|| {
+            cfg.models
+                .iter()
+                .find(|model| Some(&model.model_id) == default_model.as_ref())
+        });
+    let mut models: Vec<serde_json::Value> = cfg
+        .models
+        .iter()
+        .map(|model| {
+            serde_json::json!({
+                "name": model.name,
+                "model_id": model.model_id,
+                "is_default": default_alias.is_some_and(|default| default.name == model.name),
+            })
         })
-    }).collect();
-    
-    Ok(serde_json::json!({
-        "models": models
-    }))
+        .collect();
+    if apple_available
+        && !cfg
+            .models
+            .iter()
+            .any(|model| model.model_id == apple::MODEL_ID)
+    {
+        let mut name = "Apple Intelligence".to_string();
+        let mut suffix = 1;
+        while cfg.models.iter().any(|model| model.name == name) {
+            suffix += 1;
+            name = format!("Apple Intelligence ({})", suffix);
+        }
+        models.push(serde_json::json!({
+            "name": name,
+            "model_id": apple::MODEL_ID,
+            "is_default": default_model.is_none() || default_model.as_deref() == Some(apple::MODEL_ID),
+            "automatic": true,
+        }));
+    }
+    models
 }
 
 /// Provider prefixes that are considered local (no API key, run on this machine).
-const LOCAL_PROVIDER_PREFIXES: [&str; 2] = ["ollama:", "llamafile:"];
+const LOCAL_PROVIDER_PREFIXES: [&str; 3] = ["ollama:", "llamafile:", "apple:"];
 
 fn is_local_model(model_id: &str) -> bool {
     LOCAL_PROVIDER_PREFIXES
@@ -724,14 +834,11 @@ fn is_local_model(model_id: &str) -> bool {
 /// Companion to list_configured_models; use model_id to correlate.
 pub async fn get_configured_models_metadata() -> Result<serde_json::Value, RpcError> {
     let cfg = get_config().unwrap_or_default();
-    let metadata: Vec<serde_json::Value> = cfg
-        .models
+    let metadata: Vec<serde_json::Value> = configured_model_rows(&cfg, apple::is_available().await)
         .iter()
-        .map(|m| {
-            serde_json::json!({
-                "model_id": m.model_id,
-                "is_local": is_local_model(&m.model_id),
-            })
+        .map(|model| {
+            let model_id = model["model_id"].as_str().unwrap_or_default();
+            serde_json::json!({ "model_id": model_id, "is_local": is_local_model(model_id) })
         })
         .collect();
     Ok(serde_json::json!({ "metadata": metadata }))
@@ -849,6 +956,8 @@ pub struct StreamEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -868,13 +977,14 @@ pub async fn chat_stream(
     
     match request {
         Ok(request) => {
-            let completion_request = match prepare_completion_request(request, true) {
+            let completion_request = match prepare_completion_request(request, true).await {
                 Ok(request) => request,
                 Err(error) => {
                     let _ = event_tx.send(StreamEvent {
                         id: request_id,
                         event_type: "error".to_string(),
                         token: None,
+                        tool_calls: None,
                         finish_reason: None,
                         model: None,
                         error: Some(serde_json::json!({
@@ -886,6 +996,32 @@ pub async fn chat_stream(
                 }
             };
             let model = completion_request.model.clone();
+
+            // Apple's native helper returns a complete response. Emit its text and
+            // tool calls together, followed by the normal terminal event.
+            if model.starts_with("apple:") {
+                match apple::complete(completion_request).await {
+                    Ok(response) => {
+                        for event in apple_stream_events(request_id, response) {
+                            if event_tx.send(event).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        let _ = event_tx.send(StreamEvent {
+                            id: request_id,
+                            event_type: "error".to_string(),
+                            token: None,
+                            tool_calls: None,
+                            finish_reason: None,
+                            model: Some(model),
+                            error: Some(serde_json::json!({ "code": error.code, "message": error.message })),
+                        }).await;
+                    }
+                }
+                return;
+            }
 
             // Try to create stream
             match completion_stream(completion_request).await {
@@ -905,6 +1041,7 @@ pub async fn chat_stream(
                                     id: request_id.clone(),
                                     event_type: if finish_reason.is_some() { "done".to_string() } else { "token".to_string() },
                                     token: content,
+                                    tool_calls: None,
                                     finish_reason,
                                     model: Some(model.clone()),
                                     error: None,
@@ -915,6 +1052,7 @@ pub async fn chat_stream(
                                     id: request_id.clone(),
                                     event_type: "error".to_string(),
                                     token: None,
+                                    tool_calls: None,
                                     finish_reason: None,
                                     model: Some(model.clone()),
                                     error: Some(serde_json::json!({
@@ -939,6 +1077,7 @@ pub async fn chat_stream(
                         id: request_id,
                         event_type: "error".to_string(),
                         token: None,
+                        tool_calls: None,
                         finish_reason: None,
                         model: Some(model),
                         error: Some(serde_json::json!({
@@ -954,6 +1093,7 @@ pub async fn chat_stream(
                 id: request_id,
                 event_type: "error".to_string(),
                 token: None,
+                tool_calls: None,
                 finish_reason: None,
                 model: None,
                 error: Some(serde_json::json!({
@@ -963,6 +1103,39 @@ pub async fn chat_stream(
             }).await;
         }
     }
+}
+
+fn apple_stream_events(
+    request_id: serde_json::Value,
+    response: ChatCompletion,
+) -> Vec<StreamEvent> {
+    let choice = &response.choices[0];
+    vec![
+        StreamEvent {
+            id: request_id.clone(),
+            event_type: "token".to_string(),
+            token: match &choice.message.content {
+                any_llm::MessageContent::Text(text) => Some(text.clone()),
+                _ => None,
+            },
+            tool_calls: choice.message.tool_calls.clone(),
+            finish_reason: None,
+            model: Some(response.model.clone()),
+            error: None,
+        },
+        StreamEvent {
+            id: request_id,
+            event_type: "done".to_string(),
+            token: None,
+            tool_calls: None,
+            finish_reason: choice
+                .finish_reason
+                .as_ref()
+                .map(|reason| format!("{:?}", reason)),
+            model: Some(response.model),
+            error: None,
+        },
+    ]
 }
 
 #[cfg(test)]
@@ -1001,18 +1174,122 @@ mod message_tests {
         cfg.default_model = Some("ollama:old".into());
         cfg.remove_model("old");
         set_config(cfg);
-        assert_eq!(get_configuration().await.unwrap()["default_model"], "ollama:next");
+        assert_eq!(
+            get_configuration().await.unwrap()["default_model"],
+            "ollama:next"
+        );
         for stream in [false, true] {
             let mut req = request();
             req.model = None;
-            assert_eq!(prepare_completion_request(req, stream).unwrap().model, "ollama:next");
+            assert_eq!(
+                prepare_completion_request(req, stream).await.unwrap().model,
+                "ollama:next"
+            );
         }
+        let mut disabled = LlmConfig::default();
+        let mut provider = ProviderInstance::with_id("apple-legacy", "apple", "Apple Intelligence");
+        provider.enabled = false;
+        disabled.add_instance(provider);
+        set_config(disabled);
+        assert!(!apple::is_available().await);
         set_config(LlmConfig::default());
     }
 
     #[test]
-    fn streaming_request_prepends_system_prompt() {
-        let prepared = prepare_completion_request(request(), true).unwrap();
+    fn apple_default_selection_preserves_explicit_and_saved_choices() {
+        assert_eq!(
+            choose_model(None, None, true).as_deref(),
+            Some("apple:system")
+        );
+        assert_eq!(choose_model(None, None, false), None);
+        assert_eq!(
+            choose_model(None, Some("ollama:saved".into()), true).as_deref(),
+            Some("ollama:saved")
+        );
+        assert_eq!(
+            choose_model(
+                Some("openai:explicit".into()),
+                Some("ollama:saved".into()),
+                true
+            )
+            .as_deref(),
+            Some("openai:explicit")
+        );
+    }
+
+    #[test]
+    fn automatic_apple_rows_track_availability_and_effective_defaults() {
+        let mut cfg = LlmConfig::default();
+        assert!(configured_model_rows(&cfg, false).is_empty());
+        let rows = configured_model_rows(&cfg, true);
+        assert_eq!(rows[0]["model_id"], "apple:system");
+        assert_eq!(rows[0]["is_default"], true);
+        assert_eq!(rows[0]["automatic"], true);
+        cfg.default_model = Some("apple:system".into());
+        assert_eq!(configured_model_rows(&cfg, true)[0]["is_default"], true);
+        cfg.add_model("ollama:saved", Some("Apple Intelligence"));
+        cfg.default_model = Some("ollama:saved".into());
+        let rows = configured_model_rows(&cfg, true);
+        assert_eq!(rows[0]["is_default"], true);
+        assert_eq!(rows[1]["is_default"], false);
+        assert_ne!(rows[0]["name"], rows[1]["name"]);
+        cfg.add_model("apple:system", Some("Saved Apple"));
+        assert_eq!(configured_model_rows(&cfg, true).len(), 2);
+    }
+
+    #[test]
+    fn apple_stream_preserves_tool_calls_and_finishes_once() {
+        let response: ChatCompletion = serde_json::from_value(serde_json::json!({
+            "id": "apple-test", "object": "chat.completion", "created": 0, "model": "apple:system",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": null,
+                "tool_calls": [{"id": "call_time", "type": "function", "function": {"name": "time_now", "arguments": "{}"}}]}, "finish_reason": "tool_calls"}]
+        })).unwrap();
+        let events = apple_stream_events(serde_json::json!("req-1"), response);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].id, "req-1");
+        assert_eq!(events[0].event_type, "token");
+        assert_eq!(events[0].tool_calls.as_ref().unwrap()[0].id, "call_time");
+        assert_eq!(events[1].event_type, "done");
+        assert_eq!(events[1].finish_reason.as_deref(), Some("ToolCalls"));
+    }
+
+    #[tokio::test]
+    async fn apple_rejects_manual_provider_configuration() {
+        assert_eq!(
+            add_provider(serde_json::json!({"type": "apple", "name": "Apple"}))
+                .await
+                .unwrap_err()
+                .code,
+            -32602
+        );
+        assert_eq!(
+            configure_provider(serde_json::json!({"provider": "apple", "enabled": false}))
+                .await
+                .unwrap_err()
+                .code,
+            -32602
+        );
+    }
+
+    #[test]
+    fn apple_system_model_is_local() {
+        assert!(is_local_model("apple:system"));
+        assert!(!is_local_model("openai:gpt-4o"));
+    }
+
+    #[test]
+    fn configured_apple_model_needs_no_provider_credentials() {
+        let mut config = LlmConfig::default();
+        config.add_model("apple:system", Some("Apple Intelligence"));
+        assert_eq!(
+            config.effective_default_model().as_deref(),
+            Some("apple:system")
+        );
+    }
+
+    #[tokio::test]
+    async fn streaming_request_prepends_system_prompt() {
+        let prepared = prepare_completion_request(request(), true).await.unwrap();
         assert!(matches!(prepared.messages[0].role, MessageRole::System));
         assert_eq!(
             serde_json::to_value(&prepared.messages[0]).unwrap()["content"],
@@ -1020,9 +1297,9 @@ mod message_tests {
         );
     }
 
-    #[test]
-    fn streaming_request_keeps_tool_definitions() {
-        let prepared = prepare_completion_request(request(), true).unwrap();
+    #[tokio::test]
+    async fn streaming_request_keeps_tool_definitions() {
+        let prepared = prepare_completion_request(request(), true).await.unwrap();
         let tools = prepared.tools.expect("streaming tools kept");
         assert_eq!(tools[0].tool_type, "function");
         assert_eq!(tools[0].function.name, "time_now");
@@ -1030,10 +1307,10 @@ mod message_tests {
         assert_eq!(tools[0].function.parameters, default_input_schema());
     }
 
-    #[test]
-    fn chat_modes_prepare_identical_options_and_tool_history() {
-        let chat = prepare_completion_request(request(), false).unwrap();
-        let mut stream = prepare_completion_request(request(), true).unwrap();
+    #[tokio::test]
+    async fn chat_modes_prepare_identical_options_and_tool_history() {
+        let chat = prepare_completion_request(request(), false).await.unwrap();
+        let mut stream = prepare_completion_request(request(), true).await.unwrap();
         assert_eq!(stream.stream, Some(true));
         assert_eq!(stream.temperature, Some(0.25));
         assert_eq!(stream.max_tokens, Some(32));
@@ -1050,15 +1327,15 @@ mod message_tests {
         assert_eq!(stream.messages[3].tool_call_id.as_deref(), Some("call_1"));
     }
 
-    #[test]
-    fn requests_without_optional_fields_keep_the_user_message() {
+    #[tokio::test]
+    async fn requests_without_optional_fields_keep_the_user_message() {
         for stream in [false, true] {
             let request = serde_json::from_value(serde_json::json!({
                 "model": "ollama:test",
                 "messages": [{ "role": "user", "content": "hello" }]
             }))
             .unwrap();
-            let prepared = prepare_completion_request(request, stream).unwrap();
+            let prepared = prepare_completion_request(request, stream).await.unwrap();
             assert_eq!(prepared.messages.len(), 1);
             assert!(matches!(prepared.messages[0].role, MessageRole::User));
             assert!(prepared.tools.is_none());
