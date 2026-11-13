@@ -171,7 +171,7 @@ When Apple Intelligence is available, you can use it immediately. To use another
 The Getting Started demo ends with `agent.run()`, which needs all of the following:
 
 - A working [default model](#configure-a-model).
-- A connected MCP server with a time tool for the demo's time question. In the Harbor sidebar under **MCP Servers**, find **Time Server** and click **Start** if it is stopped. Confirm it is running before continuing; if no tools are available, see [Troubleshooting](#no-tools-available).
+- The built-in **Time Server**, which starts automatically when first installed. Existing saved server settings are preserved; if you previously stopped it, click **Start** under **MCP Servers**. See [Troubleshooting](#no-tools-available) if no tools are available.
 - **Agentic Tool Use** enabled in the **Web Agents API** sidebar, under **Browser Agent Capabilities**. Manual **Tool Access** allows listing and calling tools directly; it does not enable `agent.run()`. Agentic Tool Use is on by default for new installs. Existing saved choices are preserved: if yours is off, turn it on for this demo, then reload the demo page so it picks up the setting.
 - Permission granted to the demo's origin when it asks for `model:prompt`, `model:tools`, `mcp:tools.list` and `mcp:tools.call`. Enabling an API does not grant websites permission to use it.
 
@@ -391,7 +391,7 @@ Enable **Agentic Tool Use** in the Web Agents API sidebar and reload the demo pa
 
 ### "No tools available"
 
-The built-in **Time Server** provides `time.now`, but a listed server may be stopped. In the Harbor sidebar under **MCP Servers**, click **Start** on Time Server, then retry **Check Available Tools** in the demo.
+The built-in **Time Server** provides `time.now` and starts automatically when first installed. Existing saved stop choices are preserved, so a listed server may still be stopped. In the Harbor sidebar under **MCP Servers**, click **Start** on Time Server, then retry **Check Available Tools** in the demo.
 
 ---
 

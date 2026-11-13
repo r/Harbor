@@ -209,6 +209,8 @@ export async function ensureBuiltinServers(): Promise<McpServerManifest[]> {
     const timeManifest: McpServerManifest = {
       id: 'time-wasm',
       name: 'Time Server',
+      // Make the first-run checklist usable; existing manifests keep their saved choice.
+      autostart: true,
       version: '0.1.0',
       runtime: 'wasm',
       entrypoint: 'mcp-time.wasm',
@@ -217,13 +219,11 @@ export async function ensureBuiltinServers(): Promise<McpServerManifest[]> {
       tools: [
         {
           name: 'time.now',
-          description: 'Get current time from host',
+          description: 'Get the current date and time in ISO 8601 format (UTC)',
           inputSchema: {
             type: 'object',
-            properties: {
-              now: { type: 'string' },
-            },
-            required: ['now'],
+            properties: {},
+            required: [],
           },
         },
       ],

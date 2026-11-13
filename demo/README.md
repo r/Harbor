@@ -151,6 +151,7 @@ console.log(tab.title, tab.textContent);
 - Check the extension settings to reset permissions
 
 **No tools available**
-- Make sure MCP servers are connected in the Harbor sidebar
-- Start servers in the sidebar before using tools
+- On a fresh install, the built-in Time Server starts automatically for the Getting Started checklist.
+- Existing saved stop choices are preserved. If you previously stopped Time Server, start it under MCP Servers in the Harbor sidebar.
+- The final agent step also needs an available model. Ready Apple Intelligence works automatically; otherwise configure your preferred model using the [Quickstart](../QUICKSTART.md#configure-a-model).
 
