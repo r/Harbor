@@ -437,7 +437,7 @@ export async function setTypeDefault(instanceId: string): Promise<void> {
 
 function supportsToolCalling(providerType: string): boolean {
   // Most modern providers support tool calling
-  return ['openai', 'anthropic', 'mistral', 'ollama'].includes(providerType);
+  return ['openai', 'anthropic', 'mistral', 'ollama', 'apple'].includes(providerType);
 }
 
 // =============================================================================

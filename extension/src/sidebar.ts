@@ -2,6 +2,7 @@
 export {};
 
 import { browserAPI } from './browser-compat';
+import { configuredModelActions, modelsAvailableToAdd, type ConfiguredModel } from './sidebar-models';
 
 type SecretDecl = { name: string; label: string; type?: 'text' | 'password' };
 
@@ -59,12 +60,6 @@ type ModelInfo = {
   id: string;
   provider?: string;
   owned_by?: string;
-};
-
-type ConfiguredModel = {
-  name: string;
-  model_id: string;
-  is_default: boolean;
 };
 
 // Header elements
@@ -1006,9 +1001,7 @@ function renderConfiguredModels(models: ConfiguredModel[]): void {
         <div class="configured-model-id">${model.model_id}</div>
       </div>
       <div class="configured-model-actions">
-        <button class="btn btn-ghost btn-sm test-model-btn" data-model="${model.model_id}" title="Test connection">⚡</button>
-        ${!model.is_default ? `<button class="btn btn-ghost btn-sm set-default-model-btn" data-name="${model.name}" title="Set as default">★</button>` : ''}
-        <button class="btn btn-ghost btn-sm remove-model-btn" data-name="${model.name}" title="Remove">✕</button>
+        ${configuredModelActions(model)}
       </div>
     `;
     
@@ -1067,12 +1060,10 @@ function renderConfiguredModels(models: ConfiguredModel[]): void {
 
 // Render available models dropdown
 function renderAvailableModelsDropdown(models: ModelInfo[], configured: ConfiguredModel[]): void {
-  const configuredIds = new Set(configured.map(c => c.model_id));
-  
   availableModelsSelect.innerHTML = '<option value="">Select a model to add...</option>';
   
   // Filter out already configured models
-  const available = models.filter(m => !configuredIds.has(m.id));
+  const available = modelsAvailableToAdd(models, configured);
   
   if (available.length === 0) {
     availableModelsSelect.innerHTML = '<option value="">No more models available</option>';
@@ -1083,7 +1074,7 @@ function renderAvailableModelsDropdown(models: ModelInfo[], configured: Configur
   for (const model of available) {
     const option = document.createElement('option');
     option.value = model.id;
-    option.textContent = model.id;
+    option.textContent = model.id === 'apple:system' ? 'Apple Intelligence' : model.id;
     availableModelsSelect.appendChild(option);
   }
 }

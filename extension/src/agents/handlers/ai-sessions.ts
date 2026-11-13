@@ -122,6 +122,7 @@ export async function handleSessionPrompt(
   const looksLocal =
     !modelName ||
     modelName.startsWith('ollama:') ||
+    modelName.startsWith('apple:') ||
     modelName.startsWith('local:') ||
     modelName.startsWith('firefox-ml:') ||
     modelName.startsWith('chrome-ai:');
