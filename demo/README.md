@@ -15,6 +15,7 @@ These demos are published via GitHub Pages at: **https://[your-org].github.io/ha
 | **Demo Index** | Index page linking to all demos | `/demo/index.html` |
 | **Getting Started** | Interactive walkthrough of the Web Agent API | `/demo/web-agents/getting-started/` |
 | **Chat Demo** | Full-featured chat with MCP tools | `/demo/web-agents/chat-poc/` |
+| **AAF Invoice** | Fill and review an invoice using the visitor’s Harbor-selected AI | `/demo/web-agents/aaf-invoice/` |
 | **Page Summarizer** | Simple one-click page summarization | `/demo/web-agents/summarizer/` |
 | **Email Chat** | Chat with your email using Gmail MCP tools | `/demo/web-agents/email-chat/` |
 | **Time Agent** | Simple MCP time tool demo | `/demo/web-agents/time-agent/` |

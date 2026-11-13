@@ -1,0 +1,96 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "aaf": "https://aaf.dev/vocab#"
+  },
+  "version": "0.1",
+  "site": {
+    "name": "AAF Invoice \u00b7 Harbor",
+    "origin": "http://localhost:8000",
+    "description": "Prepare and review invoice details, then save local drafts."
+  },
+  "actions": {
+    "invoice.create": {
+      "title": "Create invoice",
+      "description": "Creates a new invoice for a customer with a specified amount, currency, and optional memo.",
+      "scope": "invoices.write",
+      "risk": "low",
+      "confirmation": "review",
+      "idempotent": false,
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "customer_email",
+          "amount",
+          "currency"
+        ],
+        "properties": {
+          "customer_email": {
+            "type": "string",
+            "format": "email",
+            "x-semantic": "https://schema.org/email"
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0,
+            "x-semantic": "https://schema.org/price"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "x-semantic": "https://schema.org/priceCurrency"
+          },
+          "memo": {
+            "type": "string",
+            "x-semantic": "https://schema.org/description"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "invoice_id",
+          "status"
+        ],
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "x-semantic": "https://schema.org/identifier"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "sent"
+            ],
+            "x-semantic": "https://schema.org/orderStatus"
+          }
+        }
+      }
+    }
+  },
+  "pages": {
+    "/web-agents/aaf-invoice/": {
+      "title": "Create Invoice",
+      "description": "Form to create a new invoice with customer email, amount, currency, and memo.",
+      "actions": [
+        "invoice.create"
+      ]
+    }
+  },
+  "errors": {
+    "UNAUTHORIZED": {
+      "message": "User is not authorized for this action"
+    },
+    "VALIDATION_ERROR": {
+      "message": "Input validation failed"
+    },
+    "CONFIRMATION_REQUIRED": {
+      "message": "Action requires explicit confirmation"
+    }
+  }
+}
