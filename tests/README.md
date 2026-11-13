@@ -22,6 +22,16 @@ npm run test:e2e
 npm run test:e2e:ui
 ```
 
+## Fresh-install Getting Started checklist
+
+After `npm run build`, run from the repository root:
+
+```bash
+node tests/e2e/test-getting-started.mjs
+```
+
+This launches Firefox with both extensions in a temporary profile and runs all five checklist steps, including the normal localhost permission prompt, time-tool discovery, a real model tool call, and the displayed response. It starts its own demo server on a free loopback port and closes its browser afterward. It does not seed extension settings or configure a model. The native bridge must already be registered and a default model must be available; ready Apple Intelligence works without a saved model. An unavailable model fails the test rather than being skipped.
+
 ## Test Structure
 
 ```
