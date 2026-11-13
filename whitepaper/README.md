@@ -6,11 +6,13 @@ It is a **static HTML site** as of May 2026 — the previous Jekyll setup was re
 when the site was redesigned. `.nojekyll` is present so GitHub Pages serves the
 files exactly as they sit here.
 
+The proposal draft number identifies an edition of the public site. The Web Agent API specification and browser extensions have their own versions.
+
 ## Files
 
 | File | Purpose |
 |---|---|
-| `index.html` | Home page — hero, problem, proposal, three primitives, comparison table, standards convergence, architecture, examples, security, invitation, get-started. |
+| `index.html` | Home page — bring your own AI, manifesto, proposal, API examples, short comparison, architecture, security and invitation. |
 | `landscape.html` | Long-form essay: "the 2026 landscape, in four shapes." Linked from the home page and the nav. |
 | `spec.html` | Web Agent API spec page — high-level overview, API surface, permission scopes, threat-model paragraph, with deep-link to the full explainer in the repo. |
 | `build.html` | Quickstart for developers: install, hello-AI, run-an-agent, expose page tools, links to the deep developer docs. |

@@ -17,9 +17,13 @@ If you're reaching for the literal copy that ships on the site, read `whitepaper
 
 ## The one-line summary
 
-> Harbor is the missing layer that lets *any* website use *the user's chosen AI* on *any browser*, with the user staying in control. Today's "AI browsers" make you pick a vendor. WebMCP gives pages a way to declare tools but not a way to get a model. Chrome's Prompt API gives you one model on one browser. Harbor is what happens when you treat AI as a browser capability — like `fetch()` is for networking — instead of a vendor product.
+> Bring your own AI to the web. Take your agent with you as you browse. You decide what it can see, what it can do, and what it shares with each site.
 
 ---
+
+## Introducing Harbor on the public site
+
+The homepage is a provocation about who gets to act on the reader’s behalf. The proposed browser capability is permissioned access to the reader’s own AI. A site asks to use it, and the browser brings that request to the reader, as it does for camera or location access. Lead with the reader’s ownership of their agent and make the case before offering setup instructions. Use a concrete example to show what each party controls. A newspaper could expose its archive search to a reader’s chosen model. The archive supplies the search tool, the reader grants access, and the model works with the results. This is an example for builders. For a hands-on introduction today, point readers to the Page Summarizer bookmarklet and explain the developer setup it requires. Keep the detailed market comparison in the landscape essay.
 
 ## Where the world is, May 2026
 
