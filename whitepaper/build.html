@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Build with Harbor</title>
 <meta name="description" content="Install Harbor in Firefox or Chrome, then build with the Web Agent API. Bring your own model and your own MCP servers." />
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48 64x64">
 <link rel="stylesheet" href="styles.css">
 <script>
   (function () {
@@ -45,8 +43,7 @@
     <p class="eyebrow">build · quickstart</p>
     <h1>Build with Harbor.</h1>
     <p class="deck">
-      Install the reference extension. Bring your own model. Write three lines.
-      The whole loop — Firefox, Ollama, your code — runs in about ten minutes.
+      Build the two Firefox extensions and their native bridge, connect a local model, then try it on an article or add a prompt to your own page.
     </p>
     <div class="meta">
       <span>Firefox primary</span>
@@ -90,7 +87,8 @@ ollama pull llama3.2</pre>
       <li>Open <code>about:debugging#/runtime/this-firefox</code></li>
       <li>"Load Temporary Add-on…" → <code>extension/dist-firefox/manifest.json</code></li>
       <li>"Load Temporary Add-on…" again → <code>web-agents-api/dist-firefox/manifest.json</code></li>
-      <li>Open the Harbor sidebar (<kbd>Cmd&nbsp;+&nbsp;B</kbd>). Verify <em>Bridge: Connected</em> and <em>LLM: Ollama</em>.</li>
+      <li>Open the Harbor sidebar from the toolbar and check for <em>Bridge: Connected</em>.</li>
+      <li>Under <strong>LLM Providers → Configured Models</strong>, select your Ollama model and click <strong>Add</strong>. Make it the default, then use <strong>Test connection</strong>. Look for <em>Model works!</em></li>
     </ol>
     <p>
       Chrome works the same way with <code>chrome://extensions</code> →
@@ -99,6 +97,8 @@ ollama pull llama3.2</pre>
     </p>
 
     <hr/>
+
+    <p>To try your setup, open the <a class="link" href="https://r.github.io/Harbor/demo/web-agents/summarizer/">Page Summarizer demo</a> and drag its bookmark to your toolbar. Open an article, click the bookmark, and grant the site permission to use your model.</p>
 
     <h2 id="hello">2. Hello, browser AI</h2>
     <p>
@@ -197,7 +197,7 @@ const writeSession = await agent.requestCapabilities({
       the use cases that show up.
     </p>
     <p>
-      <a class="link" href="mailto:raffi@mozilla.org">raffi@mozilla.org</a> · <a class="link" href="https://github.com/r/harbor/discussions" target="_blank" rel="noopener">GitHub Discussions ↗</a>
+      <a class="link" href="mailto:sam@mozilla.org">Email me</a> · <a class="link" href="https://github.com/r/harbor/discussions" target="_blank" rel="noopener">GitHub Discussions ↗</a>
     </p>
   </article>
 
@@ -247,14 +247,13 @@ const writeSession = await agent.requestCapabilities({
       <div>
         <h5>Contact</h5>
         <ul>
-          <li><a href="mailto:raffi@mozilla.org">raffi@mozilla.org</a></li>
-          <li><a href="mailto:raffi.krikorian@gmail.com">raffi.krikorian@gmail.com</a></li>
+          <li><a href="mailto:sam@mozilla.org">Email me</a></li>
         </ul>
       </div>
     </div>
     <div class="foot-bottom">
       <span>© 2026 · Harbor draft proposal</span>
-      <span>v0.3 · last updated may 2026</span>
+      <span>Proposal draft v0.4 · November 2026</span>
     </div>
   </div>
 </footer>

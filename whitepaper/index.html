@@ -3,12 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Harbor — AI as a browser capability</title>
-<meta name="description" content="A proposal and reference implementation for the Web Agent API: bring your AI to every website. Your model, your credentials, your context — mediated by the browser, not a vendor." />
+<title>Harbor — Bring your own AI to the web</title>
+<meta name="description" content="Take your agent with you as you browse. You decide what it can see, what it can do, and what it shares with each site. Explore the proposed browser API or set up Harbor in Firefox to summarize an article with your model." />
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48 64x64">
 <link rel="stylesheet" href="styles.css">
 
 <script>
@@ -48,56 +46,45 @@
 <!-- ===================== HERO ===================== -->
 <section class="hero">
   <div class="wrap">
-    <p class="hero-eyebrow"><span class="dot"></span>a proposal · open spec · working extension</p>
-    <h1>
-      AI as a<br/>
-      <span class="ul">browser capability</span>.
-    </h1>
-    <p class="hero-sub">
-      Bring your AI to every website. Your model, your credentials, your context —
-      mediated by the browser, not a vendor.
-    </p>
-    <div class="hero-ctas">
-      <a class="btn" href="spec.html">Read the proposal <span class="arr">→</span></a>
-      <a class="btn btn-secondary" href="#get-started">Install Harbor <span class="arr">→</span></a>
+    <div class="hero-spread">
+      <div>
+        <h1>
+          Bring your own AI to the web.
+        </h1>
+        <p class="hero-sub">
+          Take your agent with you as you browse.
+          You decide what it can see, what it can do, and what it shares with each site.
+        </p>
+        <div class="hero-ctas">
+          <a class="btn" href="#get-started">Try Harbor in Firefox <span class="arr">→</span></a>
+          <a class="btn btn-secondary" href="#proposal">Read the proposal <span class="arr">→</span></a>
+        </div>
+      </div>
+      <div class="beacon-print" aria-hidden="true">
+        <span class="beacon-sun"></span>
+        <span class="beacon-light"></span>
+        <span class="beacon-tower"></span>
+        <span class="beacon-water"></span>
+      </div>
     </div>
     <p class="hero-tagstrip">
-      <span class="pill">status</span>
-      a working sketch of what user-controlled AI on the open web could look like —
-      open spec, working extension, Firefox + Chrome.
+      Harbor is an experimental browser extension and a proposal for the web.
+      Built by people inside Mozilla as an independent project.
     </p>
   </div>
 </section>
 
-<!-- ===================== PROBLEM ===================== -->
-<section class="section" id="problem">
+<!-- ===================== MANIFESTO ===================== -->
+<section class="section" id="manifesto">
   <div class="wrap two-col">
     <div class="side">
-      <p class="eyebrow">01 — the 2026 landscape</p>
-      <h2>AI in the browser is everywhere. None of it is yours.</h2>
+      <h2>Whose side is your agent on?</h2>
     </div>
     <div class="prose measure">
-      <p class="lead">
-        In 2024, "AI in the browser" was an idea. By 2026 it's everywhere — and it has
-        consolidated in a way the open web hasn't, in a long time.
-      </p>
-      <p>
-        OpenAI ships Atlas. Perplexity ships Comet. Google rebuilt Chrome around Gemini.
-        Each of them is a vertically-integrated stack: <em>their</em> browser, <em>their</em>
-        agent, <em>their</em> model, <em>their</em> servers. The agent reads your screen,
-        moves your cursor, types in your fields. To use any of it, you adopt the whole thing.
-      </p>
-      <p>
-        Sidebar assistants are the other shape: Brave Leo, Firefox's AI Window. Calmer,
-        but bolted onto the side of the page. They can read the page; they can't
-        <em>do</em> things on it without screen-driving DOM agents underneath.
-      </p>
-      <p>
-        Both shapes assume the same thing: that the agent is the platform's, not yours.
-        The web is sliding from a place you visit into a place an agent visits on your behalf —
-        and the agent answers to whoever shipped the browser.
-      </p>
-      <p><a class="link" href="landscape.html">Read the full landscape essay →</a></p>
+      <p class="lead">Suppose you ask an airline’s assistant to find you the cheapest way home. Would it put a train ticket first?</p>
+      <p>The airline has every reason to build an assistant that sells flights. You have every reason to bring one that remembers you’re happy to take the train. Why should visiting a website settle which of those assistants gets to help you?</p>
+      <p>You can already follow a link in the browser of your choice. We think you should be able to bring your own agent along. A site can say what it offers. You should get to decide who acts on your behalf.</p>
+      <p><a class="link" href="landscape.html">Read Raffi Krikorian’s essay on AI in the browser →</a></p>
     </div>
   </div>
 </section>
@@ -105,30 +92,42 @@
 <!-- ===================== PROPOSAL ===================== -->
 <section class="section section-tint" id="proposal">
   <div class="wrap">
-    <p class="eyebrow">02 — the proposal</p>
-    <h2 style="max-width: 18ch">What if AI were a browser capability, like <code>fetch()</code> is for networking?</h2>
-    <p class="lead" style="margin-top: 18px">
-      The browser is the right place to put the user's agency. It already mediates
-      cookies, geolocation, the camera, payments. It already brokers trust between you
-      and millions of sites you've never met. AI is the same kind of capability — and
-      it should be wired in the same way.
-    </p>
+    <h2>What if you could use your own AI on your local paper’s site?</h2>
+    <p class="lead">Your grandmother sold tickets at Union Station. You’ve told your agent
+      about her. You open your local paper’s archive.</p>
+    <div class="prose measure">
+      <p>You choose “Search with my AI” and ask, “What did people say when the old station closed?” Your browser asks, “Let the paper use your AI to answer this question?”</p>
+      <p>You allow it. Your agent picks three words, <em>Union Station closure</em>, and sends them to the archive.
+        The paper sends back matching stories. Your agent points you to the ticket clerks’
+        recollections because it knows about your grandmother. Her name never appeared
+        in the search.</p>
+      <p>Now suppose your agent wants to search for her by name. Does that permission cover sending her name,
+        or would you want it to show you the search and ask again before sending her name
+        to the newspaper?</p>
+      <p><a class="link" href="#invite">What would you want your own agent to keep to itself? →</a></p>
+    </div>
 
     <div class="grid-3">
       <div>
         <p class="num">A.</p>
         <h4>Your model.</h4>
-        <p>You pick the provider. Local, OpenAI, Anthropic, a self-hosted endpoint. Sites talk to a stable browser API; the browser talks to whichever model you chose.</p>
+        <p>Today you connect Harbor to a model on your computer or through a provider.
+          Choosing a model doesn’t import another assistant’s conversations or memories.
+          Your agent could learn about your grandmother from this conversation or from a saved note
+          you give it permission to read.</p>
       </div>
       <div>
         <p class="num">B.</p>
         <h4>Your context.</h4>
-        <p>Your bookmarks, your tabs, your history, your MCP servers — kept on your device, surfaced to the agent only with your permission, per origin.</p>
+        <p>With a model running on your computer, the prompt is processed on your device.
+          With a hosted model, the provider receives the prompt, including any conversation or
+          saved-note text sent with it. If that text mentions your grandmother, the provider sees
+          that detail. In this example, the newspaper receives just the search terms.</p>
       </div>
       <div>
         <p class="num">C.</p>
         <h4>Mediated by the browser.</h4>
-        <p>The page asks; the browser decides what the agent can see and do. Permissions are scoped, revocable, visible. Same posture as the camera.</p>
+        <p>When a site asks to use your agent, you decide what to allow. Your browser enforces your choice. As with camera access, you can give one site permission and take it back later.</p>
       </div>
     </div>
   </div>
@@ -137,10 +136,9 @@
 <!-- ===================== HOW IT WORKS ===================== -->
 <section class="section" id="how">
   <div class="wrap">
-    <p class="eyebrow">03 — how it works</p>
-    <h2 style="max-width: 22ch">Three primitives. The rest is policy and plumbing.</h2>
+    <h2 style="max-width: 22ch">What can a website do with Harbor?</h2>
     <p class="lead">
-      The proposed Web Agent API is small on purpose. A page can <em>prompt</em> the user's model,
+      A page can <em>prompt</em> the user's model,
       <em>run</em> an agent against tools the user has approved, or <em>register</em> a tool of its own.
     </p>
 
@@ -150,7 +148,7 @@
         <div class="codecard-head"><span>1 · use the user's model</span><span class="num">window.ai</span></div>
 <pre><code><span class="tk-c">// The page never sees an API key. The browser does the routing.</span>
 <span class="tk-k">const</span> <span class="tk-n">session</span> = <span class="tk-k">await</span> <span class="tk-n">window</span>.<span class="tk-p">ai</span>.<span class="tk-f">createTextSession</span>();
-<span class="tk-k">const</span> <span class="tk-n">reply</span>   = <span class="tk-k">await</span> <span class="tk-n">session</span>.<span class="tk-f">prompt</span>(<span class="tk-s">"Summarize this page"</span>);</code></pre>
+<span class="tk-k">const</span> <span class="tk-n">reply</span>   = <span class="tk-k">await</span> <span class="tk-n">session</span>.<span class="tk-f">prompt</span>(<span class="tk-s">`Summarize this article: ${document.querySelector("article").innerText}`</span>);</code></pre>
       </div>
 
       <div class="codecard">
@@ -162,7 +160,7 @@
       </div>
 
       <div class="codecard">
-        <div class="codecard-head"><span>3 · a page declares its own tool · W3C WebMCP</span><span class="num">navigator.modelContext</span></div>
+        <div class="codecard-head"><span>3 · a page declares its own tool · Harbor API</span><span class="num">navigator.modelContext</span></div>
 <pre><code><span class="tk-n">navigator</span>.<span class="tk-p">modelContext</span>.<span class="tk-f">addTool</span>({
   <span class="tk-p">name</span>:        <span class="tk-s">"search_archive"</span>,
   <span class="tk-p">description</span>: <span class="tk-s">"Search our 20-year archive"</span>,
@@ -176,206 +174,11 @@
 
 <!-- ===================== COMPARISON ===================== -->
 <section class="section section-sunken" id="differentiation">
-  <div class="wrap">
-    <p class="eyebrow">04 — where harbor sits</p>
-    <h2 style="max-width: 20ch">The differentiation is in the architecture, not the chrome.</h2>
-    <p class="lead" style="max-width: 60ch">
-      Four shapes are in play in 2026. They look similar from the user's seat;
-      underneath, the trust model is very different.
-    </p>
-
-    <!-- desktop / tablet table -->
-    <div class="cmp-wrap">
-    <table class="cmp">
-      <colgroup>
-        <col style="width:18%"/>
-        <col/>
-        <col/>
-        <col/>
-        <col class="col-harbor"/>
-      </colgroup>
-      <thead>
-        <tr>
-          <th></th>
-          <th>Vendor agent browsers
-            <span class="examples">Atlas · Comet · Gemini in Chrome</span>
-          </th>
-          <th>Sidebar AI assistants
-            <span class="examples">Brave Leo · Firefox AI Window</span>
-          </th>
-          <th>Prompt API + WebMCP alone
-            <span class="examples">Chrome built-in AI · proposed standards</span>
-          </th>
-          <th class="col-harbor"><span class="h-name">Harbor + Web Agent API</span>
-            <span class="examples">extension · open spec · this proposal</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <th>Whose model</th>
-          <td>vendor's, fixed</td>
-          <td>vendor's, fixed</td>
-          <td>browser-bundled (Gemini Nano)</td>
-          <td class="col-harbor"><strong>user's choice</strong> — local, hosted, or self-run</td>
-        </tr>
-        <tr>
-          <th>Whose browser</th>
-          <td>theirs (a fork)</td>
-          <td>shipped one, locked to vendor</td>
-          <td>Chrome, today</td>
-          <td class="col-harbor"><strong>any browser</strong> — Firefox + Chrome today</td>
-        </tr>
-        <tr>
-          <th>How agents act on pages</th>
-          <td>screen-drives the DOM</td>
-          <td>reads page, can't really act</td>
-          <td>page tools only</td>
-          <td class="col-harbor"><strong>page tools + remote MCP</strong>, all user-scoped</td>
-        </tr>
-        <tr>
-          <th>Permissions surface</th>
-          <td>implicit, trust the vendor</td>
-          <td>per-feature toggle</td>
-          <td>page-level, opaque</td>
-          <td class="col-harbor"><strong>typed actions + capability tokens</strong>, per-origin, with mode (plan/execute/watch) and an audit feed</td>
-        </tr>
-        <tr>
-          <th>Where context lives</th>
-          <td>vendor's servers</td>
-          <td>partly local, partly vendor</td>
-          <td>local, but only what the page sees</td>
-          <td class="col-harbor"><strong>your machine</strong>, surfaced by the browser</td>
-        </tr>
-        <tr>
-          <th>Threat surface</th>
-          <td>full DOM, prompt-injectable</td>
-          <td>page text, summarization-shaped</td>
-          <td>narrow but Chrome-only</td>
-          <td class="col-harbor"><strong>scoped tools</strong> — by design, smaller surface</td>
-        </tr>
-        <tr>
-          <th>Cross-site memory</th>
-          <td>vendor stitches it</td>
-          <td>none, mostly</td>
-          <td>none</td>
-          <td class="col-harbor"><strong>user-stitched</strong>, via your MCP servers</td>
-        </tr>
-        <tr>
-          <th>Open spec</th>
-          <td>no</td>
-          <td>no</td>
-          <td>partial (Prompt API draft, WebMCP draft)</td>
-          <td class="col-harbor"><strong>yes</strong> — and this proposal extends them</td>
-        </tr>
-        <tr>
-          <th>Who answers to you</th>
-          <td>the vendor</td>
-          <td>the vendor</td>
-          <td>the browser, narrowly</td>
-          <td class="col-harbor"><strong>the browser, fully</strong></td>
-        </tr>
-      </tbody>
-    </table>
-    </div>
-
-    <!-- mobile cards -->
-    <div class="cmp-cards">
-      <div class="cmp-card">
-        <h4>Vendor agent browsers</h4>
-        <p class="ex">Atlas · Comet · Gemini in Chrome</p>
-        <dl>
-          <dt>Whose model</dt><dd>vendor's, fixed</dd>
-          <dt>Whose browser</dt><dd>theirs (a fork)</dd>
-          <dt>How agents act</dt><dd>screen-drives the DOM</dd>
-          <dt>Permissions</dt><dd>implicit, trust the vendor</dd>
-          <dt>Context lives</dt><dd>on vendor servers</dd>
-          <dt>Threat surface</dt><dd>full DOM, prompt-injectable</dd>
-          <dt>Cross-site memory</dt><dd>vendor stitches it</dd>
-          <dt>Open spec</dt><dd>no</dd>
-          <dt>Answers to</dt><dd>the vendor</dd>
-        </dl>
-      </div>
-      <div class="cmp-card">
-        <h4>Sidebar AI assistants</h4>
-        <p class="ex">Brave Leo · Firefox AI Window</p>
-        <dl>
-          <dt>Whose model</dt><dd>vendor's, fixed</dd>
-          <dt>Whose browser</dt><dd>shipped one, locked to vendor</dd>
-          <dt>How agents act</dt><dd>reads page, can't really act</dd>
-          <dt>Permissions</dt><dd>per-feature toggle</dd>
-          <dt>Context lives</dt><dd>partly local, partly vendor</dd>
-          <dt>Threat surface</dt><dd>page text, summarization-shaped</dd>
-          <dt>Cross-site memory</dt><dd>none, mostly</dd>
-          <dt>Open spec</dt><dd>no</dd>
-          <dt>Answers to</dt><dd>the vendor</dd>
-        </dl>
-      </div>
-      <div class="cmp-card">
-        <h4>Prompt API + WebMCP alone</h4>
-        <p class="ex">Chrome built-in AI · proposed standards</p>
-        <dl>
-          <dt>Whose model</dt><dd>browser-bundled (Gemini Nano)</dd>
-          <dt>Whose browser</dt><dd>Chrome, today</dd>
-          <dt>How agents act</dt><dd>page tools only</dd>
-          <dt>Permissions</dt><dd>page-level, opaque</dd>
-          <dt>Context lives</dt><dd>local, but only what the page sees</dd>
-          <dt>Threat surface</dt><dd>narrow but Chrome-only</dd>
-          <dt>Cross-site memory</dt><dd>none</dd>
-          <dt>Open spec</dt><dd>partial (Prompt API, WebMCP drafts)</dd>
-          <dt>Answers to</dt><dd>the browser, narrowly</dd>
-        </dl>
-      </div>
-      <div class="cmp-card harbor">
-        <h4>Harbor + Web Agent API</h4>
-        <p class="ex">extension · open spec · this proposal</p>
-        <dl>
-          <dt>Whose model</dt><dd>user's choice — local, hosted, self-run</dd>
-          <dt>Whose browser</dt><dd>any — Firefox + Chrome today</dd>
-          <dt>How agents act</dt><dd>page tools + remote MCP, user-scoped</dd>
-          <dt>Permissions</dt><dd>typed actions + capability tokens, per-origin, with audit feed</dd>
-          <dt>Context lives</dt><dd>your machine, surfaced by the browser</dd>
-          <dt>Threat surface</dt><dd>scoped tools — by design, smaller</dd>
-          <dt>Cross-site memory</dt><dd>user-stitched via your MCP servers</dd>
-          <dt>Open spec</dt><dd>yes — and extends Prompt API + WebMCP</dd>
-          <dt>Answers to</dt><dd>the browser, fully</dd>
-        </dl>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===================== STANDARDS CONVERGENCE ===================== -->
-<section class="section" id="standards">
-  <div class="wrap">
-    <p class="eyebrow">05 — standards convergence</p>
-    <h2 style="max-width: 22ch">We're not the only ones thinking about this. We're trying to fit in.</h2>
-    <p class="lead">
-      Three pieces of standards work overlap with what we're proposing.
-      Harbor is the fourth — the seam that connects them.
-    </p>
-
-    <div class="grid-4">
-      <div>
-        <p class="name">Chrome Prompt API</p>
-        <p class="by">Google · WICG draft</p>
-        <p>A built-in language model exposed to web pages. <code>window.ai</code> in spirit. Browser-bundled, Chrome-only, today.</p>
-      </div>
-      <div>
-        <p class="name">WebMCP</p>
-        <p class="by">W3C · early draft</p>
-        <p>Pages declare tools; agents call them. <code>navigator.modelContext.addTool()</code>. The verb-half of the puzzle.</p>
-      </div>
-      <div>
-        <p class="name">MCP</p>
-        <p class="by">Anthropic · de-facto protocol</p>
-        <p>The wire format for tools and context. Already what your AI talks to your servers in. A web-shaped MCP is the natural next step.</p>
-      </div>
-      <div class="ours">
-        <p class="name">Web Agent API</p>
-        <p class="by">this proposal</p>
-        <p>The seam. Lets a page run a real agent — model, tools, context — without the page choosing the model or holding the keys.</p>
-      </div>
+  <div class="wrap two-col">
+    <div class="side" id="problem"><h2>Who chooses the model?</h2></div>
+    <div class="prose measure" id="standards">
+      <p class="lead">A site usually picks the model behind its assistant. Harbor lets each visitor bring their own.</p>
+      <p><a class="link" href="landscape.html">Compare agent browsers, sidebars, and the proposed web APIs →</a></p>
     </div>
   </div>
 </section>
@@ -384,13 +187,10 @@
 <section class="section section-tint" id="harbor">
   <div class="wrap two-col">
     <div class="side">
-      <p class="eyebrow">06 — one sketch · harbor</p>
       <h2>Harbor is the working sketch of the proposal.</h2>
-      <p style="color: var(--ink-soft); margin-top: 16px;">
-        An extension for Firefox and Chrome. Implements the Web Agent API as
-        proposed. Routes <code>window.ai</code> to whichever model you've
-        configured. Brokers tools through MCP. Shows you, per origin, what the
-        agent is allowed to do.
+      <p>
+        You can try your model today with the <a class="link" href="#get-started">Page Summarizer in Firefox</a>.
+        The newspaper archive is an example of what a site could build.
       </p>
       <p style="margin-top: 18px;">
         <a class="link" href="spec.html">Read the spec →</a><br/>
@@ -410,23 +210,23 @@
 
             <!-- web page -->
             <rect x="190" y="20" width="240" height="62" rx="2"/>
-            <text x="310" y="52" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="currentColor">web page</text>
-            <text x="310" y="71" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--ink-mute)">your-favorite-site.example</text>
+            <text x="310" y="52" text-anchor="middle" font-family="Menlo, monospace" font-size="13" fill="currentColor">web page</text>
+            <text x="310" y="71" text-anchor="middle" font-family="Menlo, monospace" font-size="10.5" fill="var(--ink-mute)">your-favorite-site.example</text>
 
             <!-- arrow + label down -->
             <line x1="310" y1="82" x2="310" y2="138" marker-end="url(#arrow)"/>
-            <text x="320" y="113" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--ink-mute)">window.ai · window.agent</text>
+            <text x="320" y="113" font-family="Menlo, monospace" font-size="10.5" fill="var(--ink-mute)">window.ai · window.agent</text>
 
             <!-- browser -->
             <rect x="80" y="148" width="460" height="84" rx="2"/>
-            <text x="310" y="178" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="currentColor">browser  (mediates)</text>
-            <text x="310" y="200" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--ink-mute)">user permissions, per origin · audit, revoke, scope</text>
-            <text x="310" y="218" text-anchor="middle" font-family="Instrument Serif, serif" font-size="12" font-style="italic" fill="var(--accent, #c46a3f)">— Harbor lives here —</text>
+            <text x="310" y="178" text-anchor="middle" font-family="Menlo, monospace" font-size="13" fill="currentColor">browser  (mediates)</text>
+            <text x="310" y="200" text-anchor="middle" font-family="Menlo, monospace" font-size="10.5" fill="var(--ink-mute)">user permissions, per origin · audit, revoke, scope</text>
+            <text x="310" y="218" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-size="12" font-style="italic" fill="var(--accent, #c46a3f)">— Harbor lives here —</text>
 
             <!-- side annotation -->
             <line x1="540" y1="190" x2="600" y2="190"/>
-            <text x="600" y="186" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="var(--ink-mute)">user permits</text>
-            <text x="600" y="200" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="var(--ink-mute)">per origin</text>
+            <text x="600" y="186" text-anchor="end" font-family="Menlo, monospace" font-size="10" fill="var(--ink-mute)">user permits</text>
+            <text x="600" y="200" text-anchor="end" font-family="Menlo, monospace" font-size="10" fill="var(--ink-mute)">per origin</text>
 
             <!-- arrows down -->
             <line x1="200" y1="232" x2="200" y2="288" marker-end="url(#arrow)"/>
@@ -434,18 +234,18 @@
 
             <!-- user model + mcp servers -->
             <rect x="80"  y="298" width="240" height="76" rx="2"/>
-            <text x="200" y="328" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="currentColor">user's model</text>
-            <text x="200" y="349" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--ink-mute)">local · hosted · self-run</text>
+            <text x="200" y="328" text-anchor="middle" font-family="Menlo, monospace" font-size="13" fill="currentColor">user's model</text>
+            <text x="200" y="349" text-anchor="middle" font-family="Menlo, monospace" font-size="10.5" fill="var(--ink-mute)">local · hosted · self-run</text>
 
             <rect x="300" y="298" width="240" height="76" rx="2"/>
-            <text x="420" y="328" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="currentColor">user's MCP servers</text>
-            <text x="420" y="349" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--ink-mute)">page tools · remote tools</text>
+            <text x="420" y="328" text-anchor="middle" font-family="Menlo, monospace" font-size="13" fill="currentColor">user's MCP servers</text>
+            <text x="420" y="349" text-anchor="middle" font-family="Menlo, monospace" font-size="10.5" fill="var(--ink-mute)">page tools · remote tools</text>
 
             <!-- footer line -->
             <line x1="80" y1="410" x2="540" y2="410" stroke-dasharray="2 4"/>
-            <text x="80"  y="403" font-family="JetBrains Mono, monospace" font-size="10" fill="var(--ink-mute)">page</text>
-            <text x="540" y="403" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="var(--ink-mute)">user-controlled</text>
-            <text x="310" y="438" text-anchor="middle" font-family="Instrument Serif, serif" font-style="italic" font-size="13" fill="var(--ink-mute)">the trust line moves up, by one box</text>
+            <text x="80"  y="403" font-family="Menlo, monospace" font-size="10" fill="var(--ink-mute)">page</text>
+            <text x="540" y="403" text-anchor="end" font-family="Menlo, monospace" font-size="10" fill="var(--ink-mute)">user-controlled</text>
+            <text x="310" y="438" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-style="italic" font-size="13" fill="var(--ink-mute)">the trust line moves up, by one box</text>
           </g>
         </svg>
         <div class="cap">fig. 1 · the trust line</div>
@@ -457,58 +257,43 @@
 <!-- ===================== EXAMPLES ===================== -->
 <section class="section" id="build">
   <div class="wrap">
-    <p class="eyebrow">07 — what you could build</p>
-    <h2 style="max-width: 22ch">Boring things that are suddenly easy.</h2>
-    <p class="lead">
-      The interesting demos aren't "an AI search box." They're the boring
-      things that happen when every site can talk to your model, your
-      tools, your context — without each one re-inventing the stack.
-    </p>
+    <h2 style="max-width: 22ch">What could you build with Harbor?</h2>
 
     <div class="examples">
       <div class="example">
         <p class="ex-num">01</p>
         <div>
-          <h4>An archive that searches itself with your words.</h4>
-          <p>A 20-year news archive registers <code>search_archive</code> as a tool. Your AI uses it the way it would use any retrieval tool. The archive doesn't ship a model.</p>
-        </div>
-        <pre class="ex-code">navigator.modelContext.addTool({ name: "search_archive", … })</pre>
-      </div>
-
-      <div class="example">
-        <p class="ex-num">02</p>
-        <div>
           <h4>A docs site that reads itself for you.</h4>
-          <p>One <code>window.ai</code> call summarizes whatever the user is reading, in their model — no API key, no server bill, no analytics.</p>
+          <p>The docs site sends the article text to the reader’s chosen model through <code>window.ai</code>. The site never needs the reader’s API key.</p>
         </div>
         <pre class="ex-code">await window.ai.createTextSession().then(s => s.prompt(article))</pre>
       </div>
 
       <div class="example">
-        <p class="ex-num">03</p>
+        <p class="ex-num">02</p>
         <div>
-          <h4>A booking flow you can finish without using the booking flow.</h4>
-          <p>The site exposes <code>find_flights</code> and <code>hold_seat</code> as tools. The user's agent fills, picks, holds. The site runs no agent of its own.</p>
+          <h4>PDX to SFO, Friday after five, aisle seat.</h4>
+          <p>Your agent can search the airline’s flights and ask it to hold a seat.</p>
         </div>
         <pre class="ex-code">window.agent.run({ task: "PDX → SFO Friday after 5pm, aisle" })</pre>
       </div>
 
       <div class="example">
-        <p class="ex-num">04</p>
+        <p class="ex-num">03</p>
         <div>
-          <h4>An accessibility shortcut for everyone.</h4>
-          <p>Pages declare semantic tools, not just ARIA. Screen-reader users — and everyone else — get an agent that actually understands the page's verbs.</p>
+          <h4>Open a chapter by name.</h4>
+          <p>The agent calls the reading site’s <code>open_chapter</code> tool.</p>
         </div>
         <pre class="ex-code">addTool({ name: "open_chapter", inputSchema: { … } })</pre>
       </div>
 
       <div class="example">
-        <p class="ex-num">05</p>
+        <p class="ex-num">04</p>
         <div>
-          <h4>Your own writing, in your own model, anywhere there's a textarea.</h4>
-          <p>An extension hooks any input. Your AI rewrites, in your style, with your context. Same shape on every site, because the API is the browser's.</p>
+          <h4>Revise a draft in your own voice.</h4>
+          <p>When you ask for help revising a draft, a writing extension could send the text and your style profile to your chosen model.</p>
         </div>
-        <pre class="ex-code">window.ai.createTextSession({ system: userStyleProfile })</pre>
+        <pre class="ex-code">window.ai.createTextSession({ systemPrompt: userStyleProfile })</pre>
       </div>
     </div>
   </div>
@@ -517,106 +302,28 @@
 <!-- ===================== SECURITY ===================== -->
 <section class="section section-sunken" id="security">
   <div class="wrap">
-    <p class="eyebrow">08 — security &amp; permissions</p>
     <h2 style="max-width: 22ch">A smaller surface, by design.</h2>
-    <p class="lead" style="max-width: 60ch">
-      We're a draft proposal, not a hardened product. But the shape itself is the
-      argument: the agent only sees the verbs the page declared, and only with the
-      permissions the user granted, per origin.
-    </p>
-
-    <div class="sec-cols">
-      <div>
-        <h4>What the model is shielded from</h4>
-        <ul>
-          <li>raw DOM and screen pixels — unless the user explicitly grants page-read</li>
-          <li>cookies, storage, and credentials of other origins</li>
-          <li>tools the user did not approve for this origin</li>
-          <li>cross-origin context smuggled in by prompt injection — tools are typed and scoped</li>
-          <li>data with sensitive labels (<code>credentials</code>, <code>payments</code>, <code>identity</code>) — the engine refuses to forward labeled data into actions whose <code>acceptsLabels</code> excludes that label, no matter how generous the user's policy is</li>
-        </ul>
-      </div>
-      <div>
-        <h4>What the user controls, per origin</h4>
-        <ul>
-          <li>which model the page may talk to, and at what cost ceiling</li>
-          <li>which tools — page-declared and remote MCP — are visible</li>
-          <li>which context (history, bookmarks, files) is permitted</li>
-          <li>session <strong>mode</strong>: <code>plan</code> (read-only), <code>execute</code> (act), <code>watch</code> (preview every write) — narrowable at any time, never widenable without re-grant</li>
-          <li>a visible audit trail of every engine decision, with one-click revoke and a "Why?" / "What if?" simulator</li>
-        </ul>
-      </div>
-    </div>
-
-    <p style="margin-top: 24px; color: var(--ink-mute); font-size: var(--t-small);">
-      All of this is the surface of a single chokepoint — the
-      <strong>PolicyEngine</strong> — that walks a 9-tier ladder
-      (Ambient → Managed Deny → Sensitivity Gate → Information-Flow
-      Check → Watchdog → Capability Token → Policy Allow → Policy
-      Ask → Per-Origin Grant → Default-for-Effect) on every API call.
-      Tiers 1–5 are a safety floor a user policy can't override. The
-      full design lives in
-      <a class="link" href="https://github.com/r/harbor/blob/main/docs/PERMISSIONS.md" target="_blank" rel="noopener">docs/PERMISSIONS.md ↗</a>.
-    </p>
-
-    <p style="margin-top: 28px; color: var(--ink-mute); font-family: var(--font-mono); font-size: var(--t-small);">
-      We use words like <em>by design</em> and <em>smaller surface</em>. We don't say <em>safe</em>.
-      A draft is not a guarantee. <a class="link" href="spec.html#threat-model">Threat model →</a>
-    </p>
+    <p class="lead">We assume a model can be fooled by something it reads. In the proposal, a site asks for specific actions. You could allow an agent to search a news archive without giving it permission to edit a story. You can revoke a site’s access.</p>
+    <p><a class="link" href="spec.html#threat-model">Read the threat model →</a></p>
   </div>
 </section>
 
 <!-- ===================== INVITATION ===================== -->
 <section class="section" id="invite">
   <div class="wrap invite">
-    <blockquote>
-      We are not announcing a product. We are publishing a sketch, asking for arguments,
-      and looking for the people who want the open web to keep being a place where
-      <em>your</em> agent works for you.
-    </blockquote>
+    <p class="invite-question">
+      Think of a site you used this week. What would you have wanted an agent on your side
+      to do for you there? What would you have wanted it to keep to itself?
+    </p>
     <div class="invite-meta">
-      <p>Disagree with the architecture? File an issue.<br/>
-      Have a use case we're missing? Tell us.<br/>
-      Implementing something nearby? Let's compare notes.</p>
-      <p style="margin-top: 18px">
-        <a href="mailto:raffi@mozilla.org">raffi@mozilla.org</a><br/>
-        <a href="mailto:raffi.krikorian@gmail.com">raffi.krikorian@gmail.com</a>
-      </p>
-    </div>
-  </div>
-</section>
-
-<!-- ===================== GET STARTED ===================== -->
-<section class="section section-tint" id="get-started">
-  <div class="wrap">
-    <p class="eyebrow">09 — get started</p>
-    <h2 style="max-width: 18ch">Three doors in.</h2>
-
-    <div class="cta-row">
-      <div class="cta-cell">
-        <div>
-          <p class="num">01 — for standards folks</p>
-          <h4>Read the spec.</h4>
-          <p>The Web Agent API explainer, the WebIDL, the threat model, the open questions.</p>
-        </div>
-        <a class="go" href="spec.html">spec.html →</a>
-      </div>
-      <div class="cta-cell">
-        <div>
-          <p class="num">02 — for everyone else</p>
-          <h4>Install Harbor.</h4>
-          <p>The reference extension. Firefox and Chrome. Bring your own model, your own MCP servers.</p>
-        </div>
-        <a class="go" href="build.html#install">install →</a>
-      </div>
-      <div class="cta-cell">
-        <div>
-          <p class="num">03 — for builders</p>
-          <h4>Talk to us.</h4>
-          <p>We want sites that demo the API, not the API itself. Tell us what you'd build.</p>
-        </div>
-        <a class="go" href="mailto:raffi@mozilla.org">raffi@mozilla.org →</a>
-      </div>
+      <p><a href="mailto:sam@mozilla.org">Tell me about it.</a> We’re looking for the
+        everyday situations this proposal ought to account for.</p>
+      <p>If you’re building something nearby or see a problem with the design,
+        <a href="https://github.com/r/Harbor/issues">join the discussion on GitHub</a>.</p>
+      <p id="get-started">To try Harbor today, <a href="build.html#install">set up both Firefox extensions, the native bridge, and a model</a>.
+        Save the <a href="https://r.github.io/Harbor/demo/web-agents/summarizer/">Page Summarizer bookmarklet</a>
+        to your bookmarks toolbar. Open an article and click the bookmark. With your permission,
+        it sends page text to your model and shows you a summary over the article.</p>
     </div>
   </div>
 </section>
@@ -656,14 +363,13 @@
       <div>
         <h5>Contact</h5>
         <ul>
-          <li><a href="mailto:raffi@mozilla.org">raffi@mozilla.org</a></li>
-          <li><a href="mailto:raffi.krikorian@gmail.com">raffi.krikorian@gmail.com</a></li>
+          <li><a href="mailto:sam@mozilla.org">Email me</a></li>
         </ul>
       </div>
     </div>
     <div class="foot-bottom">
       <span>© 2026 · Harbor draft proposal</span>
-      <span>v0.3 · last updated may 2026</span>
+      <span>Proposal draft v0.4 · November 2026</span>
     </div>
   </div>
 </footer>

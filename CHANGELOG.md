@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The public homepage introduces Harbor as a way to bring your own agent to the web, illustrates it with an archive search, directs readers to the Page Summarizer demo and Firefox setup, and links to the landscape essay for the full comparison.
+
 - `README.md` — "Why This Exists" rewritten to reference the May 2026 landscape (Atlas, Comet, Gemini in Chrome, Brave Leo, Firefox AI Window, WebMCP, Chrome Prompt API) and to clarify Harbor's lane.
 - `spec/README.md` — "The Problem" extended with a fourth bad option ("just use the user's AI browser") and a paragraph framing the gap left by WebMCP and the Chrome Prompt API.
 - `AGENTS.md` — `whitepaper/` description updated to reflect the static-HTML structure and `docs/POSITIONING.md` flagged as the messaging source-of-truth.

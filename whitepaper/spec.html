@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Web Agent API spec — Harbor</title>
 <meta name="description" content="The Web Agent API: a draft browser-mediated contract for letting websites use the user's chosen AI, with the user's chosen tools, scoped per origin." />
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48 64x64">
 <link rel="stylesheet" href="styles.css">
 <script>
   (function () {
@@ -83,7 +81,8 @@
   systemPrompt: "Be concise.",
 });
 
-const reply = await session.prompt("Summarize this page.");</pre>
+const article = document.querySelector("article").innerText;
+const reply = await session.prompt(`Summarize this article: ${article}`);</pre>
     <p>
       Surface-compatible with the Chrome Prompt API
       (<code>window.LanguageModel.create()</code>) where it exists; falls through to
@@ -294,8 +293,7 @@ for await (const ev of window.agent.run({
       <div>
         <h5>Contact</h5>
         <ul>
-          <li><a href="mailto:raffi@mozilla.org">raffi@mozilla.org</a></li>
-          <li><a href="mailto:raffi.krikorian@gmail.com">raffi.krikorian@gmail.com</a></li>
+          <li><a href="mailto:sam@mozilla.org">Email me</a></li>
         </ul>
       </div>
     </div>
