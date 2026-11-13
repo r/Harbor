@@ -324,15 +324,13 @@ When building applications with Harbor APIs:
 
 ### For the Specification
 
-If you discover a security issue with the Web Agent API specification itself, please report it to the editors:
+Report suspected security vulnerabilities in the Web Agent API specification privately to [harbor-sec@mozilla.org](mailto:harbor-sec@mozilla.org). Follow the [security reporting policy](../SECURITY.md) for what to include in your report.
 
-1. **Do not** open a public GitHub issue for security vulnerabilities
-2. Open a security issue on GitHub (or email the maintainer)
-3. Allow reasonable time for a fix before public disclosure
+**Do not** open a public GitHub issue for a security vulnerability. Please allow reasonable time for a fix before public disclosure.
 
 ### For Implementations
 
-Report implementation-specific vulnerabilities to the relevant implementation maintainers. For Harbor, follow the same process above.
+Report implementation-specific vulnerabilities to the relevant implementation maintainers. For Harbor, report privately to [harbor-sec@mozilla.org](mailto:harbor-sec@mozilla.org) using the [security reporting policy](../SECURITY.md).
 
 ---
 
