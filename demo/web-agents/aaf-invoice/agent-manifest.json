@@ -6,8 +6,8 @@
   "version": "0.1",
   "site": {
     "name": "AAF Invoice \u00b7 Harbor",
-    "origin": "",
-    "description": "A billing application for creating and managing invoices and workspace settings."
+    "origin": "http://localhost:8000",
+    "description": "Prepare and review invoice details, then save local drafts."
   },
   "actions": {
     "invoice.create": {
@@ -74,7 +74,7 @@
     }
   },
   "pages": {
-    "./": {
+    "/web-agents/aaf-invoice/": {
       "title": "Create Invoice",
       "description": "Form to create a new invoice with customer email, amount, currency, and memo.",
       "actions": [

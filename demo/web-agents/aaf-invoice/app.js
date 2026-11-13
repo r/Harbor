@@ -61,7 +61,12 @@ const manifestPromise = fetch(new URL('./agent-manifest.json', import.meta.url))
     if (!response.ok) throw new Error('Could not load the invoice manifest.');
     return response.json();
   })
-  .then(data => validator.loadManifest(data));
+  .then(data => {
+    // Bind the sample manifest to this deployment, including a GitHub Pages prefix.
+    data.site.origin = location.origin;
+    data.pages = { [new URL('./', import.meta.url).pathname]: Object.values(data.pages)[0] };
+    return validator.loadManifest(data);
+  });
 // Keep a load failure handled until the next request can show it in the widget.
 manifestPromise.catch(() => {});
 
