@@ -115,8 +115,8 @@ export async function discoverHarbor(): Promise<string | null> {
     // In Firefox, we can use the extension ID from the discovery script
     const storageResult = await chrome.storage.local.get('harbor_extension_id');
     console.log('[Web Agents API] Stored Harbor ID:', storageResult.harbor_extension_id);
-    if (storageResult.harbor_extension_id && KNOWN_HARBOR_IDS.includes(storageResult.harbor_extension_id)) {
-      const id = storageResult.harbor_extension_id;
+    const id = storageResult.harbor_extension_id;
+    if (typeof id === 'string' && KNOWN_HARBOR_IDS.includes(id)) {
       try {
         const response = await sendMessageToExtension(id, { type: 'system.getVersion' });
         console.log('[Web Agents API] Response from stored ID:', response);
