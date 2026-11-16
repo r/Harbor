@@ -568,17 +568,21 @@ async function handleSessionUpgrade(payload: unknown): Promise<ExtensionApiRespo
  * Record usage for a session (prompt, tool call, etc.).
  */
 async function handleSessionRecordUsage(payload: unknown): Promise<ExtensionApiResponse> {
-  const { sessionId, type, detail } = payload as {
+  const { sessionId, origin, type, detail } = payload as {
     sessionId?: string;
+    origin?: string;
     type?: 'prompt' | 'tool' | 'browser';
     detail?: unknown;
   };
 
-  if (!sessionId || !type) {
-    return failure('Missing sessionId or type');
+  if (!sessionId || !origin || !type) {
+    return failure('Missing sessionId, origin or type');
   }
 
   try {
+    // Only the owning origin may record against a live session.
+    SessionRegistry.getValidatedSession(sessionId, origin);
+
     switch (type) {
       case 'prompt': {
         const { userMessage, assistantMessage } = detail as {

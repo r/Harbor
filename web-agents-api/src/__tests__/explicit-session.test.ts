@@ -118,7 +118,7 @@ describe('prompting an explicit session', () => {
     const sessionId = await createExplicit();
     await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }));
     expect(mocks.harborRequest).toHaveBeenCalledWith('session.recordUsage', {
-      sessionId, type: 'prompt', detail: { userMessage: 'Hi', assistantMessage: 'Hello from the model.' },
+      sessionId, origin: ORIGIN, type: 'prompt', detail: { userMessage: 'Hi', assistantMessage: 'Hello from the model.' },
     });
   });
 
@@ -150,5 +150,24 @@ describe('creating an explicit session', () => {
       origin: ORIGIN,
       allowedTools: ['time/now'],
     }));
+  });
+});
+
+describe("Safari's HTTP bridge (no session registry)", () => {
+  it('refuses to create an explicit session instead of recording one with no ID', async () => {
+    mocks.harborRequest.mockImplementation(async () => ({ supported: false }));
+    const res = await handleSessionsCreate(ctx('agent.sessions.create', { capabilities: { llm: {} } }));
+    expect(res).toMatchObject({ ok: false, error: { code: 'ERR_INTERNAL', message: expect.stringMatching(/not supported/) } });
+  });
+
+  it('says a prompt is not supported, and keeps the session', async () => {
+    const sessionId = await createExplicit();
+    const real = mocks.harborRequest.getMockImplementation()!;
+    mocks.harborRequest.mockImplementationOnce(async () => ({ supported: false }));
+    expect(await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' })))
+      .toMatchObject({ ok: false, error: { code: 'ERR_INTERNAL', message: expect.stringMatching(/not supported/) } });
+    expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
+    mocks.harborRequest.mockImplementation(real);
+    expect(await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }))).toMatchObject({ ok: true });
   });
 });

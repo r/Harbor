@@ -147,7 +147,7 @@ describe('promptStreaming on explicit sessions', () => {
     const id = await create();
     await stream(id);
     expect(mocks.harborRequest).toHaveBeenCalledWith('session.recordUsage', {
-      sessionId: id, type: 'prompt', detail: { userMessage: 'Hi', assistantMessage: 'Hello' },
+      sessionId: id, origin: ORIGIN, type: 'prompt', detail: { userMessage: 'Hi', assistantMessage: 'Hello' },
     });
   });
 });

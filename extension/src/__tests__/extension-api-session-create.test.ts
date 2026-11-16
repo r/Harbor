@@ -33,3 +33,39 @@ describe('session.create tool grants', () => {
     expect(await create({})).toBe(0);
   });
 });
+
+describe('session.recordUsage', () => {
+  const record = (sessionId: string, from: string | undefined) => routeExtensionApiMessage({
+    type: 'session.recordUsage',
+    payload: { sessionId, origin: from, type: 'prompt', detail: { userMessage: 'u', assistantMessage: 'a' } },
+  }, {}) as Promise<{ ok: boolean }>;
+
+  async function newSession() {
+    const res = await routeExtensionApiMessage({
+      type: 'session.create', payload: { origin, options: { capabilities: { llm: {} } } },
+    }, {}) as { result: { sessionId: string } };
+    return res.result.sessionId;
+  }
+  const promptCount = async (sessionId: string) => ((await routeExtensionApiMessage({
+    type: 'session.get', payload: { sessionId, origin },
+  }, {})) as { result: { session: { usage: { promptCount: number } } } }).result.session.usage.promptCount;
+
+  it("records a prompt for the session's own origin", async () => {
+    const id = await newSession();
+    expect((await record(id, origin)).ok).toBe(true);
+    expect(await promptCount(id)).toBe(1);
+  });
+
+  it('refuses another origin, or no origin', async () => {
+    const id = await newSession();
+    expect((await record(id, 'https://evil.test')).ok).toBe(false);
+    expect((await record(id, undefined)).ok).toBe(false);
+    expect(await promptCount(id)).toBe(0);
+  });
+
+  it('refuses a terminated session', async () => {
+    const id = await newSession();
+    await routeExtensionApiMessage({ type: 'session.terminate', payload: { sessionId: id, origin } }, {});
+    expect((await record(id, origin)).ok).toBe(false);
+  });
+});

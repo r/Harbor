@@ -57,6 +57,11 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
       allowedTools,
     });
 
+    if (!result.sessionId) {
+      // Safari's HTTP bridge answers { supported: false } for session.*.
+      return errorResponse(ctx.id, 'ERR_INTERNAL', 'Explicit sessions are not supported in this browser');
+    }
+
     registerExplicitTextSession(result.sessionId, ctx.origin, {
       systemPrompt: options.options?.systemPrompt,
       temperature: options.options?.temperature,
