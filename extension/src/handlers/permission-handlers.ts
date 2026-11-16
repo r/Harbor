@@ -7,8 +7,7 @@
 import { registerHandler, errorResponse } from './types';
 import { browserAPI } from '../browser-compat';
 import { listAllPermissions, revokePermissions } from '../policy/permissions';
-
-const WEB_AGENTS_API_EXTENSION_ID = 'web-agents@krikorian.co';
+import { WEB_AGENTS_API_FIREFOX_ID as WEB_AGENTS_API_EXTENSION_ID } from '../known-extensions';
 
 type ExternalPermissionStatusEntry = {
   origin: string;

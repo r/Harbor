@@ -9,22 +9,11 @@
  */
 
 import { ErrorCodes, type ApiError } from './types';
+import { KNOWN_HARBOR_IDS } from './known-extensions';
 
 // =============================================================================
 // Configuration
 // =============================================================================
-
-// Known Harbor extension IDs (production and development)
-const KNOWN_HARBOR_IDS = [
-  'harbor@krikorian.co',  // Firefox AMO signed ID
-  'raffi.krikorian.harbor@gmail.com',  // Firefox AMO signed ID (old)
-  // Chrome stable dev ID (generated from key in manifest.chrome.json)
-  // All developers loading from the repo will get this same ID
-  'ljnciidcajlichemnbohopnlaonhkpgm',
-  // Safari extension bundle identifier
-  'org.harbor.Extension',
-  // Add Chrome Web Store ID here when published (will be different)
-];
 
 // Timeout for requests (ms)
 const REQUEST_TIMEOUT = 30000;
@@ -126,8 +115,8 @@ export async function discoverHarbor(): Promise<string | null> {
     // In Firefox, we can use the extension ID from the discovery script
     const storageResult = await chrome.storage.local.get('harbor_extension_id');
     console.log('[Web Agents API] Stored Harbor ID:', storageResult.harbor_extension_id);
-    if (storageResult.harbor_extension_id) {
-      const id = storageResult.harbor_extension_id;
+    const id = storageResult.harbor_extension_id;
+    if (typeof id === 'string' && KNOWN_HARBOR_IDS.includes(id)) {
       try {
         const response = await sendMessageToExtension(id, { type: 'system.getVersion' });
         console.log('[Web Agents API] Response from stored ID:', response);
@@ -164,6 +153,12 @@ export function getHarborState(): { connected: boolean; extensionId: string | nu
  * Set the Harbor extension ID (called when discovered via content script).
  */
 export function setHarborExtensionId(id: string): void {
+  // The reported ID can come from page-influenced state. Only a known Harbor
+  // ID may receive our requests.
+  if (!KNOWN_HARBOR_IDS.includes(id)) {
+    console.warn('[Web Agents API] Ignoring unknown Harbor extension ID:', id);
+    return;
+  }
   harborExtensionId = id;
   connectionState = 'connected';
   // Persist for future sessions

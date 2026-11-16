@@ -769,6 +769,16 @@ becomes empty text while the message and original choices are preserved;
 malformed completions fail instead of appearing to succeed with no reply.
 Extension pages keep their background RPC transport and share only the parser.
 
+Harbor and the Web Agents API accept cross-extension messages and port
+connections only from each other. Each package lists the other's IDs in
+`src/known-extensions.ts`, and every external listener checks `sender.id`
+against that list before reading the message. The Web Agents API also uses the
+list for discovery, so it only sends requests to a known Harbor ID. Other
+extensions can't call Harbor directly. To change an extension ID, update
+`known-extensions.ts` in the other package and the other package's
+`externally_connectable.ids` in `manifest.chrome.json`. Firefox ignores
+`externally_connectable`, so the runtime check is what applies there.
+
 
 Harbor supports multiple LLM providers for local inference.
 

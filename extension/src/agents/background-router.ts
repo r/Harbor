@@ -464,7 +464,8 @@ export function initializeRouter(): void {
 
 /**
  * Handle messages from external extensions (cross-extension communication).
- * This allows other extensions (like Web Agents API) to call Harbor's APIs.
+ * Callers must check the sender first: extension-api.ts only routes messages
+ * from the Web Agents API here (see known-extensions.ts).
  * Exported for use by background.ts for Firefox compatibility.
  */
 export function routeExternalMessage(
@@ -522,19 +523,3 @@ export function routeExternalMessage(
   });
 }
 
-/**
- * Chrome-specific external message handler (onMessageExternal).
- */
-export function handleExternalMessage(
-  message: { type: string; payload?: unknown; requestId?: string },
-  sender: chrome.runtime.MessageSender,
-  sendResponse: (response: { ok: boolean; result?: unknown; error?: string }) => void,
-): boolean {
-  if (!message || !message.type) {
-    sendResponse({ ok: false, error: 'Invalid message: missing type' });
-    return true;
-  }
-
-  routeExternalMessage(message, sender, sendResponse);
-  return true;
-}

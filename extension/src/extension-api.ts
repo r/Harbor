@@ -4,7 +4,7 @@
  * This module handles external messages from other extensions.
  * It provides a typed API for LLM, MCP, and system operations.
  * 
- * Other extensions call Harbor via:
+ * Only the Web Agents API extension may call it (see known-extensions.ts):
  *   chrome.runtime.sendMessage(HARBOR_EXTENSION_ID, { type: '...', payload: {...} })
  */
 
@@ -20,6 +20,7 @@ import { routeExternalMessage } from './agents/background-router';
 import { Audit } from './policy/audit';
 import { simulate, replay } from './policy/simulator';
 import { Watchdog } from './policy/watchdog';
+import { isTrustedExtensionSender } from './known-extensions';
 
 // =============================================================================
 // Types
@@ -942,6 +943,13 @@ export function initializeExtensionApi(): void {
   // Routes to appropriate handler based on message type prefix
   browserAPI.runtime.onMessageExternal.addListener(
     (message: ExtensionApiRequest, sender, sendResponse) => {
+      // Only the Web Agents API may call Harbor. Check before reading the message.
+      if (!isTrustedExtensionSender(sender)) {
+        log('Rejected external message from untrusted sender:', sender?.id);
+        sendResponse(failure('Unauthorized sender'));
+        return false;
+      }
+
       if (!message?.type) {
         sendResponse(failure('Invalid message: missing type'));
         return true;
@@ -984,6 +992,11 @@ export function initializeExtensionApi(): void {
 
   // Handle port connections for streaming
   browserAPI.runtime.onConnectExternal.addListener((port) => {
+    if (!isTrustedExtensionSender(port.sender)) {
+      log('Rejected external port from untrusted sender:', port.sender?.id);
+      port.disconnect();
+      return;
+    }
     log('External port connection from:', port.sender?.id, 'port name:', port.name);
 
     port.onMessage.addListener((message: ExtensionApiRequest) => {

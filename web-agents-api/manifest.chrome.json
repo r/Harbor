@@ -5,7 +5,7 @@
   "description": "Exposes AI capabilities to web pages. Requires Harbor extension.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2dKajWIgyf0ueZjl9ap9FlO+vNcj0Iu19IzmvGqKfT3RmENS6gHEeHM3pQNJDgcC2Dk1rCG6+1/LLOez2Vok8lLBJgqYv6qwbuPoe63+9/AJNbdYBvL0Je8Irjj+iF/sQ+0RexChElm+8RZeqQmlWQaoN/1vOHiRLzUTT2PegFfELCiZ4Sm2kgaLDNucJvtTPh13cm+ICK9T2dgW6Wt3qrf3nIxyQWtwk+X0UiLo254phTtlADpvMYeFvCHQ5TSMv43v4EMnqbldAYKw1bwF6oZjk0QZxV4CLMzrpl89gKRPzxo7SLnusseavAaQRuIGnMYd4Oh03dyPrt76Ia47uwIDAQAB",
   "externally_connectable": {
-    "ids": ["*"]
+    "ids": ["ljnciidcajlichemnbohopnlaonhkpgm"]
   },
   "background": {
     "service_worker": "dist/background.js",

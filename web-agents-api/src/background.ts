@@ -15,6 +15,7 @@ import {
   getHarborState,
 } from './harbor-client';
 import { getFeatureFlags } from './policy/feature-flags';
+import { isHarborSender } from './known-extensions';
 import { toolResultText } from './tool-messages';
 import type { TransportResponse, TransportStreamEvent } from './types';
 
@@ -463,7 +464,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return handleWebAgentsPermissionsMessage(message, sendResponse);
 });
 
-chrome.runtime.onMessageExternal?.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessageExternal?.addListener((message, sender, sendResponse) => {
+  if (!isHarborSender(sender)) return false;
   return handleWebAgentsPermissionsMessage(message, sendResponse);
 });
 
@@ -529,7 +531,8 @@ function handleForwardedInvocation(
   return true;
 }
 
-chrome.runtime.onMessageExternal?.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessageExternal?.addListener((message, sender, sendResponse) => {
+  if (!isHarborSender(sender)) return false;
   if (message?.type === 'agent.host.run') {
     const { payload } = message as { payload?: { method: string; params: Record<string, unknown>; context: { origin?: string; tabId?: number } } };
     if (!payload) {
@@ -554,7 +557,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
   
-  if (sender.id === chrome.runtime.id) {
+  if (sender.id === chrome.runtime.id || !isHarborSender(sender)) {
     return false;
   }
   
