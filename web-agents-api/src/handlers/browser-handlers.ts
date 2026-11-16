@@ -8,6 +8,9 @@ import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission } from './permission-handlers';
 import { executeScriptInTab } from './browser-compat';
+import { isBlockedUrl } from './net-guard';
+
+const LOCAL_NETWORK_MESSAGE = 'Fetch blocked: the address is on this device or a private network';
 
 // =============================================================================
 // Click Handler
@@ -483,23 +486,10 @@ export async function handleBrowserFetch(ctx: RequestContext): HandlerResponse {
     );
   }
 
-  // Block obvious local-network exfiltration vectors. SSRF-style protection;
-  // not exhaustive (DNS rebinding etc. are out of scope here) but covers the
-  // common cases users would expect us to block.
-  const host = target.hostname.toLowerCase();
-  const blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1'];
-  const looksPrivate =
-    blockedHosts.includes(host) ||
-    host.endsWith('.local') ||
-    /^10\./.test(host) ||
-    /^192\.168\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host);
-  if (looksPrivate) {
-    return errorResponse(
-      ctx.id,
-      'ERR_PERMISSION_DENIED',
-      `Fetch blocked: host ${host} is on a private/local network`,
-    );
+  // Never let a page read the user's machine or local network through the
+  // extension's CORS-free fetch. See net-guard.ts for what this covers.
+  if (await isBlockedUrl(target)) {
+    return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', LOCAL_NETWORK_MESSAGE);
   }
 
   try {
@@ -512,6 +502,12 @@ export async function handleBrowserFetch(ctx: RequestContext): HandlerResponse {
       credentials: 'omit',
     };
     const response = await fetch(target.toString(), init);
+    // fetch can't show us each redirect hop, so check where it ended up and
+    // discard the response if that's a local address.
+    if (response.url && await isBlockedUrl(new URL(response.url))) {
+      void response.body?.cancel().catch(() => {});
+      return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', LOCAL_NETWORK_MESSAGE);
+    }
     const headers: Record<string, string> = {};
     response.headers.forEach((value, key) => { headers[key] = value; });
     const body = await response.text();

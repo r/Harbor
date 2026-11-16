@@ -81,6 +81,13 @@ describe('fetch refuses local and private-network addresses', () => {
     'http://printer.local./',
     'http://router.home.arpa/',
     'http://db.internal/',
+    'http://metadata.google.internal/computeMetadata/v1/',
+    'http://router/',
+    'http://openwrt.lan/',
+    'http://[::ffff:7f00:1]/',
+    'http://[64:ff9b::7f00:1]/',
+    'http://[2002:c0a8:101::1]/',
+    'http://[ff02::1]/',
   ]) {
     it(`refuses ${url}`, async () => {
       const res = await callFetch(url);

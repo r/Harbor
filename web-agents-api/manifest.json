@@ -19,7 +19,8 @@
     "tabs",
     "scripting",
     "activeTab",
-    "cookies"
+    "cookies",
+    "dns"
   ],
   "host_permissions": [
     "http://localhost/*",
