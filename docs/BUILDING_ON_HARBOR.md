@@ -137,13 +137,15 @@ await window.agent.requestPermissions({
 });
 
 // Spawn the target site as our owned tab
+// Open a page on our own origin; tabs on other origins can't be read.
 const tab = await window.agent.browser.tabs.create({
-  url: 'https://flights.example/search',
+  url: `${location.origin}/search`,
   active: true
 });
 await window.agent.browser.tab.waitForLoad(tab.id);
 
-// Read its DOM (we own it, so this is allowed)
+// Read its DOM. Allowed because we opened it and it's on our own origin;
+// a tab we opened on another origin can't be read.
 const { html } = await window.agent.browser.tab.getHtml(tab.id, 'main');
 
 // Plan with the user's model

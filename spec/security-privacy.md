@@ -52,6 +52,10 @@ Each permission scope grants the minimum access needed:
 | `mcp:tools.list` | Read-only metadata | Discovery without execution |
 | `mcp:tools.call` | Execute specific tools | Subject to allowlist |
 | `browser:activeTab.read` | Read current tab | No modification, no other tabs |
+| `browser:navigate` | Navigate the calling tab | http(s) only; the calling page is replaced |
+| `browser:tabs.read` | URLs and titles of open tabs | No page content |
+| `browser:tabs.create` | Open tabs; read and close the tabs this origin opened | Reads only while the tab shows this origin's own pages |
+| `web:fetch` | Fetch a URL from the extension | No cookies sent; common local hostnames refused (not a complete private-network block) |
 
 ### Permission Persistence
 
@@ -99,6 +103,14 @@ https://trusted-app.com     https://untrusted-site.com
         │ Can use AI + tools         │ Cannot access any APIs
         ▼                            ▼
 ```
+
+### Browser Control
+
+An origin can't use the browser scopes to read another site's pages with the user's credentials. Navigation, fetch and the tab APIs are behind the `browserControl` feature flag, which is off by default; the background enforces it, not only the injected API. The `browser:activeTab.*` scopes are behind the `browserInteraction` flag (`activeTab.readability` is also available under `browserControl`), which today only the injected API checks. They read and act on the calling tab, except `activeTab.screenshot`, which captures the visible tab.
+
+- **Tabs an origin opens.** `browser:tabs.create` can open a tab on any http(s) URL, and the extension records which origin opened it. That origin can read the tab (`agent.browser.tab.getHtml`, `agent.browser.tab.readability`) only while the tab shows a page on the same origin. The extension checks the tab's origin on every call, and again inside the page when the read runs, because the tab can navigate at any time. A tab on another origin returns `ERR_PERMISSION_DENIED`, so an origin can't read another site's signed-in page through a tab it opened.
+- **Capture requested by tools.** An MCP tool can ask the browser to open a page and return its content or cookies. Only tool calls from Harbor's own extension pages (the sidebar, Tool Tester and the bundled chat demo) can do this. A tool call that a page started can't, so a page can't use a tool to read another site with the user's login.
+- **Fetch.** `agent.browser.fetch` never sends the user's cookies.
 
 ### Session Isolation
 
@@ -282,6 +294,7 @@ Users control both of these through:
 | Attack | Mitigation |
 |--------|------------|
 | Read arbitrary tabs | `browser:activeTab.read` only reads current tab |
+| Read another site through an opened tab | Opened tabs are readable only while on the opener's origin, checked per call and in the page |
 | Read privileged pages | Cannot read `about:`, `chrome:`, extension pages |
 | Exfil via tools | Tool allowlisting restricts available exfil channels |
 | Exfil via AI response | User sees responses; suspicious activity visible |

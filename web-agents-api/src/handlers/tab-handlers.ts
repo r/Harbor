@@ -104,6 +104,45 @@ export function handleTabRemoved(tabId: number): void {
 }
 
 // =============================================================================
+// Origin checks
+// =============================================================================
+
+/** Origin of a URL, or null for URLs without one (about:, data:, invalid). */
+export function originOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const origin = new URL(url).origin;
+    return origin === 'null' ? null : origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A site may read or control a tab it opened only while that tab shows a page
+ * on the site's own origin. Check on every call: the tab can navigate after
+ * it's created. Scripts that read the page check again inside the page,
+ * because the tab can also navigate between this check and the script.
+ */
+async function isTabOnOrigin(tabId: number, origin: string): Promise<boolean> {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    return originOf(tab.url) === origin;
+  } catch {
+    return false;
+  }
+}
+
+/** Returned by an injected script that found the page on another origin. */
+type OriginMismatch = { originMismatch: true };
+
+function isOriginMismatch(value: unknown): value is OriginMismatch {
+  return typeof value === 'object' && value !== null && (value as OriginMismatch).originMismatch === true;
+}
+
+const OTHER_ORIGIN_MESSAGE = "Can only read tabs while they show a page on the caller's origin";
+
+// =============================================================================
 // Tab Handlers
 // =============================================================================
 
@@ -120,9 +159,19 @@ export async function handleTabsCreate(ctx: RequestContext): HandlerResponse {
     return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', 'Missing url parameter');
   }
 
+  let target: URL;
+  try {
+    target = new URL(payload.url);
+  } catch {
+    return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', `Invalid URL: ${payload.url}`);
+  }
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+    return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', `Only http(s) URLs can be opened, got ${target.protocol}`);
+  }
+
   try {
     const createOptions: chrome.tabs.CreateProperties = {
-      url: payload.url,
+      url: target.href,
       active: payload.active ?? false,
       index: payload.index,
       windowId: payload.windowId,
@@ -144,7 +193,7 @@ export async function handleTabsCreate(ctx: RequestContext): HandlerResponse {
       active: tab.active,
       index: tab.index,
       windowId: tab.windowId,
-      canControl: true,
+      canControl: originOf(payload.url) === ctx.origin,
     });
   } catch (e) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Failed to create tab');
@@ -167,7 +216,7 @@ export async function handleTabsList(ctx: RequestContext): HandlerResponse {
       windowId: tab.windowId,
       favIconUrl: tab.favIconUrl,
       status: tab.status as 'loading' | 'complete' | undefined,
-      canControl: tab.id ? isSpawnedTab(ctx.origin, tab.id) : false,
+      canControl: tab.id ? isSpawnedTab(ctx.origin, tab.id) && originOf(tab.url) === ctx.origin : false,
     }));
 
     return successResponse(ctx.id, result);
@@ -219,6 +268,10 @@ export async function handleSpawnedTabReadability(ctx: RequestContext): HandlerR
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Can only read from tabs created by this origin');
   }
 
+  if (!await isTabOnOrigin(tabId, ctx.origin)) {
+    return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', OTHER_ORIGIN_MESSAGE);
+  }
+
   try {
     const result = await executeScriptInTab<{
       title: string;
@@ -227,9 +280,12 @@ export async function handleSpawnedTabReadability(ctx: RequestContext): HandlerR
       text: string;
       html?: string;
       length: number;
-    }>(
+    } | OriginMismatch>(
       tabId,
-      () => {
+      (expectedOrigin: unknown) => {
+        if (window.location.origin !== expectedOrigin) {
+          return { originMismatch: true as const };
+        }
         const title = document.title;
         const url = window.location.href;
         const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.article'];
@@ -262,11 +318,14 @@ export async function handleSpawnedTabReadability(ctx: RequestContext): HandlerR
           length: content.length,
         };
       },
-      []
+      [ctx.origin]
     );
 
     if (!result) {
       return errorResponse(ctx.id, 'ERR_INTERNAL', 'Script execution failed');
+    }
+    if (isOriginMismatch(result)) {
+      return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', OTHER_ORIGIN_MESSAGE);
     }
     return successResponse(ctx.id, result);
   } catch (e) {
@@ -289,12 +348,19 @@ export async function handleSpawnedTabGetHtml(ctx: RequestContext): HandlerRespo
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Can only read from tabs created by this origin');
   }
 
+  if (!await isTabOnOrigin(tabId, ctx.origin)) {
+    return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', OTHER_ORIGIN_MESSAGE);
+  }
+
   try {
-    const result = await executeScriptInTab<{ html: string; url: string; title: string }>(
+    const result = await executeScriptInTab<{ html: string; url: string; title: string } | OriginMismatch>(
       tabId,
-      (containerSelector: string | null) => {
-        const container = containerSelector 
-          ? document.querySelector(containerSelector) 
+      (expectedOrigin: unknown, containerSelector: unknown) => {
+        if (window.location.origin !== expectedOrigin) {
+          return { originMismatch: true as const };
+        }
+        const container = typeof containerSelector === 'string'
+          ? document.querySelector(containerSelector)
           : document.body;
         
         return {
@@ -303,11 +369,14 @@ export async function handleSpawnedTabGetHtml(ctx: RequestContext): HandlerRespo
           title: document.title,
         };
       },
-      [selector || null]
+      [ctx.origin, selector || null]
     );
 
     if (!result) {
       return errorResponse(ctx.id, 'ERR_INTERNAL', 'Script execution failed');
+    }
+    if (isOriginMismatch(result)) {
+      return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', OTHER_ORIGIN_MESSAGE);
     }
     return successResponse(ctx.id, result);
   } catch (e) {

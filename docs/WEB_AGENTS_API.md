@@ -328,7 +328,7 @@ interface PermissionGrantResult {
 | `browser:activeTab.interact` | 🔴 High | Click, fill forms, scroll on active tab |
 | `browser:activeTab.screenshot` | 🟡 Medium | Capture screenshots of the active tab |
 | `browser:tabs.read` | 🟡 Medium | List browser tabs |
-| `browser:tabs.create` | 🔴 High | Create and control new tabs |
+| `browser:tabs.create` | 🔴 High | Open tabs on any site and close them; read them only while they show your own origin's pages |
 | `chat:open` | 🟢 Low | Open the chat sidebar |
 | `web:fetch` | 🔴 High | Fetch URLs bypassing CORS |
 
@@ -848,9 +848,10 @@ for (const tab of tabs) {
   console.log(`  Active: ${tab.active}, Can control: ${tab.canControl}`);
 }
 
-// Create a new tab
+// Create a new tab. You can open any site, but you can read the tab only
+// while it shows a page on your own origin.
 const newTab = await window.agent.browser.tabs.create({
-  url: 'https://example.com',
+  url: `${location.origin}/report`,
   active: false
 });
 

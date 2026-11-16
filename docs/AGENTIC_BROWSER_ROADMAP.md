@@ -31,7 +31,7 @@ The Web Agent API ships as two browser extensions plus a Rust bridge. The page-f
 | Same-tab screenshot | `activeTab.screenshot()` | `browser:activeTab.screenshot` | `browserInteraction` (OFF) | ✅ |
 | Navigate | `agent.browser.navigate(url)` | `browser:navigate` | `browserControl` (OFF) | ✅ |
 | Tab list / spawn / close | `agent.browser.tabs.{list, create, close}` | `browser:tabs.read` / `browser:tabs.create` | `browserControl` (OFF) | ✅ |
-| Spawned-tab read | `agent.browser.tab.{readability, getHtml, waitForLoad}` | `browser:tabs.create` | `browserControl` (OFF) | ✅ |
+| Spawned-tab read (own origin only) | `agent.browser.tab.{readability, getHtml, waitForLoad}` | `browser:tabs.create` | `browserControl` (OFF) | ✅ |
 | CORS-bypass fetch | `agent.browser.fetch(url, opts)` | `web:fetch` | `browserControl` (OFF) | ✅ |
 | Capability-bounded sessions | `agent.sessions.create({capabilities, limits})` | (per declared capabilities) | — | ✅ |
 | Site-provided MCP servers (BYOC) | `agent.mcp.{discover, register, unregister}` | `mcp:servers.register` | — | ✅ |
@@ -119,7 +119,7 @@ Use these as concrete design forcing functions. Each one stresses a different pa
 - `agent.browser.navigate`, `tabs.{create, list, close}`, `tab.{readability, getHtml}` — all there, behind `browserControl`.
 - `agent.browser.activeTab.{click, fill, scroll, screenshot, getElements}` — there, behind `browserInteraction`.
 - The `agent.run` autonomous loop with MCP tool calling.
-- Spawn-and-control trust model: tabs an origin spawned, that origin can drive.
+- Spawn-and-control trust model: an origin can close the tabs it spawned, and read them only while they show a page on its own origin.
 
 **What's missing.**
 - **Cross-tab privileged automation.** Spawn-and-control is the right model for untrusted pages but blocks an agent the user has explicitly elevated. Add a third trust tier: **extension-side automation** with a one-time user grant ("this is my agent browser; let it drive any tab while it's the active extension").
@@ -212,7 +212,7 @@ Three trust tiers, two existing and one proposed:
 | Tier | Who | What they can drive | Status |
 |---|---|---|---|
 | Same-tab | Any web page (with permission) | Their own DOM | ✅ Implemented |
-| Spawn-and-control | Any web page (with permission) | Tabs they spawned | ✅ Implemented |
+| Spawn-and-control | Any web page (with permission) | Tabs they spawned (read only while on their own origin) | ✅ Implemented |
 | Extension-driver | A user-elevated agent extension | Any tab while elevated | 🔮 Phase D |
 
 The page-facing security model **does not change** when we add Phases B/C/E. Phase D adds a new tier, behind a one-time user grant and a persistent UI indicator.

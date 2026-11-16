@@ -45,7 +45,7 @@ const SCOPE_DESCRIPTIONS: Record<PermissionScope, { title: string; description: 
   },
   'browser:tabs.create': {
     title: 'Create tabs',
-    description: 'Open new tabs and load URLs (e.g. for web search).',
+    description: 'Open new tabs on any site. This site can read and close the tabs it opens, but can only read a tab while it shows one of this site\'s own pages.',
     risk: 'medium',
   },
   'browser:tabs.read': {

@@ -3,15 +3,15 @@
 ## What to Test
 
 1. **Bridge**: When a JS MCP server calls `MCP.requestHost(method, params)`, the bridge sends `host_request` to the extension and blocks until `host_response` is received, then returns the result to the server.
-2. **Harbor extension**: When it receives `host_request` from the bridge, it forwards to the Web Agents extension and sends `host_response` back.
-3. **Web Agents**: When it receives `agent.host.run` with `browser.capturePage` or `browser.getCookies`, it checks origin permissions, opens a tab (or uses an existing one), and returns content/cookies.
+2. **Harbor extension**: When it receives `host_request` from the bridge, it handles the request itself and sends `host_response` back. `browser.*` methods run only when the tool call came from Harbor's own pages (the sidebar, the Tool Tester or the bundled chat demo); tool calls a web page starts are refused. `http.get` runs for any caller, without cookies.
+3. **Web Agents (older path)**: When it receives `agent.host.run` with `browser.capturePage` or `browser.getCookies`, it limits a page-origin request to that page's own origin, opens a tab (or uses an existing one), and returns content/cookies.
 
 ## Test Levels
 
 ### 1. Unit / handler tests
 
 - **Web Agents `host-run-handlers.ts`**: Mock `chrome.tabs.create` and `executeScriptInTab`; call `handleHostRun` with `browser.capturePage` and assert the returned shape and permission checks.
-- **Harbor `host-request-handlers.ts`**: Mock `browserAPI.runtime.sendMessage` to Web Agents; assert the message shape and that the handler returns the mocked result.
+- **Harbor `host-request-handlers.ts`**: Mock the capture functions; assert that `browser.*` methods are refused unless the context origin is `harbor-extension`, and that `http.get` omits credentials (see `extension/src/__tests__/host-request-origin.test.ts`).
 
 ### 2. Bridge-only test (no browser)
 
@@ -30,10 +30,9 @@ This is implemented by extending the bridge test harness (e.g. `tests/e2e/test-m
 ### 3. Full stack (manual or E2E)
 
 - Load Harbor + Web Agents extensions in a browser.
-- Grant an origin (e.g. a test page) `browser:tabs.create` (and any other required scopes).
 - Install and start a JS MCP server that uses `MCP.requestHost('browser.capturePage', { url })` in one of its tools.
-- From the test page (or sidebar), call that tool with a `context` that includes that origin.
-- Verify a new tab opens, content is returned, and the tool result contains the expected data (or that a permission error is returned if the origin is not allowed).
+- Call that tool from the Harbor sidebar or Tool Tester. Verify a new tab opens, content is returned, and the tool result contains the expected data.
+- Call the same tool from a web page (for example through `agent.tools.call`). Verify the capture is refused with "Browser capture is only allowed from the Harbor sidebar."
 
 ## Test server example (for bridge-only test)
 

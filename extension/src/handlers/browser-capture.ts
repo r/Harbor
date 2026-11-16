@@ -8,8 +8,14 @@ import { browserAPI, executeScriptInTab, executeScriptInTabAllFrames } from '../
 
 const HARBOR_EXTENSION_ORIGIN = 'harbor-extension';
 
+/**
+ * Browser capture opens tabs with the user's login and returns their content
+ * and cookies, so only the Harbor sidebar may ask for it. It passes this
+ * origin explicitly. Tool calls that carry no origin (for example, ones a page
+ * started) are refused rather than treated as the sidebar.
+ */
 export function isAllowedOrigin(origin: string | undefined): boolean {
-  return !origin || origin === HARBOR_EXTENSION_ORIGIN;
+  return origin === HARBOR_EXTENSION_ORIGIN;
 }
 
 export type LinkWithText = { text: string; url: string };

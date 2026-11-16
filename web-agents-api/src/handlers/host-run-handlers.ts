@@ -5,11 +5,15 @@
  * host to open a tab and return content/cookies). We require the request
  * context's origin to have browser:tabs.create (and we use spawned-tab semantics).
  *
+ * When a page started the tool call, the capture is limited to that page's own
+ * origin, like the page-facing spawned-tab reads. Only the Harbor sidebar
+ * (origin 'harbor-extension') can capture other sites.
+ *
  * See harbor/docs/MCP_BROWSER_CAPTURE_DESIGN.md.
  */
 
 import { hasPermission } from './permission-handlers';
-import { trackSpawnedTab } from './tab-handlers';
+import { trackSpawnedTab, originOf } from './tab-handlers';
 import { executeScriptInTab } from './browser-compat';
 
 export type HostRunPayload = {
@@ -26,6 +30,13 @@ export type HostRunResult = { ok: true; result: unknown } | { ok: false; error: 
  */
 /** Sentinel origin when the tool is run from Harbor UI (e.g. Tool Tester) with no page context. */
 const HARBOR_EXTENSION_ORIGIN = 'harbor-extension';
+
+const OTHER_ORIGIN_ERROR = "A page can only capture its own origin";
+
+/** The origin a capture must stay on, or null when any origin is allowed. */
+function requiredOrigin(origin: string): string | null {
+  return origin === HARBOR_EXTENSION_ORIGIN ? null : origin;
+}
 
 export async function handleHostRun(payload: HostRunPayload): Promise<HostRunResult> {
   const { method, params, context } = payload;
@@ -68,6 +79,11 @@ async function runCapturePage(
     return { ok: false, error: 'Missing or invalid url parameter' };
   }
 
+  const mustMatch = requiredOrigin(origin);
+  if (mustMatch && originOf(url) !== mustMatch) {
+    return { ok: false, error: OTHER_ORIGIN_ERROR };
+  }
+
   const waitForLoad = (params.waitForLoad as boolean) !== false;
   const timeout = Math.min(Math.max(Number(params.timeout) || 15000, 1000), 60000);
   const captureCookies = (params.captureCookies as boolean) === true;
@@ -90,9 +106,12 @@ async function runCapturePage(
       content: string;
       text: string;
       cookies?: string;
-    }>(
+    } | { originMismatch: true }>(
       tab.id,
-      (doCaptureCookies: boolean) => {
+      (expectedOrigin: unknown, doCaptureCookies: unknown) => {
+        if (expectedOrigin && window.location.origin !== expectedOrigin) {
+          return { originMismatch: true as const };
+        }
         const title = document.title;
         const url = window.location.href;
         const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.article'];
@@ -108,14 +127,17 @@ async function runCapturePage(
           content = document.body?.textContent?.trim() || '';
         }
         content = content.replace(/\s+/g, ' ').trim().slice(0, 50000);
-        const cookies = doCaptureCookies ? document.cookie : undefined;
+        const cookies = doCaptureCookies === true ? document.cookie : undefined;
         return { title, url, content, text: content, cookies };
       },
-      [captureCookies]
+      [mustMatch, captureCookies]
     );
 
     if (!result) {
       return { ok: false, error: 'Failed to extract page content' };
+    }
+    if ('originMismatch' in result) {
+      return { ok: false, error: OTHER_ORIGIN_ERROR };
     }
 
     return {
@@ -152,6 +174,11 @@ async function runGetCookies(
     return { ok: false, error: 'Missing or invalid domain parameter' };
   }
 
+  const mustMatch = requiredOrigin(origin);
+  if (mustMatch && openUrl && originOf(openUrl) !== mustMatch) {
+    return { ok: false, error: OTHER_ORIGIN_ERROR };
+  }
+
   try {
     let tabId: number | undefined;
 
@@ -166,7 +193,9 @@ async function runGetCookies(
     } else {
       const tabs = await chrome.tabs.query({});
       const found = tabs.find(
-        (t) => t.url && (t.url.includes(domain) || new URL(t.url).hostname === domain.replace(/^\./, ''))
+        (t) => t.url
+          && (!mustMatch || originOf(t.url) === mustMatch)
+          && (t.url.includes(domain) || new URL(t.url).hostname === domain.replace(/^\./, ''))
       );
       tabId = found?.id;
       if (!tabId) {
@@ -174,14 +203,22 @@ async function runGetCookies(
       }
     }
 
-    const result = await executeScriptInTab<{ cookies: string }>(
+    const result = await executeScriptInTab<{ cookies: string } | { originMismatch: true }>(
       tabId,
-      () => ({ cookies: document.cookie }),
-      []
+      (expectedOrigin: unknown) => {
+        if (expectedOrigin && window.location.origin !== expectedOrigin) {
+          return { originMismatch: true as const };
+        }
+        return { cookies: document.cookie };
+      },
+      [mustMatch]
     );
 
     if (!result) {
       return { ok: false, error: 'Failed to read cookies' };
+    }
+    if ('originMismatch' in result) {
+      return { ok: false, error: OTHER_ORIGIN_ERROR };
     }
 
     return { ok: true, result: { cookies: result.cookies } };

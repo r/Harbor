@@ -27,6 +27,7 @@ synchronous `window.agent.capabilities()` call to feature-detect at runtime.
   scroll, screenshot}`.
 - `window.agent.browser.{navigate, fetch}` (active tab) and `tabs.{create,
   list, close}` / `tab.{readability, getHtml, waitForLoad}` for owned tabs.
+  An owned tab is readable only while it shows a page on the opener's origin.
 - `window.agent.sessions.{create, get, list, terminate}` with explicit
   capability bounds and budgets.
 - `window.agent.mcp.{discover, register, unregister}`,

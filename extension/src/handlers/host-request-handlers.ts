@@ -23,8 +23,13 @@ export async function handleHostRequest(msg: HostRequestMessage): Promise<unknow
   const { method, params, context } = msg;
   const origin = context?.origin;
 
+  // http.get sends no cookies, so any tool may use it.
+  if (method === 'http.get') {
+    return runHttpGet((params ?? {}) as Record<string, unknown>);
+  }
+
   if (!isAllowedOrigin(origin)) {
-    throw new Error('Host request only allowed from Harbor (origin: harbor-extension).');
+    throw new Error('Browser capture is only allowed from the Harbor sidebar.');
   }
 
   if (method === 'browser.capturePage') {
@@ -39,10 +44,6 @@ export async function handleHostRequest(msg: HostRequestMessage): Promise<unknow
   if (method === 'browser.ensureLogin') {
     return runEnsureLogin((params ?? {}) as Record<string, unknown>);
   }
-  if (method === 'http.get') {
-    return runHttpGet((params ?? {}) as Record<string, unknown>);
-  }
-
   throw new Error(`Unknown host method: ${method}`);
 }
 
@@ -59,7 +60,7 @@ async function runHttpGet(params: Record<string, unknown>): Promise<{ status: nu
     throw new Error('http.get only allows https URLs');
   }
   const headers = params.headers as Record<string, string> | undefined;
-  const init: RequestInit = { method: 'GET' };
+  const init: RequestInit = { method: 'GET', credentials: 'omit' };
   if (headers && typeof headers === 'object') {
     init.headers = headers;
   }

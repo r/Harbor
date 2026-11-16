@@ -288,8 +288,9 @@ const r = await window.agent.browser.fetch('https://api.example.com/data', {
 ### Owned tabs — `browserControl` flag
 
 ```javascript
+// Readable only while the tab shows a page on your own origin.
 const tab = await window.agent.browser.tabs.create({
-  url: 'https://flights.example/search',
+  url: `${location.origin}/search`,
   active: false,
 });
 await window.agent.browser.tab.waitForLoad(tab.id);

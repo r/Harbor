@@ -334,7 +334,8 @@ const { dataUrl } = await window.agent.browser.activeTab.screenshot();
 ```javascript
 await window.agent.browser.navigate('https://example.com');
 const tabs = await window.agent.browser.tabs.list();
-const newTab = await window.agent.browser.tabs.create({ url: 'https://example.com', active: false });
+// Tabs you open are readable only while they show your own origin's pages.
+const newTab = await window.agent.browser.tabs.create({ url: `${location.origin}/report`, active: false });
 await window.agent.browser.tab.waitForLoad(newTab.id);
 const { html } = await window.agent.browser.tab.getHtml(newTab.id, 'main');
 await window.agent.browser.tabs.close(newTab.id);
