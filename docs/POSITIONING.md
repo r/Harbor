@@ -128,7 +128,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 | Cross-origin tool calls (MCP) | Vendor-curated | None | Not in scope | **Yes — any MCP server the user trusts** |
 | Page-declared tools (WebMCP) | Sometimes, vendor-mediated | No | Yes | **Yes — implements `navigator.modelContext` today** |
 | Permission boundary | Browser-wide / app-wide | Sidebar opt-in | Per-API, on Chrome | **Per-origin, per-scope, revocable** |
-| Prompt-injection surface | Large: agent reads the live DOM autonomously | Small: chat is user-driven | Small: no agent | **Small: websites delegate via scoped APIs; the agent is not free-roaming** |
+| Prompt-injection surface | Large: agent reads the live DOM autonomously | Small: chat is user-driven | Small: no agent | **Smaller: sites delegate through scoped APIs. Browser-control APIs (click, fill) are a stopgap and run under the person's login.** |
 | Where context lives | With the vendor | With the assistant chat (sometimes synced) | On-device (Gemini Nano cache) | **In the browser, mediated to sites with consent** |
 | Works in Firefox? | No | Yes for Mozilla's; partially for others | No | **Yes — primary target** |
 
@@ -175,7 +175,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 
 ### For people thinking about security and privacy
 
-- The agent doesn't free-roam the DOM. Websites delegate via a scoped API, which keeps the prompt-injection surface roughly the size of a normal Web API surface — not the size of "the entire web."
+- Websites delegate through a scoped API instead of an agent driving the DOM, which keeps the prompt-injection surface close to the size of a normal Web API surface. The exception is the browser-control APIs (click, fill), a stopgap that runs under the person's login.
 - Permissions are per-origin (`example.com` can't act on `other.com`'s credentials), per-scope (`model:prompt` ≠ `mcp:tools.call`), and revocable.
 - Local-first is real: Ollama and llamafile mean the data never leaves the machine. Cloud is a choice, not a default.
 - Compare to Comet: a calendar invite was enough to exfiltrate a 1Password vault, because the agent had cross-service access and trusted what it read on a page. Our threat model assumes the agent will be tricked, and the architecture limits the blast radius.
