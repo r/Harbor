@@ -1,6 +1,6 @@
 /**
  * Page-facing llm / mcp / session calls forwarded by the Web Agents API go
- * through the PolicyEngine (HBR-7): every call is audited, denies are
+ * through the PolicyEngine: every call is audited, denies are
  * enforced, ask/preview proceed on the Web Agents API's consent without a
  * second Harbor prompt, and calls without an origin are rejected.
  */
@@ -10,7 +10,9 @@ import { callTool } from '../mcp/host';
 import { initializeExtensionApi, routeExtensionApiMessage } from '../extension-api';
 import { browserAPI } from '../browser-compat';
 import { Audit } from '../policy/audit';
-import { setOriginGrantResolver } from '../policy/engine';
+import { setOriginGrantResolver, setWatchdogResolver } from '../policy/engine';
+import { Policy } from '../policy/store';
+import { compileRule, type Rule } from '../policy/rules';
 import { showPermissionPrompt } from '../policy/permissions';
 import { SessionRegistry } from '../sessions';
 
@@ -37,10 +39,24 @@ beforeEach(() => {
   vi.clearAllMocks();
   Audit.clear();
   setOriginGrantResolver(() => null);
+  setWatchdogResolver(() => ({ status: 'normal' }));
+  Policy.__reset();
   vi.mocked(bridgeRequest).mockResolvedValue({ choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], model: 'ollama:test' });
   vi.mocked(callTool).mockResolvedValue({ ok: true, result: 'tick' } as never);
 });
-afterEach(() => setOriginGrantResolver(() => null));
+afterEach(() => {
+  setOriginGrantResolver(() => null);
+  setWatchdogResolver(() => ({ status: 'normal' }));
+  Policy.__reset();
+});
+
+const loadRules = (rules: Rule[]) =>
+  Policy.__setForTesting(rules.map(r => compileRule({ ...r, source: r.source ?? 'user' })));
+const callTool_ = () =>
+  routeExtensionApiMessage(
+    { type: 'mcp.callTool', payload: { origin: ORIGIN, serverId: 'clock', toolName: 'now', args: {} } },
+    {},
+  );
 
 describe('page-facing calls go through the PolicyEngine', () => {
   it('audits a page llm.chat under the forwarded origin', async () => {
@@ -79,7 +95,7 @@ describe('page-facing calls go through the PolicyEngine', () => {
     expect(record).toMatchObject({ action: 'tool.call', effect: 'deny', resource: { server: 'clock', tool: 'now' } });
   });
 
-  it('proceeds on ask/preview without a Harbor prompt, recording the upstream consent', async () => {
+  it('proceeds on preview without a Harbor prompt, recording the upstream consent', async () => {
     const res = await routeExtensionApiMessage(
       { type: 'mcp.callTool', payload: { origin: ORIGIN, serverId: 'clock', toolName: 'now', args: {} } },
       {},
@@ -136,6 +152,77 @@ describe('page-facing calls go through the PolicyEngine', () => {
   });
 });
 
+describe('safety asks the Web Agents API consent does not cover', () => {
+  it('prompts when the watchdog has restricted the origin, and proceeds only if the user allows', async () => {
+    setWatchdogResolver(() => ({ status: 'restricted', reason: 'tool-call burst' }));
+    vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: true, grantType: 'granted-once' } as never);
+    expect((await callTool_()).ok).toBe(true);
+    expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
+    expect(Audit.query({ origin: ORIGIN })[0].consent).toBeUndefined();
+
+    vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: false, explicitDeny: true } as never);
+    expect((await callTool_()).ok).toBe(false);
+    expect(callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['ask', 'preview', 'attenuate'] as const)('prompts on a policy %s rule', async (effect) => {
+    loadRules([{ id: `r-${effect}`, effect, principal: { origin: '*' }, action: 'tool.call' }]);
+    vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: false } as never);
+    expect((await callTool_()).ok).toBe(false);
+    expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
+    expect(callTool).not.toHaveBeenCalled();
+  });
+
+  it('still proceeds without a prompt on an allow rule (the irreversible-write preview stays covered)', async () => {
+    loadRules([{ id: 'allow-tools', effect: 'allow', principal: { origin: '*' }, action: 'tool.call' }]);
+    expect((await callTool_()).ok).toBe(true);
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+  });
+});
+
+describe('page-call gate coverage', () => {
+  it('proceeds on ask without a Harbor prompt, recording the upstream consent', async () => {
+    const res = await routeExtensionApiMessage(
+      { type: 'llm.chat', payload: { origin: ORIGIN, messages, model: 'openai:gpt-x' } },
+      {},
+    );
+    expect(res.ok).toBe(true);
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+    expect(Audit.query({ origin: ORIGIN })[0]).toMatchObject({ effect: 'ask', consent: 'web-agents-api' });
+  });
+
+  it('enforces a deny on mcp.listTools', async () => {
+    setOriginGrantResolver((_o, action) => (action === 'tool.list' ? { effect: 'deny' } : null));
+    const res = await routeExtensionApiMessage({ type: 'mcp.listTools', payload: { origin: ORIGIN } }, {});
+    expect(res.ok).toBe(false);
+    expect(Audit.query({ origin: ORIGIN })[0]).toMatchObject({ action: 'tool.list', effect: 'deny' });
+  });
+
+  it.each([
+    ['read', 'browser.read.activeTab'],
+    ['interact', 'browser.write.interact'],
+    ['screenshot', 'browser.read.screenshot'],
+  ] as const)('gates a session.create browser %s capability as %s', async (access, action) => {
+    setOriginGrantResolver((_o, a) => (a === action ? { effect: 'deny' } : null));
+    const res = await routeExtensionApiMessage(
+      { type: 'session.create', payload: { origin: ORIGIN, options: { capabilities: { browser: [access] } } } },
+      {},
+    );
+    expect(res.ok).toBe(false);
+    expect(Audit.query({ origin: ORIGIN }).map(r => r.action)).toEqual([action]);
+  });
+
+  it('creates a session that requests no capabilities without a policy check', async () => {
+    const res = await routeExtensionApiMessage(
+      { type: 'session.create', payload: { origin: ORIGIN, options: { capabilities: {} } } },
+      {},
+    );
+    expect(res.ok).toBe(true);
+    expect(SessionRegistry.createExplicitSession).toHaveBeenCalled();
+    expect(Audit.query({ origin: ORIGIN })).toEqual([]);
+  });
+});
+
 describe('page-facing streaming chat goes through the PolicyEngine', () => {
   async function stream(payload: Record<string, unknown>) {
     let connect: ((port: unknown) => void) | undefined;
@@ -180,5 +267,14 @@ describe('page-facing streaming chat goes through the PolicyEngine', () => {
     const posted = await stream({ origin: ORIGIN });
     expect(bridgeStreamRequest).not.toHaveBeenCalled();
     expect(posted).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'r1', event: expect.objectContaining({ type: 'error' }) }));
+  });
+
+  it('audits a successful stream under the page origin', async () => {
+    const posted = await stream({ origin: ORIGIN });
+    expect(bridgeStreamRequest).toHaveBeenCalled();
+    expect(posted).toHaveBeenCalled();
+    expect(Audit.query({ origin: ORIGIN })).toMatchObject([
+      { action: 'model.prompt.local', effect: 'ask', consent: 'web-agents-api', correlationId: 'r1' },
+    ]);
   });
 });
