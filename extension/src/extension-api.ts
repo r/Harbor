@@ -655,8 +655,9 @@ function sessionToResponse(session: ReturnType<typeof SessionRegistry.getSession
  * page's origin. Each goes through the PolicyEngine via `requireAction`:
  * the decision is audited, and `deny` (safety floor, rules, origin deny,
  * watchdog) is enforced. The Web Agents API has already asked the user with
- * its own grant store, so `ask`/`preview` proceed without a second Harbor
- * prompt and the audit records that consent.
+ * its own grant store, so a grant-level ask or preview proceeds without a
+ * second Harbor prompt and the audit records that consent. A watchdog
+ * restriction or a policy rule that asks still prompts.
  */
 interface PageCheck {
   action: TypedAction;
