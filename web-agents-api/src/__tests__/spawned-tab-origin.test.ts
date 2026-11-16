@@ -99,6 +99,42 @@ describe('spawned tab reads are limited to the caller origin', () => {
   }
 });
 
+describe('reading on the caller origin runs the real page script', () => {
+  for (const type of ['agent.browser.tab.getHtml', 'agent.browser.tab.readability']) {
+    it(`${type} returns content when the tab is on the caller origin`, async () => {
+      mocks.executeScriptInTab.mockImplementation(async (_id: number, fn: (...a: unknown[]) => unknown, args: unknown[]) =>
+        runInjected(fn, args, CALLER));
+      const { routeMessage } = await import('../handlers');
+      const created = await routeMessage(ctx('agent.browser.tabs.create', { url: `${CALLER}/page` }));
+      const tabId = (created as { result: { id: number } }).result.id;
+      const res = await routeMessage(ctx(type, { tabId }));
+      expect(res.ok).toBe(true);
+      expect(JSON.stringify(res)).toContain('secret');
+    });
+  }
+});
+
+describe('opening tabs', () => {
+  it('refuses non-http(s) URLs', async () => {
+    const { routeMessage } = await import('../handlers');
+    for (const url of ['file:///etc/passwd', 'javascript:alert(1)', 'data:text/html,hi', 'about:config']) {
+      const res = await routeMessage(ctx('agent.browser.tabs.create', { url }));
+      expect(res.ok).toBe(false);
+    }
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('reports canControl by the requested origin, even if the new tab is still about:blank', async () => {
+    (chrome.tabs.create as ReturnType<typeof vi.fn>).mockImplementation(async () =>
+      ({ id: 5, url: 'about:blank', status: 'loading', active: false, index: 0, windowId: 1, title: '' }));
+    const { routeMessage } = await import('../handlers');
+    const own = await routeMessage(ctx('agent.browser.tabs.create', { url: `${CALLER}/a` }));
+    const other = await routeMessage(ctx('agent.browser.tabs.create', { url: 'https://bank.example/' }));
+    expect((own as { result: { canControl: boolean } }).result.canControl).toBe(true);
+    expect((other as { result: { canControl: boolean } }).result.canControl).toBe(false);
+  });
+});
+
 describe('the background enforces the browserControl flag', () => {
   for (const [type, payload] of [
     ['agent.browser.tabs.create', { url: `${CALLER}/` }],

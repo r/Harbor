@@ -137,8 +137,9 @@ await window.agent.requestPermissions({
 });
 
 // Spawn the target site as our owned tab
+// Open a page on our own origin; tabs on other origins can't be read.
 const tab = await window.agent.browser.tabs.create({
-  url: 'https://flights.example/search',
+  url: `${location.origin}/search`,
   active: true
 });
 await window.agent.browser.tab.waitForLoad(tab.id);

@@ -159,6 +159,16 @@ export async function handleTabsCreate(ctx: RequestContext): HandlerResponse {
     return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', 'Missing url parameter');
   }
 
+  let target: URL;
+  try {
+    target = new URL(payload.url);
+  } catch {
+    return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', `Invalid URL: ${payload.url}`);
+  }
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+    return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', `Only http(s) URLs can be opened, got ${target.protocol}`);
+  }
+
   try {
     const createOptions: chrome.tabs.CreateProperties = {
       url: payload.url,
@@ -183,7 +193,7 @@ export async function handleTabsCreate(ctx: RequestContext): HandlerResponse {
       active: tab.active,
       index: tab.index,
       windowId: tab.windowId,
-      canControl: originOf(tab.url || payload.url) === ctx.origin,
+      canControl: originOf(payload.url) === ctx.origin,
     });
   } catch (e) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Failed to create tab');
