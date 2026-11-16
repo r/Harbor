@@ -173,6 +173,17 @@ describe('safety asks the Web Agents API consent does not cover', () => {
     expect(callTool).not.toHaveBeenCalled();
   });
 
+  it('judges the rule that matched, even when another rule reuses its id', async () => {
+    loadRules([
+      { id: 'shared', effect: 'allow', principal: { origin: '*' }, action: 'tool.call', resource: { tool: 'harmless' } },
+      { id: 'shared', effect: 'ask', principal: { origin: '*' }, action: 'tool.call', resource: { tool: 'now' } },
+    ]);
+    vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: false } as never);
+    expect((await callTool_()).ok).toBe(false);
+    expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
+    expect(callTool).not.toHaveBeenCalled();
+  });
+
   it('still proceeds without a prompt on an allow rule (the irreversible-write preview stays covered)', async () => {
     loadRules([{ id: 'allow-tools', effect: 'allow', principal: { origin: '*' }, action: 'tool.call' }]);
     expect((await callTool_()).ok).toBe(true);
