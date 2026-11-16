@@ -201,7 +201,7 @@
         <span>Interactive Walkthrough</span>
       </div>
       <h1 class="demo-title demo-text-gradient">Research Agent</h1>
-      <p class="demo-subtitle">Search Google, fetch multiple result pages, and consolidate findings with AI.</p>
+      <p class="demo-subtitle">Search the web (falling back to Wikipedia if Google blocks it), fetch multiple result pages, and consolidate findings with AI.</p>
     </header>
 
     <div class="demo-flex demo-flex-col demo-gap-6">
@@ -211,7 +211,7 @@
           <div class="demo-card-icon">🔍</div>
           <div>
             <div class="demo-card-title">Enter Your Research Query</div>
-            <p class="demo-text-sm">The agent will search Google, fetch the top results directly, and synthesize findings.</p>
+            <p class="demo-text-sm">The agent will try a Google search, fall back to Wikipedia if that's blocked, fetch the results directly, and synthesize findings.</p>
           </div>
         </div>
         <form id="search-form" class="search-form" autocomplete="off">
@@ -299,6 +299,121 @@
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    // Extract organic result URLs from fetched Google search HTML.
+    // Returns an empty array (never throws) so the caller can fall back
+    // to Wikipedia when Google is blocking signed-out requests.
+    async function extractGoogleResultUrls(html) {
+      // First, try regex extraction (faster and more reliable for Google)
+      // Extract all href URLs and filter aggressively
+      const hrefRegex = /href="(https?:\/\/[^"]+)"/g;
+      let regexUrls = [];
+      let match;
+      while ((match = hrefRegex.exec(html)) !== null) {
+        const url = match[1];
+        try {
+          const u = new URL(url);
+          // Skip ALL Google domains (any subdomain)
+          if (u.hostname.endsWith('google.com')) continue;
+          if (u.hostname.endsWith('google.co.uk')) continue;
+          if (u.hostname.includes('.google.')) continue;
+          if (u.hostname.endsWith('gstatic.com')) continue;
+          if (u.hostname.endsWith('googleapis.com')) continue;
+          if (u.hostname.endsWith('googlesyndication.com')) continue;
+          if (u.hostname.endsWith('googleusercontent.com')) continue;
+          // Skip YouTube
+          if (u.hostname.includes('youtube.')) continue;
+          if (u.hostname.includes('youtu.be')) continue;
+          // Skip ad/tracking URLs
+          if (url.includes('/aclk?')) continue;
+          if (url.includes('googleadservices')) continue;
+          if (url.includes('doubleclick.')) continue;
+          // Skip common non-content sites
+          if (u.hostname.endsWith('facebook.com')) continue;
+          if (u.hostname.endsWith('twitter.com')) continue;
+          if (u.hostname.endsWith('instagram.com')) continue;
+          if (u.hostname.endsWith('w3.org')) continue;
+          if (u.hostname.endsWith('schema.org')) continue;
+
+          regexUrls.push(url);
+        } catch {
+          continue;
+        }
+      }
+
+      // Deduplicate
+      regexUrls = [...new Set(regexUrls)];
+      console.log('[Research] Regex found URLs:', regexUrls.slice(0, 10));
+
+      let urls = regexUrls.slice(0, 3);
+
+      // If regex didn't find enough, try AI as fallback
+      if (urls.length < 2) {
+        console.log('[Research] Regex found few URLs, trying AI...');
+
+        try {
+          const session = await window.ai.createTextSession({
+            systemPrompt: `You extract URLs from HTML. Return ONLY a JSON array of URL strings.`
+          });
+
+          // Truncate HTML
+          const truncatedHtml = html.slice(0, 25000);
+
+          const extractPrompt = `Extract 3 organic search result URLs from this Google search HTML.
+Return ONLY a JSON array: ["url1", "url2", "url3"]
+Skip google.com, youtube.com, and ad URLs.
+
+HTML:
+${truncatedHtml}`;
+
+          const response = await session.prompt(extractPrompt);
+          console.log('[Research] AI response:', response.slice(0, 500));
+          const jsonMatch = response.match(/\[[\s\S]*?\]/);
+          if (jsonMatch) {
+            const aiUrls = JSON.parse(jsonMatch[0]);
+            urls = aiUrls.filter(url => {
+              try {
+                const u = new URL(url);
+                return u.protocol.startsWith('http') &&
+                       !u.hostname.includes('google.') &&
+                       !u.hostname.includes('youtube.');
+              } catch {
+                return false;
+              }
+            }).slice(0, 3);
+          }
+
+          await session.destroy();
+        } catch (e) {
+          console.error('[Research] AI parsing failed:', e);
+        }
+      }
+
+      return urls;
+    }
+
+    // Search Wikipedia's public search API, which works without cookies.
+    // Used when a cookie-less Google fetch is blocked or yields no
+    // organic links (the same "fall back to Wikipedia" idea as the
+    // multi-web-agent/research-writer demo).
+    async function searchWikipedia(agent, query) {
+      const wikiSearchUrl = 'https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=3&srsearch=' + encodeURIComponent(query);
+      const wikiResponse = await agent.browser.fetch(wikiSearchUrl);
+
+      if (!wikiResponse.ok || wikiResponse.status !== 200) {
+        throw new Error(`Wikipedia search returned ${wikiResponse.status}`);
+      }
+
+      let wikiData;
+      try {
+        wikiData = JSON.parse(wikiResponse.body);
+      } catch {
+        throw new Error('Wikipedia search returned invalid JSON');
+      }
+
+      const hits = wikiData?.query?.search ?? [];
+      return hits.slice(0, 3).map(hit => 'https://en.wikipedia.org/wiki/' + hit.title.replace(/ /g, '_'));
+    }
+
     // Build walkthrough steps based on search query
     function buildWalkthroughSteps(query) {
       return [
@@ -331,7 +446,7 @@ if (!agent) {
             const agent = getWebAgent();
             const result = await agent.requestPermissions({
               scopes: ['web:fetch', 'model:prompt'],
-              reason: 'Research agent: search Google and synthesize results'
+              reason: 'Research agent: search the web and synthesize results'
             });
             if (!result.granted) {
               throw new Error('Permissions denied. Please grant the required permissions.');
@@ -340,144 +455,65 @@ if (!agent) {
           }
         },
         {
-          title: 'Fetch Google Search',
-          description: `Search for: "${query}"`,
+          title: 'Find result pages',
+          description: `Search for: "${query}" (falls back to Wikipedia if Google blocks the signed-out request)`,
           code: `const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(query);
-// No cookies are sent, so Google may return a signed-out
-// consent/block page instead of results.
-const response = await agent.browser.fetch(searchUrl);`,
+const response = await agent.browser.fetch(searchUrl);
+const urls = response.ok ? await extractGoogleResultUrls(response.body) : [];
+
+// Without cookies, Google sometimes returns a signed-out consent or
+// "unusual traffic" page with no organic result links. Fall back to a
+// search that works without cookies: Wikipedia's public search API.
+if (urls.length === 0) {
+  const wikiSearchUrl = 'https://en.wikipedia.org/w/api.php'
+    + '?action=query&list=search&format=json&srsearch=' + encodeURIComponent(query);
+  const wikiResponse = await agent.browser.fetch(wikiSearchUrl);
+}`,
           run: async () => {
             const agent = getWebAgent();
-            const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(query);
 
             if (!agent.browser?.fetch) {
               throw new Error('browser.fetch not available. Enable the "Browser Control" feature flag.');
             }
 
-            const response = await agent.browser.fetch(searchUrl);
-            console.log('[Research] fetch result:', {
-              status: response.status,
-              ok: response.ok,
-              bodyLength: response.body?.length,
-            });
-
-            if (!response.ok || response.status !== 200) {
-              throw new Error(`Google returned ${response.status}. Signed-out fetches sometimes hit a consent or "unusual traffic" page.`);
-            }
-
-            if (!response.body || response.body.length < 100) {
-              throw new Error(`Fetch returned insufficient HTML (${response.body?.length || 0} chars).`);
-            }
-
-            window._researchSearchHtml = response.body;
-
-            return `✓ Fetched Google search results (${response.body.length} chars)`;
-          }
-        },
-        {
-          title: 'Extract search results',
-          description: 'Use AI (with a regex fast path) to find result URLs in the fetched HTML.',
-          code: `const urls = extractUrlsFromHtml(searchHtml);
-// Falls back to AI extraction if the regex pass finds too few:
-const session = await window.ai.createTextSession();
-const aiUrls = await session.prompt('Extract URLs from: ' + searchHtml);`,
-          run: async () => {
-            const html = window._researchSearchHtml;
-            if (!html) {
-              throw new Error('No fetched search HTML available.');
-            }
-
-            // First, try regex extraction (faster and more reliable for Google)
-            // Extract all href URLs and filter aggressively
-            const hrefRegex = /href="(https?:\/\/[^"]+)"/g;
-            let regexUrls = [];
-            let match;
-            while ((match = hrefRegex.exec(html)) !== null) {
-              const url = match[1];
-              try {
-                const u = new URL(url);
-                // Skip ALL Google domains (any subdomain)
-                if (u.hostname.endsWith('google.com')) continue;
-                if (u.hostname.endsWith('google.co.uk')) continue;
-                if (u.hostname.includes('.google.')) continue;
-                if (u.hostname.endsWith('gstatic.com')) continue;
-                if (u.hostname.endsWith('googleapis.com')) continue;
-                if (u.hostname.endsWith('googlesyndication.com')) continue;
-                if (u.hostname.endsWith('googleusercontent.com')) continue;
-                // Skip YouTube
-                if (u.hostname.includes('youtube.')) continue;
-                if (u.hostname.includes('youtu.be')) continue;
-                // Skip ad/tracking URLs
-                if (url.includes('/aclk?')) continue;
-                if (url.includes('googleadservices')) continue;
-                if (url.includes('doubleclick.')) continue;
-                // Skip common non-content sites
-                if (u.hostname.endsWith('facebook.com')) continue;
-                if (u.hostname.endsWith('twitter.com')) continue;
-                if (u.hostname.endsWith('instagram.com')) continue;
-                if (u.hostname.endsWith('w3.org')) continue;
-                if (u.hostname.endsWith('schema.org')) continue;
-                
-                regexUrls.push(url);
-              } catch {
-                continue;
-              }
-            }
-            
-            // Deduplicate
-            regexUrls = [...new Set(regexUrls)];
-            console.log('[Research] Regex found URLs:', regexUrls.slice(0, 10));
-            
-            let urls = regexUrls.slice(0, 3);
-            
-            // If regex didn't find enough, try AI as fallback
-            if (urls.length < 2) {
-              console.log('[Research] Regex found few URLs, trying AI...');
-              
-              const session = await window.ai.createTextSession({
-                systemPrompt: `You extract URLs from HTML. Return ONLY a JSON array of URL strings.`
+            // --- Try Google first ---
+            try {
+              const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(query);
+              const response = await agent.browser.fetch(searchUrl);
+              console.log('[Research] Google fetch result:', {
+                status: response.status,
+                ok: response.ok,
+                bodyLength: response.body?.length,
               });
-              
-              // Truncate HTML 
-              const truncatedHtml = html.slice(0, 25000);
-              
-              const extractPrompt = `Extract 3 organic search result URLs from this Google search HTML.
-Return ONLY a JSON array: ["url1", "url2", "url3"]
-Skip google.com, youtube.com, and ad URLs.
 
-HTML:
-${truncatedHtml}`;
-              
-              try {
-                const response = await session.prompt(extractPrompt);
-                console.log('[Research] AI response:', response.slice(0, 500));
-                const jsonMatch = response.match(/\[[\s\S]*?\]/);
-                if (jsonMatch) {
-                  const aiUrls = JSON.parse(jsonMatch[0]);
-                  urls = aiUrls.filter(url => {
-                    try {
-                      const u = new URL(url);
-                      return u.protocol.startsWith('http') && 
-                             !u.hostname.includes('google.') &&
-                             !u.hostname.includes('youtube.');
-                    } catch {
-                      return false;
-                    }
-                  }).slice(0, 3);
-                }
-              } catch (e) {
-                console.error('[Research] AI parsing failed:', e);
+              if (!response.ok || response.status !== 200) {
+                throw new Error(`Google returned ${response.status}`);
               }
-              
-              await session.destroy();
+
+              const html = response.body;
+              if (!html || html.length < 100) {
+                throw new Error(`Fetch returned insufficient HTML (${html?.length || 0} chars)`);
+              }
+
+              const urls = await extractGoogleResultUrls(html);
+              if (urls.length === 0) {
+                throw new Error('No organic result links found (likely a signed-out block/consent page)');
+              }
+
+              window._researchUrls = urls;
+              return `✓ Found ${urls.length} result URLs from Google:\n${urls.map((u, i) => `  ${i + 1}. ${u}`).join('\n')}`;
+            } catch (googleError) {
+              console.warn('[Research] Google search unavailable, falling back to Wikipedia:', googleError.message);
             }
-            
-            if (urls.length === 0) {
-              throw new Error(`Could not extract URLs. HTML length: ${html.length}. Check console for details.`);
+
+            // --- Fall back to Wikipedia's public search API (no cookies needed) ---
+            const wikiUrls = await searchWikipedia(agent, query);
+            if (wikiUrls.length === 0) {
+              throw new Error('Could not find any results on Google or Wikipedia for this query.');
             }
-            
-            window._researchUrls = urls;
-            return `✓ Found ${urls.length} result URLs:\n${urls.map((u, i) => `  ${i + 1}. ${u}`).join('\n')}`;
+
+            window._researchUrls = wikiUrls;
+            return `⚠ Google search was unavailable (signed-out block page); using Wikipedia instead.\n✓ Found ${wikiUrls.length} result URLs:\n${wikiUrls.map((u, i) => `  ${i + 1}. ${u}`).join('\n')}`;
           }
         },
         {
@@ -597,8 +633,8 @@ Please provide a comprehensive answer to the research query, synthesizing inform
       tabsHtml += '</div>';
       
       // Add to current step output if we're on the right step
-      // (step index 4 is "Fetch and read result pages")
-      if (walkthroughIndex === 4) {
+      // (step index 3 is "Fetch and read result pages")
+      if (walkthroughIndex === 3) {
         const stepEl = walkthroughStepsEl.querySelector(`[data-step="${walkthroughIndex}"]`);
         if (stepEl) {
           let tabsContainer = stepEl.querySelector('.source-tabs-container');
