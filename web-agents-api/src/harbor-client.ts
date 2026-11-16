@@ -9,22 +9,11 @@
  */
 
 import { ErrorCodes, type ApiError } from './types';
+import { KNOWN_HARBOR_IDS } from './known-extensions';
 
 // =============================================================================
 // Configuration
 // =============================================================================
-
-// Known Harbor extension IDs (production and development)
-const KNOWN_HARBOR_IDS = [
-  'harbor@krikorian.co',  // Firefox AMO signed ID
-  'raffi.krikorian.harbor@gmail.com',  // Firefox AMO signed ID (old)
-  // Chrome stable dev ID (generated from key in manifest.chrome.json)
-  // All developers loading from the repo will get this same ID
-  'ljnciidcajlichemnbohopnlaonhkpgm',
-  // Safari extension bundle identifier
-  'org.harbor.Extension',
-  // Add Chrome Web Store ID here when published (will be different)
-];
 
 // Timeout for requests (ms)
 const REQUEST_TIMEOUT = 30000;

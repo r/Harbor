@@ -50,7 +50,7 @@ describe('Harbor accepts cross-extension messages only from the Web Agents API',
     ['a sender with no id', { url: 'https://example.com/' }],
     ['a sender that was retired', { id: 'raffi.krikorian.harbor@gmail.com' }],
   ])('rejects llm.* from %s without reaching the bridge', async (_label, sender) => {
-    const sendResponse = send({ type: 'llm.chat', payload: { messages: [] } }, sender);
+    const sendResponse = send({ type: 'llm.chat', payload: { messages: [{ role: 'user', content: 'Hi' }], model: 'ollama:test' } }, sender);
     await Promise.resolve();
     expect(bridgeRequest).not.toHaveBeenCalled();
     expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
@@ -72,7 +72,7 @@ describe('Harbor accepts cross-extension messages only from the Web Agents API',
 
   it('routes llm.* from the Web Agents API to the bridge', async () => {
     vi.mocked(bridgeRequest).mockResolvedValue({ choices: [] });
-    send({ type: 'llm.chat', payload: { messages: [] } }, { id: WEB_AGENTS_FIREFOX });
+    send({ type: 'llm.chat', payload: { messages: [{ role: 'user', content: 'Hi' }], model: 'ollama:test' } }, { id: WEB_AGENTS_FIREFOX });
     await vi.waitFor(() => expect(bridgeRequest).toHaveBeenCalledOnce());
   });
 

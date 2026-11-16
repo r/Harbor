@@ -33,7 +33,7 @@ describe('cross-extension chat request adapter', () => {
     let complete!: () => void;
     const done = new Promise<void>(resolve => { complete = resolve; });
     const postMessage = vi.fn(() => complete());
-    connect!({ sender: { id: 'web-agents-test' }, onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } }, onDisconnect: { addListener: vi.fn() }, postMessage });
+    connect!({ sender: { id: 'web-agents@krikorian.co' }, onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } }, onDisconnect: { addListener: vi.fn() }, postMessage });
     vi.mocked(bridgeStreamRequest).mockImplementation(async function* () { yield { id: 'stream1', type: 'done', finish_reason: 'stop' }; });
     onMessage!({ type: 'llm.chatStream', requestId: 'r1', payload: { messages, system: 'Be terse', tools, model: 'ollama:test', max_tokens: 20, temperature: 0.2 } });
     await done;
