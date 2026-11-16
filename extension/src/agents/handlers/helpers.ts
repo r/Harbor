@@ -49,6 +49,16 @@ export interface RequireActionOptions {
   promptAsScope?: PermissionScope;
   /** Optional human-readable reason surfaced in the prompt. */
   reason?: string;
+  /**
+   * The caller already obtained the user's consent upstream. On `ask`,
+   * `preview` or `attenuate`, proceed without a Harbor prompt and record
+   * the upstream consent in the audit log. `deny` is still enforced.
+   *
+   * Used for page calls forwarded by the Web Agents API, which gates them
+   * with its own grant store first. Remove once there is one store and one
+   * prompt.
+   */
+  upstreamConsent?: 'web-agents-api';
 }
 
 /**
@@ -77,9 +87,17 @@ export async function requireAction(
     correlationId: ctx.id,
   };
   const decision = await evaluate(request);
+  const proceedsOnUpstreamConsent =
+    options.upstreamConsent !== undefined &&
+    decision.effect !== 'allow' &&
+    decision.effect !== 'deny';
   // Every gated decision lands in the audit log. The activity feed,
   // watchdog, and decision simulator all read from here.
-  Audit.record(request, decision);
+  Audit.record(
+    request,
+    decision,
+    proceedsOnUpstreamConsent ? { consent: options.upstreamConsent } : {},
+  );
 
   log('requireAction decision', decision);
 
@@ -88,6 +106,8 @@ export async function requireAction(
   if (decision.effect === 'deny') {
     return sendDeny(ctx, sender, decision);
   }
+
+  if (proceedsOnUpstreamConsent) return true;
 
   // ask | preview | attenuate — surface the prompt via the existing flow.
   // We use the typed action's primary legacy scope unless the caller

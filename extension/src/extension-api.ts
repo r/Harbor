@@ -21,6 +21,10 @@ import { Audit } from './policy/audit';
 import { simulate, replay } from './policy/simulator';
 import { Watchdog } from './policy/watchdog';
 import { isTrustedExtensionSender } from './known-extensions';
+import { requireAction } from './agents/handlers/helpers';
+import type { RequestContext, ResponseSender } from './agents/handlers/router-types';
+import { promptActionForModel, type TypedAction } from './policy/actions';
+import type { PolicyResource } from './policy/engine';
 
 // =============================================================================
 // Types
@@ -642,6 +646,100 @@ function sessionToResponse(session: ReturnType<typeof SessionRegistry.getSession
 }
 
 // =============================================================================
+// Page-call gate
+// =============================================================================
+
+/**
+ * Only the Web Agents API can reach this router (see `isTrustedExtensionSender`),
+ * so the page-facing calls below are page calls it forwarded, carrying the
+ * page's origin. Each goes through the PolicyEngine via `requireAction`:
+ * the decision is audited, and `deny` (safety floor, rules, origin deny,
+ * watchdog) is enforced. The Web Agents API has already asked the user with
+ * its own grant store, so `ask`/`preview` proceed without a second Harbor
+ * prompt and the audit records that consent.
+ */
+interface PageCheck {
+  action: TypedAction;
+  resource?: PolicyResource;
+}
+
+type PagePayload = Record<string, unknown>;
+
+const BROWSER_CAPABILITY_ACTIONS: Record<'read' | 'interact' | 'screenshot', TypedAction> = {
+  read: 'browser.read.activeTab',
+  interact: 'browser.write.interact',
+  screenshot: 'browser.read.screenshot',
+};
+
+const PAGE_GATES: Partial<Record<MessageType, (payload: PagePayload) => PageCheck[]>> = {
+  'llm.chat': (p) => [{ action: promptActionForModel(p.model) }],
+  'llm.chatStream': (p) => [{ action: promptActionForModel(p.model) }],
+  'mcp.listTools': () => [{ action: 'tool.list' }],
+  'mcp.callTool': (p) => [
+    {
+      action: 'tool.call',
+      resource: {
+        server: typeof p.serverId === 'string' ? p.serverId : undefined,
+        tool: typeof p.toolName === 'string' ? p.toolName : undefined,
+      },
+    },
+  ],
+  'session.create': (p) => {
+    const options = (p.options || {}) as CreateSessionOptions;
+    const checks: PageCheck[] = [];
+    const caps = options.capabilities;
+    if (caps?.llm) checks.push({ action: promptActionForModel(caps.llm.model) });
+    if (caps?.tools?.length) checks.push({ action: 'tool.call' });
+    for (const access of caps?.browser ?? []) {
+      checks.push({ action: BROWSER_CAPABILITY_ACTIONS[access] });
+    }
+    return checks;
+  },
+};
+
+/**
+ * Returns `null` when the call may proceed, or the failure to send back.
+ */
+async function gatePageCall(
+  type: MessageType,
+  payload: unknown,
+  requestId?: string,
+): Promise<ExtensionApiResponse | null> {
+  const checksFor = PAGE_GATES[type];
+  if (!checksFor) return null;
+
+  const p = (payload || {}) as PagePayload;
+  if (typeof p.origin !== 'string' || !p.origin) {
+    return failure(`${type} requires the calling page's origin`);
+  }
+
+  const ctx: RequestContext = {
+    id: requestId ?? crypto.randomUUID(),
+    type: type as RequestContext['type'],
+    payload,
+    origin: p.origin,
+    tabId: typeof p.tabId === 'number' ? p.tabId : undefined,
+  };
+  let denied: ExtensionApiResponse | null = null;
+  const sender: ResponseSender = {
+    sendResponse: (response) => {
+      const err = (response as { error?: { code?: string; message?: string } }).error;
+      denied = failure(err?.message ?? 'Permission denied');
+    },
+    sendStreamEvent: () => {},
+  };
+
+  for (const check of checksFor(p)) {
+    const allowed = await requireAction(ctx, sender, check.action, {
+      resource: check.resource,
+      upstreamConsent: 'web-agents-api',
+    });
+    if (!allowed) return denied ?? failure('Permission denied');
+  }
+  return null;
+}
+
+// =============================================================================
 // Main Router
 // =============================================================================
 
@@ -656,6 +754,9 @@ export async function routeExtensionApiMessage(
   const { type, payload } = message;
   
   log(`Request from ${sender.id}: ${type}`);
+
+  const gateFailure = await gatePageCall(type as MessageType, payload);
+  if (gateFailure) return gateFailure;
 
   switch (type as MessageType) {
     // LLM Operations
@@ -889,6 +990,12 @@ async function handleStreamingChat(
   if (!requestId) {
     log('handleStreamingChat: No requestId provided');
     port.postMessage({ type: 'stream', requestId: '', event: { type: 'error', error: { message: 'Missing requestId for streaming' } } });
+    return;
+  }
+
+  const gateFailure = await gatePageCall('llm.chatStream', payload, requestId);
+  if (gateFailure) {
+    port.postMessage({ type: 'stream', requestId, event: { type: 'error', error: { message: gateFailure.error } } });
     return;
   }
 

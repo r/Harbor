@@ -36,7 +36,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   Audit.clear();
   setOriginGrantResolver(() => null);
-  vi.mocked(bridgeRequest).mockResolvedValue({ choices: [], model: 'ollama:test' });
+  vi.mocked(bridgeRequest).mockResolvedValue({ choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], model: 'ollama:test' });
   vi.mocked(callTool).mockResolvedValue({ ok: true, result: 'tick' } as never);
 });
 afterEach(() => setOriginGrantResolver(() => null));
@@ -119,7 +119,10 @@ describe('page-facing calls go through the PolicyEngine', () => {
     const res = await routeExtensionApiMessage(
       {
         type: 'session.create',
-        payload: { origin: ORIGIN, options: { capabilities: { llm: { allowed: true }, tools: ['clock/now'] } } },
+        payload: {
+          origin: ORIGIN,
+          options: { capabilities: { llm: { model: 'openai:gpt-x' }, tools: ['clock/now'], browser: ['read'] } },
+        },
       },
       {},
     );
