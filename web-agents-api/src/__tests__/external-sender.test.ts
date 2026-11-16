@@ -97,6 +97,11 @@ describe('Web Agents API accepts cross-extension messages only from Harbor', () 
     });
   });
 
+  it('accepts a forwarded invocation from Harbor on the internal listener too', async () => {
+    deliver(internal, forward(4), { id: HARBOR_FIREFOX });
+    await vi.waitFor(() => expect(mocks.handleIncomingInvocation).toHaveBeenCalledOnce());
+  });
+
   it('rejects the retired Harbor ID', async () => {
     deliver(external, { type: 'web_agents_permissions.list_all' }, { id: 'raffi.krikorian.harbor@gmail.com' });
     await Promise.resolve();

@@ -70,9 +70,9 @@ describe('Harbor accepts cross-extension messages only from the Web Agents API',
     expect(routeExternalMessage).toHaveBeenCalledOnce();
   });
 
-  it('routes llm.* from the Web Agents API to the bridge', async () => {
+  it.each([WEB_AGENTS_FIREFOX, WEB_AGENTS_CHROME])('routes llm.* from %s to the bridge', async (id) => {
     vi.mocked(bridgeRequest).mockResolvedValue({ choices: [] });
-    send({ type: 'llm.chat', payload: { messages: [{ role: 'user', content: 'Hi' }], model: 'ollama:test' } }, { id: WEB_AGENTS_FIREFOX });
+    send({ type: 'llm.chat', payload: { messages: [{ role: 'user', content: 'Hi' }], model: 'ollama:test' } }, { id });
     await vi.waitFor(() => expect(bridgeRequest).toHaveBeenCalledOnce());
   });
 
@@ -88,8 +88,8 @@ describe('Harbor accepts cross-extension messages only from the Web Agents API',
     expect(port.onMessage.addListener).not.toHaveBeenCalled();
   });
 
-  it('accepts a port from the Web Agents API', () => {
-    const port = connect({ id: WEB_AGENTS_CHROME });
+  it.each([WEB_AGENTS_FIREFOX, WEB_AGENTS_CHROME])('accepts a port from %s', (id) => {
+    const port = connect({ id });
     expect(port.disconnect).not.toHaveBeenCalled();
     expect(port.onMessage.addListener).toHaveBeenCalledOnce();
   });

@@ -115,7 +115,7 @@ export async function discoverHarbor(): Promise<string | null> {
     // In Firefox, we can use the extension ID from the discovery script
     const storageResult = await chrome.storage.local.get('harbor_extension_id');
     console.log('[Web Agents API] Stored Harbor ID:', storageResult.harbor_extension_id);
-    if (storageResult.harbor_extension_id) {
+    if (storageResult.harbor_extension_id && KNOWN_HARBOR_IDS.includes(storageResult.harbor_extension_id)) {
       const id = storageResult.harbor_extension_id;
       try {
         const response = await sendMessageToExtension(id, { type: 'system.getVersion' });
@@ -153,6 +153,12 @@ export function getHarborState(): { connected: boolean; extensionId: string | nu
  * Set the Harbor extension ID (called when discovered via content script).
  */
 export function setHarborExtensionId(id: string): void {
+  // The reported ID can come from page-influenced state. Only a known Harbor
+  // ID may receive our requests.
+  if (!KNOWN_HARBOR_IDS.includes(id)) {
+    console.warn('[Web Agents API] Ignoring unknown Harbor extension ID:', id);
+    return;
+  }
   harborExtensionId = id;
   connectionState = 'connected';
   // Persist for future sessions
