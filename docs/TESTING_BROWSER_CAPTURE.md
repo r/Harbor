@@ -32,7 +32,7 @@ This is implemented by extending the bridge test harness (e.g. `tests/e2e/test-m
 - Load Harbor + Web Agents extensions in a browser.
 - Grant an origin (e.g. a test page) `browser:tabs.create` (and any other required scopes).
 - Install and start a JS MCP server that uses `MCP.requestHost('browser.capturePage', { url })` in one of its tools.
-- From the test page (or sidebar), call that tool with a `context` that includes that origin.
+- From the test page (or sidebar), call that tool with a `context` that includes that origin. A page can only capture URLs on its own origin; to capture another site, run the tool from the Harbor sidebar.
 - Verify a new tab opens, content is returned, and the tool result contains the expected data (or that a permission error is returned if the origin is not allowed).
 
 ## Test server example (for bridge-only test)
