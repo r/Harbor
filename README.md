@@ -28,8 +28,9 @@ This repository contains two browser extensions plus a small native bridge that,
 - **Vendor agent browsers** (ChatGPT Atlas, Comet, Gemini in Chrome, Copilot Mode in Edge, Dia) ask you to pick a side. Each replaces your browser with their agent and routes your context to one company.
 - **Sidebar AI assistants** (Brave Leo, Mozilla's AI Window) let you bring your own model, but only to chat with yourself. Websites can't program against them.
 - **Standards** like W3C [WebMCP](https://webmachinelearning.github.io/webmcp/) (April 2026) and Chrome's [Prompt API](https://developer.chrome.com/docs/ai/built-in-apis) solve slices — page-side tools, one on-device model — but neither answers the central question: *how does an arbitrary website call the user's chosen AI, with the user's chosen tools, on whatever browser the user happens to be on?*
+- **Agent-to-company protocols** (remote MCP servers, [A2A](https://a2a-protocol.org), the [Personal Agent Protocol](https://personalagentprotocol.org)) let your agent reach a company's servers. None defines how the company's web page talks to your agent once the page is open.
 
-**The vision:** treat AI like `fetch()`. The browser holds your model connections, your credentials, and your tools. Websites declare what they need through standard APIs (`window.ai`, `window.agent`, `navigator.modelContext`). Permissions are per-origin and revocable. The agent doesn't free-roam the DOM — websites delegate via a scoped API, which keeps the prompt-injection surface manageable.
+**The vision:** treat AI like `fetch()`. The browser holds your model connections, your credentials, and your tools. Websites declare what they need through standard APIs (`window.ai`, `window.agent`, `navigator.modelContext`). Permissions are per-origin and revocable. Websites delegate through scoped APIs instead of an agent driving the DOM, which keeps the prompt-injection surface smaller. Harbor's browser-control APIs, which click and fill under your login, are a stopgap.
 
 ```javascript
 // Any website can use AI — no API keys, no backend, no vendor lock-in
