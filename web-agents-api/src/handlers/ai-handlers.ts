@@ -98,6 +98,26 @@ export function forgetExplicitTextSession(sessionId: string, origin: string): vo
   if (session?.explicit && session.origin === origin) textSessions.delete(sessionId);
 }
 
+/** Harbor's refusals from getValidatedSession: the session is gone for this origin. */
+const HARBOR_SESSION_GONE = /^Session (not found|has been terminated|has expired|belongs to different origin)$/;
+
+/**
+ * Tell Harbor an explicit session was prompted, so its registry sees the
+ * activity (inactivity cleanup, usage shown in the sidebar). Best effort.
+ */
+export function recordExplicitPrompt(
+  session: TextSessionState,
+  userMessage: string,
+  assistantMessage: string,
+): void {
+  if (!session.explicit) return;
+  harborRequest('session.recordUsage', {
+    sessionId: session.sessionId,
+    type: 'prompt',
+    detail: { userMessage, assistantMessage },
+  }).catch(() => {});
+}
+
 /**
  * Look up a text session for a prompt from `origin`. Explicit sessions are
  * revalidated with Harbor on every prompt, so termination and expiry apply.
@@ -119,7 +139,14 @@ export async function resolveTextSession(
       const result = await harborRequest<{ session: SessionSummary | null }>('session.get', { sessionId, origin });
       if (!result.session) throw new Error('Session not found');
       hasLLM = result.session.capabilities.hasLLM;
-    } catch {
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (!HARBOR_SESSION_GONE.test(message)) {
+        // Harbor couldn't answer (not connected, timed out). Keep the session:
+        // it may still be alive, and the prompt fails closed either way.
+        const code = (e as { code?: string }).code ?? 'ERR_INTERNAL';
+        return { code, message: `Could not check the session with Harbor: ${message}` };
+      }
       textSessions.delete(sessionId);
       return { code: 'ERR_SESSION_NOT_FOUND', message: 'Session not found' };
     }
@@ -159,6 +186,7 @@ export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse 
     
     // Add assistant response to history
     session.history.push({ role: 'assistant', content: result.content });
+    recordExplicitPrompt(session, input, result.content);
     
     return successResponse(ctx.id, result.content);
   } catch (e) {
@@ -172,7 +200,7 @@ export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse 
 
 export async function handleSessionDestroy(ctx: RequestContext): HandlerResponse {
   const { sessionId } = ctx.payload as { sessionId: string };
-  textSessions.delete(sessionId);
+  if (textSessions.get(sessionId)?.origin === ctx.origin) textSessions.delete(sessionId);
   return successResponse(ctx.id, null);
 }
 

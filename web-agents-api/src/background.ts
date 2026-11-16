@@ -33,6 +33,7 @@ import {
   handlePermissionPromptResponse,
   // AI utilities
   resolveTextSession,
+  recordExplicitPrompt,
   // Tab utilities
   restoreSpawnedTabs,
   handleTabRemoved,
@@ -127,6 +128,7 @@ async function handleSessionPromptStreaming(
         sendEvent({ id: ctx.id, event: { type: 'token', token: event.token } });
       } else if (event.type === 'done') {
         session.history.push({ role: 'assistant', content: fullContent });
+        recordExplicitPrompt(session, input, fullContent);
         sendEvent({ id: ctx.id, event: { type: 'done' }, done: true });
         break;
       } else if (event.type === 'error') {

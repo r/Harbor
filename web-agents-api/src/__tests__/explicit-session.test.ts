@@ -51,6 +51,8 @@ beforeEach(() => {
         if (s) s.terminated = true;
         return { terminated: !!s };
       }
+      case 'session.recordUsage':
+        return {};
       case 'llm.chat':
         return { content: 'Hello from the model.' };
       default:
@@ -101,6 +103,7 @@ describe('prompting an explicit session', () => {
     await handleSessionsTerminate(ctx('agent.sessions.terminate', { sessionId }));
     const res = await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }));
     expect(res).toMatchObject({ ok: false, error: { code: 'ERR_SESSION_NOT_FOUND' } });
+    expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
   });
 
   it('refuses a session Harbor no longer has (expired)', async () => {
@@ -109,6 +112,27 @@ describe('prompting an explicit session', () => {
     const res = await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }));
     expect(res).toMatchObject({ ok: false, error: { code: 'ERR_SESSION_NOT_FOUND' } });
     expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
+  });
+
+  it('tells Harbor about each prompt', async () => {
+    const sessionId = await createExplicit();
+    await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }));
+    expect(mocks.harborRequest).toHaveBeenCalledWith('session.recordUsage', {
+      sessionId, type: 'prompt', detail: { userMessage: 'Hi', assistantMessage: 'Hello from the model.' },
+    });
+  });
+
+  it('keeps the session when Harbor briefly cannot answer', async () => {
+    const sessionId = await createExplicit();
+    const real = mocks.harborRequest.getMockImplementation()!;
+    mocks.harborRequest.mockImplementationOnce(async () => {
+      throw Object.assign(new Error('Request timeout'), { code: 'ERR_TIMEOUT' });
+    });
+    expect(await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' })))
+      .toMatchObject({ ok: false, error: { code: 'ERR_TIMEOUT' } });
+    mocks.harborRequest.mockImplementation(real);
+    expect(await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' })))
+      .toMatchObject({ ok: true });
   });
 
   it('refuses a session created without the llm capability', async () => {
