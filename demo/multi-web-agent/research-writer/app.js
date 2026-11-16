@@ -94,7 +94,6 @@ const state = {
   multiAgentAvailable: false,
   messageCount: 0,
   sources: [],
-  spawnedTabs: [],
   // Registered agent IDs
   agents: {
     orchestrator: null,
@@ -322,13 +321,13 @@ async function checkApiAvailability() {
   
   // Check required features and collect missing ones
   const missingFeatures = [];
-  
-  // Check browser control
-  if (!agent.browser?.tabs?.create) {
+
+  // Check browser control (fetch is the capability this demo relies on)
+  if (!agent.browser?.fetch) {
     missingFeatures.push('Browser Control');
-    console.log('[Init] browser.tabs.create not available');
+    console.log('[Init] browser.fetch not available');
   } else {
-    const fnStr = agent.browser.tabs.create.toString();
+    const fnStr = agent.browser.fetch.toString();
     if (fnStr.includes('ERR_FEATURE_DISABLED')) {
       missingFeatures.push('Browser Control');
       console.log('[Init] Browser control feature is disabled');
@@ -377,10 +376,7 @@ async function checkApiAvailability() {
   
   // Log available APIs
   console.log('[Init] Available APIs:');
-  console.log('  - tabs.create:', !!agent.browser?.tabs?.create);
-  console.log('  - tabs.close:', !!agent.browser?.tabs?.close);
-  console.log('  - tab.getHtml:', !!agent.browser?.tab?.getHtml);
-  console.log('  - tab.readability:', !!agent.browser?.tab?.readability);
+  console.log('  - browser.fetch:', !!agent.browser?.fetch);
   console.log('  - agents.register:', !!agent.agents?.register);
   console.log('  - agents.invoke:', !!agent.agents?.invoke);
   console.log('  - requestPermissions:', !!agent.requestPermissions);
@@ -745,93 +741,57 @@ async function orchestratorAgent(topic) {
 // ============================================================================
 
 /**
- * Real Google search by opening a browser tab.
+ * Real Google search using agent.browser.fetch (no cookies sent) and
+ * DOMParser to pull result links out of the returned HTML.
+ *
+ * Fetching without cookies means Google may return a signed-out consent
+ * or "unusual traffic" page instead of results; that's treated the same
+ * as any other failure and falls back to Wikipedia below.
  */
 async function searchGoogleReal(topic, statusRow) {
   const agent = getWebAgent();
-  let tabId = null;
-  
+
   console.log('[Searcher] === Starting real Google search ===');
   console.log('[Searcher] Topic:', topic);
   console.log('[Searcher] Agent:', agent);
-  console.log('[Searcher] browser.tabs.create:', typeof agent.browser?.tabs?.create);
-  
+  console.log('[Searcher] browser.fetch:', typeof agent.browser?.fetch);
+
   try {
-    if (!agent.browser?.tabs?.create) {
-      throw new Error('Tab creation not available. Enable the "Browser Control" feature flag.');
+    if (!agent.browser?.fetch) {
+      throw new Error('browser.fetch not available. Enable the "Browser Control" feature flag.');
     }
-    
+
     const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(topic)}`;
-    
-    updateStatus(statusRow, 'Opening Google...');
-    console.log('[Searcher] Creating tab with URL:', searchUrl);
-    
-    // Open Google search in a new tab
-    const tab = await agent.browser.tabs.create({ url: searchUrl, active: false });
-    console.log('[Searcher] tabs.create returned:', tab);
-    
-    if (!tab || !tab.id) {
-      throw new Error('tabs.create did not return a valid tab');
+
+    updateStatus(statusRow, 'Fetching Google results...');
+    console.log('[Searcher] Fetching:', searchUrl);
+
+    const response = await agent.browser.fetch(searchUrl);
+    console.log('[Searcher] Fetch status:', response.status, 'ok:', response.ok);
+
+    if (!response.ok || response.status !== 200) {
+      throw new Error(`Google returned ${response.status} (likely a signed-out consent or block page)`);
     }
-    
-    tabId = tab.id;
-    state.spawnedTabs.push(tabId);
-    console.log('[Searcher] Tab created with ID:', tabId);
-    
-    // Wait for page to load (simple sleep like the working demo)
-    updateStatus(statusRow, 'Loading results...');
-    console.log('[Searcher] Waiting for page to load...');
-    await delay(2500);
-    console.log('[Searcher] Wait complete');
-    
-    // Get the HTML from the Google page
-    updateStatus(statusRow, 'Extracting links...');
-    console.log('[Searcher] Getting HTML from Google page...');
-    
-    if (!agent.browser?.tab?.getHtml) {
-      throw new Error('tab.getHtml not available. Enable the "Browser Control" feature flag.');
-    }
-    
-    const response = await agent.browser.tab.getHtml(tabId);
-    const html = response.html;
-    console.log('[Searcher] Got HTML, length:', html?.length, 'url:', response.url);
-    
+
+    const html = response.body;
     if (!html || html.length < 100) {
-      throw new Error(`getHtml returned insufficient HTML (${html?.length || 0} chars)`);
+      throw new Error(`Fetch returned insufficient HTML (${html?.length || 0} chars)`);
     }
-    
+
     // Parse the HTML to extract search results
+    updateStatus(statusRow, 'Extracting links...');
     const results = parseGoogleResults(html);
     console.log('[Searcher] Parsed results:', results.length);
-    
-    // Close the Google tab
-    try {
-      await agent.browser.tabs.close(tabId);
-      state.spawnedTabs = state.spawnedTabs.filter(id => id !== tabId);
-      console.log('[Searcher] Closed Google tab');
-    } catch (e) {
-      console.log('[Searcher] Could not close tab:', e);
-    }
-    
+
     if (results.length === 0) {
       console.log('[Searcher] No results parsed. HTML sample:', html.slice(0, 1000));
       throw new Error('No results extracted from Google');
     }
-    
+
     return results.slice(0, CONFIG.maxSearchResults);
-    
+
   } catch (error) {
     console.error('[Searcher] Error:', error);
-    
-    // Clean up tab if still open
-    if (tabId) {
-      try {
-        const agent = getWebAgent();
-        await agent.browser.tabs.close(tabId);
-        state.spawnedTabs = state.spawnedTabs.filter(id => id !== tabId);
-      } catch {}
-    }
-    
     updateStatus(statusRow, 'Search failed, using Wikipedia');
     return getWikipediaFallback(topic);
   }
@@ -954,113 +914,52 @@ function getWikipediaFallback(topic) {
 // ============================================================================
 
 /**
- * Real page reading using browser.tabs API.
+ * Real page reading using agent.browser.fetch (no cookies sent) and
+ * DOMParser, since the Reader can't read a spawned tab unless it's on
+ * this page's own origin.
  */
 async function readPageReal(url, title, statusRow) {
   const agent = getWebAgent();
-  let tabId = null;
-  
-  try {
-    updateStatus(statusRow, 'Opening tab...');
-    console.log('[Reader] Opening:', url);
-    
-    // Create a new tab
-    const tab = await agent.browser.tabs.create({ url, active: false });
-    tabId = tab.id;
-    state.spawnedTabs.push(tabId);
-    console.log('[Reader] Tab created:', tabId);
-    
-    // Wait for page to load
-    updateStatus(statusRow, 'Loading page...');
-    console.log('[Reader] Waiting for page to load...');
-    await delay(3000);
-    console.log('[Reader] Wait complete');
-    
-    updateStatus(statusRow, 'Extracting content...');
-    
-    // Extract content using readability
-    const content = await agent.browser.tab.readability(tabId);
-    console.log('[Reader] Got content:', content?.title, '- length:', (content?.content || content?.text || '').length);
-    
-    // Close the tab
-    try {
-      await agent.browser.tabs.close(tabId);
-      state.spawnedTabs = state.spawnedTabs.filter(id => id !== tabId);
-    } catch (e) {
-      console.log('[Reader] Could not close tab:', e);
-    }
-    
-    const extractedContent = content.text || content.content || '';
-    if (extractedContent.length < 100) {
-      throw new Error('Content too short');
-    }
-    
-    return {
-      url,
-      title: content.title || title,
-      content: extractedContent.slice(0, CONFIG.maxContentLength),
-    };
-  } catch (error) {
-    console.error('[Reader] Error reading', url, ':', error.message);
-    
-    // Try to clean up tab
-    if (tabId) {
-      try {
-        await agent.browser.tabs.close(tabId);
-        state.spawnedTabs = state.spawnedTabs.filter(id => id !== tabId);
-      } catch {}
-    }
-    
-    // Try using fetch as fallback for simple pages
-    return await readPageWithFetch(url, title, statusRow);
-  }
-}
 
-/**
- * Fallback: read page using fetch instead of tabs.
- */
-async function readPageWithFetch(url, title, statusRow) {
-  const agent = getWebAgent();
-  
   try {
-    updateStatus(statusRow, 'Trying fetch...');
-    console.log('[Reader] Fallback fetch:', url);
-    
+    updateStatus(statusRow, 'Fetching page...');
+    console.log('[Reader] Fetching:', url);
+
     const response = await agent.browser.fetch(url);
-    
-    if (response.status !== 200) {
+
+    if (!response.ok || response.status !== 200) {
       throw new Error(`Fetch failed: ${response.status}`);
     }
-    
+
     // Parse HTML and extract text content
     const parser = new DOMParser();
     const doc = parser.parseFromString(response.body, 'text/html');
-    
+
     // Remove scripts and styles
     doc.querySelectorAll('script, style, nav, header, footer, aside').forEach(el => el.remove());
-    
+
     // Try to find main content
     const mainContent = doc.querySelector('main, article, .content, #content, .post, .article');
     const textContent = (mainContent || doc.body).textContent || '';
-    
+
     // Clean up whitespace
     const cleanContent = textContent.replace(/\s+/g, ' ').trim();
-    
+
     if (cleanContent.length < 100) {
       throw new Error('Content too short');
     }
-    
+
     const pageTitle = doc.querySelector('title')?.textContent || title;
-    
+
     console.log('[Reader] Fetch got content:', pageTitle.slice(0, 50), '- length:', cleanContent.length);
-    
+
     return {
       url,
       title: pageTitle,
       content: cleanContent.slice(0, CONFIG.maxContentLength),
     };
   } catch (error) {
-    console.error('[Reader] Fetch fallback failed:', error.message);
+    console.error('[Reader] Error reading', url, ':', error.message);
     return null;
   }
 }
@@ -1242,8 +1141,7 @@ async function runPipeline(topic) {
   state.isRunning = true;
   state.startTime = Date.now();
   state.sources = [];
-  state.spawnedTabs = [];
-  
+
   elements.startBtn.disabled = true;
   elements.topicInput.disabled = true;
   
@@ -1268,8 +1166,7 @@ async function runPipeline(topic) {
     
     const permResult = await agent.requestPermissions({
       scopes: [
-        'browser:tabs.create', 
-        'browser:tabs.read', 
+        'web:fetch',
         'model:prompt',
         // Multi-agent permissions
         'agents:register',
@@ -1300,14 +1197,6 @@ async function runPipeline(topic) {
     console.error('Pipeline error:', error);
     addStatus('orchestrator', `Error: ${error.message}`, 'error');
   } finally {
-    // Clean up any remaining tabs
-    const cleanupAgent = getWebAgent();
-    for (const tabId of state.spawnedTabs) {
-      try {
-        await cleanupAgent?.browser?.tabs?.close(tabId);
-      } catch {}
-    }
-    
     // Unregister agents
     await unregisterAgents();
     

@@ -201,7 +201,7 @@
         <span>Interactive Walkthrough</span>
       </div>
       <h1 class="demo-title demo-text-gradient">Research Agent</h1>
-      <p class="demo-subtitle">Search Google, open multiple result pages, and consolidate findings with AI.</p>
+      <p class="demo-subtitle">Search Google, fetch multiple result pages, and consolidate findings with AI.</p>
     </header>
 
     <div class="demo-flex demo-flex-col demo-gap-6">
@@ -211,7 +211,7 @@
           <div class="demo-card-icon">🔍</div>
           <div>
             <div class="demo-card-title">Enter Your Research Query</div>
-            <p class="demo-text-sm">The agent will search Google, open the top results, and synthesize findings.</p>
+            <p class="demo-text-sm">The agent will search Google, fetch the top results directly, and synthesize findings.</p>
           </div>
         </div>
         <form id="search-form" class="search-form" autocomplete="off">
@@ -254,8 +254,7 @@
         <div class="requirements">
           <p><strong>Scopes:</strong></p>
           <ul style="margin: var(--demo-space-2) 0 0 var(--demo-space-5); color: var(--demo-text-secondary);">
-            <li><code>browser:tabs.create</code> — Create and control tabs</li>
-            <li><code>browser:tabs.read</code> — Read tab information</li>
+            <li><code>web:fetch</code> — Fetch pages directly (no cookies sent)</li>
             <li><code>model:prompt</code> — Use AI for synthesis</li>
           </ul>
           <p style="margin-top: var(--demo-space-3);"><strong>Feature flag:</strong> "Browser Control" must be enabled in the Web Agents API extension.</p>
@@ -320,11 +319,10 @@ if (!agent) {
         },
         {
           title: 'Request permissions',
-          description: 'Ask for tab control and AI model access.',
+          description: 'Ask for fetch and AI model access.',
           code: `const result = await agent.requestPermissions({
   scopes: [
-    'browser:tabs.create',
-    'browser:tabs.read',
+    'web:fetch',
     'model:prompt'
   ],
   reason: 'Research agent demo'
@@ -332,7 +330,7 @@ if (!agent) {
           run: async () => {
             const agent = getWebAgent();
             const result = await agent.requestPermissions({
-              scopes: ['browser:tabs.create', 'browser:tabs.read', 'model:prompt'],
+              scopes: ['web:fetch', 'model:prompt'],
               reason: 'Research agent: search Google and synthesize results'
             });
             if (!result.granted) {
@@ -342,68 +340,53 @@ if (!agent) {
           }
         },
         {
-          title: 'Open Google Search',
+          title: 'Fetch Google Search',
           description: `Search for: "${query}"`,
           code: `const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(query);
-const searchTab = await agent.browser.tabs.create({
-  url: searchUrl,
-  active: false
-});`,
+// No cookies are sent, so Google may return a signed-out
+// consent/block page instead of results.
+const response = await agent.browser.fetch(searchUrl);`,
           run: async () => {
             const agent = getWebAgent();
             const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(query);
-            
-            if (!agent.browser?.tabs?.create) {
-              throw new Error('Tab creation not available. Enable the "Browser Control" feature flag.');
+
+            if (!agent.browser?.fetch) {
+              throw new Error('browser.fetch not available. Enable the "Browser Control" feature flag.');
             }
-            
-            const searchTab = await agent.browser.tabs.create({
-              url: searchUrl,
-              active: false
+
+            const response = await agent.browser.fetch(searchUrl);
+            console.log('[Research] fetch result:', {
+              status: response.status,
+              ok: response.ok,
+              bodyLength: response.body?.length,
             });
-            
-            // Store for later
-            window._researchSearchTabId = searchTab.id;
-            
-            // Wait for page to load
-            await sleep(2500);
-            
-            return `✓ Opened Google search (Tab #${searchTab.id})`;
+
+            if (!response.ok || response.status !== 200) {
+              throw new Error(`Google returned ${response.status}. Signed-out fetches sometimes hit a consent or "unusual traffic" page.`);
+            }
+
+            if (!response.body || response.body.length < 100) {
+              throw new Error(`Fetch returned insufficient HTML (${response.body?.length || 0} chars).`);
+            }
+
+            window._researchSearchHtml = response.body;
+
+            return `✓ Fetched Google search results (${response.body.length} chars)`;
           }
         },
         {
           title: 'Extract search results',
-          description: 'Get page HTML and use AI to find result URLs.',
-          code: `const { html } = await agent.browser.tab.getHtml(searchTabId);
+          description: 'Use AI (with a regex fast path) to find result URLs in the fetched HTML.',
+          code: `const urls = extractUrlsFromHtml(searchHtml);
+// Falls back to AI extraction if the regex pass finds too few:
 const session = await window.ai.createTextSession();
-const urls = await session.prompt('Extract URLs from: ' + html);`,
+const aiUrls = await session.prompt('Extract URLs from: ' + searchHtml);`,
           run: async () => {
-            const agent = getWebAgent();
-            const tabId = window._researchSearchTabId;
-            
-            if (!agent.browser?.tab?.getHtml) {
-              throw new Error('Tab getHtml not available. Enable the "Browser Control" feature flag.');
+            const html = window._researchSearchHtml;
+            if (!html) {
+              throw new Error('No fetched search HTML available.');
             }
-            
-            // Get HTML from the search results page
-            let htmlResult;
-            try {
-              htmlResult = await agent.browser.tab.getHtml(tabId);
-              console.log('[Research] getHtml result:', { 
-                hasHtml: !!htmlResult?.html, 
-                htmlLength: htmlResult?.html?.length,
-                url: htmlResult?.url,
-                title: htmlResult?.title 
-              });
-            } catch (e) {
-              throw new Error(`getHtml failed: ${e.message}`);
-            }
-            
-            const { html } = htmlResult;
-            if (!html || html.length < 100) {
-              throw new Error(`getHtml returned insufficient HTML (${html?.length || 0} chars). Page may not have loaded.`);
-            }
-            
+
             // First, try regex extraction (faster and more reliable for Google)
             // Extract all href URLs and filter aggressively
             const hrefRegex = /href="(https?:\/\/[^"]+)"/g;
@@ -498,76 +481,61 @@ ${truncatedHtml}`;
           }
         },
         {
-          title: 'Open result pages',
-          description: 'Open each search result in a new tab.',
-          code: `const tabs = [];
+          title: 'Fetch and read result pages',
+          description: 'Fetch each result directly (no tabs, no cookies) and extract readable text.',
+          code: `const contents = [];
 for (const url of resultUrls) {
-  const tab = await agent.browser.tabs.create({ url, active: false });
-  tabs.push(tab);
+  const response = await agent.browser.fetch(url);
+  const doc = new DOMParser().parseFromString(response.body, 'text/html');
+  doc.querySelectorAll('script, style, nav, header, footer, aside').forEach(el => el.remove());
+  const main = doc.querySelector('main, article, .content, #content, .post, .article');
+  const text = (main || doc.body).textContent.replace(/\\s+/g, ' ').trim();
+  contents.push({ url, title: doc.querySelector('title')?.textContent, text });
 }`,
           run: async () => {
             const agent = getWebAgent();
             const urls = window._researchUrls;
-            openedTabs = [];
-            
-            for (const url of urls) {
-              try {
-                const tab = await agent.browser.tabs.create({
-                  url: url,
-                  active: false
-                });
-                openedTabs.push({ id: tab.id, url: url, status: 'loading' });
-                updateSourceTabsUI();
-              } catch (e) {
-                console.error('Failed to open tab:', url, e);
-              }
-            }
-            
-            // Wait for pages to load
-            await sleep(3000);
-            
-            return `✓ Opened ${openedTabs.length} tabs`;
-          }
-        },
-        {
-          title: 'Extract content from pages',
-          description: 'Read the content from each opened tab.',
-          code: `const contents = [];
-for (const tab of tabs) {
-  const content = await agent.browser.tab.readability(tab.id);
-  contents.push({ url: tab.url, title: content.title, text: content.text });
-}`,
-          run: async () => {
-            const agent = getWebAgent();
+            openedTabs = urls.map(url => ({ url, status: 'loading' }));
             extractedContent = [];
-            
-            for (let i = 0; i < openedTabs.length; i++) {
-              const tab = openedTabs[i];
+            updateSourceTabsUI();
+
+            for (let i = 0; i < urls.length; i++) {
+              const url = urls[i];
               try {
+                const response = await agent.browser.fetch(url);
+                if (!response.ok || response.status !== 200) {
+                  throw new Error(`Fetch failed: ${response.status}`);
+                }
+
                 openedTabs[i].status = 'reading';
                 updateSourceTabsUI();
-                
-                const content = await agent.browser.tab.readability(tab.id);
-                extractedContent.push({
-                  url: tab.url,
-                  title: content.title || 'Untitled',
-                  text: content.text?.slice(0, 6000) || ''
-                });
-                
+
+                const doc = new DOMParser().parseFromString(response.body, 'text/html');
+                doc.querySelectorAll('script, style, nav, header, footer, aside').forEach(el => el.remove());
+                const main = doc.querySelector('main, article, .content, #content, .post, .article');
+                const text = (main || doc.body).textContent.replace(/\s+/g, ' ').trim();
+                const title = doc.querySelector('title')?.textContent?.trim() || url;
+
+                if (text.length < 100) {
+                  throw new Error('Content too short');
+                }
+
+                extractedContent.push({ url, title, text: text.slice(0, 6000) });
+
                 openedTabs[i].status = 'completed';
-                openedTabs[i].title = content.title;
+                openedTabs[i].title = title;
                 updateSourceTabsUI();
               } catch (e) {
-                console.error('Failed to read tab:', tab.url, e);
+                console.error('Failed to fetch/read page:', url, e);
                 openedTabs[i].status = 'error';
                 updateSourceTabsUI();
               }
             }
-            
+
             if (extractedContent.length === 0) {
               throw new Error('Could not extract content from any pages.');
             }
-            
+
             return `✓ Extracted content from ${extractedContent.length} pages`;
           }
         },
@@ -611,38 +579,6 @@ Please provide a comprehensive answer to the research query, synthesizing inform
             
             return '✓ Research complete!';
           }
-        },
-        {
-          title: 'Clean up tabs',
-          description: 'Close the tabs we opened.',
-          code: `for (const tab of tabs) {
-  await agent.browser.tabs.close(tab.id);
-}
-await agent.browser.tabs.close(searchTabId);`,
-          run: async () => {
-            const agent = getWebAgent();
-            let closed = 0;
-            
-            // Close result tabs
-            for (const tab of openedTabs) {
-              try {
-                await agent.browser.tabs.close(tab.id);
-                closed++;
-              } catch (e) {
-                console.error('Failed to close tab:', tab.id, e);
-              }
-            }
-            
-            // Close search tab
-            try {
-              await agent.browser.tabs.close(window._researchSearchTabId);
-              closed++;
-            } catch (e) {
-              console.error('Failed to close search tab:', e);
-            }
-            
-            return `✓ Closed ${closed} tabs`;
-          }
         }
       ];
     }
@@ -661,7 +597,8 @@ await agent.browser.tabs.close(searchTabId);`,
       tabsHtml += '</div>';
       
       // Add to current step output if we're on the right step
-      if (walkthroughIndex >= 4 && walkthroughIndex <= 5) {
+      // (step index 4 is "Fetch and read result pages")
+      if (walkthroughIndex === 4) {
         const stepEl = walkthroughStepsEl.querySelector(`[data-step="${walkthroughIndex}"]`);
         if (stepEl) {
           let tabsContainer = stepEl.querySelector('.source-tabs-container');
