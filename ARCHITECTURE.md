@@ -655,7 +655,8 @@ The shared protocol defines type-safe communication between Harbor and Web Agent
 | `policy/permissions.ts` | Permission checking and prompts |
 | `storage/` | Extension storage utilities |
 | `background.ts` | Service worker entry point (initializes handlers) |
-| `extension-api.ts` | External extension API router |
+| `extension-api.ts` | External extension API router; accepts messages only from the Web Agents API |
+| `known-extensions.ts` | Web Agents API extension IDs that Harbor accepts messages from |
 | `sidebar.ts` | Sidebar UI for server management |
 | `directory.ts` | MCP server directory/catalog UI |
 
@@ -677,6 +678,7 @@ The shared protocol defines type-safe communication between Harbor and Web Agent
 | `handlers/agent-handlers.ts` | Multi-agent handlers |
 | `background.ts` | Service worker entry point |
 | `harbor-client.ts` | Client for Harbor extension communication |
+| `known-extensions.ts` | Harbor extension IDs used for discovery and accepted as senders |
 | `injected.ts` | `window.ai` and `window.agent` injection |
 | `content-script.ts` | Content script bridge |
 | `types.ts` | Type definitions |
