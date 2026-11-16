@@ -1,7 +1,7 @@
 # Harbor Positioning (2026)
 
 **Status:** Internal reference — drives website copy, talks, and external materials.
-**Last updated:** May 2026.
+**Last updated:** November 2026 (what Harbor is; agent-to-company protocols). The landscape tables are from May 2026.
 
 This document captures the current landscape, why Harbor still matters in it, and the language we use to describe the difference. Read it before you write a deck, a blog post, or a landing page about Harbor.
 
@@ -21,13 +21,28 @@ If you're reaching for the literal copy that ships on the site, read `whitepaper
 
 ---
 
+## What Harbor is
+
+Harbor is an implementation of a spec, not an endpoint. The spec is the **Web Agent API** (`spec/`), which defines how a web surface and the person's agent talk to each other, in both directions:
+
+- **The page calls the agent** through `window.ai` and `window.agent`.
+- **The agent calls the page's tools** through WebMCP (`navigator.modelContext`).
+
+We expect most of a person's dealings with companies to go through their agent. Some of the time a company will want to offer something richer than a conversation: an interface, which is what a website is today. That interface needs an API to the person's agent, and the Web Agent API is one proposal for it. Harbor is the working implementation that lets people try it. It's one answer, and it's also meant to push the web toward a standard.
+
+**Where the surface lives doesn't matter.** It's a Gecko or WebKit rendering. It can be a tab in an ordinary browser or a surface inside an agent's own app, and each agent decides where to put it. Today Harbor runs as Firefox and Chrome extensions.
+
+**Browser control is a stopgap.** Harbor also lets an agent click, fill and navigate in a page (`agent.browser.*`). It's necessary for now, but it isn't the model. Those actions run under the person's login, and the company can't tell them from the person's own. When the agent acts through the page's tools instead, the company's code can tell the agent's actions from the person's by the channel each arrives on.
+
+---
+
 ## Introducing Harbor on the public site
 
 The homepage is a provocation about who gets to act on the reader’s behalf. The proposed browser capability is permissioned access to the reader’s own AI. A site asks to use it, and the browser brings that request to the reader, as it does for camera or location access. Lead with the reader’s ownership of their agent and make the case before offering setup instructions. Use a concrete example to show what each party controls. A newspaper could expose its archive search to a reader’s chosen model. The archive supplies the search tool, the reader grants access, and the model works with the results. This is an example for builders. For a hands-on introduction today, point readers to the Page Summarizer bookmarklet and explain the developer setup it requires. Keep the detailed market comparison in the landscape essay.
 
-## Where the world is, May 2026
+## Where the world is, May 2026 (Camp 5 added November 2026)
 
-The browser–AI landscape has crystallized into four camps. Harbor is none of them.
+The browser–AI landscape has crystallized into five camps. Harbor is none of them.
 
 ### Camp 1 — AI-native browsers (the agent IS the browser)
 
@@ -62,13 +77,24 @@ The browser–AI landscape has crystallized into four camps. Harbor is none of t
 
 **Pattern:** the same idea — let users bring their keys — has won inside developer tools. It hasn't crossed over to the open web. Harbor is the open-web version of this idea.
 
+### Camp 5 — Agent-to-company protocols (added November 2026)
+
+- **Remote MCP servers** — companies publish tools their customers' agents can call.
+- **A2A** (Agent2Agent) — an open protocol for agents to talk to other agents, such as a company's own agent.
+- **Personal Agent Protocol** — a person's agent discovers a company, signs the person in, and works through the company's APIs, its agent or its website. Version 1.0 shipped November 2026.
+- **UCP** (Universal Commerce Protocol) for agent shopping, and **Web Bot Auth** (IETF draft) for signing an agent operator's requests.
+
+**Pattern:** these define how an agent reaches a company. None defines how a company's page talks to the person's agent once the page is open.
+
+**Harbor's stance:** complementary. They connect agents to companies; the Web Agent API connects web surfaces to agents. Whatever agent a person uses with these protocols could be the agent a Harbor page talks to.
+
 ---
 
 ## What's missing
 
 No one is shipping the combination of:
 
-1. **A portable contract** between websites and the user's chosen AI that works across browsers (not just Chrome's Prompt API; not just Firefox AI Window).
+1. **A portable contract** between websites and the user's chosen AI that works across browsers (not just Chrome's Prompt API; not just Firefox AI Window). Agent-to-company protocols (Camp 5) don't provide one either.
 2. **A unified permission boundary** that covers LLMs + remote MCP servers + page tools as a coherent whole, scoped per-origin, like `geolocation` or `camera`.
 3. **AI as a web platform capability** — a website calls `window.ai.createTextSession()` the same way it calls `fetch()`, without caring which model, key, or browser the user has, and without the website ever touching the credentials.
 4. **An architectural answer to the prompt-injection problem**: instead of an agent free-roaming the DOM (Comet, Atlas), websites *delegate* via a scoped API. The user's AI mediates. Permissions throttle each side.
@@ -111,7 +137,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 ## What we are not
 
 - **Not a browser.** We don't compete with Firefox, Chrome, Edge, Atlas, Comet, Dia. We run *inside* them.
-- **Not an agent.** Harbor does not autonomously browse. It exposes a contract; the page or the user drives.
+- **Not an agent.** Harbor implements the API that web pages and the person's agent talk through. When the site says "your agent," it means the person's own agent, whichever one they use. Harbor doesn't browse on its own; its browser-control APIs are a stopgap (see "What Harbor is").
 - **Not a model provider.** We connect to the models you bring (Ollama, llamafile, OpenAI, Anthropic, Gemini, …).
 - **Not a Mozilla product.** It's a sketch from people inside Mozilla, but the goal is a standard the whole web can adopt — not a Firefox-only feature.
 - **Not a finished design.** It's version 0.1, deliberately. We want feedback before we calcify.
@@ -125,7 +151,8 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 | Page declares tools | **WebMCP** (`navigator.modelContext`) — W3C CG, April 2026 | We implement it today; we'd happily yield this surface to the spec. |
 | Page calls a model | **Chrome Prompt API** (`window.LanguageModel`) — Chrome 138+ | We implement a compatible `window.ai`; same code runs on either. |
 | Cross-origin tools | **MCP** | We host MCP servers (WASM/JS in-browser; native via the Rust bridge); developers pick any servers they want. |
-| Browser-mediated agent + permissions | **No standard yet** | This is the gap. Our `window.agent` proposal is what we'd put on the standards track. |
+| Agent reaches a company | **Remote MCP**, **A2A**, **Personal Agent Protocol**, **UCP**, **Web Bot Auth** | Complementary. Harbor doesn't implement them; they're how the person's agent reaches companies directly. |
+| Page talks to the person's agent, with permissions | **No standard yet** | This is the gap. Our `window.ai` / `window.agent` proposal is what we'd put on the standards track. |
 
 ---
 
@@ -165,6 +192,12 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 - The architecture matches Mozilla's stated direction (user choice, openness, not locked in) but answers a question Mozilla hasn't yet: how does the *page* get a model?
 - Harbor is not a Mozilla product. It's a way to test whether the architecture works, on Firefox and Chrome, before any browser commits to anything.
 
+### For people building agents or agent protocols
+
+- Agent-to-company protocols cover how your agent reaches a company. The Web Agent API covers how a company's page talks to your agent once the page is open. You'd want both.
+- We don't mind where the page is rendered: the person's browser, or a surface in your agent's own app.
+- When the agent acts through the page's tools instead of the DOM, the company can tell the agent's actions from the person's.
+
 ---
 
 ## Headlines and taglines we like
@@ -197,3 +230,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 - Zenity 1Password / Comet attack: https://labs.zenity.io/p/perplexedbrowser-how-attackers-can-weaponize-comet-to-takeover-your-1password-vault
 - Same-origin policy bypass research: https://agent-security.cs.washington.edu/agentic_browsers_sop.html
 - BrowseSafe paper (arXiv:2511.20597): https://arxiv.org/html/2511.20597v1
+- A2A (Agent2Agent) protocol: https://a2a-protocol.org
+- Personal Agent Protocol 1.0 spec (Nov 14, 2026): https://personalagentprotocol.org/docs/1.0/spec
+- Universal Commerce Protocol: https://ucp.dev
+- Web Bot Auth (IETF draft): https://datatracker.ietf.org/doc/draft-ietf-webbotauth-httpsig-protocol/
