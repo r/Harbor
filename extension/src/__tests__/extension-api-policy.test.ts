@@ -5,9 +5,10 @@
  * second Harbor prompt, and calls without an origin are rejected.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bridgeRequest } from '../llm/bridge-client';
+import { bridgeRequest, bridgeStreamRequest } from '../llm/bridge-client';
 import { callTool } from '../mcp/host';
-import { routeExtensionApiMessage } from '../extension-api';
+import { initializeExtensionApi, routeExtensionApiMessage } from '../extension-api';
+import { browserAPI } from '../browser-compat';
 import { Audit } from '../policy/audit';
 import { setOriginGrantResolver } from '../policy/engine';
 import { showPermissionPrompt } from '../policy/permissions';
@@ -132,5 +133,52 @@ describe('page-facing calls go through the PolicyEngine', () => {
       ['model.prompt.remote.firstParty', 'ask'],
       ['tool.call', 'deny'],
     ]);
+  });
+});
+
+describe('page-facing streaming chat goes through the PolicyEngine', () => {
+  async function stream(payload: Record<string, unknown>) {
+    let connect: ((port: unknown) => void) | undefined;
+    const runtime = browserAPI.runtime as unknown as Record<string, unknown>;
+    runtime.onMessageExternal = { addListener: vi.fn() };
+    runtime.onConnectExternal = { addListener: (l: typeof connect) => { connect = l; } };
+    initializeExtensionApi();
+    let onMessage: ((message: unknown) => void) | undefined;
+    let complete!: () => void;
+    const done = new Promise<void>(resolve => { complete = resolve; });
+    const postMessage = vi.fn(() => complete());
+    connect!({
+      sender: { id: 'web-agents@krikorian.co' },
+      onMessage: { addListener: (l: typeof onMessage) => { onMessage = l; } },
+      onDisconnect: { addListener: vi.fn() },
+      postMessage,
+    });
+    vi.mocked(bridgeStreamRequest).mockImplementation(async function* () {
+      yield { id: 's1', type: 'done', finish_reason: 'stop' };
+    });
+    onMessage!({ type: 'llm.chatStream', requestId: 'r1', payload: { messages, model: 'ollama:test', ...payload } });
+    await Promise.race([done, new Promise(resolve => setTimeout(resolve, 200))]);
+    return postMessage;
+  }
+
+  it('rejects a stream without an origin', async () => {
+    const posted = await stream({});
+    expect(bridgeStreamRequest).not.toHaveBeenCalled();
+    expect(posted).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'r1', event: expect.objectContaining({ type: 'error' }) }));
+  });
+
+  it('enforces an origin deny on a stream', async () => {
+    setOriginGrantResolver(() => ({ effect: 'deny' }));
+    const posted = await stream({ origin: ORIGIN });
+    expect(bridgeStreamRequest).not.toHaveBeenCalled();
+    expect(posted).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'r1', event: expect.objectContaining({ type: 'error' }) }));
+    expect(Audit.query({ origin: ORIGIN })[0]).toMatchObject({ action: 'model.prompt.local', effect: 'deny' });
+  });
+
+  it('answers the port with an error, not silence, when the gate itself fails', async () => {
+    setOriginGrantResolver(() => { throw new Error('resolver boom'); });
+    const posted = await stream({ origin: ORIGIN });
+    expect(bridgeStreamRequest).not.toHaveBeenCalled();
+    expect(posted).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'r1', event: expect.objectContaining({ type: 'error' }) }));
   });
 });
