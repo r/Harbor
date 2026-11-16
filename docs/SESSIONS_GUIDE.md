@@ -141,7 +141,7 @@ Explicit sessions have **requested capabilities** bounded by the origin's permis
 - **LLM**: Allowed if requested and origin has `model:prompt`
 - **Tools**: Only the allowlisted tools that the origin can access
 - **Browser**: Only the requested browser capabilities
-- **Limits**: Enforced budgets that cannot be exceeded
+- **Limits**: `ttlMinutes` ends the session when it runs out. `maxToolCalls` is recorded but not yet enforced.
 
 ### Permissions
 
@@ -150,6 +150,10 @@ The session's effective capabilities are the **intersection** of:
 2. What the origin has permission to use
 
 For example, if you request `tools: ['brave-search/search', 'filesystem/read_file']` but the origin only has permission for `brave-search/search`, the session will only have access to `brave-search/search`.
+
+Harbor checks that a session is still alive, and belongs to your origin, before every `prompt()` and `promptStreaming()`. A terminated or expired session fails with `ERR_SESSION_NOT_FOUND`.
+
+Explicit sessions aren't available in Safari yet: `agent.sessions.create()` fails there with a "not supported" message. Use `window.ai.createTextSession()` instead.
 
 ---
 
