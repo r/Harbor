@@ -17,7 +17,6 @@ import type { SessionMode } from '../../policy/tokens';
 import { showPermissionPrompt } from '../../policy/permissions';
 import { grantPermissions } from '../../policy/permissions';
 import { Audit } from '../../policy/audit';
-import { Policy } from '../../policy/store';
 
 const DEBUG = false;
 
@@ -170,10 +169,10 @@ export async function requireAction(
 function upstreamConsentCovers(decision: PolicyDecision): boolean {
   if (decision.trace.some((step) => step.tier === 4 && step.outcome === 'ask')) return false;
   if (decision.rule) {
-    // Judge the rule by its own effect: an allow rule can still end in
-    // `preview` when the sensitivity gate forces one for irreversible writes.
-    const rule = Policy.rules().find((r) => r.id === decision.rule?.id);
-    return rule?.effect === 'allow';
+    // Judge the matched rule by its own effect: an allow rule can still end
+    // in `preview` when the sensitivity gate forces one for irreversible
+    // writes. The engine carries the effect, so ids needn't be unique.
+    return decision.rule.effect === 'allow';
   }
   return true;
 }
