@@ -171,7 +171,7 @@ export async function handleTabsCreate(ctx: RequestContext): HandlerResponse {
 
   try {
     const createOptions: chrome.tabs.CreateProperties = {
-      url: payload.url,
+      url: target.href,
       active: payload.active ?? false,
       index: payload.index,
       windowId: payload.windowId,

@@ -6,7 +6,7 @@ Self-contained demos that exercise active-tab interaction APIs. Each step increa
 
 - **Basic Actions** (`basic-actions/`) — Click, fill, and select on a simple form.
 - **Multi-step Form** (`multi-step-form/`) — Validation + delayed transitions with `waitForSelector`.
-- **Research Agent** (`research-agent/`) — Multi-tab search: search Google, open results in new tabs, extract content, and synthesize with AI.
+- **Research Agent** (`research-agent/`) — Search the web (falling back to Wikipedia search), fetch the result pages with `agent.browser.fetch`, and synthesize with AI.
 
 ## APIs Covered
 
@@ -21,8 +21,8 @@ Self-contained demos that exercise active-tab interaction APIs. Each step increa
 - `agent.browser.tabs.create({ url, active })` — Create new tabs
 - `agent.browser.tabs.list()` — List all tabs
 - `agent.browser.tabs.close(tabId)` — Close a spawned tab
-- `agent.browser.tab.readability(tabId)` — Extract content from a spawned tab
-- `agent.browser.tab.navigate(tabId, url)` — Navigate a spawned tab
+- `agent.browser.tab.readability(tabId)` — Extract content from a spawned tab (only while it shows a page on your own origin)
+- `agent.browser.tab.waitForLoad(tabId)` — Wait for a spawned tab to finish loading
 
 ## Permissions & Flags
 
