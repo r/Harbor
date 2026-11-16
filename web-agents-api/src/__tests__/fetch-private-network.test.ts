@@ -88,6 +88,24 @@ describe('fetch refuses local and private-network addresses', () => {
     'http://[64:ff9b::7f00:1]/',
     'http://[2002:c0a8:101::1]/',
     'http://[ff02::1]/',
+    'http://0x7f.0.0.2/',
+    'http://0300.0250.1.1/',
+    'http://127.0.0.2./',
+    'http://[::7f00:1]/',
+    'http://[::ffff:0:7f00:1]/',
+    'http://[64:ff9b:1::a00:1]/',
+    'http://[2001:0:4136:e378:8000:63bf:80ff:fffe]/',
+    'http://[2001:2::1]/',
+    'http://[3fff::1]/',
+    'http://[5f00::1]/',
+    'http://[100:0:0:1::1]/',
+    'http://localhost.localdomain/',
+    'http://localhost6.localdomain6/',
+    'http://router.home/',
+    'http://nas.corp/',
+    'http://box.private/',
+    'http://localhost../',
+    'http://foo.localhost../',
   ]) {
     it(`refuses ${url}`, async () => {
       const res = await callFetch(url);
@@ -98,7 +116,7 @@ describe('fetch refuses local and private-network addresses', () => {
   }
 
   it('still allows public addresses and names', async () => {
-    for (const url of ['https://example.com/', 'https://8.8.8.8/', 'https://[2606:4700::1111]/', 'https://172.32.0.1/', 'https://localhost.example.com/']) {
+    for (const url of ['https://example.com/', 'https://8.8.8.8/', 'https://[2606:4700::1111]/', 'https://172.32.0.1/', 'https://localhost.example.com/', 'https://[2001:4860:4860::8888]/', 'https://[2002:808:808::1]/', 'https://[64:ff9b::808:808]/']) {
       const res = await callFetch(url);
       expect(res.ok, url).toBe(true);
     }
@@ -143,6 +161,22 @@ describe('where the browser can resolve names, fetch refuses names that point at
   it('refuses when a redirect ends on a name that resolves locally', async () => {
     stubDns({ 'public.example': ['93.184.216.34'], 'sneaky.example': ['192.168.0.10'] });
     fetchMock.mockImplementation(async () => ({ ...response('https://sneaky.example/'), redirected: true }));
+    const res = await callFetch('https://public.example/');
+    expect(res.ok).toBe(false);
+    expect(JSON.stringify(res)).not.toContain('secret');
+  });
+
+  it('refuses names whose answers are local IPv6 forms', async () => {
+    stubDns({ 'v6.example': ['fe80::1%en0'], 'nat.example': ['64:ff9b:1::a00:1'], 'mapped.example': ['::ffff:10.0.0.1'] });
+    for (const host of ['v6.example', 'nat.example', 'mapped.example']) {
+      const res = await callFetch(`https://${host}/`);
+      expect(res.ok, host).toBe(false);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a redirected response whose final URL is missing', async () => {
+    fetchMock.mockImplementation(async () => ({ ...response(''), redirected: true }));
     const res = await callFetch('https://public.example/');
     expect(res.ok).toBe(false);
     expect(JSON.stringify(res)).not.toContain('secret');

@@ -504,7 +504,8 @@ export async function handleBrowserFetch(ctx: RequestContext): HandlerResponse {
     const response = await fetch(target.toString(), init);
     // fetch can't show us each redirect hop, so check where it ended up and
     // discard the response if that's a local address.
-    if (response.url && await isBlockedUrl(new URL(response.url))) {
+    // A redirected response with no URL can't be checked, so refuse it.
+    if (response.url ? await isBlockedUrl(new URL(response.url)) : response.redirected) {
       void response.body?.cancel().catch(() => {});
       return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', LOCAL_NETWORK_MESSAGE);
     }

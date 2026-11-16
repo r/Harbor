@@ -31,7 +31,11 @@ const BLOCKED_V4: ReadonlyArray<[string, number]> = [
 ];
 
 /** Name suffixes that only resolve on the user's machine or local network. */
-const LOCAL_SUFFIXES = ['localhost', 'local', 'home.arpa', 'internal', 'lan', 'intranet'];
+const LOCAL_SUFFIXES = [
+  'localhost', 'localdomain', 'localdomain6', 'local', 'home.arpa',
+  // Names RFC 6762 Appendix G lists as used privately.
+  'internal', 'intranet', 'lan', 'home', 'corp', 'private',
+];
 
 function parseV4(s: string): number | null {
   const parts = s.split('.');
@@ -88,11 +92,16 @@ function v6Blocked(g: number[]): boolean {
   if (zeros(0, 8)) return true; // ::
   if (zeros(0, 7) && g[7] === 1) return true; // ::1
   if (zeros(0, 5) && g[5] === 0xffff) return v4Blocked(embeddedV4); // IPv4-mapped
+  if (zeros(0, 4) && g[4] === 0xffff && g[5] === 0) return v4Blocked(embeddedV4); // IPv4-translated
   if (zeros(0, 6)) return true; // IPv4-compatible (deprecated)
   if (g[0] === 0x64 && g[1] === 0xff9b && zeros(2, 6)) return v4Blocked(embeddedV4); // NAT64
+  if (g[0] === 0x64 && g[1] === 0xff9b && g[2] === 1) return true; // local-use NAT64 64:ff9b:1::/48
   if (g[0] === 0x2002) return v4Blocked(((g[1] << 16) >>> 0) + g[2]); // 6to4
-  if (g[0] === 0x0100 && zeros(1, 4)) return true; // discard-only
+  if (g[0] === 0x0100 && zeros(1, 3) && g[3] <= 1) return true; // discard-only, dummy prefix
+  if (g[0] === 0x2001 && g[1] < 0x0200) return true; // IETF assignments 2001::/23 (Teredo, benchmarking)
   if (g[0] === 0x2001 && g[1] === 0x0db8) return true; // documentation
+  if (g[0] === 0x3fff && g[1] < 0x1000) return true; // documentation 3fff::/20
+  if (g[0] === 0x5f00) return true; // SRv6 SIDs 5f00::/16
   if ((g[0] & 0xfe00) === 0xfc00) return true; // unique local fc00::/7
   if ((g[0] & 0xffc0) === 0xfe80) return true; // link-local fe80::/10
   if ((g[0] & 0xffc0) === 0xfec0) return true; // site-local (deprecated)
@@ -116,8 +125,8 @@ export function isBlockedAddress(ip: string): boolean {
 export function isBlockedHostname(hostname: string): boolean {
   let host = hostname.toLowerCase();
   if (host.startsWith('[') && host.endsWith(']')) return isBlockedAddress(host.slice(1, -1));
-  if (host.endsWith('.')) host = host.slice(0, -1);
-  if (!host) return true;
+  host = host.replace(/\.+$/, '');
+  if (!host || host.split('.').some((label) => !label)) return true;
   if (parseV4(host) !== null) return isBlockedAddress(host);
   // Single-label names ("router", "intranet") resolve through local search domains.
   if (!host.includes('.')) return true;
