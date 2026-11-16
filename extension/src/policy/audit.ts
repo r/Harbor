@@ -48,8 +48,8 @@ export interface AuditRecord {
   tier: PolicyDecision['tier'];
   /** Source family. */
   source: PolicyDecision['source'];
-  /** Matched rule, if any. */
-  rule?: { id: string };
+  /** Matched rule, if any, with the rule's own effect. */
+  rule?: PolicyDecision['rule'];
   /** Reason text. */
   reason: string;
   /** Error code, if denied. */
