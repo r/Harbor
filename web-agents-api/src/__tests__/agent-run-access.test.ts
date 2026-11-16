@@ -126,4 +126,22 @@ describe('agent.run receiving boundary', () => {
     }));
   });
 
+  it('forwards the page origin and tab on every Harbor model and tool call', async () => {
+    const toolCall = { id: 'call-clock', function: { name: 'clock_time', arguments: '{}' } };
+    let chats = 0;
+    mocks.harborRequest.mockImplementation(async (method) => {
+      if (method === 'mcp.listTools') return { tools: [{ name: 'time', serverId: 'clock' }] };
+      if (method === 'mcp.callTool') return { result: 'Noon' };
+      chats++;
+      return chats === 1
+        ? { content: '', choices: [{ message: { role: 'assistant', content: '', tool_calls: [toolCall] } }] }
+        : { content: 'It is noon.' };
+    });
+    await run();
+    const calls = mocks.harborRequest.mock.calls;
+    expect(calls.map(([method]) => method)).toEqual(['mcp.listTools', 'llm.chat', 'mcp.callTool', 'llm.chat']);
+    for (const [, payload] of calls) {
+      expect(payload).toMatchObject({ origin: 'https://example.test', tabId: 1 });
+    }
+  });
 });
