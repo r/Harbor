@@ -993,7 +993,11 @@ async function handleStreamingChat(
     return;
   }
 
-  const gateFailure = await gatePageCall('llm.chatStream', payload, requestId);
+  // Fail closed and answer the port either way, so a gate error can't
+  // leave the page's stream waiting forever.
+  const gateFailure = await gatePageCall('llm.chatStream', payload, requestId).catch(
+    (e: unknown) => failure(e),
+  );
   if (gateFailure) {
     port.postMessage({ type: 'stream', requestId, event: { type: 'error', error: { message: gateFailure.error } } });
     return;
