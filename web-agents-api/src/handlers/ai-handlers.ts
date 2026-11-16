@@ -6,6 +6,7 @@
 
 import { harborRequest, discoverHarbor, getHarborState } from '../harbor-client';
 import type { RequestContext, HandlerResponse, TextSessionState } from './types';
+import type { SessionSummary } from '../types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission } from './permission-handlers';
 
@@ -71,17 +72,72 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
   return successResponse(ctx.id, sessionId);
 }
 
+/**
+ * Track an explicit session (agent.sessions.create) so session.prompt can find
+ * it. Harbor's session registry stays the authority on whether the session is
+ * still alive and has LLM access; this only holds its options and chat history.
+ */
+export function registerExplicitTextSession(
+  sessionId: string,
+  origin: string,
+  options: Record<string, unknown>,
+): void {
+  textSessions.set(sessionId, {
+    sessionId,
+    origin,
+    options,
+    history: [],
+    createdAt: Date.now(),
+    explicit: true,
+  });
+}
+
+/** Drop the local state for an explicit session the origin terminated. */
+export function forgetExplicitTextSession(sessionId: string, origin: string): void {
+  const session = textSessions.get(sessionId);
+  if (session?.explicit && session.origin === origin) textSessions.delete(sessionId);
+}
+
+/**
+ * Look up a text session for a prompt from `origin`. Explicit sessions are
+ * revalidated with Harbor on every prompt, so termination and expiry apply.
+ */
+export async function resolveTextSession(
+  sessionId: string,
+  origin: string,
+): Promise<{ session: TextSessionState } | { code: string; message: string }> {
+  const session = textSessions.get(sessionId);
+  if (!session) {
+    return { code: 'ERR_SESSION_NOT_FOUND', message: 'Session not found' };
+  }
+  if (session.origin !== origin) {
+    return { code: 'ERR_PERMISSION_DENIED', message: 'Session belongs to different origin' };
+  }
+  if (session.explicit) {
+    let hasLLM: boolean;
+    try {
+      const result = await harborRequest<{ session: SessionSummary | null }>('session.get', { sessionId, origin });
+      if (!result.session) throw new Error('Session not found');
+      hasLLM = result.session.capabilities.hasLLM;
+    } catch {
+      textSessions.delete(sessionId);
+      return { code: 'ERR_SESSION_NOT_FOUND', message: 'Session not found' };
+    }
+    if (!hasLLM) {
+      return { code: 'ERR_PERMISSION_DENIED', message: 'Session does not have LLM access' };
+    }
+  }
+  return { session };
+}
+
 export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse {
   const { sessionId, input } = ctx.payload as { sessionId: string; input: string };
   
-  const session = textSessions.get(sessionId);
-  if (!session) {
-    return errorResponse(ctx.id, 'ERR_SESSION_NOT_FOUND', 'Session not found');
+  const resolved = await resolveTextSession(sessionId, ctx.origin);
+  if (!('session' in resolved)) {
+    return errorResponse(ctx.id, resolved.code, resolved.message);
   }
-  
-  if (session.origin !== ctx.origin) {
-    return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Session belongs to different origin');
-  }
+  const { session } = resolved;
 
   try {
     // Add user message to history
@@ -203,12 +259,4 @@ export async function handleProvidersGetConfiguredModelsMetadata(ctx: RequestCon
       e instanceof Error ? e.message : 'Failed to get configured models metadata'
     );
   }
-}
-
-// =============================================================================
-// Exports for streaming (used by background.ts directly)
-// =============================================================================
-
-export function getTextSession(sessionId: string): TextSessionState | undefined {
-  return textSessions.get(sessionId);
 }

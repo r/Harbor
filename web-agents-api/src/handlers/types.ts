@@ -60,6 +60,8 @@ export interface TextSessionState {
   options: Record<string, unknown>;
   history: Array<{ role: string; content: string }>;
   createdAt: number;
+  /** Created by agent.sessions.create; Harbor's registry is the authority on it. */
+  explicit?: boolean;
 }
 
 // =============================================================================

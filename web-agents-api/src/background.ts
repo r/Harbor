@@ -32,7 +32,7 @@ import {
   resolvePromptClosed,
   handlePermissionPromptResponse,
   // AI utilities
-  getTextSession,
+  resolveTextSession,
   // Tab utilities
   restoreSpawnedTabs,
   handleTabRemoved,
@@ -94,16 +94,12 @@ async function handleSessionPromptStreaming(
     origin: ctx.origin,
   });
   
-  const session = getTextSession(sessionId);
-  if (!session) {
-    sendEvent({ id: ctx.id, event: { type: 'error', error: { code: 'ERR_SESSION_NOT_FOUND', message: 'Session not found' } }, done: true });
+  const resolved = await resolveTextSession(sessionId, ctx.origin);
+  if (!('session' in resolved)) {
+    sendEvent({ id: ctx.id, event: { type: 'error', error: { code: resolved.code, message: resolved.message } }, done: true });
     return;
   }
-  
-  if (session.origin !== ctx.origin) {
-    sendEvent({ id: ctx.id, event: { type: 'error', error: { code: 'ERR_PERMISSION_DENIED', message: 'Session belongs to different origin' } }, done: true });
-    return;
-  }
+  const { session } = resolved;
 
   try {
     // Add user message to history
