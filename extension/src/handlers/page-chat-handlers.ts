@@ -80,7 +80,7 @@ export function registerPageChatHandlers(): void {
       try {
         await browserAPI.scripting.executeScript({
           target: { tabId },
-          files: ['dist/page-chat.js'],
+          files: ['page-chat.js'],
         });
         console.log('[Harbor] Page chat injected into tab', tabId);
         sendResponse({ ok: true });
