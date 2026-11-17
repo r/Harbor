@@ -172,6 +172,13 @@ SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --prefix web-agents-api
 Run these from the repository root, then retry `npm run build`.
 See [sharp's installation guide](https://sharp.pixelplumbing.com/install/#building-from-source).
 
+The Harbor extension's build puts every bundle and page at the root of
+`dist-firefox/` or `dist-chrome/`. So at runtime, load `permission-prompt.html`,
+not `dist/permission-prompt.html`. If you add a page or script, add it to
+`entryPoints` or the copy steps in `extension/build.mjs`. The test
+`extension/src/__tests__/runtime-paths.test.ts` fails when a runtime path, or a
+script or stylesheet a page loads, isn't something the build produces.
+
 ### Quick Test
 
 ```javascript

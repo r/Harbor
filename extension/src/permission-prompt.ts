@@ -7,6 +7,7 @@
 
 import { browserAPI } from './browser-compat';
 import { SCOPE_DESCRIPTIONS } from './policy/permissions';
+import { escapeHtml } from './html-escape';
 import type { PermissionScope } from './agents/types';
 
 // Icons for each scope category
@@ -108,12 +109,12 @@ if (sessionName || sessionType === 'explicit') {
       badges.push('<span class="session-badge llm">LLM</span>');
     }
     if (parseInt(requestedTools, 10) > 0) {
-      badges.push(`<span class="session-badge tools">${requestedTools} Tools</span>`);
+      badges.push(`<span class="session-badge tools">${escapeHtml(requestedTools)} Tools</span>`);
     }
     if (requestedBrowser) {
       const browserCaps = requestedBrowser.split(',').filter(Boolean);
       if (browserCaps.length > 0) {
-        badges.push(`<span class="session-badge browser">Browser: ${browserCaps.join(', ')}</span>`);
+        badges.push(`<span class="session-badge browser">Browser: ${escapeHtml(browserCaps.join(', '))}</span>`);
       }
     }
     
@@ -161,9 +162,9 @@ if (scopesList) {
         item.innerHTML = `
           <div class="scope-header">
             <span class="scope-icon">${icon}</span>
-            <span class="scope-title">${scope}</span>
+            <span class="scope-title">${escapeHtml(scope)}</span>
           </div>
-          <div class="scope-description">Access to ${scope}</div>
+          <div class="scope-description">Access to ${escapeHtml(scope)}</div>
         `;
       }
       scopesList.appendChild(item);
@@ -178,15 +179,22 @@ if (tools.length > 0) {
   if (toolsSection && toolsList) {
     toolsSection.style.display = 'block';
 
-    for (const tool of tools) {
+    tools.forEach((tool, index) => {
+      // Tool names come from MCP servers, so build the row without innerHTML.
       const item = document.createElement('div');
       item.className = 'tool-item';
-      item.innerHTML = `
-        <input type="checkbox" id="tool-${tool}" data-tool="${tool}" checked>
-        <label for="tool-${tool}" class="tool-name">${tool}</label>
-      `;
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = `tool-${index}`;
+      checkbox.dataset.tool = tool;
+      checkbox.checked = true;
+      const label = document.createElement('label');
+      label.htmlFor = checkbox.id;
+      label.className = 'tool-name';
+      label.textContent = tool;
+      item.append(checkbox, label);
       toolsList.appendChild(item);
-    }
+    });
   }
 }
 

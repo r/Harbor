@@ -126,7 +126,7 @@ export async function handleChatOpen(
     // Then inject page-chat.js
     await browserAPI.scripting.executeScript({
       target: { tabId },
-      files: ['dist/page-chat.js'],
+      files: ['page-chat.js'],
     });
 
     log('Page chat injected into tab', tabId, 'with chatId', chatId);

@@ -457,7 +457,7 @@ function buildPromptUrl(opts: {
       params.set('browser', opts.sessionContext.requestedBrowser.join(','));
     }
   }
-  return browserAPI.runtime.getURL(`dist/permission-prompt.html?${params.toString()}`);
+  return browserAPI.runtime.getURL(`permission-prompt.html?${params.toString()}`);
 }
 
 function clearPromptState(): void {

@@ -14,7 +14,7 @@ import { getServerSecrets } from '../storage/server-secrets';
 
 // Built-in server IDs that have pre-bundled worker files (fallback)
 const BUILTIN_WORKER_MAP: Record<string, string> = {
-  'echo-js': 'dist/js-runtime/builtin-echo-worker.js',
+  'echo-js': 'js-runtime/builtin-echo-worker.js',
 };
 
 export type JsSession = {
