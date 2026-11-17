@@ -277,7 +277,7 @@ const { dataUrl } = await window.agent.browser.activeTab.screenshot();
 // Navigate the page itself
 await window.agent.browser.navigate('https://example.com');
 
-// CORS-bypassing fetch (http/https only, blocks RFC1918/localhost)
+// CORS-bypassing fetch (http/https only; refuses this device and private networks)
 const r = await window.agent.browser.fetch('https://api.example.com/data', {
   method: 'GET',
   headers: { 'X-Foo': 'bar' },

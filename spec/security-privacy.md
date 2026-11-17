@@ -55,7 +55,7 @@ Each permission scope grants the minimum access needed:
 | `browser:navigate` | Navigate the calling tab | http(s) only; the calling page is replaced |
 | `browser:tabs.read` | URLs and titles of open tabs | No page content |
 | `browser:tabs.create` | Open tabs; read and close the tabs this origin opened | Reads only while the tab shows this origin's own pages |
-| `web:fetch` | Fetch a URL from the extension | No cookies sent; common local hostnames refused (not a complete private-network block) |
+| `web:fetch` | Fetch a URL from the extension | No cookies sent; the user's device and private networks refused (see Browser Control) |
 
 ### Permission Persistence
 
@@ -110,7 +110,10 @@ An origin can't use the browser scopes to read another site's pages with the use
 
 - **Tabs an origin opens.** `browser:tabs.create` can open a tab on any http(s) URL, and the extension records which origin opened it. That origin can read the tab (`agent.browser.tab.getHtml`, `agent.browser.tab.readability`) only while the tab shows a page on the same origin. The extension checks the tab's origin on every call, and again inside the page when the read runs, because the tab can navigate at any time. A tab on another origin returns `ERR_PERMISSION_DENIED`, so an origin can't read another site's signed-in page through a tab it opened.
 - **Capture requested by tools.** An MCP tool can ask the browser to open a page and return its content or cookies. Only tool calls from Harbor's own extension pages (the sidebar, Tool Tester and the bundled chat demo) can do this. A tool call that a page started can't, so a page can't use a tool to read another site with the user's login.
-- **Fetch.** `agent.browser.fetch` never sends the user's cookies.
+- **Fetch.** `agent.browser.fetch` never sends the user's cookies, and it won't return responses from the user's own device or local network. It refuses loopback, private, link-local, multicast, documentation and other special-use IPv4 and IPv6 ranges, including IPv4 written inside IPv6 addresses. It also refuses names that only work locally, such as `localhost`, `.local`, `.localdomain`, `.home.arpa`, `.internal` and `.lan`, and single-label names such as `router`. Redirects are followed, but if the final address is refused, the response is discarded and the call returns `ERR_PERMISSION_DENIED`. In Firefox, the extension also resolves the name and refuses it if any of its addresses is refused. Limits:
+  - A redirect can still make a request reach a local address. The page never sees the response, but a 307 or 308 redirect carries the request's method, body and headers there. The error code also shows whether that address answered.
+  - Chrome and Safari have no DNS check, so a public name that points at a local address isn't caught there.
+  - A name's answer can change between the check and the request (DNS rebinding).
 
 ### Session Isolation
 
