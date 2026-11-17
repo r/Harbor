@@ -39,7 +39,12 @@ interface BuildOutputs {
 }
 
 function readBuildOutputs(): BuildOutputs {
-  const build = fs.readFileSync(join(EXTENSION_ROOT, 'build.mjs'), 'utf8');
+  // Drop line comments so a commented-out entry doesn't count as built.
+  const build = fs
+    .readFileSync(join(EXTENSION_ROOT, 'build.mjs'), 'utf8')
+    .split('\n')
+    .map((line) => line.replace(/^\s*\/\/.*$/, ''))
+    .join('\n');
   const files = new Set<string>();
   const dirs = new Map<string, string>();
   const entrySources = new Set<string>();
@@ -121,7 +126,6 @@ function runtimePathUses(): PathUse[] {
   const uses: PathUse[] = [];
   const patterns = [
     /(?:getURL|getExtensionURL)\(\s*[`'"]([^`'"?$]+)/g,
-    /files:\s*\[\s*[`'"]([^`'"]+)[`'"]/g,
   ];
   for (const full of sourceFiles(SRC)) {
     const file = full.slice(SRC.length + 1);
@@ -129,6 +133,9 @@ function runtimePathUses(): PathUse[] {
     const text = fs.readFileSync(full, 'utf8');
     for (const re of patterns) {
       for (const m of text.matchAll(re)) uses.push({ file, path: m[1] });
+    }
+    for (const list of text.matchAll(/files:\s*\[([^\]]*)\]/g)) {
+      for (const m of list[1].matchAll(/[`'"]([^`'"]+)[`'"]/g)) uses.push({ file, path: m[1] });
     }
     const workerMap = text.match(/BUILTIN_WORKER_MAP[^=]*=\s*\{([\s\S]*?)\}/);
     if (workerMap) {
