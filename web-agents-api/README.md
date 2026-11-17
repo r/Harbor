@@ -19,7 +19,7 @@ The extension:
 1. **Injects a content script** into every page
 2. **Exposes the Web Agents API** via `window.ai` and `window.agent`
 3. **Communicates with Harbor** to fulfill API requests
-4. **Enforces permissions** — websites must request and receive user consent
+4. **Enforces permissions** — websites must request and receive user consent; the grants live in Harbor, which this extension asks before every call
 
 ---
 
@@ -143,7 +143,6 @@ web-agents-api/
 │   ├── content-script.ts    # Bridge between page and extension
 │   ├── background.ts        # Service worker / background script
 │   ├── sidebar.ts           # Sidebar UI (if any)
-│   ├── permission-prompt.ts # Permission request UI
 │   ├── harbor-client.ts     # Communication with Harbor extension
 │   └── types.ts             # TypeScript definitions
 ├── assets/                  # Icons and static assets
@@ -174,9 +173,11 @@ The extension uses a content script that injects code into the page's context:
 When a page calls `window.agent.requestPermissions()`:
 
 1. The request is forwarded to Harbor
-2. Harbor opens a permission prompt window
-3. User approves or denies
+2. Harbor opens its permission prompt window
+3. User approves or denies, and Harbor stores the answer
 4. Result is returned to the page
+
+Harbor holds the only copy of each site's grants. This extension asks Harbor before every call, so revoking a site in Harbor's sidebar takes effect immediately. If Harbor isn't available, nothing is granted.
 
 ---
 

@@ -310,7 +310,7 @@ if (result.granted) {
 interface PermissionGrantResult {
   granted: boolean;              // true if ALL requested scopes were granted
   scopes: Record<PermissionScope, PermissionGrant>;  // Status per scope
-  allowedTools?: string[];       // Tools in the allowlist (if any)
+  allowedTools: string[];        // Tools the site may call; empty means none
 }
 ```
 
