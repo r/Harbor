@@ -27,10 +27,7 @@ import {
   // Permission utilities
   hasPermission,
   getPermissions,
-  listAllPermissions,
-  revokeOriginPermissions,
-  resolvePromptClosed,
-  handlePermissionPromptResponse,
+  deleteLegacyPermissionStore,
   // AI utilities
   resolveTextSession,
   recordExplicitPrompt,
@@ -56,6 +53,10 @@ console.log('[Web Agents API] Extension starting...', { startupId: STARTUP_ID, t
 
 // Initialize: restore tabs from storage
 restoreSpawnedTabs();
+
+// Grants live only in Harbor now. Delete any left in this extension's old store.
+deleteLegacyPermissionStore().catch((e) =>
+  console.warn('[Web Agents API] Failed to delete the old permission store:', e));
 
 // =============================================================================
 // Tab Event Handlers
@@ -175,7 +176,7 @@ async function handleAgentRun(
   }
 
   for (const scope of ['model:prompt', 'model:tools'] as const) {
-    if (!await hasPermission(ctx.origin, scope)) {
+    if (!await hasPermission(ctx.origin, scope, ctx.tabId)) {
       sendEvent({
         id: ctx.id,
         event: { type: 'error', error: { code: 'ERR_PERMISSION_DENIED', message: `Permission ${scope} required` } },
@@ -189,20 +190,19 @@ async function handleAgentRun(
     // Get available tools
     let tools: Array<{ serverId: string; name: string; description?: string; inputSchema?: unknown }> = [];
     
-    if (await hasPermission(ctx.origin, 'mcp:tools.list')) {
+    if (await hasPermission(ctx.origin, 'mcp:tools.list', ctx.tabId)) {
       const toolsResult = await harborRequest<{ tools: typeof tools }>('mcp.listTools', {
         origin: ctx.origin,
         tabId: ctx.tabId,
       });
       tools = toolsResult.tools || [];
       
-      const permissions = await getPermissions(ctx.origin);
-      if (permissions.allowedTools && permissions.allowedTools.length > 0) {
-        tools = tools.filter(t => 
-          permissions.allowedTools!.includes(t.name) || 
-          permissions.allowedTools!.includes(`${t.serverId}/${t.name}`)
-        );
-      }
+      // Offer only the tools the site was granted. No allowlist means no tools.
+      const permissions = await getPermissions(ctx.origin, ctx.tabId);
+      tools = tools.filter(t =>
+        permissions.allowedTools.includes(t.name) ||
+        permissions.allowedTools.includes(`${t.serverId}/${t.name}`)
+      );
     }
 
     // Build tool definitions for the LLM
@@ -277,7 +277,7 @@ async function handleAgentRun(
       const toolCalls = choice?.message?.tool_calls;
 
       if (toolCalls && toolCalls.length > 0) {
-        if (!await hasPermission(ctx.origin, 'mcp:tools.call')) {
+        if (!await hasPermission(ctx.origin, 'mcp:tools.call', ctx.tabId)) {
           messages.push({ role: 'assistant', content: responseContent || 'I need to use tools but permission was denied.' });
           messages.push({ role: 'user', content: 'Tool calling is not permitted. Please provide an answer without using tools.' });
           continue;
@@ -423,64 +423,6 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 // =============================================================================
-// Permission Prompt Handler
-// =============================================================================
-
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== 'permission_prompt_response') {
-    return false;
-  }
-
-  const success = handlePermissionPromptResponse(message.response);
-  sendResponse({ ok: success });
-  return true;
-});
-
-chrome.windows.onRemoved.addListener((windowId) => {
-  resolvePromptClosed(windowId);
-});
-
-// =============================================================================
-// Permission Management Messages
-// =============================================================================
-
-function handleWebAgentsPermissionsMessage(
-  message: { type?: string; origin?: string },
-  sendResponse: (response?: unknown) => void,
-): boolean {
-  if (message?.type === 'web_agents_permissions.list_all') {
-    listAllPermissions()
-      .then(permissions => sendResponse({ ok: true, permissions }))
-      .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
-    return true;
-  }
-
-  if (message?.type === 'web_agents_permissions.revoke_origin') {
-    const { origin } = message as { origin?: string };
-    if (!origin) {
-      sendResponse({ ok: false, error: 'Missing origin' });
-      return true;
-    }
-
-    revokeOriginPermissions(origin)
-      .then(() => sendResponse({ ok: true }))
-      .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
-    return true;
-  }
-
-  return false;
-}
-
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  return handleWebAgentsPermissionsMessage(message, sendResponse);
-});
-
-chrome.runtime.onMessageExternal?.addListener((message, sender, sendResponse) => {
-  if (!isHarborSender(sender)) return false;
-  return handleWebAgentsPermissionsMessage(message, sendResponse);
-});
-
-// =============================================================================
 // Harbor Discovery Handler
 // =============================================================================
 
@@ -589,60 +531,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       } else {
         sendResponse({ connected: true, extensionId: state.extensionId });
       }
-    })();
-    return true;
-  }
-
-  if (message?.type === 'getPermissionsForOrigin') {
-    const { origin } = message as { origin?: string };
-    if (!origin) {
-      sendResponse({ scopes: {}, allowedTools: [] });
-      return true;
-    }
-
-    (async () => {
-      const permissions = await getPermissions(origin);
-      const scopes: Record<string, string> = {};
-      
-      for (const [scope, grant] of Object.entries(permissions.scopes || {})) {
-        if (grant.type === 'granted-once' && grant.expiresAt && Date.now() > grant.expiresAt) {
-          scopes[scope] = 'not-granted';
-        } else {
-          scopes[scope] = grant.type;
-        }
-      }
-
-      sendResponse({ scopes, allowedTools: permissions.allowedTools || [] });
-    })();
-    return true;
-  }
-
-  if (message?.type === 'listAllPermissions') {
-    listAllPermissions().then(permissions => sendResponse({ permissions }));
-    return true;
-  }
-
-  if (message?.type === 'revokePermissions') {
-    const { origin } = message as { origin?: string };
-    if (!origin) {
-      sendResponse({ ok: false, error: 'Missing origin' });
-      return true;
-    }
-
-    revokeOriginPermissions(origin).then(() => sendResponse({ ok: true }));
-    return true;
-  }
-
-  if (message?.type === 'revokeAllPermissions') {
-    (async () => {
-      const result = await chrome.storage.local.get(null);
-      const keysToRemove = Object.keys(result).filter(key => key.startsWith('permissions:'));
-      
-      if (keysToRemove.length > 0) {
-        await chrome.storage.local.remove(keysToRemove);
-      }
-      
-      sendResponse({ ok: true });
     })();
     return true;
   }

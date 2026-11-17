@@ -25,6 +25,8 @@ import { requireAction } from './agents/handlers/helpers';
 import type { RequestContext, ResponseSender } from './agents/handlers/router-types';
 import { promptActionForModel, type TypedAction } from './policy/actions';
 import type { PolicyResource } from './policy/engine';
+import { getPermissionStatus, requestPermissions, SCOPE_DESCRIPTIONS } from './policy/permissions';
+import type { PermissionScope } from './agents/types';
 
 // =============================================================================
 // Types
@@ -90,7 +92,10 @@ type MessageType =
   // System
   | 'system.health'
   | 'system.getCapabilities'
-  | 'system.getVersion';
+  | 'system.getVersion'
+  // Permissions (Harbor holds the only store)
+  | 'permissions.check'
+  | 'permissions.request';
 
 // =============================================================================
 // Helpers
@@ -359,43 +364,68 @@ function handleSystemGetVersion(): ExtensionApiResponse {
   });
 }
 
+// =============================================================================
+// Permission Handlers
+// =============================================================================
+
 /**
- * Sync permissions from Web Agents API to Harbor's storage.
- * This allows Harbor to enforce permissions that were granted through Web Agents API.
+ * Harbor holds the only store of per-origin grants and the only consent
+ * prompt. The Web Agents API asks here for every check and request instead
+ * of keeping a copy, so a grant revoked in Harbor stops the next page call.
  */
-async function handleSystemSyncPermissions(
-  payload: {
-    origin: string;
-    scopes: string[];
-    grantType: 'granted-once' | 'granted-always';
-    allowedTools?: string[];
+const KNOWN_SCOPES = new Set<string>(Object.keys(SCOPE_DESCRIPTIONS));
+
+function readPermissionOrigin(p: Record<string, unknown>): string | null {
+  return typeof p.origin === 'string' && p.origin ? p.origin : null;
+}
+
+function readTabId(p: Record<string, unknown>): number | undefined {
+  return typeof p.tabId === 'number' ? p.tabId : undefined;
+}
+
+async function handlePermissionsCheck(payload: unknown): Promise<ExtensionApiResponse> {
+  const p = (payload || {}) as Record<string, unknown>;
+  const origin = readPermissionOrigin(p);
+  if (!origin) {
+    return failure('permissions.check requires the calling page\'s origin');
   }
-): Promise<ExtensionApiResponse> {
-  const { origin, scopes, grantType, allowedTools } = payload;
-  
-  if (!origin || !scopes || !Array.isArray(scopes)) {
-    return failure('Invalid payload: missing origin or scopes');
-  }
-  
-  log('Syncing permissions from Web Agents API:', { origin, scopes, grantType });
-  
   try {
-    // Import grantPermissions dynamically to avoid circular dependencies
-    const { grantPermissions } = await import('./policy/permissions');
-    
-    await grantPermissions(
-      origin,
-      scopes as Parameters<typeof grantPermissions>[1],
-      grantType,
-      undefined, // tabId
-      allowedTools
-    );
-    
-    log('Permissions synced successfully for', origin);
-    return success({ synced: true });
+    const status = await getPermissionStatus(origin, readTabId(p));
+    return success({ ...status, allowedTools: status.allowedTools ?? [] });
   } catch (e) {
-    error('Failed to sync permissions:', e);
-    return failure(e instanceof Error ? e.message : 'Failed to sync permissions');
+    return failure(e);
+  }
+}
+
+async function handlePermissionsRequest(payload: unknown): Promise<ExtensionApiResponse> {
+  const p = (payload || {}) as Record<string, unknown>;
+  const origin = readPermissionOrigin(p);
+  if (!origin) {
+    return failure('permissions.request requires the calling page\'s origin');
+  }
+  const { scopes, reason, tools } = p;
+  if (!Array.isArray(scopes) || scopes.length === 0 || !scopes.every(s => typeof s === 'string' && KNOWN_SCOPES.has(s))) {
+    return failure('permissions.request requires a non-empty list of known scopes');
+  }
+  if (reason !== undefined && typeof reason !== 'string') {
+    return failure('permissions.request: reason must be a string');
+  }
+  if (tools !== undefined && (!Array.isArray(tools) || !tools.every(t => typeof t === 'string'))) {
+    return failure('permissions.request: tools must be a list of tool names');
+  }
+  try {
+    const result = await requestPermissions(
+      origin,
+      {
+        scopes: scopes as PermissionScope[],
+        reason: reason as string | undefined,
+        tools: tools as string[] | undefined,
+      },
+      readTabId(p),
+    );
+    return success({ ...result, allowedTools: result.allowedTools ?? [] });
+  } catch (e) {
+    return failure(e);
   }
 }
 
@@ -827,6 +857,12 @@ export async function routeExtensionApiMessage(
     case 'watchdog.resetOrigin':
       return handleWatchdogResetOrigin(payload);
 
+    // Permissions (Harbor holds the only store)
+    case 'permissions.check':
+      return handlePermissionsCheck(payload);
+    case 'permissions.request':
+      return handlePermissionsRequest(payload);
+
     // System
     case 'system.health':
       return handleSystemHealth();
@@ -834,8 +870,6 @@ export async function routeExtensionApiMessage(
       return handleSystemGetCapabilities();
     case 'system.getVersion':
       return handleSystemGetVersion();
-    case 'system.syncPermissions':
-      return handleSystemSyncPermissions(payload as Parameters<typeof handleSystemSyncPermissions>[0]);
 
     default:
       return failure(`Unknown message type: ${type}`);
@@ -1078,12 +1112,13 @@ export function initializeExtensionApi(): void {
       log('External message:', msgType, 'from', sender.id);
       
       // Route based on message type prefix:
-      // - llm.*, mcp.*, session.*, system.* -> this module (extension API)
+      // - llm.*, mcp.*, session.*, system.*, permissions.* -> this module (extension API)
       // - agent.*, agents.* -> agent router
-      const isExtensionApiMessage = msgType.startsWith('llm.') || 
+      const isExtensionApiMessage = msgType.startsWith('llm.') ||
                                      msgType.startsWith('mcp.') ||
-                                     msgType.startsWith('session.') || 
-                                     msgType.startsWith('system.');
+                                     msgType.startsWith('session.') ||
+                                     msgType.startsWith('system.') ||
+                                     msgType.startsWith('permissions.');
       
       if (isExtensionApiMessage) {
         // Streaming requests need a port connection, not sendMessage

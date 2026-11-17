@@ -1,7 +1,7 @@
 /**
  * Extensions Harbor trusts to send it cross-extension messages.
  *
- * Harbor's external API (llm.*, mcp.*, session.*, system.*, agent.*) is for
+ * Harbor's external API (llm.*, mcp.*, session.*, system.*, permissions.*, agent.*) is for
  * the Web Agents API extension only. Every onMessageExternal and
  * onConnectExternal listener checks the sender against this list before
  * reading anything else from the message.

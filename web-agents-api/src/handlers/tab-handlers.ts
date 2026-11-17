@@ -149,7 +149,7 @@ const OTHER_ORIGIN_MESSAGE = "Can only read tabs while they show a page on the c
 export async function handleTabsCreate(ctx: RequestContext): HandlerResponse {
   console.log('[Web Agents API] handleTabsCreate called:', { origin: ctx.origin, payload: ctx.payload });
   
-  if (!await hasPermission(ctx.origin, 'browser:tabs.create')) {
+  if (!await hasPermission(ctx.origin, 'browser:tabs.create', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:tabs.create required');
   }
 
@@ -201,7 +201,7 @@ export async function handleTabsCreate(ctx: RequestContext): HandlerResponse {
 }
 
 export async function handleTabsList(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:tabs.read')) {
+  if (!await hasPermission(ctx.origin, 'browser:tabs.read', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:tabs.read required');
   }
 
@@ -226,7 +226,7 @@ export async function handleTabsList(ctx: RequestContext): HandlerResponse {
 }
 
 export async function handleTabsClose(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:tabs.create')) {
+  if (!await hasPermission(ctx.origin, 'browser:tabs.create', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:tabs.create required');
   }
 
@@ -254,7 +254,7 @@ export async function handleTabsClose(ctx: RequestContext): HandlerResponse {
 // =============================================================================
 
 export async function handleSpawnedTabReadability(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:tabs.create')) {
+  if (!await hasPermission(ctx.origin, 'browser:tabs.create', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:tabs.create required');
   }
 
@@ -334,7 +334,7 @@ export async function handleSpawnedTabReadability(ctx: RequestContext): HandlerR
 }
 
 export async function handleSpawnedTabGetHtml(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:tabs.create')) {
+  if (!await hasPermission(ctx.origin, 'browser:tabs.create', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:tabs.create required');
   }
 
@@ -385,7 +385,7 @@ export async function handleSpawnedTabGetHtml(ctx: RequestContext): HandlerRespo
 }
 
 export async function handleSpawnedTabWaitForLoad(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:tabs.create')) {
+  if (!await hasPermission(ctx.origin, 'browser:tabs.create', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:tabs.create required');
   }
 

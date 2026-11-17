@@ -30,7 +30,6 @@ const entryPoints = [
   'src/background.ts',
   'src/content-script.ts',
   'src/injected.ts',
-  'src/permission-prompt.ts',
   'src/sidebar.ts',
 ];
 
@@ -70,7 +69,6 @@ async function copyStatic() {
   }
   
   // Copy HTML and CSS files
-  await copyFile('src/permission-prompt.html', `${outDir}/permission-prompt.html`);
   await copyFile('src/sidebar.html', `${outDir}/sidebar.html`);
   await copyFile('src/design-tokens.css', `${outDir}/design-tokens.css`);
   

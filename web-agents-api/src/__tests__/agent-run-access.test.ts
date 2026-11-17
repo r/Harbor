@@ -11,9 +11,8 @@ vi.mock('../harbor-client', () => ({
 vi.mock('../policy/feature-flags', () => ({ getFeatureFlags: mocks.getFeatureFlags }));
 vi.mock('../handlers', () => ({
   routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: mocks.hasPermission,
-  getPermissions: async () => ({ scopes: {} }), listAllPermissions: vi.fn(),
-  revokeOriginPermissions: vi.fn(), resolvePromptClosed: vi.fn(),
-  handlePermissionPromptResponse: vi.fn(), resolveTextSession: mocks.resolveTextSession, recordExplicitPrompt: vi.fn(),
+  getPermissions: async () => ({ scopes: {}, allowedTools: [] }),
+  deleteLegacyPermissionStore: vi.fn(async () => {}), resolveTextSession: mocks.resolveTextSession, recordExplicitPrompt: vi.fn(),
   restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
   isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
   cleanupAgentsForTab: vi.fn(), agentInvocationTabs: new Map(),

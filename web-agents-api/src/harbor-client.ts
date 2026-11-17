@@ -186,14 +186,15 @@ function isSafari(): boolean {
 async function sendMessageToExtension(
   extensionId: string,
   message: HarborRequest,
+  timeoutMs: number = REQUEST_TIMEOUT,
 ): Promise<HarborResponse> {
   console.log('[Web Agents API] sendMessageToExtension:', extensionId, message.type, 'safari:', isSafari());
   
   // Create a timeout promise
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => {
-      reject(new Error(`Request timed out after ${REQUEST_TIMEOUT}ms`));
-    }, REQUEST_TIMEOUT);
+      reject(new Error(`Request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
   });
 
   // Create the message promise
@@ -283,6 +284,7 @@ async function safariHttpRequest<T>(method: string, params: unknown = {}): Promi
 export async function harborRequest<T = unknown>(
   type: string,
   payload?: unknown,
+  options: { timeoutMs?: number } = {},
 ): Promise<T> {
   if (!harborExtensionId || connectionState !== 'connected') {
     // Try to discover Harbor first
@@ -321,7 +323,7 @@ export async function harborRequest<T = unknown>(
     return { supported: false } as unknown as T;
   }
 
-  const response = await sendMessageToExtension(harborExtensionId!, { type, payload });
+  const response = await sendMessageToExtension(harborExtensionId!, { type, payload }, options.timeoutMs);
 
   if (!response.ok) {
     throw createError(ErrorCodes.INTERNAL, response.error || 'Unknown error from Harbor');

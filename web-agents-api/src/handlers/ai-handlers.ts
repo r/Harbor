@@ -46,7 +46,7 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
   });
   
   // Check permission
-  if (!await hasPermission(ctx.origin, 'model:prompt')) {
+  if (!await hasPermission(ctx.origin, 'model:prompt', ctx.tabId)) {
     console.log('[Web Agents API] handleAiCreateTextSession: Permission denied for', ctx.origin);
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission model:prompt required');
   }
@@ -232,7 +232,7 @@ export async function handleLanguageModelCapabilities(ctx: RequestContext): Hand
 }
 
 export async function handleProvidersList(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'model:list')) {
+  if (!await hasPermission(ctx.origin, 'model:list', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission model:list required');
   }
 
@@ -259,7 +259,7 @@ export async function handleProvidersGetActive(ctx: RequestContext): HandlerResp
 
 /** List configured models (named aliases) from Harbor — e.g. "llama", "gpt". */
 export async function handleProvidersListConfiguredModels(ctx: RequestContext): HandlerResponse {
-  if (!(await hasPermission(ctx.origin, 'model:list'))) {
+  if (!(await hasPermission(ctx.origin, 'model:list', ctx.tabId))) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission model:list required');
   }
 
@@ -279,7 +279,7 @@ export async function handleProvidersListConfiguredModels(ctx: RequestContext): 
 
 /** Get metadata for configured models (companion to listConfiguredModels). Includes is_local. */
 export async function handleProvidersGetConfiguredModelsMetadata(ctx: RequestContext): HandlerResponse {
-  if (!(await hasPermission(ctx.origin, 'model:list'))) {
+  if (!(await hasPermission(ctx.origin, 'model:list', ctx.tabId))) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission model:list required');
   }
 

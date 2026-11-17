@@ -313,84 +313,6 @@
         display: block;
       }
 
-      /* Permissions list */
-      .permissions-list {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-      }
-      .permission-item {
-        background: var(--color-surface-secondary);
-        border-radius: var(--radius-sm);
-        padding: var(--space-2);
-        border: 1px solid var(--color-border-subtle);
-      }
-      .permission-origin {
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        color: var(--color-accent-primary);
-        word-break: break-all;
-        margin-bottom: var(--space-1);
-      }
-      .permission-origin.current {
-        display: flex;
-        align-items: center;
-        gap: var(--space-1);
-      }
-      .permission-origin .current-badge {
-        font-size: 9px;
-        padding: 1px 4px;
-        background: var(--color-accent-bg);
-        color: var(--color-accent-primary);
-        border-radius: var(--radius-sm);
-        font-family: var(--font-sans);
-      }
-      .permission-scopes {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-        margin-bottom: var(--space-2);
-      }
-      .permission-scope-badge {
-        font-size: 9px;
-        padding: 2px 6px;
-        border-radius: var(--radius-sm);
-        background: var(--color-success-bg);
-        color: var(--color-success);
-      }
-      .permission-scope-badge.temporary {
-        background: var(--color-warning-bg);
-        color: var(--color-warning);
-      }
-      .permission-tools {
-        margin-top: var(--space-1);
-        padding-top: var(--space-1);
-        border-top: 1px solid var(--color-border-subtle);
-      }
-      .permission-tools-title {
-        font-size: 9px;
-        color: var(--color-text-muted);
-        text-transform: uppercase;
-        margin-bottom: var(--space-1);
-      }
-      .permission-tools-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-      }
-      .permission-tool-badge {
-        font-size: 9px;
-        padding: 2px 6px;
-        border-radius: var(--radius-sm);
-        background: var(--color-surface-tertiary);
-        color: var(--color-text-secondary);
-        font-family: var(--font-mono);
-      }
-      .permission-actions {
-        display: flex;
-        gap: var(--space-1);
-        margin-top: var(--space-2);
-      }
 
       /* Current site section */
       .current-site-section {
@@ -496,14 +418,13 @@
       </div>
     </div>
 
-    <!-- Current Site Permissions -->
-    <div class="current-site-section" id="current-site-section">
+    <!-- Site permissions live in Harbor -->
+    <div class="current-site-section" id="site-permissions-note">
       <div class="current-site-header">
-        <span class="current-site-title">Current Site</span>
+        <span class="current-site-title">Site Permissions</span>
       </div>
-      <div class="current-site-origin" id="current-site-origin">—</div>
-      <div id="current-site-permissions">
-        <div class="current-site-no-permissions">No permissions granted for this site</div>
+      <div class="current-site-no-permissions">
+        Harbor asks you before a site can use your agent. See and revoke site permissions in Harbor's sidebar.
       </div>
     </div>
 
@@ -585,24 +506,6 @@
         <div class="feature-flag-reload-hint" id="feature-flag-reload-hint">
           ⚠️ Reload pages to apply changes
         </div>
-      </div>
-    </div>
-
-    <!-- All Site Permissions -->
-    <div class="panel" id="permissions-panel">
-      <div class="panel-header" id="permissions-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon collapsed" id="permissions-toggle">▼</span>
-          <div class="panel-title">All Site Permissions</div>
-        </div>
-      </div>
-      <div class="panel-body collapsed" id="permissions-body">
-        <div id="permissions-list" class="permissions-list">
-          <div class="empty-state">No permissions granted yet</div>
-        </div>
-        <button class="btn btn-danger btn-sm" id="revoke-all-btn" style="width: 100%; margin-top: var(--space-3); display: none;">
-          Revoke All Permissions
-        </button>
       </div>
     </div>
 

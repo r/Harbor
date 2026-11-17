@@ -17,7 +17,7 @@ const LOCAL_NETWORK_MESSAGE = 'Fetch blocked: the address is on this device or a
 // =============================================================================
 
 export async function handleBrowserClick(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:activeTab.interact')) {
+  if (!await hasPermission(ctx.origin, 'browser:activeTab.interact', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:activeTab.interact required');
   }
 
@@ -70,7 +70,7 @@ export async function handleBrowserClick(ctx: RequestContext): HandlerResponse {
 // =============================================================================
 
 export async function handleBrowserFill(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:activeTab.interact')) {
+  if (!await hasPermission(ctx.origin, 'browser:activeTab.interact', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:activeTab.interact required');
   }
 
@@ -124,7 +124,7 @@ export async function handleBrowserFill(ctx: RequestContext): HandlerResponse {
 // =============================================================================
 
 export async function handleBrowserSelect(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:activeTab.interact')) {
+  if (!await hasPermission(ctx.origin, 'browser:activeTab.interact', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:activeTab.interact required');
   }
 
@@ -172,7 +172,7 @@ export async function handleBrowserSelect(ctx: RequestContext): HandlerResponse 
 // =============================================================================
 
 export async function handleBrowserScroll(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:activeTab.interact')) {
+  if (!await hasPermission(ctx.origin, 'browser:activeTab.interact', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:activeTab.interact required');
   }
 
@@ -215,7 +215,7 @@ export async function handleBrowserScroll(ctx: RequestContext): HandlerResponse 
 // =============================================================================
 
 export async function handleBrowserScreenshot(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:activeTab.screenshot')) {
+  if (!await hasPermission(ctx.origin, 'browser:activeTab.screenshot', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:activeTab.screenshot required');
   }
 
@@ -247,7 +247,7 @@ type ElementInfo = {
 };
 
 export async function handleBrowserGetElements(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:activeTab.read')) {
+  if (!await hasPermission(ctx.origin, 'browser:activeTab.read', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:activeTab.read required');
   }
 
@@ -353,7 +353,7 @@ type ReadabilityResult = {
 };
 
 export async function handleBrowserReadability(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:activeTab.read')) {
+  if (!await hasPermission(ctx.origin, 'browser:activeTab.read', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:activeTab.read required');
   }
 
@@ -411,7 +411,7 @@ export async function handleBrowserReadability(ctx: RequestContext): HandlerResp
 const ALLOWED_NAV_PROTOCOLS = new Set(['http:', 'https:']);
 
 export async function handleBrowserNavigate(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'browser:navigate')) {
+  if (!await hasPermission(ctx.origin, 'browser:navigate', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:navigate required');
   }
 
@@ -452,7 +452,7 @@ export async function handleBrowserNavigate(ctx: RequestContext): HandlerRespons
 // =============================================================================
 
 export async function handleBrowserFetch(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'web:fetch')) {
+  if (!await hasPermission(ctx.origin, 'web:fetch', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission web:fetch required');
   }
 

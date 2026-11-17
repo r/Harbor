@@ -1,7 +1,7 @@
 /**
  * Web Agents API - Sidebar Script
  * 
- * Manages API feature toggles and permission visibility.
+ * Manages API feature toggles. Site permissions are managed in Harbor's sidebar.
  */
 
 export {};
@@ -19,12 +19,6 @@ interface FeatureFlags {
   multiAgent: boolean;
 }
 
-interface PermissionEntry {
-  origin: string;
-  scopes: Record<string, string>;
-  allowedTools?: string[];
-}
-
 // =============================================================================
 // DOM Elements
 // =============================================================================
@@ -37,10 +31,6 @@ const harborStatus = document.getElementById('harbor-status') as HTMLDivElement;
 const harborStatusIndicator = document.getElementById('harbor-status-indicator') as HTMLDivElement;
 const harborStatusText = document.getElementById('harbor-status-text') as HTMLDivElement;
 const harborInstallHint = document.getElementById('harbor-install-hint') as HTMLDivElement;
-
-// Current site elements
-const currentSiteOrigin = document.getElementById('current-site-origin') as HTMLDivElement;
-const currentSitePermissions = document.getElementById('current-site-permissions') as HTMLDivElement;
 
 // API toggles
 const flagTextGeneration = document.getElementById('flag-textGeneration') as HTMLInputElement;
@@ -55,11 +45,6 @@ const featureFlagReloadHint = document.getElementById('feature-flag-reload-hint'
 const apiTogglesHeader = document.getElementById('api-toggles-header') as HTMLDivElement;
 const apiTogglesToggle = document.getElementById('api-toggles-toggle') as HTMLSpanElement;
 const apiTogglesBody = document.getElementById('api-toggles-body') as HTMLDivElement;
-const permissionsHeader = document.getElementById('permissions-header') as HTMLDivElement;
-const permissionsToggle = document.getElementById('permissions-toggle') as HTMLSpanElement;
-const permissionsBody = document.getElementById('permissions-body') as HTMLDivElement;
-const permissionsList = document.getElementById('permissions-list') as HTMLDivElement;
-const revokeAllBtn = document.getElementById('revoke-all-btn') as HTMLButtonElement;
 
 // =============================================================================
 // Theme Management
@@ -254,186 +239,11 @@ function setupFeatureFlagListeners(): void {
 }
 
 // =============================================================================
-// Current Site
-// =============================================================================
-
-let currentOrigin: string | null = null;
-
-async function updateCurrentSite(): Promise<void> {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
-    if (tab?.url) {
-      const url = new URL(tab.url);
-      currentOrigin = url.origin;
-      currentSiteOrigin.textContent = currentOrigin;
-      
-      // Get permissions for this site
-      await updateCurrentSitePermissions();
-    } else {
-      currentOrigin = null;
-      currentSiteOrigin.textContent = '—';
-      currentSitePermissions.innerHTML = '<div class="current-site-no-permissions">No active tab</div>';
-    }
-  } catch (error) {
-    currentOrigin = null;
-    currentSiteOrigin.textContent = '—';
-    currentSitePermissions.innerHTML = '<div class="current-site-no-permissions">Could not get current tab</div>';
-  }
-}
-
-async function updateCurrentSitePermissions(): Promise<void> {
-  if (!currentOrigin) {
-    currentSitePermissions.innerHTML = '<div class="current-site-no-permissions">No active tab</div>';
-    return;
-  }
-
-  try {
-    const response = await chrome.runtime.sendMessage({ 
-      type: 'getPermissionsForOrigin', 
-      origin: currentOrigin 
-    });
-
-    if (!response || !response.scopes || Object.keys(response.scopes).length === 0) {
-      currentSitePermissions.innerHTML = '<div class="current-site-no-permissions">No permissions granted for this site</div>';
-      return;
-    }
-
-    let html = '<div class="permission-scopes">';
-    for (const [scope, grant] of Object.entries(response.scopes)) {
-      if (grant === 'not-granted' || grant === 'denied') continue;
-      const isTemp = grant === 'granted-once';
-      html += `<span class="permission-scope-badge ${isTemp ? 'temporary' : ''}">${scope}${isTemp ? ' (temp)' : ''}</span>`;
-    }
-    html += '</div>';
-
-    if (response.allowedTools && response.allowedTools.length > 0) {
-      html += '<div class="permission-tools">';
-      html += '<div class="permission-tools-title">Allowed Tools</div>';
-      html += '<div class="permission-tools-list">';
-      for (const tool of response.allowedTools) {
-        html += `<span class="permission-tool-badge">${tool}</span>`;
-      }
-      html += '</div></div>';
-    }
-
-    html += `<div class="permission-actions">
-      <button class="btn btn-danger btn-sm" id="revoke-current-btn">Revoke</button>
-    </div>`;
-
-    currentSitePermissions.innerHTML = html;
-
-    // Add revoke handler
-    const revokeBtn = document.getElementById('revoke-current-btn');
-    if (revokeBtn) {
-      revokeBtn.addEventListener('click', async () => {
-        await revokePermissions(currentOrigin!);
-        await updateCurrentSitePermissions();
-        await loadAllPermissions();
-        showToast('Permissions revoked', 'success');
-      });
-    }
-  } catch (error) {
-    currentSitePermissions.innerHTML = '<div class="current-site-no-permissions">Error loading permissions</div>';
-  }
-}
-
-// =============================================================================
-// All Permissions
-// =============================================================================
-
-async function loadAllPermissions(): Promise<void> {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'listAllPermissions' });
-    const permissions: PermissionEntry[] = response?.permissions || [];
-
-    if (permissions.length === 0) {
-      permissionsList.innerHTML = '<div class="empty-state">No permissions granted yet</div>';
-      revokeAllBtn.style.display = 'none';
-      return;
-    }
-
-    let html = '';
-    for (const entry of permissions) {
-      // Filter out not-granted scopes
-      const grantedScopes = Object.entries(entry.scopes).filter(
-        ([, grant]) => grant === 'granted-once' || grant === 'granted-always'
-      );
-      
-      if (grantedScopes.length === 0) continue;
-
-      const isCurrent = entry.origin === currentOrigin;
-      
-      html += `<div class="permission-item">
-        <div class="permission-origin ${isCurrent ? 'current' : ''}">
-          ${entry.origin}
-          ${isCurrent ? '<span class="current-badge">current</span>' : ''}
-        </div>
-        <div class="permission-scopes">`;
-      
-      for (const [scope, grant] of grantedScopes) {
-        const isTemp = grant === 'granted-once';
-        html += `<span class="permission-scope-badge ${isTemp ? 'temporary' : ''}">${scope}${isTemp ? ' (temp)' : ''}</span>`;
-      }
-      
-      html += '</div>';
-
-      if (entry.allowedTools && entry.allowedTools.length > 0) {
-        html += `<div class="permission-tools">
-          <div class="permission-tools-title">Allowed Tools</div>
-          <div class="permission-tools-list">`;
-        for (const tool of entry.allowedTools) {
-          html += `<span class="permission-tool-badge">${tool}</span>`;
-        }
-        html += '</div></div>';
-      }
-
-      html += `<div class="permission-actions">
-        <button class="btn btn-danger btn-sm revoke-btn" data-origin="${entry.origin}">Revoke</button>
-      </div>
-      </div>`;
-    }
-
-    permissionsList.innerHTML = html || '<div class="empty-state">No permissions granted yet</div>';
-    revokeAllBtn.style.display = html ? 'block' : 'none';
-
-    // Add revoke handlers
-    permissionsList.querySelectorAll('.revoke-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        const origin = (e.target as HTMLElement).getAttribute('data-origin');
-        if (origin) {
-          await revokePermissions(origin);
-          await loadAllPermissions();
-          await updateCurrentSitePermissions();
-          showToast('Permissions revoked', 'success');
-        }
-      });
-    });
-  } catch (error) {
-    permissionsList.innerHTML = '<div class="empty-state">Error loading permissions</div>';
-    revokeAllBtn.style.display = 'none';
-  }
-}
-
-async function revokePermissions(origin: string): Promise<void> {
-  await chrome.runtime.sendMessage({ type: 'revokePermissions', origin });
-}
-
-async function revokeAllPermissions(): Promise<void> {
-  await chrome.runtime.sendMessage({ type: 'revokeAllPermissions' });
-  await loadAllPermissions();
-  await updateCurrentSitePermissions();
-  showToast('All permissions revoked', 'success');
-}
-
-// =============================================================================
 // Initialization
 // =============================================================================
 
 async function refresh(): Promise<void> {
   await checkHarborConnection();
-  await updateCurrentSite();
-  await loadAllPermissions();
 }
 
 async function init(): Promise<void> {
@@ -441,12 +251,10 @@ async function init(): Promise<void> {
   
   // Setup panel toggles
   setupPanelToggle(apiTogglesHeader, apiTogglesToggle, apiTogglesBody);
-  setupPanelToggle(permissionsHeader, permissionsToggle, permissionsBody);
   
   // Setup event listeners
   themeToggle.addEventListener('click', cycleTheme);
   refreshBtn.addEventListener('click', refresh);
-  revokeAllBtn.addEventListener('click', revokeAllPermissions);
   
   // Initialize feature flags
   await initFeatureFlags();
@@ -454,17 +262,6 @@ async function init(): Promise<void> {
   
   // Initial load
   await refresh();
-  
-  // Listen for tab changes
-  chrome.tabs.onActivated.addListener(() => {
-    updateCurrentSite();
-  });
-  
-  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (changeInfo.url) {
-      updateCurrentSite();
-    }
-  });
 }
 
 init().catch(console.error);

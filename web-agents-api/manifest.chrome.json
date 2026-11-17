@@ -33,8 +33,6 @@
     {
       "resources": [
         "dist/injected.js",
-        "dist/permission-prompt.html",
-        "dist/permission-prompt.js",
         "dist/design-tokens.css"
       ],
       "matches": ["<all_urls>"]
