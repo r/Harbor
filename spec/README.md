@@ -301,6 +301,10 @@ MCP is the protocol for tool extensibility. The Web Agent API uses MCP to:
 - Provide a standardized way to extend AI capabilities
 - Enable an open ecosystem of tools
 
+### Agent-to-company protocols
+
+Protocols such as [A2A](https://a2a-protocol.org) and the [Personal Agent Protocol](https://personalagentprotocol.org) define how an agent reaches a company: discovery, sign-in, APIs and conversations. The Web Agent API covers a different direction: how a company's web page and the person's agent talk once the page is open, wherever it's rendered. The two are complementary.
+
 ---
 
 ## FAQ

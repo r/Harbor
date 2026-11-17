@@ -72,7 +72,7 @@ describe('Harbor accepts cross-extension messages only from the Web Agents API',
 
   it.each([WEB_AGENTS_FIREFOX, WEB_AGENTS_CHROME])('routes llm.* from %s to the bridge', async (id) => {
     vi.mocked(bridgeRequest).mockResolvedValue({ choices: [] });
-    send({ type: 'llm.chat', payload: { messages: [{ role: 'user', content: 'Hi' }], model: 'ollama:test' } }, { id });
+    send({ type: 'llm.chat', payload: { origin: 'https://page.example', messages: [{ role: 'user', content: 'Hi' }], model: 'ollama:test' } }, { id });
     await vi.waitFor(() => expect(bridgeRequest).toHaveBeenCalledOnce());
   });
 

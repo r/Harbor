@@ -356,6 +356,14 @@ Every PolicyEngine decision — whether it prompted, auto-allowed, denied, or do
 }
 ```
 
+### Page calls through the Web Agents API
+
+Page model and tool calls reach Harbor through the Web Agents API extension, which forwards the page's origin. Harbor runs each one through the PolicyEngine under that origin: `llm.chat`, `llm.chatStream`, `mcp.listTools`, `mcp.callTool`, and `session.create` (one check per requested capability). An `agent.run` therefore appears in the audit log as its tool listing, each model prompt and each tool call, in order. A forwarded call without an origin is rejected.
+
+For now the Web Agents API still keeps its own grant store and asks the user first. So for these calls Harbor enforces `deny` (safety floor, policy rules, a denied origin grant, the watchdog). When the only thing left to settle is the origin grant (Tier 8 or the Tier 9 default), Harbor proceeds without a second prompt, and the audit record carries `consent: "web-agents-api"`. A watchdog restriction (Tier 4) or a policy rule that asks, previews or attenuates (Tier 7) still shows Harbor's prompt. Once there is one store and one prompt, Harbor will prompt for page calls itself.
+
+If you're building a page, open Harbor's sidebar and pick the **Activity** tab to see every decision for your origin and the reason for it.
+
 ### Activity feed
 
 The sidebar's **Activity** tab shows these records grouped by origin, filterable by decision and by time range. From any row the user can:

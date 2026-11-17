@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(), hasPermission: vi.fn(), getFeatureFlags: vi.fn(),
+  harborStreamRequest: vi.fn(), resolveTextSession: vi.fn(),
 }));
 vi.mock('../harbor-client', () => ({
-  harborRequest: mocks.harborRequest, harborStreamRequest: vi.fn(),
+  harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
   discoverHarbor: async () => null, setHarborExtensionId: vi.fn(), getHarborState: vi.fn(),
 }));
 vi.mock('../policy/feature-flags', () => ({ getFeatureFlags: mocks.getFeatureFlags }));
@@ -12,7 +13,7 @@ vi.mock('../handlers', () => ({
   routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: mocks.hasPermission,
   getPermissions: async () => ({ scopes: {} }), listAllPermissions: vi.fn(),
   revokeOriginPermissions: vi.fn(), resolvePromptClosed: vi.fn(),
-  handlePermissionPromptResponse: vi.fn(), resolveTextSession: vi.fn(), recordExplicitPrompt: vi.fn(),
+  handlePermissionPromptResponse: vi.fn(), resolveTextSession: mocks.resolveTextSession, recordExplicitPrompt: vi.fn(),
   restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
   isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
   cleanupAgentsForTab: vi.fn(), agentInvocationTabs: new Map(),
@@ -126,4 +127,37 @@ describe('agent.run receiving boundary', () => {
     }));
   });
 
+  it('forwards the page origin and tab on every Harbor model and tool call', async () => {
+    const toolCall = { id: 'call-clock', function: { name: 'clock_time', arguments: '{}' } };
+    let chats = 0;
+    mocks.harborRequest.mockImplementation(async (method) => {
+      if (method === 'mcp.listTools') return { tools: [{ name: 'time', serverId: 'clock' }] };
+      if (method === 'mcp.callTool') return { result: 'Noon' };
+      chats++;
+      return chats === 1
+        ? { content: '', choices: [{ message: { role: 'assistant', content: '', tool_calls: [toolCall] } }] }
+        : { content: 'It is noon.' };
+    });
+    await run();
+    const calls = mocks.harborRequest.mock.calls;
+    expect(calls.map(([method]) => method)).toEqual(['mcp.listTools', 'llm.chat', 'mcp.callTool', 'llm.chat']);
+    for (const [, payload] of calls) {
+      expect(payload).toMatchObject({ origin: 'https://example.test', tabId: 1 });
+    }
+  });
+});
+
+describe('window.ai session promptStreaming()', () => {
+  it('forwards the page origin and tab on llm.chatStream', async () => {
+    mocks.resolveTextSession.mockResolvedValue({ session: {
+      sessionId: 's1', origin: 'https://example.test', options: {}, history: [], createdAt: 0,
+    } });
+    mocks.harborStreamRequest.mockReturnValue({
+      stream: (async function* () { yield { type: 'done' }; })(), cancel: vi.fn(),
+    });
+    await receive({ id: 'stream-1', type: 'session.promptStreaming', origin: 'https://example.test',
+      payload: { sessionId: 's1', input: 'Hi' } });
+    expect(mocks.harborStreamRequest).toHaveBeenCalledWith('llm.chatStream',
+      expect.objectContaining({ origin: 'https://example.test', tabId: 1 }));
+  });
 });

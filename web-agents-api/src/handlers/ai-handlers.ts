@@ -185,6 +185,8 @@ export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse 
     
     // Call Harbor
     const result = await harborRequest<{ content: string; model?: string }>('llm.chat', {
+      origin: ctx.origin,
+      tabId: ctx.tabId,
       messages,
       model: session.options.model,
       temperature: session.options.temperature,

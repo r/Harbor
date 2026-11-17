@@ -49,6 +49,19 @@ export interface RequireActionOptions {
   promptAsScope?: PermissionScope;
   /** Optional human-readable reason surfaced in the prompt. */
   reason?: string;
+  /**
+   * The caller already obtained the user's consent upstream. When the
+   * verdict is an ask/preview that a per-origin grant would settle (Tier 8
+   * or the Tier 9 default), proceed without a Harbor prompt and record the
+   * upstream consent in the audit log. `deny` is still enforced, and so are
+   * the asks that consent can't stand in for: a watchdog restriction and a
+   * policy rule that says ask, preview or attenuate. Those prompt as usual.
+   *
+   * Used for page calls forwarded by the Web Agents API, which gates them
+   * with its own grant store first. Remove once there is one store and one
+   * prompt.
+   */
+  upstreamConsent?: 'web-agents-api';
 }
 
 /**
@@ -77,9 +90,18 @@ export async function requireAction(
     correlationId: ctx.id,
   };
   const decision = await evaluate(request);
+  const proceedsOnUpstreamConsent =
+    options.upstreamConsent !== undefined &&
+    decision.effect !== 'allow' &&
+    decision.effect !== 'deny' &&
+    upstreamConsentCovers(decision);
   // Every gated decision lands in the audit log. The activity feed,
   // watchdog, and decision simulator all read from here.
-  Audit.record(request, decision);
+  Audit.record(
+    request,
+    decision,
+    proceedsOnUpstreamConsent ? { consent: options.upstreamConsent } : {},
+  );
 
   log('requireAction decision', decision);
 
@@ -88,6 +110,8 @@ export async function requireAction(
   if (decision.effect === 'deny') {
     return sendDeny(ctx, sender, decision);
   }
+
+  if (proceedsOnUpstreamConsent) return true;
 
   // ask | preview | attenuate — surface the prompt via the existing flow.
   // We use the typed action's primary legacy scope unless the caller
@@ -134,6 +158,23 @@ export async function requireAction(
     },
   });
   return false;
+}
+
+/**
+ * Whether consent obtained upstream can stand in for this verdict. It can
+ * for a grant-level ask (no grant yet, or the default for the action's
+ * effect). It can't when the watchdog has restricted the origin or a policy
+ * rule asked for confirmation: the user or their admin wanted those seen.
+ */
+function upstreamConsentCovers(decision: PolicyDecision): boolean {
+  if (decision.trace.some((step) => step.tier === 4 && step.outcome === 'ask')) return false;
+  if (decision.rule) {
+    // Judge the matched rule by its own effect: an allow rule can still end
+    // in `preview` when the sensitivity gate forces one for irreversible
+    // writes. The engine carries the effect, so ids needn't be unique.
+    return decision.rule.effect === 'allow';
+  }
+  return true;
 }
 
 function sendDeny(

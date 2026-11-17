@@ -76,6 +76,7 @@ describe('prompting an explicit session', () => {
     const res = await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }));
     expect(res).toMatchObject({ ok: true, result: 'Hello from the model.' });
     expect(mocks.harborRequest).toHaveBeenCalledWith('llm.chat', {
+      origin: ORIGIN,
       messages: [{ role: 'system', content: 'Be terse' }, { role: 'user', content: 'Hi' }],
       model: 'ollama:test',
       temperature: 0.2,

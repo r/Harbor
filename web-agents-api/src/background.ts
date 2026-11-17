@@ -115,6 +115,8 @@ async function handleSessionPromptStreaming(
     
     // Stream from Harbor
     const { stream } = harborStreamRequest('llm.chatStream', {
+      origin: ctx.origin,
+      tabId: ctx.tabId,
       messages,
       model: session.options.model,
       temperature: session.options.temperature,
@@ -188,7 +190,10 @@ async function handleAgentRun(
     let tools: Array<{ serverId: string; name: string; description?: string; inputSchema?: unknown }> = [];
     
     if (await hasPermission(ctx.origin, 'mcp:tools.list')) {
-      const toolsResult = await harborRequest<{ tools: typeof tools }>('mcp.listTools', {});
+      const toolsResult = await harborRequest<{ tools: typeof tools }>('mcp.listTools', {
+        origin: ctx.origin,
+        tabId: ctx.tabId,
+      });
       tools = toolsResult.tools || [];
       
       const permissions = await getPermissions(ctx.origin);
@@ -248,7 +253,9 @@ async function handleAgentRun(
       
       let result: LLMResponse;
       try {
-        result = await harborRequest<LLMResponse>('llm.chat', { 
+        result = await harborRequest<LLMResponse>('llm.chat', {
+          origin: ctx.origin,
+          tabId: ctx.tabId,
           messages,
           tools: llmTools.length > 0 ? llmTools.map(t => ({
             name: t.name,
@@ -308,6 +315,8 @@ async function handleAgentRun(
           let toolResult: unknown;
           try {
             const callResult = await harborRequest<{ result: unknown }>('mcp.callTool', {
+              origin: ctx.origin,
+              tabId: ctx.tabId,
               serverId,
               toolName: actualToolName,
               args,
@@ -342,7 +351,11 @@ async function handleAgentRun(
 
     // Max tool calls reached
     messages.push({ role: 'user', content: 'Please provide your final answer based on the information gathered.' });
-    const finalResult = await harborRequest<{ content: string }>('llm.chat', { messages });
+    const finalResult = await harborRequest<{ content: string }>('llm.chat', {
+      origin: ctx.origin,
+      tabId: ctx.tabId,
+      messages,
+    });
     const finalContent = finalResult.content;
     
     sendEvent({
