@@ -1234,7 +1234,6 @@ type PermissionStatusEntry = {
   origin: string;
   scopes: Record<string, string>;
   allowedTools?: string[];
-  source?: 'harbor' | 'web-agents-api';
 };
 
 async function loadPermissions(): Promise<void> {
@@ -1303,21 +1302,17 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
       `;
     }
 
-    const sourceLabel = perm.source === 'web-agents-api' ? 'Web Agents API' : 'Harbor';
-    const sourceBadge = `<span class="permission-source-badge ${perm.source || 'harbor'}">${escapeHtml(sourceLabel)}</span>`;
-
     return `
       <div class="permission-origin-item" data-origin="${escapeHtml(perm.origin)}">
         <div class="permission-origin-header">
           <span class="permission-origin-name">${escapeHtml(perm.origin)}</span>
-          ${sourceBadge}
         </div>
         <div class="permission-scopes">
           ${scopeBadges || '<span style="color: var(--color-text-muted); font-size: 11px;">No scopes</span>'}
         </div>
         ${toolsHtml}
         <div class="permission-actions">
-          <button class="btn btn-sm btn-danger revoke-permissions-btn" data-origin="${escapeHtml(perm.origin)}" data-source="${escapeHtml(perm.source || 'harbor')}">Revoke All</button>
+          <button class="btn btn-sm btn-danger revoke-permissions-btn" data-origin="${escapeHtml(perm.origin)}">Revoke All</button>
         </div>
       </div>
     `;
@@ -1327,11 +1322,10 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
   permissionsList.querySelectorAll('.revoke-permissions-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const origin = (btn as HTMLElement).dataset.origin!;
-      const source = (btn as HTMLElement).dataset.source;
       if (!confirm(`Revoke all permissions for ${origin}?`)) return;
 
       try {
-        await browserAPI.runtime.sendMessage({ type: 'revoke_origin_permissions', origin, source });
+        await browserAPI.runtime.sendMessage({ type: 'revoke_origin_permissions', origin });
         await loadPermissions();
         showToast('Permissions revoked');
       } catch (err) {

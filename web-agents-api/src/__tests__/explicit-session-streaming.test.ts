@@ -16,9 +16,8 @@ vi.mock('../handlers', async () => {
   const ai = await vi.importActual<typeof import('../handlers/ai-handlers')>('../handlers/ai-handlers');
   return {
     routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: mocks.hasPermission,
-    getPermissions: mocks.getPermissions, listAllPermissions: vi.fn(),
-    revokeOriginPermissions: vi.fn(), resolvePromptClosed: vi.fn(),
-    handlePermissionPromptResponse: vi.fn(), resolveTextSession: ai.resolveTextSession,
+    getPermissions: mocks.getPermissions,
+    deleteLegacyPermissionStore: vi.fn(async () => {}), resolveTextSession: ai.resolveTextSession,
     recordExplicitPrompt: ai.recordExplicitPrompt,
     restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
     isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),

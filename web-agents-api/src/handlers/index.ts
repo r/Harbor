@@ -28,13 +28,7 @@ import {
   handlePermissionsList,
   hasPermission,
   getPermissions,
-  savePermissions,
-  checkPermission,
-  listAllPermissions,
-  revokeOriginPermissions,
-  resolvePromptClosed,
-  handlePermissionPromptResponse,
-  showPermissionPrompt,
+  deleteLegacyPermissionStore,
 } from './permission-handlers';
 
 import {
@@ -263,13 +257,7 @@ export function isStreamingMessage(type: string): boolean {
 export {
   hasPermission,
   getPermissions,
-  savePermissions,
-  checkPermission,
-  listAllPermissions,
-  revokeOriginPermissions,
-  resolvePromptClosed,
-  handlePermissionPromptResponse,
-  showPermissionPrompt,
+  deleteLegacyPermissionStore,
 };
 
 // AI utilities

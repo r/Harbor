@@ -1,431 +1,85 @@
 /**
  * Permission Handlers
- * 
- * Handles permission requests, storage, and prompts.
+ *
+ * Harbor holds the only store of per-origin grants and the only consent
+ * prompt. This extension keeps no copy: every check and request goes to
+ * Harbor, so a grant revoked in Harbor stops the next page call here.
+ *
+ * Every failure is closed. If Harbor can't answer (it isn't installed,
+ * the request times out, or the browser is Safari, where page calls go to
+ * the bridge and Harbor isn't in the path), nothing is granted.
  */
 
 import { harborRequest } from '../harbor-client';
 import type { PermissionScope, PermissionGrantType } from '../types';
-import type { RequestContext, HandlerResponse, StoredPermissions } from './types';
+import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 
-// =============================================================================
-// Constants
-// =============================================================================
+/** Key prefix of the retired local store, kept only to delete old entries. */
+const LEGACY_PERMISSION_KEY_PREFIX = 'permissions:';
 
-const PERMISSION_KEY_PREFIX = 'permissions:';
+/** A permission prompt waits on the user, so give it far longer than a normal call. */
+const PERMISSION_PROMPT_TIMEOUT_MS = 10 * 60 * 1000;
 
-// =============================================================================
-// Permission Storage
-// =============================================================================
-
-export async function getPermissions(origin: string): Promise<StoredPermissions> {
-  const key = PERMISSION_KEY_PREFIX + origin;
-  const result = await chrome.storage.local.get(key);
-  return result[key] || { scopes: {} };
+export interface OriginPermissions {
+  scopes: Partial<Record<PermissionScope, PermissionGrantType>>;
+  /** Tools the origin may call. Empty means none: there is no "all tools" default. */
+  allowedTools: string[];
 }
 
-export async function savePermissions(origin: string, permissions: StoredPermissions): Promise<void> {
-  const key = PERMISSION_KEY_PREFIX + origin;
-  await chrome.storage.local.set({ [key]: permissions });
+const NOTHING_GRANTED: OriginPermissions = { scopes: {}, allowedTools: [] };
+
+function isGranted(grant: PermissionGrantType | undefined): boolean {
+  return grant === 'granted-once' || grant === 'granted-always';
 }
 
-export async function checkPermission(origin: string, scope: PermissionScope): Promise<PermissionGrantType> {
-  const permissions = await getPermissions(origin);
-  const grant = permissions.scopes[scope];
-  
-  if (!grant) {
-    return 'not-granted';
-  }
-  
-  // Check expiration for granted-once
-  if (grant.type === 'granted-once' && grant.expiresAt) {
-    if (Date.now() > grant.expiresAt) {
-      return 'not-granted';
-    }
-  }
-  
-  return grant.type;
-}
-
-export async function hasPermission(origin: string, scope: PermissionScope): Promise<boolean> {
-  const status = await checkPermission(origin, scope);
-  return status === 'granted-once' || status === 'granted-always';
-}
-
-export async function listAllPermissions(): Promise<Array<{
-  origin: string;
-  scopes: Record<string, PermissionGrantType>;
-  allowedTools?: string[];
-}>> {
-  const result = await chrome.storage.local.get(null);
-  const entries: Array<{
-    origin: string;
-    scopes: Record<string, PermissionGrantType>;
-    allowedTools?: string[];
-  }> = [];
-
-  for (const [key, value] of Object.entries(result)) {
-    if (!key.startsWith(PERMISSION_KEY_PREFIX)) continue;
-    const origin = key.slice(PERMISSION_KEY_PREFIX.length);
-    const permissions = (value || { scopes: {} }) as StoredPermissions;
-    const scopes: Record<string, PermissionGrantType> = {};
-
-    for (const [scope, grant] of Object.entries(permissions.scopes || {})) {
-      if (grant.type === 'granted-once' && grant.expiresAt && Date.now() > grant.expiresAt) {
-        scopes[scope] = 'not-granted';
-      } else {
-        scopes[scope] = grant.type;
-      }
-    }
-
-    entries.push({
-      origin,
-      scopes,
-      allowedTools: permissions.allowedTools,
-    });
-  }
-
-  return entries;
-}
-
-export async function revokeOriginPermissions(origin: string): Promise<void> {
-  const key = PERMISSION_KEY_PREFIX + origin;
-  await chrome.storage.local.remove(key);
-}
-
-// =============================================================================
-// Permission Prompt
-// =============================================================================
-
-interface PermissionPromptResponse {
-  promptId: string;
-  granted: boolean;
-  grantType?: 'granted-once' | 'granted-always';
-  allowedTools?: string[];
-  explicitDeny?: boolean;
-}
-
-interface PendingPrompt {
-  resolvers: Array<(response: PermissionPromptResponse) => void>;
-  windowId?: number;
-  origin: string;
-  currentScopes: PermissionScope[];
-  currentTools: string[];
-  currentReason?: string;
-}
-
-const pendingPermissionPrompts = new Map<string, PendingPrompt>();
-/** Tracks which origin has an open prompt so we update it instead of opening a second one. */
-const openPromptByOrigin = new Map<string, string>(); // origin -> promptId
-/** Serializes openPermissionPrompt per origin so concurrent requests see the first prompt. */
-const openPromptLockByOrigin = new Map<string, Promise<void>>();
-let promptIdCounter = 0;
-
-/** Normalize origin so "https://example.com/" and "https://example.com" share one prompt. */
-function normalizeOrigin(origin: string): string {
-  try {
-    const u = new URL(origin);
-    return u.origin;
-  } catch {
-    return origin;
-  }
-}
-
-function generatePromptId(): string {
-  return `prompt-${Date.now()}-${++promptIdCounter}`;
-}
-
-export function resolvePromptClosed(windowId: number): void {
-  for (const [promptId, pending] of pendingPermissionPrompts.entries()) {
-    if (pending.windowId === windowId) {
-      pendingPermissionPrompts.delete(promptId);
-      openPromptByOrigin.delete(normalizeOrigin(pending.origin));
-      const response = { promptId, granted: false };
-      for (const resolve of pending.resolvers) resolve(response);
-      return;
-    }
-  }
-}
-
-export function handlePermissionPromptResponse(response: PermissionPromptResponse): boolean {
-  let promptId = response.promptId;
-  if (!promptId && pendingPermissionPrompts.size === 1) {
-    promptId = Array.from(pendingPermissionPrompts.keys())[0];
-  }
-
-  const pending = promptId ? pendingPermissionPrompts.get(promptId) : undefined;
-  if (!pending) {
-    return false;
-  }
-
-  pendingPermissionPrompts.delete(promptId);
-  openPromptByOrigin.delete(normalizeOrigin(pending.origin));
-  if (pending.windowId) {
-    chrome.windows.remove(pending.windowId);
-  }
-
-  const fullResponse = { ...response, promptId };
-  for (const resolve of pending.resolvers) resolve(fullResponse);
-  return true;
-}
-
-function buildPromptUrl(params: {
-  promptId: string;
-  origin: string;
-  scopes: PermissionScope[];
-  reason?: string;
-  tools?: string[];
-}): string {
-  const url = new URL(chrome.runtime.getURL('permission-prompt.html'));
-  url.searchParams.set('promptId', params.promptId);
-  url.searchParams.set('origin', params.origin);
-  if (params.scopes.length > 0) {
-    url.searchParams.set('scopes', params.scopes.join(','));
-  }
-  if (params.reason) {
-    url.searchParams.set('reason', params.reason);
-  }
-  if (params.tools && params.tools.length > 0) {
-    url.searchParams.set('tools', params.tools.join(','));
-  }
-  return url.toString();
-}
-
-async function openPermissionPrompt(options: {
-  origin: string;
-  scopes: PermissionScope[];
-  reason?: string;
-  tools?: string[];
-}): Promise<PermissionPromptResponse> {
-  const originKey = normalizeOrigin(options.origin);
-
-  // Serialize per origin so a concurrent request for the same site waits and then sees this prompt
-  const prevLock = openPromptLockByOrigin.get(originKey) ?? Promise.resolve();
-  let releaseLock: () => void;
-  const myLock = new Promise<void>((r) => {
-    releaseLock = r;
-  });
-  openPromptLockByOrigin.set(originKey, prevLock.then(() => myLock));
-  await prevLock;
-
-  try {
-    const existingPromptId = openPromptByOrigin.get(originKey);
-    if (existingPromptId) {
-      const pending = pendingPermissionPrompts.get(existingPromptId);
-      if (pending) {
-        // Same site already has a prompt (window may or may not exist yet). Merge and reuse so we never show a second popup for this origin.
-        const mergedScopes = [...new Set([...pending.currentScopes, ...options.scopes])];
-        const mergedTools = [...new Set([...pending.currentTools, ...(options.tools || [])])];
-        const mergedReason = options.reason || pending.currentReason;
-        pending.currentScopes = mergedScopes;
-        pending.currentTools = mergedTools;
-        pending.currentReason = mergedReason;
-
-        if (pending.windowId != null) {
-          const newUrl = buildPromptUrl({
-            promptId: existingPromptId,
-            origin: options.origin,
-            scopes: mergedScopes,
-            reason: mergedReason,
-            tools: mergedTools,
-          });
-          try {
-            const win = await chrome.windows.get(pending.windowId, { populate: true });
-            const tab = win.tabs?.[0];
-            if (tab?.id) {
-              await chrome.tabs.update(tab.id, { url: newUrl });
-            }
-          } catch {
-            // Window may have been closed; resolvers will be resolved when we detect it
-          }
-        }
-        releaseLock!();
-        return new Promise((resolve) => {
-          pending.resolvers.push(resolve);
-        });
-      }
-      openPromptByOrigin.delete(originKey);
-    }
-
-    const promptId = generatePromptId();
-    const pending: PendingPrompt = {
-      resolvers: [],
-      origin: options.origin,
-      currentScopes: options.scopes,
-      currentTools: options.tools || [],
-      currentReason: options.reason,
-    };
-    pendingPermissionPrompts.set(promptId, pending);
-    openPromptByOrigin.set(originKey, promptId);
-    releaseLock!();
-
-    return new Promise((resolve) => {
-      pending.resolvers.push(resolve);
-
-      const url = buildPromptUrl({
-        promptId,
-        origin: options.origin,
-        scopes: pending.currentScopes,
-        reason: pending.currentReason,
-        tools: pending.currentTools,
-      });
-
-      chrome.windows.create(
-        {
-          url,
-          type: 'popup',
-          width: 480,
-          height: 640,
-        },
-        (createdWindow) => {
-          if (chrome.runtime.lastError || !createdWindow?.id) {
-            pendingPermissionPrompts.delete(promptId);
-            openPromptByOrigin.delete(originKey);
-            resolve({ promptId, granted: false });
-            return;
-          }
-
-          const p = pendingPermissionPrompts.get(promptId);
-          if (p) {
-            p.windowId = createdWindow.id;
-            const mergedUrl = buildPromptUrl({
-              promptId,
-              origin: p.origin,
-              scopes: p.currentScopes,
-              reason: p.currentReason,
-              tools: p.currentTools,
-            });
-            chrome.windows.get(createdWindow.id, { populate: true }).then((win) => {
-              const tab = win.tabs?.[0];
-              if (tab?.id && tab.url !== mergedUrl) {
-                chrome.tabs.update(tab.id, { url: mergedUrl });
-              }
-            }).catch(() => {});
-          }
-        },
-      );
-    });
-  } catch (e) {
-    releaseLock!();
-    throw e;
-  }
-}
-
-export async function showPermissionPrompt(
-  origin: string,
-  scopes: PermissionScope[],
-  reason?: string,
-  tools?: string[],
-): Promise<{ granted: boolean; scopes: Record<PermissionScope, PermissionGrantType>; allowedTools?: string[] }> {
-  const permissions = await getPermissions(origin);
-  const result: Record<PermissionScope, PermissionGrantType> = {} as Record<PermissionScope, PermissionGrantType>;
-  const scopesToRequest: PermissionScope[] = [];
-  const requestedTools = tools && tools.length > 0 ? tools : [];
-  const existingAllowedTools = permissions.allowedTools || [];
-  const missingTools = requestedTools.filter((tool) => !existingAllowedTools.includes(tool));
-  
-  for (const scope of scopes) {
-    // Check if already granted
-    const existing = await checkPermission(origin, scope);
-    if (existing === 'granted-once' || existing === 'granted-always') {
-      result[scope] = existing;
-      continue;
-    }
-    
-    if (existing === 'denied') {
-      result[scope] = 'denied';
-      continue;
-    }
-
-    scopesToRequest.push(scope);
-  }
-
-  let didUpdatePermissions = false;
-
-  if (scopesToRequest.length > 0) {
-    const promptResponse = await openPermissionPrompt({ origin, scopes: scopesToRequest, reason, tools });
-
-    if (promptResponse.granted) {
-      const grantType = promptResponse.grantType || 'granted-once';
-      for (const scope of scopesToRequest) {
-        const grant = {
-          type: grantType as PermissionGrantType,
-          grantedAt: Date.now(),
-          expiresAt: grantType === 'granted-once' ? Date.now() + 10 * 60 * 1000 : undefined,
-        };
-        permissions.scopes[scope] = grant;
-        result[scope] = grant.type;
-      }
-
-      if (promptResponse.allowedTools && promptResponse.allowedTools.length > 0) {
-        permissions.allowedTools = [
-          ...new Set([...(permissions.allowedTools || []), ...promptResponse.allowedTools]),
-        ];
-      }
-
-      didUpdatePermissions = true;
-    } else {
-      for (const scope of scopesToRequest) {
-        if (promptResponse.explicitDeny) {
-          permissions.scopes[scope] = { type: 'denied', grantedAt: Date.now() };
-          result[scope] = 'denied';
-          didUpdatePermissions = true;
-        } else {
-          result[scope] = 'not-granted';
-        }
-      }
-    }
-  }
-
-  if (scopesToRequest.length === 0 && missingTools.length > 0) {
-    const promptResponse = await openPermissionPrompt({
-      origin,
-      scopes: ['mcp:tools.call'],
-      reason,
-      tools: missingTools,
-    });
-
-    if (promptResponse.granted && promptResponse.allowedTools && promptResponse.allowedTools.length > 0) {
-      permissions.allowedTools = [
-        ...new Set([...(permissions.allowedTools || []), ...promptResponse.allowedTools]),
-      ];
-      didUpdatePermissions = true;
-    }
-  }
-
-  if (didUpdatePermissions) {
-    await savePermissions(origin, permissions);
-    
-    // Sync granted permissions to Harbor so it can enforce them
-    const grantedScopes = Object.entries(result)
-      .filter(([, grant]) => grant === 'granted-once' || grant === 'granted-always')
-      .map(([scope]) => scope as PermissionScope);
-    
-    if (grantedScopes.length > 0) {
-      const grantType = result[grantedScopes[0]]; // Use the same grant type
-      try {
-        await harborRequest('system.syncPermissions', {
-          origin,
-          scopes: grantedScopes,
-          grantType,
-          allowedTools: permissions.allowedTools,
-        });
-        console.log('[Web Agents API] Synced permissions to Harbor:', grantedScopes);
-      } catch (e) {
-        console.warn('[Web Agents API] Failed to sync permissions to Harbor:', e);
-        // Continue even if sync fails - local permissions still work
-      }
-    }
-  }
-  
-  const allGranted = scopes.every(s => result[s] === 'granted-once' || result[s] === 'granted-always');
-  
+/** Accept Harbor's answer only if it has the expected shape. */
+function readPermissions(raw: unknown): OriginPermissions | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const { scopes, allowedTools } = raw as { scopes?: unknown; allowedTools?: unknown };
+  if (!scopes || typeof scopes !== 'object' || Array.isArray(scopes)) return null;
   return {
-    granted: allGranted,
-    scopes: result,
-    allowedTools: permissions.allowedTools,
+    scopes: scopes as OriginPermissions['scopes'],
+    allowedTools: Array.isArray(allowedTools)
+      ? allowedTools.filter((t): t is string => typeof t === 'string')
+      : [],
   };
+}
+
+// =============================================================================
+// Checks
+// =============================================================================
+
+/** The origin's grants as Harbor holds them, or nothing if Harbor can't answer. */
+export async function getPermissions(origin: string, tabId?: number): Promise<OriginPermissions> {
+  try {
+    const raw = await harborRequest('permissions.check', { origin, tabId });
+    return readPermissions(raw) ?? NOTHING_GRANTED;
+  } catch (e) {
+    console.warn('[Web Agents API] Permission check failed; treating as not granted:', e);
+    return NOTHING_GRANTED;
+  }
+}
+
+export async function hasPermission(origin: string, scope: PermissionScope, tabId?: number): Promise<boolean> {
+  const permissions = await getPermissions(origin, tabId);
+  return isGranted(permissions.scopes[scope]);
+}
+
+// =============================================================================
+// Retired local store
+// =============================================================================
+
+/**
+ * Delete grants left in this extension's old store. They are not migrated:
+ * sites ask again, through Harbor's prompt.
+ */
+export async function deleteLegacyPermissionStore(): Promise<void> {
+  const all = await chrome.storage.local.get(null);
+  const keys = Object.keys(all).filter((key) => key.startsWith(LEGACY_PERMISSION_KEY_PREFIX));
+  if (keys.length > 0) {
+    await chrome.storage.local.remove(keys);
+  }
 }
 
 // =============================================================================
@@ -435,41 +89,57 @@ export async function showPermissionPrompt(
 const MULTI_AGENT_SCOPES: PermissionScope[] = ['agents:register', 'agents:invoke'];
 
 export async function handleRequestPermissions(ctx: RequestContext): HandlerResponse {
-  const { scopes, reason, tools } = ctx.payload as {
-    scopes: PermissionScope[];
+  const { scopes, reason, tools } = (ctx.payload || {}) as {
+    scopes?: PermissionScope[];
     reason?: string;
     tools?: string[];
   };
 
-  // Ensure agent scopes are always included when the app requests model or tools (multi-agent/research apps need them)
+  if (!Array.isArray(scopes) || scopes.length === 0) {
+    return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', 'requestPermissions needs at least one scope');
+  }
+
+  // Apps that request model or tool access also get the multi-agent scopes
+  // (multi-agent and research apps need them).
   const hasResearchScopes = scopes.some(
     (s) => s === 'model:prompt' || s === 'mcp:tools.call' || s === 'browser:tabs.create'
   );
-  const mergedScopes =
-    hasResearchScopes && Array.isArray(scopes)
-      ? [...new Set([...scopes, ...MULTI_AGENT_SCOPES])] as PermissionScope[]
-      : scopes;
+  const mergedScopes = hasResearchScopes
+    ? [...new Set([...scopes, ...MULTI_AGENT_SCOPES])] as PermissionScope[]
+    : scopes;
 
-  const result = await showPermissionPrompt(ctx.origin, mergedScopes, reason, tools);
-  return successResponse(ctx.id, result);
+  try {
+    const result = await harborRequest<{
+      granted?: unknown;
+      scopes?: Record<string, PermissionGrantType>;
+      allowedTools?: string[];
+    }>(
+      'permissions.request',
+      { origin: ctx.origin, tabId: ctx.tabId, scopes: mergedScopes, reason, tools },
+      { timeoutMs: PERMISSION_PROMPT_TIMEOUT_MS },
+    );
+    if (!result || typeof result.granted !== 'boolean' || !result.scopes) {
+      return errorResponse(ctx.id, 'ERR_HARBOR_NOT_FOUND', 'Harbor is needed to grant permissions');
+    }
+    return successResponse(ctx.id, {
+      granted: result.granted,
+      scopes: result.scopes,
+      allowedTools: Array.isArray(result.allowedTools) ? result.allowedTools : [],
+    });
+  } catch (e) {
+    return errorResponse(
+      ctx.id,
+      'ERR_HARBOR_NOT_FOUND',
+      e instanceof Error ? e.message : 'Harbor is needed to grant permissions',
+    );
+  }
 }
 
 export async function handlePermissionsList(ctx: RequestContext): HandlerResponse {
-  const permissions = await getPermissions(ctx.origin);
-  const scopes: Record<string, PermissionGrantType> = {};
-  
-  for (const [scope, grant] of Object.entries(permissions.scopes)) {
-    // Check expiration
-    if (grant.type === 'granted-once' && grant.expiresAt && Date.now() > grant.expiresAt) {
-      scopes[scope] = 'not-granted';
-    } else {
-      scopes[scope] = grant.type;
-    }
-  }
-  
+  const permissions = await getPermissions(ctx.origin, ctx.tabId);
   return successResponse(ctx.id, {
     origin: ctx.origin,
-    scopes,
+    scopes: permissions.scopes,
     allowedTools: permissions.allowedTools,
   });
 }

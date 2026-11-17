@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  listAllPermissions: vi.fn(), revokeOriginPermissions: vi.fn(),
   handleIncomingInvocation: vi.fn(), handleHostRun: vi.fn(),
 }));
 vi.mock('../harbor-client', () => ({
@@ -12,9 +11,8 @@ vi.mock('../policy/feature-flags', () => ({ getFeatureFlags: vi.fn() }));
 vi.mock('../handlers/host-run-handlers', () => ({ handleHostRun: mocks.handleHostRun }));
 vi.mock('../handlers', () => ({
   routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: vi.fn(),
-  getPermissions: async () => ({ scopes: {} }),
-  listAllPermissions: mocks.listAllPermissions, revokeOriginPermissions: mocks.revokeOriginPermissions,
-  resolvePromptClosed: vi.fn(), handlePermissionPromptResponse: vi.fn(), resolveTextSession: vi.fn(), recordExplicitPrompt: vi.fn(),
+  getPermissions: async () => ({ scopes: {}, allowedTools: [] }),
+  deleteLegacyPermissionStore: vi.fn(async () => {}), resolveTextSession: vi.fn(), recordExplicitPrompt: vi.fn(),
   restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
   isSpawnedTab: vi.fn(), handleIncomingInvocation: mocks.handleIncomingInvocation,
   resolveInvocationResponse: vi.fn(), cleanupAgentsForTab: vi.fn(),
@@ -32,8 +30,6 @@ let internal: Listener[];
 
 beforeEach(async () => {
   vi.resetModules(); vi.clearAllMocks();
-  mocks.listAllPermissions.mockResolvedValue([]);
-  mocks.revokeOriginPermissions.mockResolvedValue(undefined);
   mocks.handleIncomingInvocation.mockResolvedValue({ success: true });
   mocks.handleHostRun.mockResolvedValue({ ok: true });
   external = []; internal = [];
@@ -64,19 +60,6 @@ const forward = (n: number) => ({
 });
 
 describe('Web Agents API accepts cross-extension messages only from Harbor', () => {
-  it('rejects permission listing from an unknown extension', async () => {
-    deliver(external, { type: 'web_agents_permissions.list_all' }, STRANGER);
-    deliver(external, { type: 'web_agents_permissions.list_all' }, {});
-    await Promise.resolve();
-    expect(mocks.listAllPermissions).not.toHaveBeenCalled();
-  });
-
-  it('rejects permission revocation from an unknown extension', async () => {
-    deliver(external, { type: 'web_agents_permissions.revoke_origin', origin: 'https://a.example' }, STRANGER);
-    await Promise.resolve();
-    expect(mocks.revokeOriginPermissions).not.toHaveBeenCalled();
-  });
-
   it('rejects forwarded invocations and host runs from an unknown extension', async () => {
     deliver(external, forward(1), STRANGER);
     deliver(internal, forward(2), STRANGER);
@@ -86,12 +69,10 @@ describe('Web Agents API accepts cross-extension messages only from Harbor', () 
     expect(mocks.handleHostRun).not.toHaveBeenCalled();
   });
 
-  it.each([HARBOR_FIREFOX, HARBOR_CHROME])('accepts permission sync and invocations from %s', async (id) => {
-    deliver(external, { type: 'web_agents_permissions.list_all' }, { id });
+  it.each([HARBOR_FIREFOX, HARBOR_CHROME])('accepts invocations and host runs from %s', async (id) => {
     deliver(external, forward(3), { id });
     deliver(external, { type: 'agent.host.run', payload: { method: 'x', params: {}, context: {} } }, { id });
     await vi.waitFor(() => {
-      expect(mocks.listAllPermissions).toHaveBeenCalledOnce();
       expect(mocks.handleIncomingInvocation).toHaveBeenCalledOnce();
       expect(mocks.handleHostRun).toHaveBeenCalledOnce();
     });
@@ -103,8 +84,8 @@ describe('Web Agents API accepts cross-extension messages only from Harbor', () 
   });
 
   it('rejects the retired Harbor ID', async () => {
-    deliver(external, { type: 'web_agents_permissions.list_all' }, { id: 'raffi.krikorian.harbor@gmail.com' });
-    await Promise.resolve();
-    expect(mocks.listAllPermissions).not.toHaveBeenCalled();
+    deliver(external, forward(5), { id: 'raffi.krikorian.harbor@gmail.com' });
+    await new Promise(r => setTimeout(r, 0));
+    expect(mocks.handleIncomingInvocation).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,7 @@
  * Shared handler types for the Web Agents API background script.
  */
 
-import type { TransportResponse, PermissionScope, PermissionGrantType } from '../types';
+import type { TransportResponse } from '../types';
 
 // =============================================================================
 // Request Context
@@ -40,15 +40,6 @@ export type MessageHandler = (ctx: RequestContext) => HandlerResponse;
  * Handler registry type.
  */
 export type HandlerRegistry = Map<string, MessageHandler>;
-
-// =============================================================================
-// Permission Types (for handlers)
-// =============================================================================
-
-export interface StoredPermissions {
-  scopes: Record<PermissionScope, { type: PermissionGrantType; expiresAt?: number; grantedAt: number }>;
-  allowedTools?: string[];
-}
 
 // =============================================================================
 // Session State

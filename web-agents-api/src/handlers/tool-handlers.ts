@@ -40,9 +40,9 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
 
   const { tool, args } = ctx.payload as { tool: string; args?: Record<string, unknown> };
   
-  // Check tool allowlist
-  const permissions = await getPermissions(ctx.origin);
-  if (permissions.allowedTools && !permissions.allowedTools.includes(tool)) {
+  // Check tool allowlist. A site with no allowlist may call no tools.
+  const permissions = await getPermissions(ctx.origin, ctx.tabId);
+  if (typeof tool !== 'string' || !permissions.allowedTools.includes(tool)) {
     return errorResponse(ctx.id, 'ERR_TOOL_NOT_ALLOWED', `Tool ${tool} not in allowlist`);
   }
 
