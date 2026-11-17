@@ -14,7 +14,7 @@ import { hasPermission, getPermissions } from './permission-handlers';
 // =============================================================================
 
 export async function handleToolsList(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'mcp:tools.list')) {
+  if (!await hasPermission(ctx.origin, 'mcp:tools.list', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission mcp:tools.list required');
   }
 
@@ -34,7 +34,7 @@ export async function handleToolsList(ctx: RequestContext): HandlerResponse {
 }
 
 export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
-  if (!await hasPermission(ctx.origin, 'mcp:tools.call')) {
+  if (!await hasPermission(ctx.origin, 'mcp:tools.call', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission mcp:tools.call required');
   }
 

@@ -37,13 +37,13 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
 
   // Check permissions
   for (const scope of requiredScopes) {
-    if (!await hasPermission(ctx.origin, scope)) {
+    if (!await hasPermission(ctx.origin, scope, ctx.tabId)) {
       return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', `Permission ${scope} required`);
     }
   }
 
   // Get allowed tools for this origin
-  const permissions = await getPermissions(ctx.origin);
+  const permissions = await getPermissions(ctx.origin, ctx.tabId);
   const allowedTools = permissions.allowedTools || [];
 
   try {

@@ -35,7 +35,7 @@ vi.stubGlobal('chrome', {
 });
 
 import { hasPermission, handleRequestPermissions, handlePermissionsList } from '../handlers/permission-handlers';
-import { handleToolsCall } from '../handlers/tool-handlers';
+import { handleToolsCall, handleToolsList } from '../handlers/tool-handlers';
 
 const ORIGIN = 'https://page.example';
 const ctx = (type: string, payload: unknown) =>
@@ -70,6 +70,15 @@ describe("checks use Harbor's store", () => {
     const res = await handlePermissionsList(ctx('agent.permissions.list', {})) as { result: { scopes: Record<string, string>; allowedTools: string[] } };
     expect(res.result.scopes['model:prompt']).toBe('not-granted');
     expect(res.result.allowedTools).toEqual(['clock/now']);
+  });
+});
+
+describe('checks carry the calling tab', () => {
+  it("so a once-grant for one tab doesn't cover another", async () => {
+    mocks.harborRequest.mockImplementation(async (type: string) =>
+      type === 'permissions.check' ? { origin: ORIGIN, scopes: {}, allowedTools: [] } : { tools: [] });
+    await handleToolsList(ctx('agent.tools.list', {}));
+    expect(mocks.harborRequest).toHaveBeenCalledWith('permissions.check', { origin: ORIGIN, tabId: 4 });
   });
 });
 

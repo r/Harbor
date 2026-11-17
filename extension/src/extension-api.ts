@@ -1112,12 +1112,13 @@ export function initializeExtensionApi(): void {
       log('External message:', msgType, 'from', sender.id);
       
       // Route based on message type prefix:
-      // - llm.*, mcp.*, session.*, system.* -> this module (extension API)
+      // - llm.*, mcp.*, session.*, system.*, permissions.* -> this module (extension API)
       // - agent.*, agents.* -> agent router
-      const isExtensionApiMessage = msgType.startsWith('llm.') || 
+      const isExtensionApiMessage = msgType.startsWith('llm.') ||
                                      msgType.startsWith('mcp.') ||
-                                     msgType.startsWith('session.') || 
-                                     msgType.startsWith('system.');
+                                     msgType.startsWith('session.') ||
+                                     msgType.startsWith('system.') ||
+                                     msgType.startsWith('permissions.');
       
       if (isExtensionApiMessage) {
         // Streaming requests need a port connection, not sendMessage

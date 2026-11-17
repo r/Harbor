@@ -176,7 +176,7 @@ async function handleAgentRun(
   }
 
   for (const scope of ['model:prompt', 'model:tools'] as const) {
-    if (!await hasPermission(ctx.origin, scope)) {
+    if (!await hasPermission(ctx.origin, scope, ctx.tabId)) {
       sendEvent({
         id: ctx.id,
         event: { type: 'error', error: { code: 'ERR_PERMISSION_DENIED', message: `Permission ${scope} required` } },
@@ -190,7 +190,7 @@ async function handleAgentRun(
     // Get available tools
     let tools: Array<{ serverId: string; name: string; description?: string; inputSchema?: unknown }> = [];
     
-    if (await hasPermission(ctx.origin, 'mcp:tools.list')) {
+    if (await hasPermission(ctx.origin, 'mcp:tools.list', ctx.tabId)) {
       const toolsResult = await harborRequest<{ tools: typeof tools }>('mcp.listTools', {
         origin: ctx.origin,
         tabId: ctx.tabId,
@@ -277,7 +277,7 @@ async function handleAgentRun(
       const toolCalls = choice?.message?.tool_calls;
 
       if (toolCalls && toolCalls.length > 0) {
-        if (!await hasPermission(ctx.origin, 'mcp:tools.call')) {
+        if (!await hasPermission(ctx.origin, 'mcp:tools.call', ctx.tabId)) {
           messages.push({ role: 'assistant', content: responseContent || 'I need to use tools but permission was denied.' });
           messages.push({ role: 'user', content: 'Tool calling is not permitted. Please provide an answer without using tools.' });
           continue;

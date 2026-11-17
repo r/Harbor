@@ -70,6 +70,22 @@ describe('Harbor accepts cross-extension messages only from the Web Agents API',
     expect(routeExternalMessage).toHaveBeenCalledOnce();
   });
 
+  it.each([WEB_AGENTS_FIREFOX, WEB_AGENTS_CHROME])('answers permissions.check from %s from its own store', async (id) => {
+    const sendResponse = send({ type: 'permissions.check', payload: { origin: 'https://page.example' } }, { id });
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledOnce());
+    expect(routeExternalMessage).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({
+      ok: true,
+      result: expect.objectContaining({ scopes: expect.objectContaining({ 'model:prompt': 'not-granted' }) }),
+    }));
+  });
+
+  it('rejects permissions.* from an unknown extension', async () => {
+    const sendResponse = send({ type: 'permissions.check', payload: { origin: 'https://page.example' } }, { id: 'someone-else@example.com' });
+    await Promise.resolve();
+    expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+  });
+
   it.each([WEB_AGENTS_FIREFOX, WEB_AGENTS_CHROME])('routes llm.* from %s to the bridge', async (id) => {
     vi.mocked(bridgeRequest).mockResolvedValue({ choices: [] });
     send({ type: 'llm.chat', payload: { origin: 'https://page.example', messages: [{ role: 'user', content: 'Hi' }], model: 'ollama:test' } }, { id });
