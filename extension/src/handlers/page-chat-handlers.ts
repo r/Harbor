@@ -6,7 +6,6 @@
 
 import { bridgeChat } from '../llm/chat';
 import { registerHandler, errorResponse } from './types';
-import { browserAPI } from '../browser-compat';
 
 export function registerPageChatHandlers(): void {
   // Ping handler for connectivity check
@@ -66,29 +65,6 @@ export function registerPageChatHandlers(): void {
       }
     })();
 
-    return true;
-  });
-
-  // Open page chat in tab
-  registerHandler('open_page_chat', (message, _sender, sendResponse) => {
-    const tabId = message.tabId as number | undefined;
-    if (!tabId) {
-      sendResponse({ ok: false, error: 'Missing tabId' });
-      return true;
-    }
-    (async () => {
-      try {
-        await browserAPI.scripting.executeScript({
-          target: { tabId },
-          files: ['page-chat.js'],
-        });
-        console.log('[Harbor] Page chat injected into tab', tabId);
-        sendResponse({ ok: true });
-      } catch (err) {
-        console.error('[Harbor] Failed to inject page chat:', err);
-        sendResponse(errorResponse(err));
-      }
-    })();
     return true;
   });
 }
