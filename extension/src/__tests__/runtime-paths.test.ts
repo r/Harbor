@@ -34,6 +34,8 @@ interface BuildOutputs {
   // Directories copied wholesale: output prefix -> source directory.
   dirs: Map<string, string>;
   entrySources: Set<string>;
+  // HTML pages copied by build.mjs: output path -> source path.
+  pages: Map<string, string>;
 }
 
 function readBuildOutputs(): BuildOutputs {
@@ -41,6 +43,7 @@ function readBuildOutputs(): BuildOutputs {
   const files = new Set<string>();
   const dirs = new Map<string, string>();
   const entrySources = new Set<string>();
+  const pages = new Map<string, string>();
 
   const entries = build.match(/const entryPoints = \[([\s\S]*?)\];/);
   if (!entries) throw new Error('build.mjs: entryPoints not found');
@@ -51,11 +54,12 @@ function readBuildOutputs(): BuildOutputs {
 
   for (const m of build.matchAll(/copyFile\(\s*'([^']+)',\s*`\$\{outDir\}\/([^`]+)`/g)) {
     files.add(m[2]);
+    if (m[2].endsWith('.html')) pages.set(m[2], m[1]);
   }
   for (const m of build.matchAll(/\bcp\(\s*'([^']+)',\s*`\$\{outDir\}\/([^`]+)`/g)) {
     dirs.set(m[2], m[1]);
   }
-  return { files, dirs, entrySources };
+  return { files, dirs, entrySources, pages };
 }
 
 function isShipped(path: string, outputs: BuildOutputs): boolean {
@@ -66,6 +70,29 @@ function isShipped(path: string, outputs: BuildOutputs): boolean {
     }
   }
   return false;
+}
+
+// Resolve a page-relative reference ("./a.js", "../b.css") to an output path.
+function resolveFromPage(page: string, ref: string): string {
+  const parts = page.split('/').slice(0, -1);
+  for (const seg of ref.split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return parts.join('/');
+}
+
+// Local scripts and stylesheets a shipped page loads. Remote URLs, data: URIs
+// and fragments aren't build outputs, so they're skipped.
+function pageReferences(html: string): string[] {
+  const refs: string[] = [];
+  for (const m of html.matchAll(/<(?:script|link)\b[^>]*?\b(?:src|href)=["']([^"']+)["']/g)) {
+    const ref = m[1].split(/[?#]/)[0];
+    if (!ref || /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(ref)) continue;
+    refs.push(ref);
+  }
+  return refs;
 }
 
 function sourceFiles(dir: string): string[] {
@@ -105,7 +132,7 @@ function runtimePathUses(): PathUse[] {
     }
     const workerMap = text.match(/BUILTIN_WORKER_MAP[^=]*=\s*\{([\s\S]*?)\}/);
     if (workerMap) {
-      for (const m of workerMap[1].matchAll(/:\s*'([^']+)'/g)) uses.push({ file, path: m[1] });
+      for (const m of workerMap[1].matchAll(/:\s*['"`]([^'"`]+)['"`]/g)) uses.push({ file, path: m[1] });
     }
   }
   return uses;
@@ -136,6 +163,19 @@ describe('runtime extension paths', () => {
     const missing = uses
       .filter((u) => !isShipped(u.path, outputs))
       .map((u) => `${u.file}: ${u.path}`);
+    expect(missing).toEqual([]);
+  });
+
+  it('every shipped HTML page loads only scripts and styles the build ships', () => {
+    expect(outputs.pages.size).toBeGreaterThan(0);
+    const missing: string[] = [];
+    for (const [page, source] of outputs.pages) {
+      const html = fs.readFileSync(join(EXTENSION_ROOT, source), 'utf8');
+      for (const ref of pageReferences(html)) {
+        const path = resolveFromPage(page, ref);
+        if (!isShipped(path, outputs)) missing.push(`${page}: ${ref}`);
+      }
+    }
     expect(missing).toEqual([]);
   });
 
