@@ -1,7 +1,7 @@
 # Harbor Positioning (2026)
 
 **Status:** Internal reference — drives website copy, talks, and external materials.
-**Last updated:** November 2026 (what Harbor is; agent-to-company protocols). The landscape tables are from May 2026.
+**Last updated:** November 2026 (one extension; bring your own agent; what Harbor is; agent-to-company protocols). The landscape tables are from May 2026.
 
 This document captures the current landscape, why Harbor still matters in it, and the language we use to describe the difference. Read it before you write a deck, a blog post, or a landing page about Harbor.
 
@@ -23,16 +23,39 @@ If you're reaching for the literal copy that ships on the site, read `whitepaper
 
 ## What Harbor is
 
-Harbor is an implementation of a spec, not an endpoint. The spec is the **Web Agent API** (`spec/`), which defines how a web surface and the person's agent talk to each other, in both directions:
+Harbor is an implementation of a spec, not an endpoint. It's a polyfill: it makes the spec work in today's browsers before any browser builds it in. The spec is the **Web Agent API** (`spec/`), which defines how a web surface and the person's agent talk to each other, in both directions:
 
 - **The page calls the agent** through `window.ai` and `window.agent`.
 - **The agent calls the page's tools** through WebMCP (`navigator.modelContext`).
 
 We expect most of a person's dealings with companies to go through their agent. Some of the time a company will want to offer something richer than a conversation: an interface, which is what a website is today. That interface needs an API to the person's agent, and the Web Agent API is one proposal for it. Harbor is the working implementation that lets people try it. It's one answer, and it's also meant to push the web toward a standard.
 
-**Where the surface lives doesn't matter.** It's a Gecko or WebKit rendering. It can be a tab in an ordinary browser or a surface inside an agent's own app, and each agent decides where to put it. Today Harbor runs as Firefox and Chrome extensions.
+**Where the surface lives doesn't matter.** It's a Gecko or WebKit rendering. It can be a tab in an ordinary browser or a surface inside an agent's own app, and each agent decides where to put it. Today Harbor runs as browser extensions in Firefox and Chrome.
 
 **Browser control is a stopgap.** Harbor also lets an agent click, fill and navigate in a page (`agent.browser.*`). It's necessary for now, but it isn't the model. Those actions run under the person's login, and the company can't tell them from the person's own. When the agent acts through the page's tools instead, the company's code can tell the agent's actions from the person's by the channel each arrives on.
+
+---
+
+## How Harbor ships: one extension, your agent
+
+**The pitch:** *Let websites use your agent.* Use it for the extension's store listing and anywhere else with room for one short line. The one-line summary above stays the longer version.
+
+**One extension.** Harbor is moving to a single browser extension, the thing a person installs from an extension store. Today it's split in two: a page-facing extension that puts `window.ai` and `window.agent` on pages, and the Harbor extension that holds models, tools, permissions and the sidebar. The page-facing extension is called the Web Agents API extension. It's folding into Harbor and will be retired. After that there's one install, and one place to see which sites can use your agent and take their access away.
+
+**Names.** Two names are enough:
+
+- **The Web Agent API** is the spec: how a page and the person's agent talk to each other.
+- **Harbor** is the implementation of it.
+
+Don't use "Web Agents API" (plural) in pitches, site copy, decks or posts. It's one letter away from the spec's name.
+
+**What to say today.** Until the single extension ships, setup and install instructions still name both extensions: Harbor, and the Web Agents API extension. Everywhere else, talk about Harbor as one thing. Once the merge ships, install copy drops the second extension too.
+
+**Harbor decides; the agent does the work.** Deciding whether a site may use the person's agent is the browser's job. Until browsers do it themselves, Harbor does it for them: per-site, per-scope grants, the consent prompt, policy rules and the audit log. The agent does the work the site asked for. Today that means the models and tools the person has connected to Harbor, for example a local model through Ollama or a hosted one, plus their MCP servers.
+
+**Next: bring your own agent.** Harbor will connect to the agent a person already uses over the [Agent Client Protocol](https://agentclientprotocol.com/get-started/introduction) (ACP), an open protocol for connecting a client to an agent. Harbor is the client: it passes each request a site is allowed to make to the person's agent. The first target is [goose](https://goose-docs.ai), which supports ACP as an agent. Other agents that support ACP, directly or through an adapter, can follow. Whichever agent runs a request, the site's access will still be gated by the person's grants in Harbor.
+
+Say "next" or "planned" for ACP until it ships. Don't name an agent as supported until Harbor has been tested with it.
 
 ---
 
@@ -160,7 +183,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 
 > Every website that wants AI features has three bad options today: ask users for API keys, run their own AI backend, or embed someone else's. The new "AI browsers" — Atlas, Comet, Dia, Copilot Mode, Gemini in Chrome — try to solve this from the wrong end: they replace your browser with their agent and route your context to one vendor. Standards like WebMCP and Chrome's Prompt API are real progress, but each solves only a slice.
 >
-> Harbor proposes a fourth option: AI as a browser capability. The browser holds your model connections, your credentials, and your tools. Websites declare what they need through `window.ai` and `window.agent`. Pages can expose their own functions through WebMCP. Permissions are per-origin and revocable. You bring your AI to the web; the web doesn't drag you into someone else's AI. We've shipped a working implementation — two extensions and a Rust bridge — on Firefox and Chrome to prove it's viable. It's a starting point for a conversation, not a product.
+> Harbor proposes a fourth option: AI as a browser capability. The browser holds your model connections, your credentials, and your tools. Websites declare what they need through `window.ai` and `window.agent`. Pages can expose their own functions through WebMCP. Permissions are per-origin and revocable. You bring your AI to the web; the web doesn't drag you into someone else's AI. We've shipped a working implementation — browser extensions and a Rust bridge — on Firefox and Chrome to prove it's viable. It's a starting point for a conversation, not a product.
 
 ---
 
@@ -194,6 +217,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 
 ### For people building agents or agent protocols
 
+- Harbor is the client; your agent does the work. Harbor plans to connect to agents over ACP, starting with goose. People building an ACP agent could then serve websites without writing browser code, and Harbor would still handle each site's consent.
 - Agent-to-company protocols cover how your agent reaches a company. The Web Agent API covers how a company's page talks to your agent once the page is open. You'd want both.
 - We don't mind where the page is rendered: the person's browser, or a surface in your agent's own app.
 - When the agent acts through the page's tools instead of the DOM, the company can tell the agent's actions from the person's.
@@ -202,6 +226,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 
 ## Headlines and taglines we like
 
+- **"Let websites use your agent."** (the extension's pitch)
 - **"AI as a browser capability."**
 - **"Bring your AI to every site."**
 - **"Your model. Your credentials. Your context. Every website."**
@@ -211,6 +236,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 ## Headlines we avoid
 
 - "Harbor is an AI browser." (We're not a browser.)
+- "Web Agents API" as a product name in pitches or site copy. (Say Harbor. "Web Agent API" is the spec. Install instructions are the exception until the single extension ships.)
 - "Harbor is a Mozilla product." (It isn't.)
 - "Replace ChatGPT/Claude/Gemini with Harbor." (We're not a model.)
 - "Harbor is secure because it has fewer features." (We have a positive security story; lead with it.)
@@ -233,4 +259,6 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 - A2A (Agent2Agent) protocol: https://a2a-protocol.org
 - Personal Agent Protocol 1.0 spec (Nov 14, 2026): https://personalagentprotocol.org/docs/1.0/spec
 - Universal Commerce Protocol: https://ucp.dev
+- Agent Client Protocol (ACP): https://agentclientprotocol.com/get-started/introduction
+- goose over ACP: https://goose-docs.ai/docs/gdk/acp/
 - Web Bot Auth (IETF draft): https://datatracker.ietf.org/doc/draft-ietf-webbotauth-httpsig-protocol/
