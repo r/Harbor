@@ -31,6 +31,7 @@ const entryPoints = [
   'src/discovery.ts',
   'src/discovery-injected.ts',
   'src/page-chat.ts',
+  'src/permission-prompt.ts',
   'src/directory.ts',
   'src/sidebar.ts',
   'src/demo-bootstrap.ts',
