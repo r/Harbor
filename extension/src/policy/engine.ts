@@ -117,8 +117,13 @@ export interface PolicyDecision {
   source: DecisionSource;
   /** Human-readable explanation. Surfaced in the audit feed and prompts. */
   reason: string;
-  /** Specific rule, if a rule produced the decision. */
-  rule?: { id: string };
+  /**
+   * Specific rule, if a rule produced the decision, with the rule's own
+   * effect. `effect` on the decision can be more cautious than the rule's
+   * when the safety floor forces a minimum (an allow rule on an
+   * irreversible write still ends in `preview`).
+   */
+  rule?: { id: string; effect?: RuleEffect };
   /** Labels to attach to data this action produces. */
   outputLabels: LabelSet;
   /** Sensitivity classifier verdict, surfaced for diagnostics. */
@@ -491,7 +496,7 @@ export async function evaluate(req: PolicyRequest): Promise<PolicyDecision> {
       tier: tier as 6 | 7,
       source: rule.source ?? 'user',
       reason: rule.comment ?? `Matched rule ${rule.id}`,
-      rule: { id: rule.id },
+      rule: { id: rule.id, effect: rule.effect },
       outputLabels: labelsAfterTier2.union(new LabelSet(meta.defaultDataLabels)),
       sensitivity: verdict,
       manifestTrusted,

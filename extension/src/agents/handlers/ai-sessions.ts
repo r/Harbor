@@ -5,6 +5,7 @@
 import { bridgeChat } from '../../llm/chat';
 import type { RequestContext, ResponseSender } from './router-types';
 import { log, requireAction } from './helpers';
+import { promptActionForModel } from '../../policy/actions';
 import { bridgeRequest } from '../../llm/bridge-client';
 import { getRuntimeCapabilities, listAllProviders } from '../../llm/provider-registry';
 
@@ -111,22 +112,9 @@ export async function handleSessionPrompt(
   }
 
   // Pick the typed action based on what the configured model actually does.
-  // We can't know the locality of an arbitrary model name without a registry
-  // lookup, so we conservatively assume `remote.firstParty` (the user's
-  // configured account) for any session that names a model. Sessions with no
-  // model selection ride the local path; the engine will still gate
-  // remote-egress at the bridge layer through `network.egress.cross_origin`
-  // when the bridge actually fetches.
-  const modelName =
-    typeof session.options.model === 'string' ? session.options.model.toLowerCase() : '';
-  const looksLocal =
-    !modelName ||
-    modelName.startsWith('ollama:') ||
-    modelName.startsWith('apple:') ||
-    modelName.startsWith('local:') ||
-    modelName.startsWith('firefox-ml:') ||
-    modelName.startsWith('chrome-ai:');
-  const action = looksLocal ? 'model.prompt.local' : 'model.prompt.remote.firstParty';
+  // The engine still gates remote egress at the bridge layer through
+  // `network.egress.cross_origin` when the bridge actually fetches.
+  const action = promptActionForModel(session.options.model);
   if (!(await requireAction(ctx, sender, action, { promptAsScope: 'model:prompt' }))) {
     return;
   }

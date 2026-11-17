@@ -19,7 +19,10 @@ export async function handleToolsList(ctx: RequestContext): HandlerResponse {
   }
 
   try {
-    const result = await harborRequest<{ tools: unknown[] }>('mcp.listTools', {});
+    const result = await harborRequest<{ tools: unknown[] }>('mcp.listTools', {
+      origin: ctx.origin,
+      tabId: ctx.tabId,
+    });
     return successResponse(ctx.id, result.tools);
   } catch (e) {
     return errorResponse(
@@ -51,7 +54,10 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
     [serverId, toolName] = tool.split('/', 2);
   } else {
     // Need to find which server has this tool
-    const toolsResult = await harborRequest<{ tools: Array<{ serverId: string; name: string }> }>('mcp.listTools', {});
+    const toolsResult = await harborRequest<{ tools: Array<{ serverId: string; name: string }> }>('mcp.listTools', {
+      origin: ctx.origin,
+      tabId: ctx.tabId,
+    });
     const found = toolsResult.tools.find(t => t.name === tool);
     if (!found) {
       return errorResponse(ctx.id, 'ERR_TOOL_NOT_FOUND', `Tool ${tool} not found`);
@@ -62,6 +68,8 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
 
   try {
     const result = await harborRequest<{ result: unknown }>('mcp.callTool', {
+      origin: ctx.origin,
+      tabId: ctx.tabId,
       serverId,
       toolName,
       args: args || {},

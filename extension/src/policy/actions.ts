@@ -486,3 +486,23 @@ export function isOnDeviceLocality(locality: ActionLocality): boolean {
 export function effectCanEgress(effect: ActionEffect): boolean {
   return effect === 'egress' || effect === 'destructive' || effect === 'identity';
 }
+
+/**
+ * The typed prompt action for a model name. Locality isn't knowable from an
+ * arbitrary name without a registry lookup, so any named model outside the
+ * known on-device prefixes counts as the user's first-party remote account.
+ * No model selection rides the local path.
+ */
+export function promptActionForModel(
+  model: unknown,
+): 'model.prompt.local' | 'model.prompt.remote.firstParty' {
+  const name = typeof model === 'string' ? model.toLowerCase() : '';
+  const looksLocal =
+    !name ||
+    name.startsWith('ollama:') ||
+    name.startsWith('apple:') ||
+    name.startsWith('local:') ||
+    name.startsWith('firefox-ml:') ||
+    name.startsWith('chrome-ai:');
+  return looksLocal ? 'model.prompt.local' : 'model.prompt.remote.firstParty';
+}

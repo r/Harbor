@@ -48,8 +48,8 @@ export interface AuditRecord {
   tier: PolicyDecision['tier'];
   /** Source family. */
   source: PolicyDecision['source'];
-  /** Matched rule, if any. */
-  rule?: { id: string };
+  /** Matched rule, if any, with the rule's own effect. */
+  rule?: PolicyDecision['rule'];
   /** Reason text. */
   reason: string;
   /** Error code, if denied. */
@@ -62,6 +62,17 @@ export interface AuditRecord {
   trace: TraceStep[];
   /** Optional correlation id from the request. */
   correlationId?: string;
+  /**
+   * Set when an `ask`/`preview` verdict proceeded on consent another
+   * component already obtained, rather than on a Harbor prompt. Today this
+   * is only the Web Agents API, whose own grant store gates page calls
+   * before forwarding them (until the stores are merged).
+   */
+  consent?: 'web-agents-api';
+}
+
+export interface AuditExtra {
+  consent?: AuditRecord['consent'];
 }
 
 // =============================================================================
@@ -84,7 +95,7 @@ class AuditLog {
   /**
    * Record a decision. Called from the engine wrapper.
    */
-  record(req: PolicyRequest, decision: PolicyDecision): AuditRecord {
+  record(req: PolicyRequest, decision: PolicyDecision, extra: AuditExtra = {}): AuditRecord {
     const record: AuditRecord = {
       id: `aud_${crypto.randomUUID()}`,
       timestamp: Date.now(),
@@ -109,6 +120,7 @@ class AuditLog {
       labelsOut: decision.outputLabels.toArray(),
       trace: decision.trace,
       correlationId: req.correlationId,
+      ...(extra.consent ? { consent: extra.consent } : {}),
     };
 
     this.buffer.push(record);
