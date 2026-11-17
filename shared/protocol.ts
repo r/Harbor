@@ -311,6 +311,8 @@ export interface SessionTerminateRequest {
 
 export interface SessionRecordUsageRequest {
   sessionId: string;
+  /** Origin that owns the session; Harbor refuses any other. */
+  origin: string;
   type: 'prompt' | 'tool' | 'browser';
   detail?: unknown;
 }

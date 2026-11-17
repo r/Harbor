@@ -407,10 +407,12 @@ async function handleSystemSyncPermissions(
  * Create an explicit session with specified capabilities.
  */
 async function handleSessionCreate(payload: unknown): Promise<ExtensionApiResponse> {
-  const { origin, tabId, options } = payload as {
+  const { origin, tabId, options, allowedTools } = payload as {
     origin?: string;
     tabId?: number;
     options?: CreateSessionOptions;
+    /** Tools the origin was granted, as recorded by the Web Agents API. */
+    allowedTools?: string[];
   };
 
   if (!origin) {
@@ -422,14 +424,15 @@ async function handleSessionCreate(payload: unknown): Promise<ExtensionApiRespon
   }
 
   try {
-    // TODO: Check origin permissions before creating session
-    // For now, we'll create the session and let the caller handle permission checking
-    
-    // Get allowed tools for this origin (if tools requested)
-    // TODO: Integrate with permission system to get actual allowed tools
-    const allowedTools = options.capabilities?.tools || [];
-
-    const result = SessionRegistry.createExplicitSession(origin, options, allowedTools, tabId);
+    // The caller checks the origin's scopes and sends the tools it was
+    // granted. The session gets only requested tools that are also granted;
+    // with no grant, it gets no tools.
+    const result = SessionRegistry.createExplicitSession(
+      origin,
+      options,
+      Array.isArray(allowedTools) ? allowedTools : [],
+      tabId,
+    );
     
     if (result.success) {
       return success({
@@ -569,17 +572,21 @@ async function handleSessionUpgrade(payload: unknown): Promise<ExtensionApiRespo
  * Record usage for a session (prompt, tool call, etc.).
  */
 async function handleSessionRecordUsage(payload: unknown): Promise<ExtensionApiResponse> {
-  const { sessionId, type, detail } = payload as {
+  const { sessionId, origin, type, detail } = payload as {
     sessionId?: string;
+    origin?: string;
     type?: 'prompt' | 'tool' | 'browser';
     detail?: unknown;
   };
 
-  if (!sessionId || !type) {
-    return failure('Missing sessionId or type');
+  if (!sessionId || !origin || !type) {
+    return failure('Missing sessionId, origin or type');
   }
 
   try {
+    // Only the owning origin may record against a live session.
+    SessionRegistry.getValidatedSession(sessionId, origin);
+
     switch (type) {
       case 'prompt': {
         const { userMessage, assistantMessage } = detail as {

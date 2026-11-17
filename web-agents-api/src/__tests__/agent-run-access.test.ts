@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(), hasPermission: vi.fn(), getFeatureFlags: vi.fn(),
-  harborStreamRequest: vi.fn(), getTextSession: vi.fn(),
+  harborStreamRequest: vi.fn(), resolveTextSession: vi.fn(),
 }));
 vi.mock('../harbor-client', () => ({
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
@@ -13,7 +13,7 @@ vi.mock('../handlers', () => ({
   routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: mocks.hasPermission,
   getPermissions: async () => ({ scopes: {} }), listAllPermissions: vi.fn(),
   revokeOriginPermissions: vi.fn(), resolvePromptClosed: vi.fn(),
-  handlePermissionPromptResponse: vi.fn(), getTextSession: mocks.getTextSession,
+  handlePermissionPromptResponse: vi.fn(), resolveTextSession: mocks.resolveTextSession, recordExplicitPrompt: vi.fn(),
   restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
   isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
   cleanupAgentsForTab: vi.fn(), agentInvocationTabs: new Map(),
@@ -149,9 +149,9 @@ describe('agent.run receiving boundary', () => {
 
 describe('window.ai session promptStreaming()', () => {
   it('forwards the page origin and tab on llm.chatStream', async () => {
-    mocks.getTextSession.mockReturnValue({
+    mocks.resolveTextSession.mockResolvedValue({ session: {
       sessionId: 's1', origin: 'https://example.test', options: {}, history: [], createdAt: 0,
-    });
+    } });
     mocks.harborStreamRequest.mockReturnValue({
       stream: (async function* () { yield { type: 'done' }; })(), cancel: vi.fn(),
     });

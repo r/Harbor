@@ -9,6 +9,7 @@ import type { PermissionScope, CreateSessionOptions, SessionSummary } from '../t
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission, getPermissions } from './permission-handlers';
+import { registerExplicitTextSession, forgetExplicitTextSession } from './ai-handlers';
 
 // =============================================================================
 // Handlers
@@ -53,6 +54,18 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
       origin: ctx.origin,
       tabId: ctx.tabId,
       options,
+      allowedTools,
+    });
+
+    if (!result.sessionId) {
+      // Safari's HTTP bridge answers { supported: false } for session.*.
+      return errorResponse(ctx.id, 'ERR_INTERNAL', 'Explicit sessions are not supported in this browser');
+    }
+
+    registerExplicitTextSession(result.sessionId, ctx.origin, {
+      systemPrompt: options.options?.systemPrompt,
+      temperature: options.options?.temperature,
+      model: options.capabilities.llm?.model,
     });
 
     return successResponse(ctx.id, {
@@ -160,6 +173,7 @@ export async function handleSessionsTerminate(ctx: RequestContext): HandlerRespo
       sessionId,
       origin: ctx.origin,
     });
+    if (result.terminated) forgetExplicitTextSession(sessionId, ctx.origin);
 
     return successResponse(ctx.id, { terminated: result.terminated });
   } catch (e) {

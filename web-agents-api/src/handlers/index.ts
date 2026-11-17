@@ -19,7 +19,8 @@ import {
   handleProvidersGetActive,
   handleProvidersListConfiguredModels,
   handleProvidersGetConfiguredModelsMetadata,
-  getTextSession,
+  resolveTextSession,
+  recordExplicitPrompt,
 } from './ai-handlers';
 
 import {
@@ -272,7 +273,7 @@ export {
 };
 
 // AI utilities
-export { getTextSession };
+export { resolveTextSession, recordExplicitPrompt };
 
 // Tab utilities
 export {

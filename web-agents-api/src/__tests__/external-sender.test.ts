@@ -14,7 +14,7 @@ vi.mock('../handlers', () => ({
   routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: vi.fn(),
   getPermissions: async () => ({ scopes: {} }),
   listAllPermissions: mocks.listAllPermissions, revokeOriginPermissions: mocks.revokeOriginPermissions,
-  resolvePromptClosed: vi.fn(), handlePermissionPromptResponse: vi.fn(), getTextSession: vi.fn(),
+  resolvePromptClosed: vi.fn(), handlePermissionPromptResponse: vi.fn(), resolveTextSession: vi.fn(), recordExplicitPrompt: vi.fn(),
   restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
   isSpawnedTab: vi.fn(), handleIncomingInvocation: mocks.handleIncomingInvocation,
   resolveInvocationResponse: vi.fn(), cleanupAgentsForTab: vi.fn(),
