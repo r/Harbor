@@ -2013,7 +2013,7 @@ const caps = await window.agent.capabilities();
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.1 | November 2026 | Removed the proposed `ai.runtime` namespace, which was never implemented. |
+| 1.1 | November 2026 | Removed the `ai.runtime` namespace. It shipped briefly in an early page script, was dropped, and isn't in the current implementation. |
 | 1.0 | January 2026 | Initial specification |
 
 ---

@@ -2563,7 +2563,7 @@ console.log(caps.permissions.llm.prompt); // 'granted-always'
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.5 | November 2026 | Removed the proposed `ai.runtime.*` and Address Bar API (`agent.addressBar.*`, `agent.commandBar.*`). Neither was implemented. |
+| 1.5 | November 2026 | Removed `ai.runtime.*` and the Address Bar API (`agent.addressBar.*`, `agent.commandBar.*`). `ai.runtime` shipped briefly in an early page script and was dropped; page calls to the Address Bar API were never connected. Neither is in the reference implementation. |
 | 1.4 | May 2026 | Synchronous `agent.capabilities()` shipped; `agent.browser.navigate` and `agent.browser.fetch` wired up; permission scope set reconciled with implementation; debug logging gated behind `web-agents-api:debug`. |
 | 1.3 | January 2026 | Native browser AI providers (Firefox ML, Chrome AI), split routing, `ai.runtime.*` (proposed, not yet shipped). |
 | 1.2 | January 2026 | Address Bar API (`agent.addressBar.*`, `agent.commandBar.*`) (proposed, not yet shipped). |

@@ -1558,4 +1558,4 @@ This document describes **Web Agent API v1.3** as implemented by **Harbor v1**.
 
 **v1.1 additions:** BYOC APIs (`agent.mcp.*`, `agent.chat.*`)
 
-The proposed `ai.runtime.*` (v1.3) and Address Bar API (`agent.addressBar.*`, `agent.commandBar.*`, v1.2) were never implemented, and spec v1.5 removed them.
+`ai.runtime.*` (v1.3) and the Address Bar API (`agent.addressBar.*`, `agent.commandBar.*`, v1.2) aren't in the current implementation, and spec v1.5 removed them.
