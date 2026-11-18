@@ -304,7 +304,7 @@ You can only drive tabs your origin spawned (same-origin or "owned" model). You 
 
 ---
 
-## Sessions API (toolAccess flag)
+## Sessions API
 
 Capability-bounded, named sessions with budgets.
 
