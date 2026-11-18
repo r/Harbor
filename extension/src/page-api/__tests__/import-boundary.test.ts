@@ -8,8 +8,7 @@
  * page-api/.
  */
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- plain JS helper; see support/import-boundary.mjs for why.
-import { findImportBoundaryViolations } from './support/import-boundary.mjs';
+import { findImportBoundaryViolations } from './support/import-boundary';
 
 describe('page-api only reaches the rest of Harbor through harbor-core, browser-compat, or types', () => {
   it('has no other value imports leaving page-api/', () => {

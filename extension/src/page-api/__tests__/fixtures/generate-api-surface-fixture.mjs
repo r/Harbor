@@ -12,7 +12,7 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadInjectedApiShape, ALL_FLAGS_TRUE, ALL_FLAGS_FALSE } from '../support/api-shape.mjs';
+import { loadInjectedApiShape, ALL_FLAGS_TRUE, ALL_FLAGS_FALSE } from '../support/api-shape.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sourcePath = process.argv[2]

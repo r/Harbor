@@ -1,15 +1,15 @@
+/// <reference types="node" />
 /**
- * Plain-JS helper for the import-boundary test. Lives outside .ts so
- * extension/'s tsc run (no @types/node here) never needs to type-check
- * node:fs / node:path.
+ * Helper for the import-boundary test: lists page-api's production files and
+ * the relative imports each one makes.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
-function listProductionTsFiles(dir) {
-  const out = [];
+function listProductionTsFiles(dir: string): string[] {
+  const out: string[] = [];
   for (const entry of readdirSync(dir)) {
     if (entry === '__tests__') continue;
     const full = path.join(dir, entry);
@@ -23,10 +23,10 @@ function listProductionTsFiles(dir) {
   return out;
 }
 
-function importsOf(file) {
+function importsOf(file: string): Array<{ specifier: string; typeOnly: boolean }> {
   const source = readFileSync(file, 'utf-8');
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-  const out = [];
+  const out: Array<{ specifier: string; typeOnly: boolean }> = [];
   sourceFile.forEachChild((node) => {
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
       out.push({ specifier: node.moduleSpecifier.text, typeOnly: !!node.importClause?.isTypeOnly });
@@ -46,11 +46,11 @@ function importsOf(file) {
  * allowed boundary (same-directory, harbor-core.ts, browser-compat, or a
  * type-only import).
  */
-export function findImportBoundaryViolations(testFileUrl) {
+export function findImportBoundaryViolations(testFileUrl: string): { files: string[]; violations: string[] } {
   const pageApiRoot = path.dirname(path.dirname(fileURLToPath(testFileUrl)));
   const files = listProductionTsFiles(pageApiRoot);
 
-  const violations = [];
+  const violations: string[] = [];
   for (const file of files) {
     for (const imp of importsOf(file)) {
       if (!imp.specifier.startsWith('.')) continue; // npm packages / node builtins
