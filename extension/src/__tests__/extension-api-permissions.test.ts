@@ -90,6 +90,15 @@ describe('permissions.request', () => {
     }
     expect(requestPermissions).not.toHaveBeenCalled();
   });
+
+  it('rejects the retired address-bar scopes without prompting', async () => {
+    // Harbor has no address-bar feature, so these scopes would grant nothing.
+    for (const scope of ['addressBar:suggest', 'addressBar:context', 'addressBar:history', 'addressBar:execute']) {
+      const res = await route('permissions.request', { origin: ORIGIN, scopes: [scope] });
+      expect(res.ok, scope).toBe(false);
+    }
+    expect(requestPermissions).not.toHaveBeenCalled();
+  });
 });
 
 describe('the one-way grant sync is gone', () => {
