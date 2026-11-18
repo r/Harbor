@@ -1776,7 +1776,7 @@ partial interface Window {
 | **Malicious website abusing AI** | All operations require explicit user consent |
 | **Unauthorized tool access** | Tools are namespaced; users can allowlist specific tools per-origin |
 | **Data exfiltration via AI** | No automatic data sharing; content must be explicitly passed to prompts |
-| **Prompt injection attacks** | Mitigated by system prompts; users responsible for input sanitization |
+| **Prompt injection attacks** | Assumed to succeed sometimes. Limited by scope: a page's session reaches only its own history and the tools the user allowed for that origin. Confirmation before irreversible tool calls is planned. See [Against Prompt Injection](security-privacy.md#against-prompt-injection) |
 | **Cross-origin attacks** | Permissions strictly scoped to origin |
 | **Session hijacking** | Session IDs are origin-bound and validated on each request |
 
