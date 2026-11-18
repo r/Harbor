@@ -38,6 +38,14 @@ test('loads both Firefox builds in a new profile and closes only its runner', as
   assert.equal(f.exits, 1);
 });
 
+test('--harbor-only loads just the Harbor build', async () => {
+  const f = fixture();
+  const session = await launchFirefox({ extensionDirs: ['extension/dist-firefox'] }, f.dependencies);
+  assert.deepEqual(f.config.params.extensions.map(e => e.sourceDir.split('/').slice(-2).join('/')),
+    ['extension/dist-firefox']);
+  await session.close();
+});
+
 test('startup failure closes the owned runner and preserves the error', async () => {
   const error = new Error('second addon rejected');
   const f = fixture({ failure: error });
