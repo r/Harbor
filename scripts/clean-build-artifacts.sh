@@ -24,7 +24,6 @@ rm -rf "$PROJECT_ROOT/installer/firefox/payload"
 echo "  ✓ Firefox installer build/"
 
 rm -rf "$PROJECT_ROOT/installer/safari/build"
-rm -rf "$PROJECT_ROOT/installer/safari/Harbor/build"
 echo "  ✓ Safari installer build/"
 
 # Extension build directories

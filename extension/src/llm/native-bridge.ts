@@ -13,6 +13,7 @@
 
 import { browserAPI, isSafari } from '../browser-compat';
 import { handleHostRequest } from '../handlers/host-request-handlers';
+import { normalizeChatResponse } from './chat-response';
 
 // Native app ID differs by browser:
 // - Firefox/Chrome: 'harbor_bridge' (matches native messaging manifest name)
@@ -99,7 +100,7 @@ async function checkSafariConnection(): Promise<void> {
       updateState({
         connected: false,
         bridgeReady: false,
-        error: 'Harbor.app not running',
+        error: 'Bridge not running (harbor-bridge --http-server)',
       });
       return;
     }
@@ -515,7 +516,7 @@ export function rpcStreamRequest(
   // Safari: Fall back to non-streaming HTTP request
   if (useSafariMode) {
     if (!connectionState.bridgeReady) {
-      const error = new Error('Bridge not connected. Make sure Harbor.app is running.');
+      const error = new Error('Bridge not connected. Run harbor-bridge --http-server.');
       return {
         cancel: () => {},
         done: Promise.reject(error),
@@ -527,17 +528,15 @@ export function rpcStreamRequest(
     
     const done = (async () => {
       try {
-        // Safari streaming: Request with safari_no_stream flag, bridge buffers and returns complete
-        const response = await safariHttpRequest<{
-          content?: string;
-          model?: string;
-          finish_reason?: string;
-        }>(method, { ...(params as object), safari_no_stream: true });
+        // The HTTP bridge has no streaming method: ask for the whole chat
+        // completion at once and hand it over as a single token.
+        const httpMethod = method === 'llm.chat_stream' ? 'llm.chat' : method;
+        const raw = await safariHttpRequest<unknown>(httpMethod, { ...(params as object), safari_no_stream: true });
+        const response = normalizeChatResponse(raw);
         
         if (cancelled) return;
         
-        // Emit the complete content as a single token event
-        if (response?.content) {
+        if (response.content) {
           onEvent({
             id,
             type: 'token',
@@ -545,12 +544,11 @@ export function rpcStreamRequest(
           });
         }
         
-        // Emit done event
         onEvent({
           id,
           type: 'done',
-          finish_reason: response?.finish_reason || 'stop',
-          model: response?.model,
+          finish_reason: response.finish_reason || 'stop',
+          model: response.model,
         });
       } catch (err) {
         if (!cancelled) {

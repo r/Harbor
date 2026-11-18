@@ -113,7 +113,7 @@ async function copyStatic() {
   if (isChrome) {
     console.log('[Harbor]   → chrome://extensions → Enable Developer Mode → Load unpacked');
   } else if (isSafari) {
-    console.log('[Harbor]   → See installer/safari/README.md for Xcode setup');
+    console.log('[Harbor]   → Run installer/safari/build.sh to build the Safari app (docs/QUICKSTART_SAFARI.md)');
   } else {
     console.log('[Harbor]   → about:debugging → This Firefox → Load Temporary Add-on');
   }
