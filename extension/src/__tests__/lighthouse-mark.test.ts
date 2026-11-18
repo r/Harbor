@@ -33,4 +33,18 @@ describe('lighthouse mark', () => {
     expect(source).not.toMatch(/logo[^"]*">H<\//);
     for (const shape of shapes) expect(source).toContain(shape);
   });
+
+  it('the in-page chat draws the mark as an image, out of reach of page CSS', () => {
+    const source = read('extension/src/page-chat.ts');
+    expect(source).not.toMatch(/<span class="hpc-logo[^"]*"><svg/);
+    expect(source).toContain('url("data:image/svg+xml,${encodeURIComponent(LIGHTHOUSE_SVG)}")');
+  });
+
+  it("Firefox's sidebar switcher gets the one-color lighthouse", () => {
+    const manifest = JSON.parse(read('extension/manifest.json'));
+    for (const icon of Object.values(manifest.sidebar_action.default_icon)) {
+      expect(icon).toBe('assets/icon-sidebar.svg');
+    }
+    expect(manifest.action.default_icon['16']).toBe('assets/icon.svg');
+  });
 });

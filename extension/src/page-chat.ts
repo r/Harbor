@@ -12,6 +12,12 @@
 
 import { browserAPI } from './browser-compat';
 
+// Harbor's lighthouse mark (assets/icon.svg). The overlay lives in the host
+// page's DOM, so the badge draws it as a background image: page CSS such as
+// `svg { fill: currentColor }` can't restyle an image.
+const LIGHTHOUSE_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#00d230"/><path d="M33 17L64 6V27.5L34 23Z" fill="#efffce"/><path d="M26 7.5L37 17H15Z" fill="#151b17"/><rect x="18" y="17" width="16" height="7" fill="#151b17"/><rect x="22" y="17.75" width="8" height="4.5" fill="#efffce"/><rect x="14" y="24" width="24" height="4" fill="#151b17"/><path d="M20 28H32.5L38 52H14Z" fill="#151b17"/><path d="M18.68 33.26L33.05 30.39L34.71 37.65L16.61 41.57Z" fill="#efffce"/><path d="M0 57Q8 53 13.5 51.5H38.5Q45 53 49 55.5Q56 53.5 64 53.5V64H0Z" fill="#151b17"/></svg>';
+
 // Configuration interface for BYOC mode
 interface PageChatConfig {
   chatId?: string;
@@ -373,7 +379,7 @@ function getSidebarHTML(isByocMode: boolean): string {
     ? `<div class="hpc-header hpc-header-byoc">
         <div class="hpc-header-main">
           <div class="hpc-header-left">
-            <span class="hpc-logo hpc-logo-verified"><svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><rect width="64" height="64" fill="#00d230"/><path d="M33 17L64 6V27.5L34 23Z" fill="#efffce"/><path d="M26 7.5L37 17H15Z" fill="#151b17"/><rect x="18" y="17" width="16" height="7" fill="#151b17"/><rect x="22" y="17.75" width="8" height="4.5" fill="#efffce"/><rect x="14" y="24" width="24" height="4" fill="#151b17"/><path d="M20 28H32.5L38 52H14Z" fill="#151b17"/><path d="M18.68 33.26L33.05 30.39L34.71 37.65L16.61 41.57Z" fill="#efffce"/><path d="M0 57Q8 53 13.5 51.5H38.5Q45 53 49 55.5Q56 53.5 64 53.5V64H0Z" fill="#151b17"/></svg></span>
+            <span class="hpc-logo hpc-logo-verified"></span>
             <div class="hpc-header-text">
               <span class="hpc-title">Page Chat</span>
               <span class="hpc-subtitle">Powered by Harbor</span>
@@ -395,7 +401,7 @@ function getSidebarHTML(isByocMode: boolean): string {
       </div>`
     : `<div class="hpc-header">
         <div class="hpc-header-left">
-          <span class="hpc-logo"><svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><rect width="64" height="64" fill="#00d230"/><path d="M33 17L64 6V27.5L34 23Z" fill="#efffce"/><path d="M26 7.5L37 17H15Z" fill="#151b17"/><rect x="18" y="17" width="16" height="7" fill="#151b17"/><rect x="22" y="17.75" width="8" height="4.5" fill="#efffce"/><rect x="14" y="24" width="24" height="4" fill="#151b17"/><path d="M20 28H32.5L38 52H14Z" fill="#151b17"/><path d="M18.68 33.26L33.05 30.39L34.71 37.65L16.61 41.57Z" fill="#efffce"/><path d="M0 57Q8 53 13.5 51.5H38.5Q45 53 49 55.5Q56 53.5 64 53.5V64H0Z" fill="#151b17"/></svg></span>
+          <span class="hpc-logo"></span>
           <span class="hpc-title">Page Chat</span>
         </div>
         <div class="hpc-header-right">
@@ -548,12 +554,7 @@ function getSidebarCSS(): string {
       display: flex;
       align-items: center;
       justify-content: center;
-    }
-    .hpc-logo svg {
-      display: block;
-      width: 100%;
-      height: 100%;
-      border-radius: inherit;
+      background: url("data:image/svg+xml,${encodeURIComponent(LIGHTHOUSE_SVG)}") center / cover no-repeat;
     }
     
     .hpc-title {
