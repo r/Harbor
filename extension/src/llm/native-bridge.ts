@@ -55,7 +55,7 @@ async function safariHttpRequest<T>(method: string, params: unknown = {}): Promi
     }
     
     const data = await response.json();
-    console.log('[Harbor:Safari] HTTP RPC response:', JSON.stringify(data).slice(0, 200));
+    console.log('[Harbor:Safari] HTTP RPC response received', { hasError: !!data?.error });
     
     if (data && data.error) {
       const errorMsg = data.error.message || (typeof data.error === 'string' ? data.error : JSON.stringify(data.error));

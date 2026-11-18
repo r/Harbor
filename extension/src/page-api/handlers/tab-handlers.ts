@@ -147,7 +147,7 @@ const OTHER_ORIGIN_MESSAGE = "Can only read tabs while they show a page on the c
 // =============================================================================
 
 export async function handleTabsCreate(ctx: RequestContext): HandlerResponse {
-  console.log('[Web Agents API] handleTabsCreate called:', { origin: ctx.origin, payload: ctx.payload });
+  console.log('[Web Agents API] handleTabsCreate called:', { origin: ctx.origin });
   
   if (!await hasPermission(ctx.origin, 'browser:tabs.create', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:tabs.create required');
@@ -178,7 +178,7 @@ export async function handleTabsCreate(ctx: RequestContext): HandlerResponse {
     };
     
     const tab = await chrome.tabs.create(createOptions);
-    console.log('[Web Agents API] Tab created:', { tabId: tab.id, url: tab.url });
+    console.log('[Web Agents API] Tab created:', { tabId: tab.id });
 
     if (!tab.id) {
       return errorResponse(ctx.id, 'ERR_INTERNAL', 'Failed to create tab');

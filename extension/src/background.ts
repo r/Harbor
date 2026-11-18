@@ -107,12 +107,6 @@ if (isSafari()) {
 // Debug Utilities
 // =============================================================================
 
-// Debug: log all incoming messages
-browserAPI.runtime.onMessage.addListener((message) => {
-  console.log('[Harbor] Incoming message:', message?.type, message);
-  return false;
-});
-
 // Debug: expose callTool for console testing
 (globalThis as Record<string, unknown>).debugCallTool = callTool;
 

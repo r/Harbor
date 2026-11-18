@@ -328,7 +328,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // Clean up old invocations after 60 seconds
   setTimeout(() => processedInvocations.delete(invocationId), 60000);
   
-  console.log(`[TRACE ${trace}] Content: Forwarding invocation to page - task: ${message.task}, invocationId: ${invocationId}`);
+  console.log(`[TRACE ${trace}] Content: Forwarding invocation to page - invocationId: ${invocationId}`);
   
   // Forward to page in the format injected.ts expects
   window.postMessage({

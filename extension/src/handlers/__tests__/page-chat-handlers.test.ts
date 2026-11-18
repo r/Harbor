@@ -32,3 +32,32 @@ describe('page chat handlers', () => {
     expect(executeScript).not.toHaveBeenCalled();
   });
 });
+
+vi.mock('../../llm/chat', () => ({ bridgeChat: vi.fn(async () => ({ content: 'MARKER-7f3a-reply' })) }));
+
+describe('page chat logging', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('does not log the chat message or the reply', async () => {
+    const listeners: Listener[] = [];
+    vi.spyOn(chrome.runtime.onMessage, 'addListener').mockImplementation((l) => {
+      listeners.push(l as Listener);
+    });
+    const lines: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => { lines.push(args.map(String).join(' ')); });
+
+    vi.resetModules();
+    const { registerPageChatHandlers } = await import('../page-chat-handlers');
+    registerPageChatHandlers();
+
+    const done = new Promise((resolve) => {
+      for (const l of listeners) {
+        l({ type: 'page_chat_message', chatId: 'c1', message: 'MARKER-7f3a-question' }, {}, resolve);
+      }
+    });
+    await done;
+    expect(lines.filter((l) => l.includes('MARKER-7f3a'))).toEqual([]);
+  });
+});
