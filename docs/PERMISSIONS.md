@@ -306,7 +306,7 @@ The Watchdog is a complement to the structural defenses (info-flow labels, sensi
 | Rule | Trigger | Default response |
 |---|---|---|
 | **Velocity spike** | rate > 3× rolling average | Toast notification in sidebar |
-| **Repeated denials** | ≥ 3 consecutive denials | Quarantine the session; the user must reset it from the sidebar |
+| **Repeated denials** | ≥ 5 consecutive denials | Quarantine the origin; the user must reset it from the sidebar |
 | **Budget overspend** | > 90% of budget consumed in a single burst | Suspend; ask to extend |
 | **Repeated label-egress attempts** | 2+ blocked egress attempts carrying `credentials`/`payments`/`identity` in a single session | Quarantine session |
 | **Scope escalation** | Origin requests an action outside its current token's `allowedActions` twice in a row | Terminate session; mark origin "needs review" |
