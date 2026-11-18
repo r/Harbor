@@ -23,7 +23,6 @@ const SCOPE_ICONS: Record<string, string> = {
   'browser:activeTab.screenshot': '📸',
   'chat:open': '💬',
   'web:fetch': '🌐',
-  'addressBar:suggest': '🔍',
 };
 
 // =============================================================================

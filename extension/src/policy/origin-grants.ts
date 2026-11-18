@@ -91,11 +91,6 @@ const TYPED_TO_LEGACY: Partial<Record<TypedAction, readonly string[]>> = {
   'agent.run': ['model:tools'],
 
   'chat.open': ['chat:open'],
-
-  'addressBar.suggest': ['addressBar:suggest'],
-  'addressBar.read.context': ['addressBar:context'],
-  'addressBar.read.history': ['addressBar:history'],
-  'addressBar.execute': ['addressBar:execute'],
 };
 
 // =============================================================================
