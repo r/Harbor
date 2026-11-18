@@ -189,7 +189,7 @@ function handlePermissionPromptMessage(
     return false;
   }
 
-  log('Permission prompt response:', message.response);
+  log('Permission prompt response received');
 
   if (message.response) {
     handlePermissionPromptResponse(message.response);
@@ -231,7 +231,6 @@ export function routeAgentMessage(
   sendResponse: (response: { ok: boolean; result?: unknown; error?: string }) => void,
 ): void {
   log('Agent message:', message.type);
-  log('Full message:', JSON.stringify(message));
 
   const payload = message.payload as { origin?: string; tabId?: number } | undefined;
   const pageOrigin = payload?.origin;

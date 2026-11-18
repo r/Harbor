@@ -183,7 +183,7 @@ export async function invokeAgent(
   const fromAgent = getAgent(fromAgentId);
   const toAgent = getAgent(request.agentId);
   
-  console.log(`[TRACE ${trace}] invokeAgent START - from: ${fromAgentId}, to: ${request.agentId}, task: ${request.task}`);
+  console.log(`[TRACE ${trace}] invokeAgent START - from: ${fromAgentId}, to: ${request.agentId}`);
 
   if (!fromAgent) {
     return {

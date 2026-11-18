@@ -275,7 +275,7 @@ export async function handleAgentsInvoke(
   }
 
   const traceId = payload.traceId || `harbor-trace-${Date.now()}`;
-  log(`[TRACE ${traceId}] handleAgentsInvoke START - target: ${payload.agentId}, task: ${payload.task}`);
+  log(`[TRACE ${traceId}] handleAgentsInvoke START - target: ${payload.agentId}`);
 
   const fromAgentId = originAgents.get(ctx.origin);
   if (!fromAgentId) {
@@ -431,7 +431,7 @@ export function handleAgentsRegisterInvocationHandler(
   ctx: RequestContext,
   sender: ResponseSender,
 ): void {
-  log('handleAgentsRegisterInvocationHandler called, payload:', JSON.stringify(ctx.payload));
+  log('handleAgentsRegisterInvocationHandler called from', ctx.origin);
 
   const payload = ctx.payload as { agentId?: string; origin?: string; tabId?: number } | undefined;
 
@@ -460,7 +460,7 @@ export function handleAgentsRegisterInvocationHandler(
   // now: there is no second extension to forward to.
   registerInvocationHandler(agentId, async (request, fromAgentId, traceId) => {
     const trace = traceId || 'no-trace';
-    log(`[TRACE ${trace}] Proxy handler called for ${agentId}, task: ${request.task}`);
+    log(`[TRACE ${trace}] Proxy handler called for ${agentId}`);
 
     if (!invocationHandlers.has(agentId)) {
       log(`[TRACE ${trace}] ERROR - no invocation handler info`);

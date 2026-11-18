@@ -489,7 +489,7 @@ export async function showPermissionPrompt(
   allowedTools?: string[];
   explicitDeny?: boolean;
 }> {
-  console.log('[Permissions] showPermissionPrompt called:', { origin, scopes, reason, sessionContext });
+  console.log('[Permissions] showPermissionPrompt called:', { origin, scopes, hasSessionContext: !!sessionContext });
 
   // Same site already has a prompt: merge and reuse so we never show a second popup for this origin
   if (promptOrigin === origin) {
@@ -550,7 +550,7 @@ export async function showPermissionPrompt(
     tools: promptTools,
     sessionContext: promptSessionContext,
   });
-  console.log('[Permissions] Opening prompt URL:', promptUrl);
+  console.log('[Permissions] Opening permission prompt for', origin);
 
   return new Promise((resolve) => {
     pendingPromptResolvers.push(resolve);

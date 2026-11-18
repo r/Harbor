@@ -128,7 +128,7 @@ async function handleAgentRun(
     systemPrompt?: string;
   };
 
-  log('agent.run starting:', { task, maxToolCalls, origin: ctx.origin });
+  log('agent.run starting:', { taskLength: task?.length ?? 0, maxToolCalls, origin: ctx.origin });
 
   // Enforce the setting at the receiver: a page can send transport messages
   // directly, without going through the injected API's disabled wrapper.

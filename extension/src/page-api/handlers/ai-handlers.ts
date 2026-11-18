@@ -35,10 +35,7 @@ export async function handleAiCanCreateTextSession(ctx: RequestContext): Handler
 }
 
 export async function handleAiCreateTextSession(ctx: RequestContext): HandlerResponse {
-  console.log('[Web Agents API] handleAiCreateTextSession called', {
-    origin: ctx.origin,
-    payload: ctx.payload,
-  });
+  console.log('[Web Agents API] handleAiCreateTextSession called', { origin: ctx.origin });
   
   // Check permission
   if (!await hasPermission(ctx.origin, 'model:prompt', ctx.tabId)) {
