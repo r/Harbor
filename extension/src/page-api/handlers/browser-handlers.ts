@@ -223,9 +223,33 @@ export async function handleBrowserScreenshot(ctx: RequestContext): HandlerRespo
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
 
+  const tabId = ctx.tabId;
+  const tabsApi = (typeof browser !== 'undefined' ? browser.tabs : chrome.tabs);
+  const notVisible = () => errorResponse(
+    ctx.id, 'ERR_PERMISSION_DENIED', 'Screenshots are only allowed while the calling tab is visible',
+  );
+
+  // captureVisibleTab captures a window, not a tab. Capture only the caller's
+  // own window, and only while the caller is the tab showing in it, so the
+  // image can't show another site. Returns the window ID, or undefined.
+  const visibleWindowOf = async () => {
+    try {
+      const tab = await tabsApi.get(tabId);
+      return tab.active ? tab.windowId : undefined;
+    } catch {
+      return undefined; // the tab has closed
+    }
+  };
+
   try {
-    const tabsApi = (typeof browser !== 'undefined' ? browser.tabs : chrome.tabs);
-    const dataUrl = await tabsApi.captureVisibleTab({ format: 'png' });
+    const windowId = await visibleWindowOf();
+    if (windowId === undefined) return notVisible();
+
+    const dataUrl = await tabsApi.captureVisibleTab(windowId, { format: 'png' });
+
+    // The user may have switched tabs while the capture ran.
+    if (await visibleWindowOf() !== windowId) return notVisible();
+
     return successResponse(ctx.id, { dataUrl });
   } catch (e) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Screenshot failed');
