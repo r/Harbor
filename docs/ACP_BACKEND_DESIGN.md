@@ -129,7 +129,7 @@ Rules:
   | --- | --- | --- |
   | goose | `GOOSE_MODE=approve` in the agent's environment at start | every tool call |
   | Claude Code | `session/set_mode` to `default` ("Manual"), plus `_meta.claudeCode.options.settings.permissions.ask: ["Bash"]` on `session/new` | file changes and every shell command; not reads through its file tools |
-  | Codex | A custom permission profile in a Codex config directory Harbor provides: `approval_policy = "on-request"`, file access limited to the working directory, selected with `INITIAL_AGENT_MODE=permission-profile:<id>` | every shell command; reads outside the directory are blocked |
+  | Codex | A custom permission profile in a Codex config directory Harbor provides: `approval_policy = "on-request"`, file access limited to the working directory, selected with `INITIAL_AGENT_MODE=permission-profile:<id>` | every shell command; its own file-read tool fails everywhere, so reads go through shell commands, which ask |
 
   Without these settings, Claude Code's and Codex's strictest modes ran read-only shell commands such as `ls` and `cat` without asking. Claude Code also reads the user's own settings, which can start it in `auto` mode, so Harbor sets the mode and the override on every session. Under the Codex profile, Codex's own file-read tool fails even inside the directory, so it falls back to shell commands, and each one asks; that's safe but means more prompts. Codex no longer accepts the `untrusted` approval policy, and its built-in modes override session settings.
 
