@@ -107,10 +107,12 @@ async function loadOriginPermissions(origin: string): Promise<StoredOriginPermis
   }
 }
 
-function isStoredGrantLive(stored: StoredPermission, now: number): boolean {
+function isStoredGrantLive(stored: StoredPermission, now: number, tabId?: number): boolean {
   if (stored.grant === 'granted-always') return true;
   if (stored.grant === 'granted-once') {
     if (stored.expiresAt && now > stored.expiresAt) return false;
+    // "Allow once" covers only the tab that granted it (as isGrantValid in permissions.ts).
+    if (stored.tabId !== undefined && tabId !== undefined && stored.tabId !== tabId) return false;
     return true;
   }
   return false;
@@ -129,6 +131,7 @@ export async function lookupOriginGrant(
   origin: string,
   action: TypedAction,
   resource?: PolicyResource,
+  tabId?: number,
 ): Promise<OriginGrantOutcome | null> {
   const legacy = TYPED_TO_LEGACY[action];
   if (!legacy) return null;
@@ -161,7 +164,7 @@ export async function lookupOriginGrant(
       sawDeny = true;
       continue;
     }
-    if (isStoredGrantLive(entry, now)) {
+    if (isStoredGrantLive(entry, now, tabId)) {
       sawAllow = true;
       if (entry.grant === 'granted-always') persistence = 'always';
     }
@@ -176,8 +179,8 @@ export async function lookupOriginGrant(
  * Convenience: the resolver function the engine wires up via
  * setOriginGrantResolver().
  */
-export const originGrantResolver: OriginGrantResolver = (origin, action, resource) =>
-  lookupOriginGrant(origin, action, resource);
+export const originGrantResolver: OriginGrantResolver = (origin, action, resource, tabId) =>
+  lookupOriginGrant(origin, action, resource, tabId);
 
 // =============================================================================
 // Test helpers

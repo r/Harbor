@@ -88,6 +88,7 @@ export async function requireAction(
     mode: options.mode,
     reason: options.reason,
     correlationId: ctx.id,
+    tabId: ctx.tabId,
   };
   const decision = await evaluate(request);
   const proceedsOnUpstreamConsent =

@@ -13,7 +13,7 @@ function seedGrant(
   origin: string,
   scope: string,
   grant: 'granted-always' | 'granted-once' | 'denied',
-  options: { expiresAt?: number; allowedTools?: string[] } = {},
+  options: { expiresAt?: number; allowedTools?: string[]; tabId?: number } = {},
 ) {
   const all =
     (storage.local.data[__testing.PERMISSIONS_STORAGE_KEY] as Record<string, unknown>) ?? {};
@@ -26,6 +26,7 @@ function seedGrant(
     grant,
     grantedAt: Date.now(),
     ...(options.expiresAt ? { expiresAt: options.expiresAt } : {}),
+    ...(options.tabId !== undefined ? { tabId: options.tabId } : {}),
   };
   if (options.allowedTools) existing.allowedTools = options.allowedTools;
   storage.local.data[__testing.PERMISSIONS_STORAGE_KEY] = { ...all, [origin]: existing };
@@ -63,6 +64,36 @@ describe('lookupOriginGrant', () => {
     const result = await lookupOriginGrant('https://example.com', 'tool.list');
     expect(result?.effect).toBe('allow');
     expect(result?.persistence).toBe('once');
+  });
+
+  // "Allow once" is stored for the tab that granted it, as in
+  // permissions.ts isGrantValid. Another tab on the origin doesn't inherit it.
+  describe('granted-once is scoped to its tab', () => {
+    const later = () => Date.now() + 60_000;
+
+    it('covers the tab that granted it', async () => {
+      seedGrant('https://example.com', 'agents:invoke', 'granted-once', { expiresAt: later(), tabId: 9 });
+      const result = await lookupOriginGrant('https://example.com', 'agent.invoke', undefined, 9);
+      expect(result?.effect).toBe('allow');
+    });
+
+    it('is no opinion for a different tab', async () => {
+      seedGrant('https://example.com', 'agents:invoke', 'granted-once', { expiresAt: later(), tabId: 9 });
+      const result = await lookupOriginGrant('https://example.com', 'agent.invoke', undefined, 10);
+      expect(result).toBeNull();
+    });
+
+    it('still applies when the caller has no tab', async () => {
+      seedGrant('https://example.com', 'agents:invoke', 'granted-once', { expiresAt: later(), tabId: 9 });
+      const result = await lookupOriginGrant('https://example.com', 'agent.invoke');
+      expect(result?.effect).toBe('allow');
+    });
+
+    it('does not limit granted-always to a tab', async () => {
+      seedGrant('https://example.com', 'agents:invoke', 'granted-always', { tabId: 9 });
+      const result = await lookupOriginGrant('https://example.com', 'agent.invoke', undefined, 10);
+      expect(result?.effect).toBe('allow');
+    });
   });
 
   it('falls back to null for unknown actions (no mapping)', async () => {

@@ -325,7 +325,9 @@ export const TYPED_ACTIONS = {
     description: 'Call another registered agent on this device.',
     effect: 'write',
     locality: 'local',
-    reversible: false,
+    // The call itself changes nothing; the other agent's own actions are
+    // checked separately. So a grant covers later calls (no forced preview).
+    reversible: true,
     defaultDataLabels: [],
     acceptsLabels: [],
     defaultTTL: 'session',
@@ -335,7 +337,9 @@ export const TYPED_ACTIONS = {
     description: 'Send and receive messages with another agent.',
     effect: 'write',
     locality: 'local',
-    reversible: false,
+    // The call itself changes nothing; the other agent's own actions are
+    // checked separately. So a grant covers later calls (no forced preview).
+    reversible: true,
     defaultDataLabels: [],
     acceptsLabels: [],
     defaultTTL: 'session',

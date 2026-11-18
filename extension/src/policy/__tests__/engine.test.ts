@@ -285,6 +285,46 @@ describe('Tier 8: per-origin grants', () => {
     expect(decision.effect).toBe('deny');
     expect(decision.source).toBe('originGrant');
   });
+
+  // Calling or messaging a local agent changes nothing by itself; whatever
+  // the other agent then does goes through its own checks. So a grant covers
+  // later calls instead of prompting on each one.
+  it.each(['agent.invoke', 'agent.message'] as const)(
+    'an allow grant covers every later %s call',
+    async (action) => {
+      setOriginGrantResolver(() => ({ effect: 'allow', persistence: 'always' }));
+      const decision = await evaluate({ origin: 'https://example.com', action });
+      expect(decision.effect).toBe('allow');
+      expect(decision.source).toBe('originGrant');
+    },
+  );
+
+  it('passes the calling tab to the grant resolver', async () => {
+    const seen: Array<number | undefined> = [];
+    setOriginGrantResolver((_origin, _action, _resource, tabId) => {
+      seen.push(tabId);
+      return null;
+    });
+    await evaluate({ origin: 'https://example.com', action: 'agent.invoke', tabId: 9 });
+    expect(seen).toEqual([9]);
+  });
+
+  it.each(['agent.invoke', 'agent.message'] as const)(
+    'without a grant, %s still prompts (preview)',
+    async (action) => {
+      const decision = await evaluate({ origin: 'https://example.com', action });
+      expect(decision.effect).toBe('preview');
+    },
+  );
+
+  it.each([
+    ['tool.call', { server: 'github', tool: 'create_pr' }],
+    ['browser.write.interact', undefined],
+  ] as const)('an allow grant does not skip the preview for %s', async (action, resource) => {
+    setOriginGrantResolver(() => ({ effect: 'allow', persistence: 'always' }));
+    const decision = await evaluate({ origin: 'https://example.com', action, resource });
+    expect(decision.effect).toBe('preview');
+  });
 });
 
 // =============================================================================

@@ -214,7 +214,7 @@ export async function handleAgentsUnregister(ctx: RequestContext): HandlerRespon
   }
 
   try {
-    await harborRequest('agents.unregister', { agentId, origin: ctx.origin });
+    await harborRequest('agents.unregister', { agentId, origin: ctx.origin, tabId: ctx.tabId });
     registeredAgents.delete(agentId);
     return successResponse(ctx.id, null);
   } catch (e) {
@@ -230,7 +230,7 @@ export async function handleAgentsGetInfo(ctx: RequestContext): HandlerResponse 
   }
 
   try {
-    const result = await harborRequest('agents.getInfo', { agentId, origin: ctx.origin });
+    const result = await harborRequest('agents.getInfo', { agentId, origin: ctx.origin, tabId: ctx.tabId });
     return successResponse(ctx.id, result);
   } catch (e) {
     return errorResponse(ctx.id, 'ERR_AGENT_NOT_FOUND', e instanceof Error ? e.message : 'Agent not found');
@@ -250,6 +250,7 @@ export async function handleAgentsDiscover(ctx: RequestContext): HandlerResponse
     const result = await harborRequest<{ agents: unknown[]; total: number }>('agents.discover', {
       ...query,
       origin: ctx.origin,
+      tabId: ctx.tabId,
     });
     return successResponse(ctx.id, result);
   } catch (e) {
@@ -259,7 +260,7 @@ export async function handleAgentsDiscover(ctx: RequestContext): HandlerResponse
 
 export async function handleAgentsList(ctx: RequestContext): HandlerResponse {
   try {
-    const result = await harborRequest<{ agents: unknown[] }>('agents.list', { origin: ctx.origin });
+    const result = await harborRequest<{ agents: unknown[] }>('agents.list', { origin: ctx.origin, tabId: ctx.tabId });
     return successResponse(ctx.id, result);
   } catch (e) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'List failed');
@@ -405,6 +406,7 @@ export async function handleAgentsPipeline(ctx: RequestContext): HandlerResponse
       config,
       initialInput,
       origin: ctx.origin,
+      tabId: ctx.tabId,
     });
 
     return successResponse(ctx.id, result);
@@ -433,6 +435,7 @@ export async function handleAgentsParallel(ctx: RequestContext): HandlerResponse
     }>('agents.orchestrate.parallel', {
       config,
       origin: ctx.origin,
+      tabId: ctx.tabId,
     });
 
     return successResponse(ctx.id, result);
@@ -465,6 +468,7 @@ export async function handleAgentsRoute(ctx: RequestContext): HandlerResponse {
       input,
       task,
       origin: ctx.origin,
+      tabId: ctx.tabId,
     });
 
     return successResponse(ctx.id, result);
