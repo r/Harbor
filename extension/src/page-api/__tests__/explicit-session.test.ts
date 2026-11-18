@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// HBR-13: a session from agent.sessions.create() must be promptable.
+// a session from agent.sessions.create() must be promptable.
 
 const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(),

@@ -16,8 +16,8 @@
  *
  * --harbor-only loads only extension/dist-firefox (no Web Agents API
  * extension) and runs a smaller page checking that window.ai, window.agent
- * and navigator.modelContext are still served, in-process, by Harbor alone
- * (HBR-63). It uses its own test page and a port distinct from the demo
+ * and navigator.modelContext are still served, in-process, by Harbor alone.
+ * It uses its own test page and a port distinct from the demo
  * server (8000) and the normal two-extension run (3457).
  */
 

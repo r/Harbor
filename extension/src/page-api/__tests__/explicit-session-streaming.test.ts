@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// HBR-13: session.promptStreaming on explicit sessions, through the real
+// session.promptStreaming on explicit sessions, through the real
 // background port listener. Adapted from the independent verifier's tests.
 
 const mocks = vi.hoisted(() => ({
