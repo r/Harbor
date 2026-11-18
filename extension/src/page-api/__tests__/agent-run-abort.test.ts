@@ -161,4 +161,33 @@ describe('agent.run cancellation at the background port boundary', () => {
     const terminal = postMessage.mock.calls.map(([m]) => m).filter((m) => m.id === 'reused' && m.done);
     expect(terminal.at(-1).event).toMatchObject({ type: 'error', error: { code: 'ERR_ABORTED' } });
   });
+
+  it('reports ERR_ABORTED, not the answer, when the page aborts while the model is answering', async () => {
+    let resolveChat!: (value: unknown) => void;
+    mocks.harborRequest.mockImplementation(async (method: string) => {
+      if (method === 'mcp.listTools') return { tools: [] };
+      if (method === 'llm.chat') return new Promise((resolve) => { resolveChat = resolve; });
+      throw new Error(`unexpected ${method}`);
+    });
+    const run = receive({ id: 'final-run', type: 'agent.run', origin: 'https://example.test', payload: { task: 't' } });
+    await vi.waitFor(() => expect(resolveChat).toBeDefined());
+
+    await receive({ type: 'abort', id: 'final-run' });
+    resolveChat({ content: 'the answer', choices: [{ message: { role: 'assistant', content: 'the answer' } }] });
+    await run;
+
+    const events = postMessage.mock.calls.map(([m]) => m).filter((m) => m.id === 'final-run');
+    expect(events.some((m) => typeof m.event?.token === 'string' && m.event.token.includes('"final"'))).toBe(false);
+    const terminal = events.filter((m) => m.done);
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0].event).toMatchObject({ type: 'error', error: { code: 'ERR_ABORTED' } });
+  });
+
+  it('ignores abort messages without a string id', async () => {
+    for (const id of [undefined, 42, { toString: () => 'x' }, null]) {
+      await expect(receive({ type: 'abort', id })).resolves.toBeUndefined();
+    }
+    expect(mocks.harborRequest).not.toHaveBeenCalled();
+    expect(postMessage).not.toHaveBeenCalled();
+  });
 });

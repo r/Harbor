@@ -130,6 +130,12 @@ export const builtinAgentBackend: AgentBackend = {
         return;
       }
 
+      // The page may have aborted while the model was answering.
+      if (signal.aborted) {
+        emit(abortedEvent());
+        return;
+      }
+
       const choice = result.choices?.[0];
       const responseContent = result.content;
       const toolCalls = choice?.message?.tool_calls;
@@ -216,6 +222,11 @@ export const builtinAgentBackend: AgentBackend = {
       messages,
     });
     const finalContent = finalResult.content;
+
+    if (signal.aborted) {
+      emit(abortedEvent());
+      return;
+    }
 
     emit({ type: 'token', token: JSON.stringify({ type: 'final', output: finalContent }) });
     emit({ type: 'done' });
