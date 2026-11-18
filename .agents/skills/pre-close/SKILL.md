@@ -20,5 +20,8 @@ Inventory this session's resources from its ledger: claimed HBR issues, workers,
 4. **Promises.** Reconcile every worker thread, review finding and promised follow-up. Remaining work goes in the open ticket's ledger, or an authorized follow-up, not in chat. Anything not made durable is named as an open handoff gap.
 5. **Processes and shared resources.** Stop the servers, Firefox instances and web-ext runners you own, by launcher or by verified PID after checking the command, cwd and port. Check the listeners afterward. If you re-registered the bridge, restore the recorded previous registration. Leave Ollama running unless this session started it.
 6. **Artifacts.** Put sanitized evidence into `~/.harbor-dev/evidence/HBR-<n>/` and the ticket. Remove only clean, integrated worker worktrees. Never delete unique work, remote branches, or `~/.harbor/`.
+7. **Retitle.** Start named this session or tab `hbr-<n>-<slug>`. Rename it to `closed-hbr-<n>` so the name stops claiming live work before the next task begins. Use `closed-hbr-<n>-hbr-<m>` for several tickets, and `closed` when there was no ticket. Do this last, after the other steps succeed. Start renames it again for the next task.
+   - **Codex:** Use `set_thread_title` with `title: "closed-hbr-<n>"`, omitting `threadId`.
+   - **Rex:** `rex window rename "$(rex block inspect "$REX_BLOCK" | awk '/^window:/{print $2}')" closed-hbr-<n>`. Never rename the Rex session.
 
 Report the PR state, the claims released or transferred, the work preserved, the next actions, and the resources stopped or restored. Complete means delivered and evidenced; parked means parked. Never merge, publish or discard work to tidy a handoff.
