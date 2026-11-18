@@ -802,7 +802,7 @@ async function main() {
     const testUrl = `http://localhost:${config.testServerPort}/`;
     
     console.log(`  Test page: ${testUrl}`);
-    console.log('  Note: Full tool testing requires both Harbor AND Web Agents API extensions\n');
+    console.log('  Note: Full tool testing needs the page API, which Harbor serves itself\n');
     
     // Launch Firefox with Harbor extension
     console.log('  Launching Firefox with Harbor...');
