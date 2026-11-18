@@ -84,8 +84,8 @@ How a `window.ai` text session maps onto ACP:
 - **`createTextSession`** opens an ACP session in the same per-origin working directory. A `systemPrompt` option is sent with the first prompt and labelled as coming from the site, as for `agent.run`.
 - **`prompt` and `promptStreaming`** send one `session/prompt` each. Only `agent_message_chunk` text reaches the page; `window.ai` has no events for thinking or tool calls, so those stay inside Harbor (in the permission prompt and the audit log). Multi-turn history lives in the ACP session, not in Harbor.
 - **`destroy`** cancels any turn in progress and drops the session. A tab closing does the same.
-- **Options the agent controls.** Sampling options such as `temperature` and `topK` can't be passed to an ACP agent. Harbor ignores them on this backend, and `capabilities()` reports that they aren't supported.
-- **`clone`** has no ACP equivalent, because an ACP session can't be forked. On this backend it fails with a not-supported error. This is a visible difference from the built-in stack (see the decisions at the end).
+- **Options the agent controls.** The built-in stack passes a session's `temperature` to the model (it already ignores `topK`). An ACP agent picks its own model and sampling, so on this backend Harbor ignores `temperature` too. A page can't tell from the API which backend it got; whether it should is a decision at the end.
+- **`clone`** isn't part of Harbor's text sessions today. If it's added later, an ACP session can't be forked, so the ACP backend would need its own answer.
 - **The agent's tools** follow the same rules as in an `agent.run` (section 3). A site with only `model:prompt` can now start an agent that may ask to use its tools, so every such call needs the user's approval in Harbor.
 
 ### 3. Tools and permissions
@@ -139,7 +139,7 @@ Each unit ends with tests and a working check. Red tests come first, at the real
 | 1 | Backend interface around today's loop, with cancellation wired through. No behaviour change. | Extension | vitest; the existing `agent.run` e2e tests pass |
 | 2 | Bridge `acp` module: spawn configured agents, relay, kill on close or disconnect, cap, validate. | bridge-rs | cargo tests against a fake stdio agent |
 | 3 | Extension ACP backend over the bridge for `agent.run`: session, prompt, update mapping, cancel, limits. | Extension | vitest against a fake agent |
-| 3b | `window.ai` text sessions on the ACP backend: create, prompt, stream, destroy, unsupported options and `clone`. | Extension | vitest against a fake agent |
+| 3b | `window.ai` text sessions on the ACP backend: create, prompt, stream, destroy, ignored sampling options. | Extension | vitest against a fake agent |
 | 4 | Permission requests: Harbor's prompt, the policy action, per-origin "always", timeout, refusal without an approval mode. | Extension | vitest; manual check in Firefox |
 | 5 | Sidebar Agent setting, goose preset, consent prompt names the agent. | Extension | Firefox, with goose and a local model |
 | 6 | End-to-end: a demo page's `agent.run` and a `window.ai` text session both run on goose in Firefox. | tests/e2e, demo | e2e with goose installed, skipped when it isn't, and recorded as skipped |
@@ -160,5 +160,5 @@ Proposed, and open to the maintainer's review on this proposal:
 5. **Tools in the first release.** No Harbor or page tools are offered to the agent; it uses only its own.
 6. **Backend choice.** One global setting in the sidebar, not per site.
 7. **Working directory.** An empty directory per origin.
-8. **`window.ai` differences on the ACP backend.** Sampling options are ignored and reported as unsupported, and `clone` fails as not supported. These change what a page sees, so they're part of the page-API contract.
+8. **`window.ai` on the ACP backend ignores `temperature`.** A page gets no signal that its option was dropped. The alternative is to report the backend, or which options apply, to the page, which would change the page-API contract.
 9. **Positioning.** Once goose works, `docs/POSITIONING.md` can name goose as tested. That copy change waits until the end-to-end unit is done.
