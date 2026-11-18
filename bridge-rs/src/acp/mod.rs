@@ -90,24 +90,80 @@ pub async fn list_agents() -> Result<Value, RpcError> {
     list_agents_for(&AcpConfig::load())
 }
 
-fn list_agents_for(_config: &AcpConfig) -> Result<Value, RpcError> {
-    // RED: not implemented yet.
-    Err(RpcError::internal("not implemented"))
+fn list_agents_for(config: &AcpConfig) -> Result<Value, RpcError> {
+    let agents: Vec<Value> = config
+        .agents
+        .iter()
+        .map(|a| json!({ "id": a.id, "name": a.name }))
+        .collect();
+    Ok(json!({ "agents": agents }))
 }
 
 /// `acp.send {channel, message}` -> writes `message` + "\n" to the agent's stdin.
-pub async fn send(_params: Value) -> Result<Value, RpcError> {
-    // RED: not implemented yet.
-    Err(RpcError::internal("not implemented"))
+pub async fn send(params: Value) -> Result<Value, RpcError> {
+    let channel = params
+        .get("channel")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| RpcError::invalid_params("channel is required"))?
+        .to_string();
+
+    let message = params
+        .get("message")
+        .cloned()
+        .ok_or_else(|| RpcError::invalid_params("message is required"))?;
+
+    if !message.is_object() {
+        return Err(RpcError::invalid_params("message must be a JSON object"));
+    }
+
+    let mut serialized = serde_json::to_string(&message)
+        .map_err(|e| RpcError::internal(format!("failed to serialize message: {}", e)))?;
+
+    if serialized.len() > MAX_SEND_BYTES {
+        return Err(RpcError::invalid_params(format!(
+            "message exceeds the {} byte limit",
+            MAX_SEND_BYTES
+        )));
+    }
+    serialized.push('\n');
+
+    let handle = {
+        let map = channels();
+        let guard = map.read().await;
+        guard.get(&channel).cloned()
+    }
+    .ok_or_else(|| RpcError::invalid_params(format!("unknown channel: {}", channel)))?;
+
+    let mut stdin = handle.stdin.lock().await;
+    stdin
+        .write_all(serialized.as_bytes())
+        .await
+        .map_err(|e| RpcError::internal(format!("failed to write to agent: {}", e)))?;
+
+    Ok(json!({ "ok": true }))
 }
 
 /// `acp.close {channel}` -> kills the agent process and ends its stream.
-pub async fn close(_params: Value) -> Result<Value, RpcError> {
-    // RED: not implemented yet.
-    Err(RpcError::internal("not implemented"))
+pub async fn close(params: Value) -> Result<Value, RpcError> {
+    let channel = params
+        .get("channel")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| RpcError::invalid_params("channel is required"))?
+        .to_string();
+
+    let removed = channels().write().await.remove(&channel);
+    match removed {
+        Some(handle) => {
+            kill(&handle).await;
+            Ok(json!({ "ok": true }))
+        }
+        None => Err(RpcError::invalid_params(format!(
+            "unknown channel: {}",
+            channel
+        ))),
+    }
 }
 
-#[allow(dead_code)]
 async fn kill(handle: &ChannelHandle) {
     let mut child = handle.child.lock().await;
     let _ = child.kill().await;
@@ -118,7 +174,14 @@ async fn kill(handle: &ChannelHandle) {
 /// disconnect and on bridge shutdown: the bridge must never leave an agent
 /// process running after it stops relaying for it.
 pub async fn shutdown_all() {
-    // RED: not implemented yet.
+    let drained: Vec<Arc<ChannelHandle>> = {
+        let map = channels();
+        let mut guard = map.write().await;
+        guard.drain().map(|(_, handle)| handle).collect()
+    };
+    for handle in drained {
+        kill(&handle).await;
+    }
 }
 
 // =============================================================================
@@ -139,26 +202,184 @@ pub async fn open_stream(params: Value, event_tx: mpsc::Sender<Value>) {
     open_stream_with_config(params, event_tx, AcpConfig::load()).await
 }
 
-async fn open_stream_with_config(
-    _params: Value,
-    event_tx: mpsc::Sender<Value>,
-    _config: AcpConfig,
-) {
-    // RED: not implemented yet. Always reports a fatal error instead of
-    // spawning anything, so every test that expects a working relay fails.
-    send_fatal(&event_tx, "not implemented").await;
+async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, config: AcpConfig) {
+    let agent_id = match params.get("agentId").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => {
+            send_fatal(&event_tx, "agentId is required").await;
+            return;
+        }
+    };
+
+    let Some(agent) = config.find(&agent_id).cloned() else {
+        send_fatal(&event_tx, &format!("unknown agent: {}", agent_id)).await;
+        return;
+    };
+
+    {
+        let map = channels();
+        let count = map.read().await.len();
+        if count >= MAX_LIVE_AGENTS {
+            send_fatal(
+                &event_tx,
+                &format!("too many open agents (limit {})", MAX_LIVE_AGENTS),
+            )
+            .await;
+            return;
+        }
+    }
+
+    let mut command = Command::new(&agent.command);
+    command
+        .args(&agent.args)
+        .envs(&agent.env)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    let mut child = match command.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            send_fatal(&event_tx, &format!("failed to start agent: {}", e)).await;
+            return;
+        }
+    };
+
+    let Some(stdin) = child.stdin.take() else {
+        send_fatal(&event_tx, "agent process has no stdin").await;
+        return;
+    };
+    let Some(stdout) = child.stdout.take() else {
+        send_fatal(&event_tx, "agent process has no stdout").await;
+        return;
+    };
+    let stderr = child.stderr.take();
+
+    let channel = new_channel_id();
+    let handle = Arc::new(ChannelHandle {
+        stdin: Mutex::new(stdin),
+        child: Mutex::new(child),
+    });
+
+    // Re-check the cap and insert atomically: two concurrent opens could
+    // both pass the read-only check above.
+    {
+        let map = channels();
+        let mut guard = map.write().await;
+        if guard.len() >= MAX_LIVE_AGENTS {
+            drop(guard);
+            kill(&handle).await;
+            send_fatal(
+                &event_tx,
+                &format!("too many open agents (limit {})", MAX_LIVE_AGENTS),
+            )
+            .await;
+            return;
+        }
+        guard.insert(channel.clone(), handle.clone());
+    }
+
+    if event_tx
+        .send(json!({ "type": "open", "channel": channel }))
+        .await
+        .is_err()
+    {
+        // Extension already gone; still clean up the process we started.
+        channels().write().await.remove(&channel);
+        kill(&handle).await;
+        return;
+    }
+
+    if let Some(stderr) = stderr {
+        let agent_id_for_log = agent_id.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                tracing::warn!(
+                    "acp agent '{}' stderr: {}",
+                    agent_id_for_log,
+                    truncate(&line, LOG_TRUNCATE_BYTES)
+                );
+            }
+        });
+    }
+
+    let channel_for_stdout = channel.clone();
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(stdout).lines();
+        loop {
+            match lines.next_line().await {
+                Ok(Some(line)) => {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    forward_stdout_line(&channel_for_stdout, &line, &event_tx).await;
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    tracing::error!(
+                        "acp channel '{}' stdout read error: {}",
+                        channel_for_stdout,
+                        e
+                    );
+                    break;
+                }
+            }
+        }
+
+        let code = reap(&channel_for_stdout).await;
+        let _ = event_tx.send(json!({ "type": "exit", "code": code })).await;
+    });
 }
 
-#[allow(dead_code)]
 async fn forward_stdout_line(channel: &str, line: &str, event_tx: &mpsc::Sender<Value>) {
-    let _ = (channel, line, event_tx);
+    let parsed: Value = match serde_json::from_str(line) {
+        Ok(v) => v,
+        Err(_) => {
+            tracing::warn!(
+                "acp channel '{}' dropped non-JSON stdout line: {}",
+                channel,
+                truncate(line, LOG_TRUNCATE_BYTES)
+            );
+            return;
+        }
+    };
+
+    if !parsed.is_object() {
+        tracing::warn!(
+            "acp channel '{}' dropped non-object JSON stdout line: {}",
+            channel,
+            truncate(line, LOG_TRUNCATE_BYTES)
+        );
+        return;
+    }
+
+    let event = json!({ "type": "message", "message": parsed });
+    let size = serde_json::to_vec(&event).map(|v| v.len()).unwrap_or(usize::MAX);
+    if size > MAX_OUTBOUND_LINE_BYTES {
+        tracing::error!(
+            "acp channel '{}' dropped oversized stdout line ({} bytes > {} limit)",
+            channel,
+            size,
+            MAX_OUTBOUND_LINE_BYTES
+        );
+        let _ = event_tx
+            .send(json!({
+                "type": "error",
+                "message": "agent output exceeded the outbound message size limit and was dropped",
+            }))
+            .await;
+        return;
+    }
+
+    let _ = event_tx.send(event).await;
 }
 
 /// Remove the channel (if still present) and wait for its process to exit,
 /// returning the exit code. If the channel was already removed (e.g. by an
 /// explicit `acp.close` that already killed and waited on it), there is
 /// nothing left to reap.
-#[allow(dead_code)]
 async fn reap(channel: &str) -> Option<i32> {
     let removed = channels().write().await.remove(channel);
     match removed {
