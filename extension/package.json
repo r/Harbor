@@ -14,6 +14,7 @@
     "dev": "node build.mjs --watch",
     "dev:chrome": "node build.mjs --watch --chrome",
     "dev:safari": "node build.mjs --watch --safari",
+    "favicon": "node scripts/make-favicon.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"

@@ -42,9 +42,11 @@ const entryPoints = [
 async function generatePngIcons(svgPath, outputDir) {
   const sizes = [16, 32, 48, 128];
   const svgBuffer = await readFile(svgPath);
-  
+  const { width } = await sharp(svgBuffer).metadata();
+
   for (const size of sizes) {
-    await sharp(svgBuffer)
+    // Rasterize at twice the target size, so large icons aren't upscaled.
+    await sharp(svgBuffer, { density: (72 * size * 2) / width })
       .resize(size, size)
       .png()
       .toFile(`${outputDir}/icon-${size}.png`);
