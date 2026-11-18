@@ -4,8 +4,8 @@
  * Handlers for native bridge status and communication.
  */
 
-import { registerHandler, registerAsyncHandler, errorResponse } from './types';
-import { getBridgeConnectionState, checkBridgeHealth, bridgeRequest } from '../llm/bridge-client';
+import { registerHandler } from './types';
+import { getBridgeConnectionState, checkBridgeHealth } from '../llm/bridge-client';
 import { getConnectionState as getNativeConnectionState, connectNativeBridge } from '../llm/native-bridge';
 
 export function registerBridgeHandlers(): void {
@@ -43,23 +43,6 @@ export function registerBridgeHandlers(): void {
   registerHandler('native_bridge_status', (_message, _sender, sendResponse) => {
     const state = getNativeConnectionState();
     sendResponse({ ok: true, ...state });
-    return true;
-  });
-
-  // Generic bridge RPC passthrough
-  registerHandler('bridge_rpc', (message, _sender, sendResponse) => {
-    const { method, params } = message as { method?: string; params?: unknown };
-    if (!method) {
-      sendResponse({ ok: false, error: 'Missing method' });
-      return true;
-    }
-    console.log('[Harbor] bridge_rpc:', method);
-    bridgeRequest(method, params)
-      .then((result) => sendResponse({ ok: true, result }))
-      .catch((error) => {
-        console.error('[Harbor] bridge_rpc error:', error);
-        sendResponse(errorResponse(error));
-      });
     return true;
   });
 }
