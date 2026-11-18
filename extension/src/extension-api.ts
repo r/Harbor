@@ -909,8 +909,7 @@ async function handleAuditClear(): Promise<ExtensionApiResponse> {
 
 /**
  * Run a hypothetical request through the engine without side effects.
- * The sidebar's "What if?" affordance uses this to preview what would
- * happen if the user changed a rule or turned off a feature flag.
+ * Previews what would happen if a rule or the input's labels changed.
  */
 async function handlePolicySimulate(payload: unknown): Promise<ExtensionApiResponse> {
   const input = (payload || {}) as Parameters<typeof simulate>[0];

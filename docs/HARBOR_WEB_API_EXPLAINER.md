@@ -184,8 +184,7 @@ The model has four properties page authors should know:
    delegations re-attenuate the parent token; authority can shrink,
    never grow.
 4. **Auditable.** Every decision, including silent allows, is recorded
-   and surfaced in the sidebar's Activity feed with a "Why?" trace
-   and a "What if?" simulator.
+   and surfaced in the sidebar's Activity feed with a "Why?" trace.
 
 The legacy `agent.requestPermissions()` and `PermissionScope` surface
 documented further below remains a working path for simple

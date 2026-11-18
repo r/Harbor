@@ -518,8 +518,9 @@ extension code.
    attenuate, never widen, the parent token.
 5. **Audit + simulator.** Every decision lands in
    `extension/src/policy/audit.ts` and shows up in the sidebar's
-   Activity panel, with "Why?" / "What if?" affordances backed by
-   `extension/src/policy/simulator.ts`.
+   Activity panel, with a "Why?" trace. The decision simulator
+   (`extension/src/policy/simulator.ts`) replays a recorded decision
+   under changed rules or labels.
 6. **Per-origin grants** remain a first-class concept and are
    resolved at Tier 8 (`extension/src/policy/origin-grants.ts`).
    `requestPermissions` on the page side maps to this tier.

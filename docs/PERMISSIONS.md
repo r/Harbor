@@ -373,11 +373,11 @@ This is also what makes silent decisions visible. If the engine auto-allowed a t
 
 ### Decision simulator
 
-Each audit row has a **"Why?"** affordance and a **"What if?"** affordance.
+Each audit row in the sidebar has a **"Why?"** affordance. The **"What if?"** simulator runs behind the `policy.simulate` and `policy.replay` messages; the sidebar doesn't expose it yet.
 
 **Why?** explains the decision in full: which tier of the ladder fired, which rule matched (with its `id`), which sensitivity classifier triggered (if any), what labels were on the input, and what the resulting effect was. This is the answer to the legitimate user question "why did Harbor block this?" — and it's the answer to the developer's question "why is my site getting `ERR_BLOCKED_BY_POLICY`?"
 
-**What if?** is the simulator. It lets the user (or a developer in dev tools) replay the same decision against:
+**What if?** is the simulator. It lets a developer replay the same decision against:
 
 - A modified action set (what if the origin had asked for `model.prompt.local` instead of `.remote`?)
 - A modified policy (what if I added this allow rule?)
@@ -928,13 +928,7 @@ You don't have to do anything. The agent has been quietly restricted, and you ca
 
 ### The decision simulator
 
-Every row in the Activity feed has a **"Why?"** link. Clicking it opens a panel that walks through the decision: which tier of the ladder fired, which rule matched, what labels were on the input, what the resulting effect was. Below that is a **"What if?"** panel that lets you replay the decision under different conditions:
-
-- What if this had been a local prompt instead of remote?
-- What if this rule was changed to allow?
-- What if the input wasn't tainted with `confidential`?
-
-The simulator is read-only — replaying doesn't change anything. It's how you investigate "why did Harbor block this?" without having to read JSON. It's also how you pre-check a policy change before saving it.
+Every row in the Activity feed has a **"Why?"** link. Clicking it opens a panel that walks through the decision: which tier of the ladder fired, which rule matched, what labels were on the input, what the resulting effect was. It's how you investigate "why did Harbor block this?" without having to read JSON.
 
 ## Building a policy without ever editing JSON
 
