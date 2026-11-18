@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The test harness for third-party apps (`spec/testing/`) mocks the multi-agent API: `agent.agents.register`, `discover`, `invoke`, `send` and their handlers, with the agent scopes and real TypeScript types, plus an example multi-agent test. Its `requestPermissions()` now grants only the scopes it names, as Harbor does, and `grantAll()` means the user allows each request rather than granting every scope up front.
 - Harbor's icon is now the lighthouse from the site's favicon, in the toolbar, the add-ons page and Harbor's own UI (sidebar, permission prompt, directory, in-page chat), replacing the "H". `npm run favicon` in `extension/` rebuilds `whitepaper/favicon.ico` from `extension/assets/icon.svg`.
 - Harbor is now a single browser extension: it injects and serves `window.ai`, `window.agent` and `navigator.modelContext` itself (`extension/src/page-api/`). The separate Web Agents API extension is retired.
 - Site, `README.md` and `spec/README.md` follow the updated positioning: homepage example 02 shows the airline's page handing the trip to your agent, which asks before holding a seat; the spec page says Harbor implements the Web Agent API; both READMEs mention agent-to-company protocols; browser-control APIs are described as a stopgap.

@@ -125,9 +125,9 @@ mock.uninstall();
 
 | What you want | What to do |
 |---------------|------------|
-| Permissions granted | `mock.permissions.grantAll()` |
+| User allows every request | `mock.permissions.grantAll()` (grants only the scopes each `requestPermissions()` names, as Harbor does) |
 | Permissions denied | `mock.permissions.denyAll()` |
-| Grant specific scopes | `mock.permissions.grantScopes(['model:prompt', 'mcp:tools.list'])` |
+| Scopes the site already holds | `mock.permissions.grantScopes(['model:prompt', 'mcp:tools.list'])` |
 | `session.prompt()` return value | `mock.ai.textSessionResponse = '…'` |
 | `session.promptStreaming()` tokens | `mock.ai.textSessionStreamTokens = ['a', 'b', 'c']` |
 | Next session error | `mock.ai.nextError = { code: 'ERR_MODEL_FAILED', message: '…' }` |
@@ -136,6 +136,9 @@ mock.uninstall();
 | `agent.tools.call()` error | `mock.agent.toolCallError = { code: 'ERR_TOOL_NOT_FOUND', message: '…' }` |
 | `agent.run()` final output | `mock.agent.runOutput = '…'` |
 | `agent.run()` error | `mock.agent.runError = { code: '…', message: '…' }` |
+| Another agent on the site | `mock.agents.addAgent({ name, capabilities }, { onInvoke, onMessage })` |
+| Another agent invokes or messages your page | `mock.agents.invokePage(fromId, request)`, `mock.agents.sendToPage(fromId, payload)` |
+| `multiAgent` feature off | `mock.agents.featureEnabled = false` |
 
 Error `code` values should match the real API (e.g. `ERR_PERMISSION_DENIED`, `ERR_SCOPE_REQUIRED`, `ERR_MODEL_FAILED`, `ERR_TOOL_NOT_FOUND`, `ERR_TOOL_FAILED`).
 
@@ -146,6 +149,8 @@ See `harbor-test/example.test.mjs` in the generated harness. Run it with:
 ```bash
 npx vitest run harbor-test/example.test.mjs
 ```
+
+`harbor-test/example.multi-agent.test.mjs` shows a multi-agent flow: register, discover, invoke and message. In Harbor, calling `agent.agents.*` without the scope shows a permission prompt. The mock fails with `ERR_SCOPE_REQUIRED` instead, so the test shows whether your page requests the scope first. The generated `harbor-test/README.md` lists what the agents mock leaves out.
 
 ---
 

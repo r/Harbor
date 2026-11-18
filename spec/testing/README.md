@@ -30,7 +30,8 @@ You can then import the mock in your tests (e.g. `import { installWebAgentsMock 
 | Path in template | Purpose |
 |------------------|--------|
 | `harness-template/README.md` | Instructions for the generated folder |
-| `harness-template/mock.js` | Installable mock for `window.ai` / `window.agent` |
+| `harness-template/mock.js` | Installable mock for `window.ai` / `window.agent`, including the multi-agent API (`agent.agents`) |
+| `harness-template/example.test.mjs`, `example.multi-agent.test.mjs` | Example unit tests against the mock; the second one registers, discovers, invokes and messages agents |
 | `harness-template/playwright.harbor.config.example.ts` | Example Playwright config (Chrome + the Harbor extension) |
 | `harness-template/fixtures/harbor.ts` | Optional fixture: page with the Harbor extension path |
 | `harness-template/web-agents-api.d.ts` | TypeScript declarations for the API |
