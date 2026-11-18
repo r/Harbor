@@ -142,11 +142,18 @@ struct Bridge {
 
 impl Bridge {
     fn spawn(agents: Value) -> Self {
+        Self::spawn_with_env(agents, &[])
+    }
+
+    /// `spawn`, with extra variables set in the bridge's own environment
+    /// (on top of what the test process inherited).
+    fn spawn_with_env(agents: Value, bridge_env: &[(&str, &str)]) -> Self {
         let home = unique_dir("hbr80-home");
         write_acp_config(&home, agents);
 
         let mut child = Command::new(BRIDGE_BIN)
             .arg("--native-messaging")
+            .envs(bridge_env.iter().copied())
             .env("HOME", &home)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -681,5 +688,85 @@ fn natural_exit_kills_a_backgrounded_process_the_agent_spawned() {
         "a background process the agent started must die with it, even on a natural exit"
     );
 
+    bridge.shutdown();
+}
+
+/// Mirrors `acp::INHERITED_ENV` in `src/acp/mod.rs`, for the same reason as
+/// `MAX_LIVE_AGENTS` above; keep the two in sync. `LC_*` is matched by
+/// prefix, as the bridge does.
+const INHERITED_ENV: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "TMPDIR",
+    "LANG",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_STATE_HOME",
+];
+
+#[test]
+fn agent_gets_only_allowlisted_env_plus_its_config_env() {
+    let mut agent = fake_agent("fake");
+    agent["env"] = json!({ "FROM_CONFIG": "yes", "LANG": "C" });
+
+    // Variables only the bridge has: terminal/session identifiers, an API key
+    // the user didn't put in acp.json, and an arbitrary one.
+    let mut bridge = Bridge::spawn_with_env(
+        json!([agent]),
+        &[
+            ("REX_SESSION", "session:leak"),
+            ("TMUX", "/tmp/tmux-leak,1,0"),
+            ("TERM_PROGRAM", "leak"),
+            ("SSH_AUTH_SOCK", "/tmp/leak.sock"),
+            ("XDG_RUNTIME_DIR", "/tmp/leak-runtime"),
+            ("ANTHROPIC_API_KEY", "sk-leak"),
+            ("HARBOR_TEST_BRIDGE_ONLY", "leak"),
+            ("LANG", "en_US.UTF-8"),
+            ("LC_CTYPE", "en_US.UTF-8"),
+            ("TMPDIR", "/tmp/hbr100-tmpdir/"),
+        ],
+    );
+    let channel = bridge.open("fake", "O1");
+    bridge.rpc("S1", "acp.send", json!({ "channel": channel, "message": { "__test_cmd": "env" } }));
+    let reply = bridge
+        .wait_for(|m| is_stream_event(m, "O1", "message"), Duration::from_secs(5))
+        .expect("env reply from the agent");
+    let env = reply["event"]["message"]["env"]
+        .as_object()
+        .expect("agent reported its env")
+        .clone();
+
+    for key in env.keys() {
+        let allowed = key == "FROM_CONFIG"
+            || INHERITED_ENV.contains(&key.as_str())
+            || key.starts_with("LC_");
+        assert!(allowed, "agent saw {} = {:?}, which is not allowlisted", key, env[key]);
+    }
+    for leaked in [
+        "REX_SESSION",
+        "TMUX",
+        "TERM_PROGRAM",
+        "SSH_AUTH_SOCK",
+        "XDG_RUNTIME_DIR",
+        "ANTHROPIC_API_KEY",
+        "HARBOR_TEST_BRIDGE_ONLY",
+    ] {
+        assert!(!env.contains_key(leaked), "{} reached the agent", leaked);
+    }
+
+    // Config env is added, and wins over an inherited value.
+    assert_eq!(env["FROM_CONFIG"], "yes");
+    assert_eq!(env["LANG"], "C");
+    // Allowlisted variables still come through from the bridge.
+    assert_eq!(env["HOME"], json!(bridge._home.to_string_lossy()));
+    assert_eq!(env["LC_CTYPE"], "en_US.UTF-8");
+    assert_eq!(env["TMPDIR"], "/tmp/hbr100-tmpdir/");
+    assert!(env.contains_key("PATH"), "agent needs PATH");
+
+    bridge.close(&channel);
     bridge.shutdown();
 }

@@ -7,6 +7,8 @@
 //! beyond "is this one JSON object".
 //!
 //! Commands, args and env come only from `acp.json` (see `config.rs`).
+//! An agent does not inherit the bridge's environment: it gets the few
+//! variables in `INHERITED_ENV`, then its config `env` (see `agent_env`).
 //! Messages from the extension can only select an agent by `id`, and can
 //! never carry a command to run. Processes are always spawned directly
 //! (`tokio::process::Command`), never through a shell.
@@ -67,6 +69,52 @@ const STDERR_LOG_CAP_BYTES: usize = 8 * 1024;
 
 /// How much of a dropped (non-JSON/garbage) line to keep in a log message.
 const LOG_TRUNCATE_BYTES: usize = 2000;
+
+/// The only variables an agent inherits from the bridge's environment, plus
+/// any `LC_*`. Everything else is dropped: a page's request can steer an
+/// agent that runs commands, and variables that identify the user's
+/// terminal or session (`REX_*`, `TMUX`, `SSH_AUTH_SOCK`, ...) let it act
+/// outside the run. API keys are not inherited either; a user who wants
+/// one passed puts it in the agent's `env` in `acp.json`.
+///
+/// This is what agents need to start and find their own install and
+/// config: `PATH` to find the command (and `node` behind `npx` wrappers),
+/// `HOME` and the XDG base directories for their config and credentials,
+/// the user identity and shell, a temp dir, and the locale.
+/// `XDG_RUNTIME_DIR` is left out on purpose: it holds the login session's
+/// sockets (D-Bus, Wayland, sometimes an SSH agent).
+const INHERITED_ENV: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "TMPDIR",
+    "LANG",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_STATE_HOME",
+];
+
+/// An agent's environment: the allowlisted part of `inherited`, then the
+/// config's `env`, which wins on a clash.
+fn agent_env(
+    inherited: impl IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
+    config_env: &HashMap<String, String>,
+) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    let mut env: Vec<_> = inherited
+        .into_iter()
+        .filter(|(key, _)| {
+            key.to_str().is_some_and(|k| {
+                (INHERITED_ENV.contains(&k) || k.starts_with("LC_"))
+                    && !config_env.contains_key(k)
+            })
+        })
+        .collect();
+    env.extend(config_env.iter().map(|(k, v)| (k.into(), v.into())));
+    env
+}
 
 /// Depth of each channel's stdin write queue. `acp.send` calls are enqueued
 /// here in arrival order and drained by a single writer task per channel,
@@ -440,7 +488,8 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
     let mut command = Command::new(&agent.command);
     command
         .args(&agent.args)
-        .envs(&agent.env)
+        .env_clear()
+        .envs(agent_env(std::env::vars_os(), &agent.env))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -725,6 +774,38 @@ mod tests {
     // that calls `open_stream_with_config` directly can't observe that
     // path. What's left here is the pure, no-process transform that's safe
     // and fast to unit test in-process.
+
+    #[test]
+    fn agent_env_keeps_allowlist_and_config_env_only() {
+        let inherited = [
+            ("PATH", "/usr/bin"),
+            ("HOME", "/home/u"),
+            ("LC_ALL", "C.UTF-8"),
+            ("LANG", "en_US.UTF-8"),
+            ("REX_SESSION", "session:x"),
+            ("OPENAI_API_KEY", "sk-x"),
+        ]
+        .map(|(k, v)| (k.into(), v.into()));
+        let config = HashMap::from([
+            ("LANG".to_string(), "C".to_string()),
+            ("GOOSE_MODE".to_string(), "approve".to_string()),
+        ]);
+        let mut env: Vec<(String, String)> = agent_env(inherited, &config)
+            .into_iter()
+            .map(|(k, v)| (k.into_string().unwrap(), v.into_string().unwrap()))
+            .collect();
+        env.sort();
+        let expected: Vec<(String, String)> = [
+            ("GOOSE_MODE", "approve"),
+            ("HOME", "/home/u"),
+            ("LANG", "C"),
+            ("LC_ALL", "C.UTF-8"),
+            ("PATH", "/usr/bin"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .to_vec();
+        assert_eq!(env, expected);
+    }
 
     #[test]
     fn list_agents_hides_commands_and_env() {
