@@ -2,7 +2,7 @@
 
 Status: **proposal, awaiting the maintainer's approval.** Nothing here is built yet.
 
-Harbor implements the Web Agent API. Today every request a page makes runs on Harbor's own stack: a model reached through the native bridge, plus the MCP servers connected to Harbor. This document proposes a second backend. Harbor would act as a client of the [Agent Client Protocol](https://agentclientprotocol.com/get-started/introduction) (ACP) and pass a page's `agent.run` request to an agent the user already runs. The first target is [goose](https://goose-docs.ai/docs/gdk/acp/).
+Harbor implements the Web Agent API. Today every request a page makes runs on Harbor's own stack: a model reached through the native bridge, plus the MCP servers connected to Harbor. This document proposes a second backend. Harbor would act as a client of the [Agent Client Protocol](https://agentclientprotocol.com/get-started/introduction) (ACP) and pass a page's `agent.run` requests and `window.ai` text sessions to an agent the user already runs. The first target is [goose](https://goose-docs.ai/docs/gdk/acp/).
 
 The built-in stack stays the default. The ACP backend is designed as a first-class backend, not a side option, so the default can change later without rework.
 
@@ -65,7 +65,7 @@ Safari reaches the bridge over HTTP without streaming. The ACP backend is Firefo
 | Web Agent API call | Backend |
 | --- | --- |
 | `window.agent.run` | **The ACP agent, when the user picks one.** One `session/new` per run, then one `session/prompt`. |
-| `window.ai` text sessions | Built-in stack. `window.ai` is a model API with no tools. An agent with its own tools and memory would change what a site gets for the same grant. |
+| `window.ai` text sessions | **The ACP agent, when the user picks one.** One ACP session per text session, one `session/prompt` per `prompt()` call. |
 | `agent.tools.list` / `agent.tools.call`, `navigator.modelContext` | Harbor. These are about the page's and Harbor's tools, not about who runs the loop. |
 | Browser-control APIs | Harbor. Unchanged. |
 
@@ -79,6 +79,15 @@ How a run maps onto ACP:
 - **Timeouts:** an agent turn can take minutes, so ACP runs don't use the 30-second default request timeout. A run has its own overall limit.
 - **Protocol version:** v1. Move to v2 when it's stable and goose supports it.
 
+How a `window.ai` text session maps onto ACP:
+
+- **`createTextSession`** opens an ACP session in the same per-origin working directory. A `systemPrompt` option is sent with the first prompt and labelled as coming from the site, as for `agent.run`.
+- **`prompt` and `promptStreaming`** send one `session/prompt` each. Only `agent_message_chunk` text reaches the page; `window.ai` has no events for thinking or tool calls, so those stay inside Harbor (in the permission prompt and the audit log). Multi-turn history lives in the ACP session, not in Harbor.
+- **`destroy`** cancels any turn in progress and drops the session. A tab closing does the same.
+- **Options the agent controls.** Sampling options such as `temperature` and `topK` can't be passed to an ACP agent. Harbor ignores them on this backend, and `capabilities()` reports that they aren't supported.
+- **`clone`** has no ACP equivalent, because an ACP session can't be forked. On this backend it fails with a not-supported error. This is a visible difference from the built-in stack (see the decisions at the end).
+- **The agent's tools** follow the same rules as in an `agent.run` (section 3). A site with only `model:prompt` can now start an agent that may ask to use its tools, so every such call needs the user's approval in Harbor.
+
 ### 3. Tools and permissions
 
 There are three kinds of tool, handled differently.
@@ -87,7 +96,7 @@ There are three kinds of tool, handled differently.
 
 Proposed rules:
 
-1. **Every agent tool call needs Harbor's approval during a page's run.** Harbor sets the agent to an approval mode when the session starts (`session/set_mode` in v1; goose's `approve` mode). If the agent can't be put in a mode that asks before acting, Harbor refuses to start a run for a page. The user sees why.
+1. **Every agent tool call needs Harbor's approval while it works on a page's request.** Harbor sets the agent to an approval mode when the session starts (`session/set_mode` in v1; goose's `approve` mode). If the agent can't be put in a mode that asks before acting, Harbor refuses to start a page's request on it. The user sees why.
 2. **Harbor shows the request in its own prompt**, naming the site, the agent and the action: the tool call's title, kind, input and file locations.
 3. **Harbor never passes "always" through to the agent.** The agent's own "always allow" isn't tied to a site, so it would carry over to the next site's run. Harbor answers `allow_once` or `reject_once`, and keeps any "always" in its own store, keyed by origin, agent and tool kind.
 4. **Each approval goes through the policy engine** as a new action, so it reaches rules and the audit log. Its effect comes from the tool call's kind: `read`, `search`, `think` and `fetch` are reads; `edit`, `delete`, `move` and `execute` are writes; anything else counts as a write. The site's grant to use the agent doesn't count as consent for these calls.
@@ -102,7 +111,7 @@ Proposed rules:
 
 ### 4. Consent
 
-- A site still needs the same grants for `agent.run`: `model:prompt` and `model:tools`. The backend changes which agent runs the request, not what the site may ask for.
+- A site still needs the same grants: `model:prompt` for a text session, plus `model:tools` for `agent.run`. The backend changes which agent runs the request, not what the site may ask for. What the agent then does with its own tools is approved call by call (section 3), whichever grant started the request.
 - The consent prompt names where requests go: for example "goose (via ACP)" instead of a model name. The site's request reaches whatever model the user configured inside goose, which Harbor can't see. Harbor's data-flow promise, that data goes only to the provider the user configured, holds because the user configured goose.
 - Prompts to an external agent need their own policy classification. Today any model name without a known local prefix counts as a first-party remote model. An ACP agent is neither. It needs a new action, so that rules can treat it separately.
 - Revoking a site's grant during a run cancels the run.
@@ -129,20 +138,27 @@ Each unit ends with tests and a working check. Red tests come first, at the real
 | 0 | Spike: the extension-side client runs one `agent.run` against `goose serve` over WebSocket, behind a developer flag. Confirms goose's modes, its permission requests and its update stream. Not merged. | Extension | A recorded run with a local model |
 | 1 | Backend interface around today's loop, with cancellation wired through. No behaviour change. | Extension | vitest; the existing `agent.run` e2e tests pass |
 | 2 | Bridge `acp` module: spawn configured agents, relay, kill on close or disconnect, cap, validate. | bridge-rs | cargo tests against a fake stdio agent |
-| 3 | Extension ACP backend over the bridge: session, prompt, update mapping, cancel, limits. | Extension | vitest against a fake agent |
+| 3 | Extension ACP backend over the bridge for `agent.run`: session, prompt, update mapping, cancel, limits. | Extension | vitest against a fake agent |
+| 3b | `window.ai` text sessions on the ACP backend: create, prompt, stream, destroy, unsupported options and `clone`. | Extension | vitest against a fake agent |
 | 4 | Permission requests: Harbor's prompt, the policy action, per-origin "always", timeout, refusal without an approval mode. | Extension | vitest; manual check in Firefox |
 | 5 | Sidebar Agent setting, goose preset, consent prompt names the agent. | Extension | Firefox, with goose and a local model |
-| 6 | End-to-end: a demo page's `agent.run` runs on goose in Firefox. | tests/e2e, demo | e2e with goose installed, skipped when it isn't, and recorded as skipped |
+| 6 | End-to-end: a demo page's `agent.run` and a `window.ai` text session both run on goose in Firefox. | tests/e2e, demo | e2e with goose installed, skipped when it isn't, and recorded as skipped |
 
 Later, as separate work: Harbor and page tools offered to the agent; Claude Code and Codex presets; session reuse; v2.
 
-## Decisions for the maintainer
+## Decisions
 
-1. **Transport.** The bridge spawns the agent and relays, with the ACP client in the extension (recommended). The alternatives are WebSocket to `goose serve`, or an ACP client in Rust.
-2. **Mapping.** Only `agent.run` goes to the ACP agent, and `window.ai` stays on the built-in stack (recommended).
-3. **Agent-native tools on a page's behalf** (a permission-model change). Each call needs Harbor's approval. Harbor keeps "always" per origin and refuses agents it can't put in an approval mode (recommended).
-4. **Policy classification.** Add a new action for prompts sent to an external agent, so it's no longer counted as a first-party remote model (recommended).
-5. **Tools in the first release.** No Harbor or page tools are offered to the agent, and the agent uses only its own (recommended).
-6. **Backend choice.** One global setting in the sidebar (recommended), or per site.
-7. **Working directory.** An empty directory per origin (recommended), or something the user picks.
-8. **Positioning.** Once goose works, `docs/POSITIONING.md` can name goose as tested. That copy change is the maintainer's call, after unit 6.
+Settled by the maintainer:
+
+1. **Transport.** The bridge spawns the configured agent and relays messages. The ACP client runs in the extension. (WebSocket to `goose serve` is used only for the spike.)
+2. **Mapping.** Both `agent.run` and `window.ai` text sessions go to the ACP agent when the user picks one.
+3. **Agent-native tools on a page's behalf.** Each call needs Harbor's approval. Harbor keeps "always" per origin and refuses agents it can't put in an approval mode.
+
+Proposed, and open to the maintainer's review on this proposal:
+
+4. **Policy classification.** Add a new action for prompts sent to an external agent, so they're no longer counted as going to a first-party remote model.
+5. **Tools in the first release.** No Harbor or page tools are offered to the agent; it uses only its own.
+6. **Backend choice.** One global setting in the sidebar, not per site.
+7. **Working directory.** An empty directory per origin.
+8. **`window.ai` differences on the ACP backend.** Sampling options are ignored and reported as unsupported, and `clone` fails as not supported. These change what a page sees, so they're part of the page-API contract.
+9. **Positioning.** Once goose works, `docs/POSITIONING.md` can name goose as tested. That copy change waits until the end-to-end unit is done.
