@@ -160,9 +160,7 @@ Some MCP servers require API keys (e.g., GitHub, Brave Search):
 
 **Safari:**
 
-1. **Make sure Harbor.app is running** (check the Dock)
-
-2. **Rebuild the app in Xcode** — the bridge is bundled inside
+1. **Make sure the bridge is running in HTTP mode:** `harbor-bridge --http-server`. Safari reaches it at `127.0.0.1:8766`; nothing starts it for you.
 
 → See [Safari Setup](QUICKSTART_SAFARI.md) for details.
 
@@ -171,8 +169,8 @@ Some MCP servers require API keys (e.g., GitHub, Brave Search):
 1. Open **Safari → Settings → Extensions**
 2. Make sure it's checked:
    - ☑️ Harbor
-3. For unsigned extensions, first enable: **Safari → Develop → Allow Unsigned Extensions**
-   - If Develop menu is missing: **Safari → Settings → Advanced → Show Develop menu**
+3. For unsigned extensions, first enable: **Safari → Develop → Developer Settings… → Allow Unsigned Extensions**. Safari turns it off when it quits.
+   - If the Develop menu is missing: **Safari → Settings → Advanced → Show features for web developers**
 
 ### "No LLM Provider Found"
 
@@ -254,8 +252,8 @@ rm -rf ~/.harbor
 
 ### Safari
 
-1. Delete the `installer/safari/build/` directory
-2. The extensions are automatically unregistered when the app is deleted
+1. Delete the `installer/safari/build/` directory, which holds the app
+2. Safari unregisters the extension when the app is deleted
 3. Remove user data:
    ```bash
    rm -rf ~/.harbor

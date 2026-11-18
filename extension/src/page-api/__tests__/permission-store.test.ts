@@ -39,7 +39,7 @@ describe("checks use Harbor's store", () => {
     expect(await hasPermission(ORIGIN, 'model:prompt')).toBe(true);
   });
 
-  it('fails closed when Harbor cannot answer (Safari, or Harbor missing)', async () => {
+  it('fails closed when Harbor gives a malformed answer or none', async () => {
     mocks.harborRequest.mockResolvedValueOnce({ supported: false });
     expect(await hasPermission(ORIGIN, 'model:prompt')).toBe(false);
     mocks.harborRequest.mockRejectedValueOnce(new Error('Harbor extension not found'));

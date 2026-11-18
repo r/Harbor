@@ -143,12 +143,8 @@ export async function resolveTextSession(
   if (session.explicit) {
     let hasLLM: boolean;
     try {
-      const result = await harborRequest<{ session?: SessionSummary | null; supported?: false }>(
+      const result = await harborRequest<{ session?: SessionSummary | null }>(
         'session.get', { sessionId, origin });
-      if (result.supported === false) {
-        // Safari's HTTP bridge has no session registry.
-        return { code: 'ERR_INTERNAL', message: 'Explicit sessions are not supported in this browser' };
-      }
       if (!result.session) throw new Error('Session not found');
       hasLLM = result.session.capabilities.hasLLM;
     } catch (e) {

@@ -164,6 +164,9 @@ const caps = window.agent.capabilities();
 ```
 
 Use `caps.features.*` instead of try/catching `ERR_FEATURE_DISABLED`.
+`surfaces.mcp`, `chat`, `sessions` and `modelContext` are always `true`
+because no toggle gates them. Sessions still need permission grants:
+`model:prompt` for model access and `mcp:tools.call` for tools.
 
 ---
 

@@ -8,7 +8,7 @@ This file provides guidance for AI coding assistants working on the Harbor codeb
 
 - Firefox: Primary target
 - Chrome/Chromium: Secondary target  
-- Safari: Tertiary target (macOS App Store distribution)
+- Safari: Proof that the API runs on WebKit; built and loaded locally (`installer/safari/build.sh`), not distributed
 
 ## Extension Architecture
 

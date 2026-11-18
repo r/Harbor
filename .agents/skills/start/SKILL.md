@@ -31,9 +31,18 @@ Rules: [the workflow](../../../docs/agent-workflow.md). This skill ends with a c
    Stay bounded: nothing is built under an unclaimed task.
 4. **Claim.** Reread the status and the newest claim comment. Then post the claim in the [workflow's format](../../../docs/agent-workflow.md#ownership) and move the issue to In Progress. In Rex, the session ID names the pane too: `rex:<REX_SESSION uuid>/<REX_BLOCK uuid>`. Competing ownership means stop. A claim over 24 hours old with no commit or comment is abandoned; take it over with a note.
 5. **Isolate.** Never switch the shared root checkout.
-   - Fetch, then branch from `origin/main` (or the chosen base), named `<user>/hbr-<n>-<slug>`.
-   - Add a worktree at `../harbor-wt/hbr-<n>-<slug>`.
-   - Run `git submodule update --init` in it, plus `npm install` in each package you'll build.
+   - Read the workflow's [known pitfalls](../../../docs/agent-workflow.md#known-pitfalls) before setting up. Several bite during setup and base comparisons.
+   - Fetch, then create the branch and worktree in one step. Use `origin/main` or the chosen base. `--no-track` keeps the branch from tracking the base, so the first `git push -u` sets the right upstream:
+
+     ```sh
+     git fetch origin
+     git worktree add --no-track -b <user>/hbr-<n>-<slug> ../harbor-wt/hbr-<n>-<slug> origin/main
+     cd ../harbor-wt/hbr-<n>-<slug> && git submodule update --init
+     (cd extension && SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm ci)   # and each other package you'll build
+     ```
+
+   - Don't silence the install, and don't skip install scripts to get past a failure. If it still fails, stop and record the error in the ledger.
+   - To compare against the base, add a detached worktree at the base SHA. Never use `git stash`.
    - Record in the ledger the ports and the Firefox profile you'll use, and whether you'll need the [shared bridge registration](../../../docs/agent-workflow.md#shared-local-resources).
    - Use absolute paths in every brief.
    - Name the current session or tab after the task (`hbr-<n>-<slug>`) where the harness allows:

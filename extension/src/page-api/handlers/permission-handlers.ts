@@ -5,9 +5,8 @@
  * prompt. This extension keeps no copy: every check and request goes to
  * Harbor, so a grant revoked in Harbor stops the next page call here.
  *
- * Every failure is closed. If Harbor can't answer (it isn't installed,
- * the request times out, or the browser is Safari, where page calls go to
- * the bridge and Harbor isn't in the path), nothing is granted.
+ * Every failure is closed. If Harbor can't answer (for example, the
+ * request times out), nothing is granted.
  */
 
 import { harborRequest } from '../harbor-core';
