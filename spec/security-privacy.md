@@ -287,7 +287,7 @@ This spec assumes the model will sometimes be tricked. The defense is scope, not
 | `agent.run()` offers the model only the tools the user allowed for that origin. With no allowlist, it offers none. | `extension/src/page-api/background.ts` (the `agent.run` handler) |
 | A direct tool call outside the allowlist is refused with `ERR_TOOL_NOT_ALLOWED`. | `extension/src/page-api/handlers/tool-handlers.ts` |
 | Each session keeps its own history. Every prompt is checked against the origin that created the session, so one origin can't read or extend another's session. | `extension/src/page-api/handlers/ai-handlers.ts` (`resolveTextSession`), `extension/src/sessions/registry.ts` (`getValidatedSession`) |
-| The model sees what the page passes in, the results of granted tools, and page content read through a granted browser API. It doesn't see other tabs, other sessions or stored credentials. | — |
+| The model sees what the page passes in, the results of granted tools, and page content read through a granted browser API. It doesn't see other sessions, or tabs the site didn't open. | — |
 
 #### What scope doesn't cover
 
@@ -300,7 +300,7 @@ This spec assumes the model will sometimes be tricked. The defense is scope, not
 
 | Layer | Status |
 |-------|--------|
-| **User confirmation.** Before a tool call that can't be undone, the browser's own interface asks the user, naming the origin and the action: "paypa1.com wants to send $1,000 to billing@paypa1-support.com." Text from the page or from a tool can't give this approval. | Planned. Today the user consents per grant, not per call. For agents run over the Agent Client Protocol, [`docs/ACP_BACKEND_DESIGN.md`](../docs/ACP_BACKEND_DESIGN.md) proposes approval for every tool call. |
+| **User confirmation.** Before a tool call that can't be undone, the browser's own interface asks the user, naming the origin and the action: "paypa1.com wants to send $1,000 to billing@paypa1-support.com." Text from the page or from a tool can't give this approval. | Planned. Today the user's grant to the origin covers each call. A separate prompt appears only when a policy rule or the watchdog asks for one. For agents run over the Agent Client Protocol, [`docs/ACP_BACKEND_DESIGN.md`](../docs/ACP_BACKEND_DESIGN.md) proposes approval for every tool call. |
 | **Origin in the prompt.** A system message the page can't override tells the model which origin is asking. | Planned. |
 | **Data-flow checks.** The policy engine tracks where data came from, so data from one source can't reach a sending tool without consent. | Partial. Page calls to the model and to tools pass the policy engine (`extension/src/extension-api.ts`, `PAGE_GATES`), but without data labels, so no data-flow checks apply to them yet. |
 
@@ -345,7 +345,7 @@ When building applications with Harbor APIs:
 - Request only the permissions you need
 - Provide a clear `reason` in permission requests
 - Handle permission denials gracefully
-- Sanitize user input before including in prompts
+- Treat agent output as untrusted: escape it before rendering, never run it
 - Destroy sessions when done
 - Use `AbortSignal` for cancellable operations
 
