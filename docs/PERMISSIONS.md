@@ -1072,6 +1072,8 @@ The `reason` string is always site-supplied, so trust the structural information
 
 The PolicyEngine is the structural defense: even if the agent is convinced by injected instructions to do something dangerous, the engine evaluates the action against your policy and the SensitivityEngine and the data-label flow tracker, all of which are blind to the agent's reasoning. Sensitive actions still confirm; deny rules still deny; tainted data still can't reach a remote model without your consent. None of this prevents the agent from being misled, but it bounds what a misled agent can do.
 
+For requests from web pages, the engine gates calls to the model and to tools, but those calls don't carry data labels yet, so the label checks don't apply to them. See [Against Prompt Injection](../spec/security-privacy.md#against-prompt-injection) for what limits a page's session today and what is planned.
+
 **Q: How does multi-agent delegation work?**
 
 Each session has a capability token. When the session calls `agent.delegate` to invoke a subagent, it must mint a child token, and the engine enforces strict attenuation: the child's `allowedActions` is a subset of the parent's, the child's `acceptedLabels` is a subset of the parent's, the child's budgets and TTL are bounded by the parent's. A subagent cannot accumulate authority by recursion, and revoking the parent token transitively revokes every descendant.

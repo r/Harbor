@@ -275,13 +275,36 @@ Users control both of these through:
 
 ### Against Prompt Injection
 
-| Attack | Mitigation |
-|--------|------------|
-| Webpage injects malicious prompts | System prompts are controlled by the app, not the page content |
-| Tool results contain instructions | LLM instructed to treat tool results as data, not instructions |
-| Cross-session contamination | Sessions are isolated; one session cannot read another's history |
+A page that calls the Web Agent API directs the agent on purpose. It writes the task, and it can set the system prompt (`systemPrompt` on `agent.run()` and `ai.createTextSession()`). Page text reaching the model isn't a flaw in the API; it is the API. Injection becomes an attack when text from the page, or from a tool result, gets the agent to act against the user.
 
-**Recommendation for developers:** Always sanitize user input before including in prompts.
+This spec assumes the model will sometimes be tricked. The defense is scope, not filtering: whatever text the model was given, a page's session can only reach what the user granted that origin.
+
+#### What a page's session can reach
+
+| Limit | Implemented in |
+|-------|----------------|
+| The origin comes from the browser, not from the page. Calls without an origin are refused. | `extension/src/page-api/background.ts` (`originFromSender`), `extension/src/agents/background-router.ts` (`routeAgentMessage`) |
+| `agent.run()` offers the model only the tools the user allowed for that origin. With no allowlist, it offers none. | `extension/src/page-api/background.ts` (the `agent.run` handler) |
+| A direct tool call outside the allowlist is refused with `ERR_TOOL_NOT_ALLOWED`. | `extension/src/page-api/handlers/tool-handlers.ts` |
+| Each session keeps its own history. Every prompt is checked against the origin that created the session, so one origin can't read or extend another's session. | `extension/src/page-api/handlers/ai-handlers.ts` (`resolveTextSession`), `extension/src/sessions/registry.ts` (`getValidatedSession`) |
+| The model sees what the page passes in, the results of granted tools, and page content read through a granted browser API. It doesn't see other tabs, other sessions or stored credentials. | — |
+
+#### What scope doesn't cover
+
+- **Exfiltration through a granted tool.** If an origin holds a tool that writes or sends data (email, files, HTTP), injected text can get the model to call it with arguments the attacker chose. The allowlist limits which channels exist, not what goes through them.
+- **Instructions in tool results.** Tool results go back to the model as they are (`extension/src/page-api/tool-messages.ts`). Harbor doesn't wrap or label them, and doesn't tell the model to treat them as data. A tool that returns attacker-written text, such as an email or a web page, can steer the rest of the run, within the same allowlist.
+- **The page's own system prompt.** A page's `systemPrompt` becomes the system message word for word. Nothing the model sees says which origin is asking.
+- **Browser-control APIs.** These let an agent act in pages under the user's login, so they reach further than scoped tools. They are a stopgap for sites that don't offer scoped APIs yet. Tabs a site opens are readable only while they stay on that site's origin; see [Against Data Exfiltration](#against-data-exfiltration).
+
+#### Planned layers
+
+| Layer | Status |
+|-------|--------|
+| **User confirmation.** Before a tool call that can't be undone, the browser's own interface asks the user, naming the origin and the action: "paypa1.com wants to send $1,000 to billing@paypa1-support.com." Text from the page or from a tool can't give this approval. | Planned. Today the user consents per grant, not per call. For agents run over the Agent Client Protocol, [`docs/ACP_BACKEND_DESIGN.md`](../docs/ACP_BACKEND_DESIGN.md) proposes approval for every tool call. |
+| **Origin in the prompt.** A system message the page can't override tells the model which origin is asking. | Planned. |
+| **Data-flow checks.** The policy engine tracks where data came from, so data from one source can't reach a sending tool without consent. | Partial. Page calls to the model and to tools pass the policy engine (`extension/src/extension-api.ts`, `PAGE_GATES`), but without data labels, so no data-flow checks apply to them yet. |
+
+**For site developers:** Ask only for the tools the task needs. Every extra tool you request widens what an injected instruction can do. Treat what the agent returns as untrusted input: escape it before you render it, and never run it.
 
 ### Against Resource Abuse
 
