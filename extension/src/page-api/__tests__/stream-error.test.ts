@@ -18,7 +18,7 @@ const FLAGS_ELEMENT_ID = 'harbor-page-api-flags';
 type Message = { channel: string; request?: { id: string; type: string; payload?: unknown } };
 type PageApi = {
   ai: {
-    createTextSession(): Promise<{ promptStreaming(input: string): AsyncIterable<{ type: string; token?: string }> }>;
+    createTextSession(): Promise<{ promptStreaming(input: string): AsyncIterable<string> }>;
   };
 };
 
@@ -99,5 +99,29 @@ describe('page stream errors', () => {
     const { iterator, streamEvent } = await streamingSession();
     streamEvent('session.promptStreaming', modelError, true);
     await expect(iterator.next()).rejects.toThrow('Provider unavailable');
+  });
+
+  it('hands over tokens that arrived before the error, then the error', async () => {
+    const { iterator, streamEvent } = await streamingSession();
+    streamEvent('session.promptStreaming', { type: 'token', token: 'a' });
+    streamEvent('session.promptStreaming', { type: 'token', token: 'b' });
+    streamEvent('session.promptStreaming', modelError, true);
+
+    expect((await iterator.next()).value).toBe('a');
+    expect((await iterator.next()).value).toBe('b');
+    await expect(iterator.next()).rejects.toThrow('Provider unavailable');
+  });
+
+  it('ends a waiting next() when the page stops the stream', async () => {
+    const { iterator, tick } = await streamingSession();
+    const next = iterator.next();
+    await tick();
+    await iterator.return!();
+
+    const outcome = await Promise.race([
+      next.then((r) => (r.done ? 'done' : 'value')),
+      new Promise((r) => setTimeout(() => r('still waiting'), 50)),
+    ]);
+    expect(outcome).toBe('done');
   });
 });

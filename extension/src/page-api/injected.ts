@@ -399,12 +399,13 @@ function createStreamIterable<T extends StreamToken>(
 
       return {
         async next(): Promise<IteratorResult<T>> {
-          if (error) {
-            throw error;
-          }
-
+          // Hand over tokens that arrived before an error, then the error.
           if (queue.length > 0) {
             return { done: false, value: queue.shift()! };
+          }
+
+          if (error) {
+            throw error;
           }
 
           if (done) {
@@ -420,6 +421,11 @@ function createStreamIterable<T extends StreamToken>(
         async return(): Promise<IteratorResult<T>> {
           done = true;
           streamListeners.delete(id);
+          if (resolveNext) {
+            resolveNext({ done: true, value: undefined });
+            resolveNext = null;
+            rejectNext = null;
+          }
           // Send abort signal
           window.postMessage({ channel: CHANNEL, abort: { id } }, '*');
           return { done: true, value: undefined };
