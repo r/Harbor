@@ -59,15 +59,33 @@ function createError(message: string): Error & { code?: string } {
 // Request/Response
 // =============================================================================
 
+/** Default time limit for a call into the rest of Harbor. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 /**
  * Send a request to the rest of Harbor, in-process. Throws on failure, same
- * contract as the old cross-extension harborRequest.
+ * contract as the old cross-extension harborRequest, including its time
+ * limit: 30 seconds unless the caller asks for longer (a permission prompt
+ * waits on the user).
  */
 export async function harborRequest<T = unknown>(
   type: string,
   payload?: unknown,
-  _options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number } = {},
 ): Promise<T> {
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([dispatch<T>(type, payload), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function dispatch<T>(type: string, payload: unknown): Promise<T> {
   if (isExtensionApiType(type)) {
     const response = await routeExtensionApiMessage({ type, payload }, PAGE_API_SENDER);
     if (!response.ok) throw createError(response.error ?? 'Unknown error from Harbor');
