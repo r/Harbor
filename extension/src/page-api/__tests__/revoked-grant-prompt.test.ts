@@ -108,12 +108,12 @@ afterEach(() => {
   vi.resetModules();
 });
 
-function connectPort() {
+function connectPort(tab = TAB) {
   const listeners: Array<(m: unknown) => void> = [];
   const posted: Posted[] = [];
   onConnect({
     name: 'harbor-page-api',
-    sender: { url: `${ORIGIN}/app`, tab: { id: TAB } },
+    sender: { url: `${ORIGIN}/app`, tab: { id: tab } },
     onMessage: { addListener: (l: (m: unknown) => void) => listeners.push(l) },
     onDisconnect: { addListener: () => {} },
     postMessage: (m: Posted) => posted.push(m),
@@ -191,5 +191,15 @@ describe('a revoked model:prompt grant stops prompts on an open session', () => 
     const denied = await port.request('p2', 'session.prompt', { sessionId, input: 'Later' });
     expect(denied).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
     expect(bridge.bridgeChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('a one-time grant for one tab does not cover prompts from another tab', async () => {
+    await grantPermissions(ORIGIN, ['model:prompt'], 'granted-once', TAB);
+    const sessionId = await openSession(connectPort(TAB));
+
+    const otherTab = connectPort(TAB + 1);
+    const denied = await otherTab.request('p1', 'session.prompt', { sessionId, input: 'Hi' });
+    expect(denied).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
+    expect(bridge.bridgeChat).not.toHaveBeenCalled();
   });
 });

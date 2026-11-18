@@ -346,7 +346,8 @@ function createStreamIterable<T extends StreamToken>(
   return {
     [Symbol.asyncIterator](): AsyncIterator<T> {
       const queue: T[] = [];
-      let resolveNext: ((result: IteratorResult<T>) => void) | null = null;
+      // The page's pending next(), if it's waiting for the next event.
+      let waiting: { resolve: (result: IteratorResult<T>) => void; reject: (e: Error) => void } | null = null;
       let done = false;
       let error: Error | null = null;
 
@@ -376,10 +377,14 @@ function createStreamIterable<T extends StreamToken>(
           done = true;
         }
 
-        if (resolveNext && !error) {
-          resolveNext({ done: false, value: event as T });
-          resolveNext = null;
-        } else if (!error) {
+        if (error) {
+          // Settle a waiting next() too, or a page awaiting the stream hangs.
+          waiting?.reject(error);
+          waiting = null;
+        } else if (waiting) {
+          waiting.resolve({ done: false, value: event as T });
+          waiting = null;
+        } else {
           queue.push(event as T);
         }
       });
@@ -401,8 +406,8 @@ function createStreamIterable<T extends StreamToken>(
             return { done: true, value: undefined };
           }
 
-          return new Promise((resolve) => {
-            resolveNext = resolve;
+          return new Promise((resolve, reject) => {
+            waiting = { resolve, reject };
           });
         },
 
