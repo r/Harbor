@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `spec/README.md` — "The Problem" extended with a fourth bad option ("just use the user's AI browser") and a paragraph framing the gap left by WebMCP and the Chrome Prompt API.
 - `AGENTS.md` — `whitepaper/` description updated to reflect the static-HTML structure and `docs/POSITIONING.md` flagged as the messaging source-of-truth.
 
+### Fixed
+
+- Harbor no longer writes what a page sends to the browser console: prompts, system prompts, `agent.run` tasks, tasks passed between agents, URLs a page opens or registers, a page's reason for a permission request, and model replies. Logs keep the request type, IDs, origin and sizes. The debug listener that logged every message reaching Harbor's background is gone.
+
 ### Removed
 
 - The old Jekyll scaffolding under `whitepaper/` (`_config.yml`, `_layouts/`, `Gemfile`, `index.md`, `landscape.md`) — replaced by static HTML. `.nojekyll` added so GitHub Pages serves the files as authored.
