@@ -112,7 +112,7 @@ npx tsc --noEmit -p extension
 - `main` currently has type errors in the extension package. The gate is **no new errors**: compare the error lists at base and head, and record both counts.
 - Run `npm run build:chrome` too when a change touches manifests or browser-specific code.
 - Run `cd tests/e2e && npm run test:browser` when a change touches page injection.
-- The root `npm run test:unit` runs both extension suites, then the Rust bridge tests. For isolated worktree checks, set a worktree-specific `CARGO_TARGET_DIR`.
+- The root `npm run test:unit` runs the extension's suite, then the Rust bridge tests. For isolated worktree checks, set a worktree-specific `CARGO_TARGET_DIR`.
 - Docs-only work runs link and content checks.
 - A skip or a timeout is not a pass.
 - GitHub Actions only deploys the Pages site, so local evidence is the merge gate.

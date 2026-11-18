@@ -1153,11 +1153,11 @@ async function runPipeline(topic) {
     
     // Verify required features are available
     if (!state.browserControlAvailable) {
-      throw new Error('Browser Control is not available. Enable it in Harbor's sidebar and reload this page.');
+      throw new Error("Browser Control is not available. Enable it in Harbor's sidebar and reload this page.");
     }
     
     if (!state.multiAgentAvailable) {
-      throw new Error('Multi-Agent is not available. Enable it in Harbor's sidebar and reload this page.');
+      throw new Error("Multi-Agent is not available. Enable it in Harbor's sidebar and reload this page.");
     }
     
     // Request permissions

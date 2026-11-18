@@ -245,7 +245,7 @@ Harbor's page API uses feature flags to control which capabilities are exposed t
 | Flag | Description | Default |
 |------|-------------|---------|
 | `textGeneration` | Enable `window.ai` for text generation | `true` |
-| `toolCalling` | Enable `agent.run()` for autonomous tasks | `false` |
+| `toolCalling` | Enable `agent.run()` for autonomous tasks | `true` |
 | `toolAccess` | Enable `agent.tools.list()` and `call()` | `true` |
 | `browserInteraction` | Enable click/fill/scroll on pages | `false` |
 | `browserControl` | Enable navigation and tab management | `false` |
