@@ -69,6 +69,8 @@ beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
   resetMockBrowser();
+  // agent.agents.* is gated by Multi-Agent, which is off by default.
+  await chrome.storage.local.set({ 'harbor-page-api-flags': { multiAgent: true } });
 
   runtimeMessageListeners = [];
   tabsSendMessage = vi.fn(() => Promise.resolve());

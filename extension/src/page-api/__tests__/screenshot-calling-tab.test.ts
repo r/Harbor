@@ -24,7 +24,13 @@ beforeEach(() => {
   tabs = new Map();
   captureVisibleTab = vi.fn(async () => 'data:image/png;base64,AAAA');
   vi.stubGlobal('chrome', {
-    storage: { local: { set: vi.fn(async () => {}), get: vi.fn(async () => ({})) } },
+    storage: {
+      local: {
+        set: vi.fn(async () => {}),
+        // agent.browser.activeTab.screenshot is gated by Browser Interaction.
+        get: vi.fn(async () => ({ 'harbor-page-api-flags': { browserInteraction: true } })),
+      },
+    },
     tabs: {
       get: vi.fn(async (id: number) => {
         const tab = tabs.get(id);

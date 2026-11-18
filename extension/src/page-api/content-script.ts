@@ -16,6 +16,7 @@ import type {
   TransportResponse,
   TransportStreamEvent,
 } from './types';
+import { DEFAULT_FLAGS, STORAGE_KEY, type FeatureFlags } from './policy/feature-flag-set';
 
 const CHANNEL = 'harbor_page_api';
 
@@ -102,25 +103,6 @@ function getBackgroundPort(): RuntimePort {
   return backgroundPort;
 }
 
-// Feature flags type
-interface FeatureFlags {
-  textGeneration: boolean;
-  toolCalling: boolean;
-  toolAccess: boolean;
-  browserInteraction: boolean;
-  browserControl: boolean;
-  multiAgent: boolean;
-}
-
-const DEFAULT_FLAGS: FeatureFlags = {
-  textGeneration: true,
-  toolCalling: true,
-  toolAccess: true,
-  browserInteraction: false,
-  browserControl: false,
-  multiAgent: false,
-};
-
 /**
  * Fetch feature flags from background script.
  */
@@ -203,7 +185,7 @@ async function updatePageFlags(): Promise<void> {
 // When user toggles flags in the sidebar, update the page so the injected API sees them without refresh.
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return;
-  if (changes['harbor-page-api-flags']) {
+  if (changes[STORAGE_KEY]) {
     updatePageFlags();
   }
 });

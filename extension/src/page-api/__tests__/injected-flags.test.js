@@ -39,3 +39,11 @@ describe('page-facing Agentic Tool Use exposure', () => {
     expect(window.postMessage).not.toHaveBeenCalled();
   });
 });
+
+describe('the page keeps the same flags as the extension', () => {
+  it('starts from the same defaults when no flags reach the page', async () => {
+    const { DEFAULT_FLAGS } = await import('../policy/feature-flag-set');
+    const features = page(undefined).agent.capabilities().features;
+    expect(Object.fromEntries(Object.keys(DEFAULT_FLAGS).map((k) => [k, features[k]]))).toEqual(DEFAULT_FLAGS);
+  });
+});

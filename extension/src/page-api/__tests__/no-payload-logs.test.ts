@@ -17,8 +17,12 @@ vi.mock('../harbor-core', () => ({
     ? { tools: [] } : { content: 'ok' }),
   harborStreamRequest: vi.fn(),
 }));
-vi.mock('../policy/feature-flags', () => ({
-  getFeatureFlags: async () => ({ toolCalling: true, browserControl: true }),
+vi.mock('../policy/feature-flags', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getFeatureFlags: async () => ({
+    textGeneration: true, toolCalling: true, toolAccess: true,
+    browserInteraction: true, browserControl: true, multiAgent: true,
+  }),
 }));
 
 let logged: string[];
