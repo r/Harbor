@@ -43,23 +43,7 @@ export default async function globalSetup() {
     console.log('✅ Extension build found');
   }
 
-  // 2. Check web-agents-api build
-  const webAgentsDist = path.join(ROOT, 'web-agents-api/dist/manifest.json');
-  if (!(await fileExists(webAgentsDist))) {
-    console.log('📦 Web Agents API not built. Building...');
-    try {
-      execSync('npm run build', { 
-        cwd: path.join(ROOT, 'web-agents-api'),
-        stdio: 'inherit',
-      });
-    } catch (err) {
-      throw new Error('Failed to build web-agents-api. Run: cd web-agents-api && npm install && npm run build');
-    }
-  } else {
-    console.log('✅ Web Agents API build found');
-  }
-
-  // 3. Check native bridge
+  // 2. Check native bridge
   const bridgePath = path.join(ROOT, 'bridge-rs/target/release/harbor-bridge');
   if (!(await fileExists(bridgePath))) {
     console.log('🔧 Native bridge not built. Building...');
@@ -75,7 +59,7 @@ export default async function globalSetup() {
     console.log('✅ Native bridge build found');
   }
 
-  // 4. Check native messaging manifest (macOS)
+  // 3. Check native messaging manifest (macOS)
   const os = await import('os');
   const nativeManifestPath = path.join(
     os.homedir(),

@@ -1,24 +1,18 @@
 #!/usr/bin/env node
 /**
  * E2E Browser Test Runner for Firefox
- * 
+ *
  * This script:
  * 1. Starts a local server to serve test pages
- * 2. Launches Firefox with both Harbor and Web Agents API extensions
+ * 2. Launches Firefox with the Harbor extension
  * 3. Captures results via HTTP endpoint
  * 4. Exits with appropriate code
- * 
- * Both Firefox builds are installed in a fresh temporary profile.
+ *
+ * The Harbor build is installed in a fresh temporary profile.
  * The native bridge must already be registered for full functionality tests.
  *
  * Usage:
- *   node run-browser-tests.mjs [--timeout=60000] [--keep-open] [--harbor-only]
- *
- * --harbor-only loads only extension/dist-firefox (no Web Agents API
- * extension) and runs a smaller page checking that window.ai, window.agent
- * and navigator.modelContext are still served, in-process, by Harbor alone.
- * It uses its own test page and a port distinct from the demo
- * server (8000) and the normal two-extension run (3457).
+ *   node run-browser-tests.mjs [--timeout=60000] [--keep-open]
  */
 
 import http from 'http';
@@ -40,16 +34,12 @@ const getArg = (name, defaultVal) => {
 };
 
 // Configuration - Firefox is the PRIMARY browser
-const harborOnly = args.includes('--harbor-only');
-
 const config = {
   harborExtPath: path.resolve(__dirname, '../../extension/dist-firefox'),
-  webAgentsExtPath: path.resolve(__dirname, '../../web-agents-api/dist-firefox'),
-  testServerPort: harborOnly ? 3462 : 3457,
+  testServerPort: 3457,
   timeout: parseInt(getArg('timeout', '60000')),
   keepOpen: args.includes('--keep-open'),
-  harborOnly,
-  testPage: harborOnly ? 'harbor-only-test-runner.html' : 'test-runner.html',
+  testPage: 'test-runner.html',
 };
 
 // MIME types
@@ -181,19 +171,9 @@ function checkBuilds() {
     process.exit(1);
   }
   console.log('[build] ✓ Harbor extension ready (Firefox)');
-
-  if (config.harborOnly) return;
-
-  const webAgentsManifest = path.join(config.webAgentsExtPath, 'manifest.json');
-  if (!fs.existsSync(webAgentsManifest)) {
-    console.error(`[error] Web Agents API extension not built at ${config.webAgentsExtPath}`);
-    console.error(`        Run: cd web-agents-api && npm run build`);
-    process.exit(1);
-  }
-  console.log('[build] ✓ Web Agents API extension ready (Firefox)');
 }
 
-// The same two-extension launcher used by npm run dev:firefox.
+// The same launcher used by npm run dev:firefox.
 async function runBrowserTests(testUrl, testResultsPromise) {
   let timer;
   const deadline = new Promise((_, reject) => {
@@ -208,7 +188,6 @@ async function runBrowserTests(testUrl, testResultsPromise) {
       launchFirefox({
         startUrl: testUrl,
         signal: controller.signal,
-        extensionDirs: config.harborOnly ? ['extension/dist-firefox'] : undefined,
       }), deadline,
     ]);
     const results = await Promise.race([

@@ -377,8 +377,7 @@ function createTestServer(models) {
       const aiApi = await checkAIAPI();
       if (!aiApi) {
         setStatus('harbor-status', 'Harbor detected but window.ai not available', 'fail');
-        log('Note: This test requires the Web Agents API extension for window.ai');
-        reportResult(false, 'window.ai API not available - need Web Agents API extension');
+        reportResult(false, 'window.ai API not available');
         return;
       }
       
@@ -538,39 +537,26 @@ async function main() {
     process.exit(0); // Not a failure - just nothing to test
   }
   
-  // Step 5: Test via Firefox with extensions
+  // Step 5: Test via Firefox with the extension
   console.log('\n[step 4] Testing model selection in browser...');
-  console.log('[note] This test requires BOTH Harbor AND Web Agents API extensions');
   console.log('[note] The test will use the first available model\n');
-  
-  // Check if extensions are built
+
+  // Check if the extension is built
   const harborManifest = path.join(config.harborExtPath, 'manifest.json');
-  const webAgentsManifest = path.resolve(__dirname, '../../web-agents-api/dist-firefox/manifest.json');
-  
+
   if (!fs.existsSync(harborManifest)) {
     console.error('❌ Harbor extension not built');
     console.error('   Run: cd extension && npm run build');
     process.exit(1);
   }
-  
-  if (!fs.existsSync(webAgentsManifest)) {
-    console.error('❌ Web Agents API extension not built');
-    console.error('   Run: cd web-agents-api && npm run build');
-    process.exit(1);
-  }
-  
+
   // Create test server with model list
   const { server, resultPromise } = await createTestServer(modelsForTest);
   const testUrl = `http://localhost:${config.testServerPort}/`;
   
   console.log(`[test] Test page: ${testUrl}`);
   
-  // Launch Firefox with BOTH extensions
-  // Note: web-ext only supports one extension, so we need to use a different approach
-  // For now, we'll just test with Harbor and note that window.ai requires Web Agents API
-  
   console.log('[firefox] Launching with Harbor extension...');
-  console.log('[note] Full window.ai testing requires manually loading Web Agents API extension');
   
   const webExtArgs = [
     'web-ext', 'run',

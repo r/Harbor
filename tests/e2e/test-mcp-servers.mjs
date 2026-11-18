@@ -26,7 +26,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const config = {
   harborExtPath: path.resolve(__dirname, '../../extension/dist-firefox'),
-  webAgentsExtPath: path.resolve(__dirname, '../../web-agents-api/dist-firefox'),
   testServerPort: 3460,
   timeout: 45000,
   keepOpen: process.argv.includes('--keep-open'),

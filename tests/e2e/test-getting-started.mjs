@@ -1,5 +1,5 @@
-// Full checklist smoke test in a fresh Firefox profile with both real extensions.
-// Requires built Firefox extensions, a registered bridge and an available default
+// Full checklist smoke test in a fresh Firefox profile with the real extension.
+// Requires the built Firefox extension, a registered bridge and an available default
 // model. Never seeds browser storage or changes model/server configuration.
 import assert from 'node:assert/strict';
 import http from 'node:http';

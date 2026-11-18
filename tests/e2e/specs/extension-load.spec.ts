@@ -28,24 +28,17 @@ test.describe('Extension Loading', () => {
     expect(title).toBeTruthy();
   });
 
-  test.skip('Web Agents API extension loads successfully (requires web-ext setup)', async ({ extensionContext, webAgentsId }) => {
-    expect(webAgentsId).toBeTruthy();
-    expect(webAgentsId).not.toBe('extension-not-loaded');
-    expect(webAgentsId).toMatch(/^[a-f0-9-]+$/);
-  });
-
   test.skip('sidebar page renders (requires extension)', async ({ sidebarPage }) => {
     await sidebarPage.waitForLoadState('domcontentloaded');
     const body = sidebarPage.locator('body');
     await expect(body).toBeVisible();
   });
 
-  test.skip('both extensions are listed in about:debugging (requires web-ext setup)', async ({ extensionContext }) => {
+  test.skip('extension is listed in about:debugging (requires web-ext setup)', async ({ extensionContext }) => {
     const page = await extensionContext.newPage();
     await page.goto('about:debugging#/runtime/this-firefox');
     await page.waitForLoadState('domcontentloaded');
-    
+
     await expect(page.locator('text=Harbor').first()).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=Web Agents').first()).toBeVisible({ timeout: 10000 });
   });
 });

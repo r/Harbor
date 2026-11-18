@@ -449,6 +449,21 @@
         }
       });
 
+      // ---- Page API Contract ----
+      await test('Page API Contract', "agent.capabilities() reports apiVersion '1.4.0'", async () => {
+        const caps = window.agent.capabilities();
+        assert(caps.apiVersion === '1.4.0', `Expected apiVersion 1.4.0, got ${caps.apiVersion}`);
+      });
+
+      await test('Page API Contract', "window.ai.canCreateTextSession() returns 'readily'", async () => {
+        const availability = await window.ai.canCreateTextSession();
+        assert(availability === 'readily', `Expected 'readily', got '${availability}'`);
+      });
+
+      await test('Page API Contract', 'window.__harbor is not defined', async () => {
+        assert(typeof window.__harbor === 'undefined', `Expected window.__harbor to be undefined, got ${JSON.stringify(window.__harbor)}`);
+      });
+
       // Finish
       updateProgress('Tests complete!');
       await renderSummary();

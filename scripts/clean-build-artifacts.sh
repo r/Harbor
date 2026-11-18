@@ -38,12 +38,6 @@ rm -rf "$PROJECT_ROOT/extension/dist-safari"
 rm -rf "$PROJECT_ROOT/extension/bundled"
 echo "  ✓ Harbor extension dist/"
 
-rm -rf "$PROJECT_ROOT/web-agents-api/dist"
-rm -rf "$PROJECT_ROOT/web-agents-api/dist-chrome"
-rm -rf "$PROJECT_ROOT/web-agents-api/dist-firefox"
-rm -rf "$PROJECT_ROOT/web-agents-api/dist-safari"
-echo "  ✓ Web Agents extension dist/"
-
 # Rust build directory (optional - takes time to rebuild)
 if [ "$1" = "--all" ] || [ "$1" = "--rust" ]; then
     echo ""
@@ -57,7 +51,6 @@ if [ "$1" = "--all" ] || [ "$1" = "--node" ]; then
     echo ""
     echo "Cleaning node_modules..."
     rm -rf "$PROJECT_ROOT/extension/node_modules"
-    rm -rf "$PROJECT_ROOT/web-agents-api/node_modules"
     rm -rf "$PROJECT_ROOT/demo/node_modules"
     echo "  ✓ node_modules/"
 fi

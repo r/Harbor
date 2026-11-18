@@ -9,7 +9,7 @@
     "test:debug": "playwright test --debug",
     "test:ui": "playwright test --ui",
     "report": "playwright show-report",
-    "build:extensions": "cd ../../extension && npm run build && cd ../web-agents-api && npm run build",
+    "build:extensions": "cd ../../extension && npm run build",
     "test:browser": "node run-browser-tests.mjs",
     "test:browser:build": "npm run build:extensions && node run-browser-tests.mjs",
     "test:browser:keep-open": "node run-browser-tests.mjs --keep-open",
