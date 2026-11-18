@@ -1,84 +1,14 @@
 /**
- * Feature Flags for Web Agents API
- * 
- * Controls which APIs are exposed to web pages.
- * These flags are managed via the sidebar UI.
- * 
- * ## API Categories
- * 
- * **Text Generation (textGeneration):**
- * - window.ai - LLM prompts and text sessions
- * 
- * **Tool Calling (toolCalling):**
- * - agent.run() - LLM-driven tool calling loops
- * 
- * **Tool Access (toolAccess):**
- * - agent.tools.list() / agent.tools.call() - Manual MCP tool access
- * 
- * **Browser Interaction (browserInteraction):**
- * - agent.browser.activeTab.click/fill/scroll/select
- * - Same-tab page manipulation
- * 
- * **Browser Control (browserControl):**
- * - agent.browser.navigate/tabs/fetch
- * - Multi-tab control and web fetch
- * 
- * **Multi-Agent (multiAgent):**
- * - agent.agents.* - Agent-to-agent communication
+ * Feature flags for the page API, as the user set them in the sidebar.
+ *
+ * This module reads and caches the saved flags. The flag set itself, and which
+ * transport messages each flag gates, live in ./feature-flag-set.ts.
  */
 
-export const STORAGE_KEY = 'harbor-page-api-flags';
+import { DEFAULT_FLAGS, STORAGE_KEY, type FeatureFlags } from './feature-flag-set';
 
-export interface FeatureFlags {
-  /**
-   * Enable text generation APIs (window.ai).
-   * Default: true
-   */
-  textGeneration: boolean;
-
-  /**
-   * Enable tool calling APIs (agent.run).
-   * LLM-driven tool calling loops. Websites still need permission.
-   * Default: true
-   */
-  toolCalling: boolean;
-
-  /**
-   * Enable manual MCP tool access (agent.tools.*).
-   * Default: true
-   */
-  toolAccess: boolean;
-
-  /**
-   * Enable browser interaction APIs (click, fill, scroll, select).
-   * Same-tab page manipulation only.
-   * Default: false
-   */
-  browserInteraction: boolean;
-
-  /**
-   * Enable browser control APIs (navigate, tabs, fetch).
-   * Multi-tab and navigation control.
-   * Default: false
-   */
-  browserControl: boolean;
-
-  /**
-   * Enable multi-agent APIs (agent.agents.*).
-   * Agent-to-agent communication and orchestration.
-   * Default: false
-   */
-  multiAgent: boolean;
-}
-
-export const DEFAULT_FLAGS: FeatureFlags = {
-  textGeneration: true,
-  toolCalling: true,
-  toolAccess: true,
-  browserInteraction: false,
-  browserControl: false,
-  multiAgent: false,
-};
+export { DEFAULT_FLAGS, FEATURE_LABELS, STORAGE_KEY, featureRefusal, featuresForMessage } from './feature-flag-set';
+export type { FeatureFlags } from './feature-flag-set';
 
 let cachedFlags: FeatureFlags | null = null;
 
@@ -100,14 +30,6 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
 }
 
 /**
- * Get feature flags synchronously from cache.
- * Returns defaults if not yet loaded.
- */
-export function getFeatureFlagsSync(): FeatureFlags {
-  return cachedFlags || DEFAULT_FLAGS;
-}
-
-/**
  * Update feature flags.
  */
 export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<void> {
@@ -116,14 +38,6 @@ export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<voi
   
   await chrome.storage.local.set({ [STORAGE_KEY]: updated });
   cachedFlags = updated;
-}
-
-/**
- * Check if a specific feature is enabled.
- */
-export async function isFeatureEnabled(feature: keyof FeatureFlags): Promise<boolean> {
-  const flags = await getFeatureFlags();
-  return flags[feature];
 }
 
 /**

@@ -25,7 +25,6 @@ async function flags() { return import('../policy/feature-flags'); }
 describe('Agentic Tool Use defaults and saved choices', () => {
   it('enables agent runs on a fresh install without enabling browser control', async () => {
     const api = await flags();
-    expect(api.getFeatureFlagsSync().toolCalling).toBe(true);
     expect(await api.getFeatureFlags()).toMatchObject({
       toolCalling: true, toolAccess: true, browserInteraction: false,
       browserControl: false, multiAgent: false,

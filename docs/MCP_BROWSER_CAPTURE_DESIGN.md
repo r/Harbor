@@ -60,7 +60,7 @@ Two host methods are enough for the Atlantic (and similar) use cases:
 ### 5. Permission gating
 
 - Host requests are only honored if the **request context’s origin** has the needed permissions in the Web Agents extension (e.g. `browser:tabs.create` and the capability to read from tabs that origin created).
-- **As implemented:** Harbor handles host requests itself (§10, §11) and allows browser capture only when the tool call carries the origin `harbor-extension`, which Harbor's own extension pages pass (the sidebar, Tool Tester and the bundled chat demo). A tool call with no origin, including one a page started, is refused. `http.get` sends no cookies and stays available to any tool.
+- **As implemented:** Harbor handles host requests itself (§10, §11) and allows browser capture only when the tool call carries the origin `harbor-extension`, which Harbor's own extension pages pass (the sidebar and Tool Tester). A tool call with no origin, including one a page started, is refused. `http.get` sends no cookies and stays available to any tool.
 - The older Web Agents path (`agent.host.run`) limits a page-origin request to that page's own origin.
 - If the tool call was not initiated by a page (e.g. user clicked in Harbor sidebar), we may have no origin; then we could either deny host requests or treat “no origin” as a trusted context (sidebar). Design choice: require origin for host_request so that we only allow browser capture when a page with the right permissions initiated the tool call.
 

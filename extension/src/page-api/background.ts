@@ -12,7 +12,7 @@
  * page or a compromised content script could otherwise forge.
  */
 import { harborRequest, harborStreamRequest } from './harbor-core';
-import { getFeatureFlags } from './policy/feature-flags';
+import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
 import { builtinAgentBackend, type AgentBackend } from './agent-backend';
 import type { TransportStreamEvent } from './types';
 
@@ -137,12 +137,9 @@ async function handleAgentRun(
   // This, the grant checks below, tool listing/filtering and delivering
   // events to the page apply to every backend, so they stay here rather
   // than in the backend itself.
-  if (!(await getFeatureFlags()).toolCalling) {
-    sendEvent({
-      id: ctx.id,
-      event: { type: 'error', error: { code: 'ERR_FEATURE_DISABLED', message: 'Agentic Tool Use is disabled' } },
-      done: true,
-    });
+  const refusal = featureRefusal(ctx.type, await getFeatureFlags());
+  if (refusal) {
+    sendEvent({ id: ctx.id, event: { type: 'error', error: refusal }, done: true });
     return;
   }
 

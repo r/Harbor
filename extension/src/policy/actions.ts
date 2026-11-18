@@ -325,7 +325,9 @@ export const TYPED_ACTIONS = {
     description: 'Call another registered agent on this device.',
     effect: 'write',
     locality: 'local',
-    reversible: false,
+    // The call itself changes nothing; the other agent's own actions are
+    // checked separately. So a grant covers later calls (no forced preview).
+    reversible: true,
     defaultDataLabels: [],
     acceptsLabels: [],
     defaultTTL: 'session',
@@ -335,7 +337,9 @@ export const TYPED_ACTIONS = {
     description: 'Send and receive messages with another agent.',
     effect: 'write',
     locality: 'local',
-    reversible: false,
+    // The call itself changes nothing; the other agent's own actions are
+    // checked separately. So a grant covers later calls (no forced preview).
+    reversible: true,
     defaultDataLabels: [],
     acceptsLabels: [],
     defaultTTL: 'session',
@@ -381,50 +385,6 @@ export const TYPED_ACTIONS = {
     effect: 'write',
     locality: 'local',
     reversible: true,
-    defaultDataLabels: [],
-    acceptsLabels: [],
-    defaultTTL: 'session',
-  },
-
-  // ---------------------------------------------------------------------------
-  // addressBar.* — address-bar surface
-  // ---------------------------------------------------------------------------
-  'addressBar.suggest': {
-    title: 'Suggest in the address bar',
-    description: 'Provide AI-powered suggestions in the browser address bar.',
-    effect: 'metadata',
-    locality: 'local',
-    reversible: null,
-    defaultDataLabels: [],
-    acceptsLabels: [],
-    defaultTTL: 'until_user_revokes',
-  },
-  'addressBar.read.context': {
-    title: 'Read current-tab context',
-    description: 'Use information about the current tab to improve suggestions.',
-    effect: 'read',
-    locality: 'local',
-    reversible: null,
-    defaultDataLabels: ['confidential'],
-    acceptsLabels: [],
-    defaultTTL: 'session',
-  },
-  'addressBar.read.history': {
-    title: 'Read browsing history',
-    description: 'Use recent browsing history for personalized suggestions.',
-    effect: 'read',
-    locality: 'local',
-    reversible: null,
-    defaultDataLabels: ['confidential'],
-    acceptsLabels: [],
-    defaultTTL: 'session',
-  },
-  'addressBar.execute': {
-    title: 'Execute from the address bar',
-    description: 'Run tools or actions directly from address-bar commands.',
-    effect: 'write',
-    locality: 'local',
-    reversible: false,
     defaultDataLabels: [],
     acceptsLabels: [],
     defaultTTL: 'session',

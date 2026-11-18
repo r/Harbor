@@ -9,7 +9,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../harbor-core', () => ({
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
 }));
-vi.mock('../policy/feature-flags', () => ({ getFeatureFlags: async () => ({ toolCalling: true }) }));
+vi.mock('../policy/feature-flags', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getFeatureFlags: async () => ({
+    textGeneration: true, toolCalling: true, toolAccess: true,
+    browserInteraction: true, browserControl: true, multiAgent: true,
+  }),
+}));
 vi.mock('../handlers/permission-handlers', () => ({ hasPermission: mocks.hasPermission, getPermissions: mocks.getPermissions }));
 vi.mock('../handlers', async () => {
   const ai = await vi.importActual<typeof import('../handlers/ai-handlers')>('../handlers/ai-handlers');

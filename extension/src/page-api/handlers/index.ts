@@ -104,7 +104,7 @@ import {
 } from './agent-handlers';
 
 import { executeScriptInTab, browserAPI } from '../../browser-compat';
-import { getFeatureFlags } from '../policy/feature-flags';
+import { featureRefusal, getFeatureFlags } from '../policy/feature-flags';
 
 // =============================================================================
 // Handler Registry
@@ -192,14 +192,6 @@ handlers.set('agent.agents.orchestrate.route', handleAgentsRoute);
 // Router
 // =============================================================================
 
-/** Message types covered by the browserControl feature flag. */
-function isBrowserControlMessage(type: string): boolean {
-  return type === 'agent.browser.navigate'
-    || type === 'agent.browser.fetch'
-    || type.startsWith('agent.browser.tabs.')
-    || type.startsWith('agent.browser.tab.');
-}
-
 /**
  * Route a message to its handler.
  * Returns undefined if no handler is found (for streaming handlers).
@@ -209,12 +201,9 @@ export async function routeMessage(ctx: RequestContext): HandlerResponse {
   
   // Enforce the setting at the receiver: a page can send transport messages
   // directly, without going through the injected API's disabled wrapper.
-  if (handler && isBrowserControlMessage(ctx.type) && !(await getFeatureFlags()).browserControl) {
-    return {
-      id: ctx.id,
-      ok: false,
-      error: { code: 'ERR_FEATURE_DISABLED', message: 'Browser Control is disabled' },
-    };
+  const refusal = handler ? featureRefusal(ctx.type, await getFeatureFlags()) : null;
+  if (refusal) {
+    return { id: ctx.id, ok: false, error: refusal };
   }
 
   if (handler) {

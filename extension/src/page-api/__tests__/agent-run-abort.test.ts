@@ -14,7 +14,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../harbor-core', () => ({
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
 }));
-vi.mock('../policy/feature-flags', () => ({ getFeatureFlags: mocks.getFeatureFlags }));
+vi.mock('../policy/feature-flags', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../policy/feature-flags')>()),
+  getFeatureFlags: mocks.getFeatureFlags,
+}));
 vi.mock('../handlers', () => ({
   routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: mocks.hasPermission,
   getPermissions: async () => ({ scopes: {}, allowedTools: [] }),
@@ -39,7 +42,8 @@ function toolCallResponse(callId: string) {
 
 beforeEach(async () => {
   vi.resetModules(); vi.clearAllMocks();
-  mocks.getFeatureFlags.mockResolvedValue({ toolCalling: true });
+  const { DEFAULT_FLAGS } = await import('../policy/feature-flag-set');
+  mocks.getFeatureFlags.mockResolvedValue({ ...DEFAULT_FLAGS, toolCalling: true });
   mocks.hasPermission.mockResolvedValue(true);
   const event = () => ({ addListener: vi.fn() });
   const onConnect = event();

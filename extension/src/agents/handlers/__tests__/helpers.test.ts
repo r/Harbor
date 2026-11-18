@@ -67,6 +67,18 @@ describe('requireAction', () => {
     expect(response.error.details.source).toBe('managed');
   });
 
+  it('passes the calling tab to the origin-grant lookup', async () => {
+    const seen: Array<number | undefined> = [];
+    setOriginGrantResolver((_origin, _action, _resource, tabId) => {
+      seen.push(tabId);
+      return { effect: 'allow', persistence: 'once' };
+    });
+    const { sender: s } = sender();
+    const result = await requireAction(ctx({ tabId: 9 }), s, 'agent.invoke', { promptAsScope: 'agents:invoke' });
+    expect(result).toBe(true);
+    expect(seen).toEqual([9]);
+  });
+
   it('passes the input labels through to the engine', async () => {
     const { sender: s, calls } = sender();
     const { LabelSet } = await import('../../../policy/labels');

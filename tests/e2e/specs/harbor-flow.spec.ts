@@ -53,12 +53,6 @@ test.describe('Harbor Extension Flow', () => {
     });
   });
 
-  test.describe('Chat Functionality', () => {
-    test('can open chat page', async () => {
-      // Manual test: Click "Open Chat" button, verify chat page opens
-    });
-  });
-
   test.describe('MCP Servers', () => {
     test('MCP servers panel exists', async () => {
       // Manual test: Verify MCP servers panel is visible

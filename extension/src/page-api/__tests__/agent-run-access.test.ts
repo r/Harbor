@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../harbor-core', () => ({
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
 }));
-vi.mock('../policy/feature-flags', () => ({ getFeatureFlags: mocks.getFeatureFlags }));
+vi.mock('../policy/feature-flags', async (importOriginal) => ({
+  ...(await importOriginal<object>()), getFeatureFlags: mocks.getFeatureFlags,
+}));
 vi.mock('../handlers', () => ({
   routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: mocks.hasPermission,
   getPermissions: async () => ({ scopes: {}, allowedTools: [] }),

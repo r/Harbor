@@ -87,8 +87,6 @@ describe('Typed action registry', () => {
       'browser.read.element',
       'browser.read.screenshot',
       'browser.read.tabs',
-      'addressBar.read.context',
-      'addressBar.read.history',
     ];
     for (const action of reads) {
       const ttl = TYPED_ACTIONS[action].defaultTTL;

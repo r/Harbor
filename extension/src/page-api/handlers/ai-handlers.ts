@@ -9,6 +9,7 @@ import type { RequestContext, HandlerResponse, TextSessionState } from './types'
 import type { SessionSummary } from '../types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission } from './permission-handlers';
+import { FEATURE_LABELS, getFeatureFlags } from '../policy/feature-flags';
 
 // =============================================================================
 // Session State
@@ -114,6 +115,8 @@ export function recordExplicitPrompt(
 /**
  * Look up a text session for a prompt from `origin`. Explicit sessions are
  * revalidated with Harbor on every prompt, so termination and expiry apply.
+ * A window.ai session is refused while Text Generation is off, even one made
+ * before it was turned off.
  */
 export async function resolveTextSession(
   sessionId: string,
@@ -125,6 +128,9 @@ export async function resolveTextSession(
   }
   if (session.origin !== origin) {
     return { code: 'ERR_PERMISSION_DENIED', message: 'Session belongs to different origin' };
+  }
+  if (!session.explicit && !(await getFeatureFlags()).textGeneration) {
+    return { code: 'ERR_FEATURE_DISABLED', message: `${FEATURE_LABELS.textGeneration} is disabled` };
   }
   if (session.explicit) {
     let hasLLM: boolean;

@@ -13,8 +13,6 @@ import type {
   StoredOriginPermissions,
   StoredPermission,
   RequestPermissionsOptions,
-  MessageType,
-  REQUIRED_SCOPES,
 } from '../agents/types';
 
 const PERMISSIONS_STORAGE_KEY = 'harbor_origin_permissions';
@@ -112,10 +110,6 @@ export async function getPermissionStatus(origin: string, tabId?: number): Promi
     'web:fetch': 'not-granted',
     // Other
     'chat:open': 'not-granted',
-    'addressBar:suggest': 'not-granted',
-    'addressBar:context': 'not-granted',
-    'addressBar:history': 'not-granted',
-    'addressBar:execute': 'not-granted',
     // Extension 3: Multi-Agent (reserved)
     'agents:register': 'not-granted',
     'agents:discover': 'not-granted',
@@ -158,7 +152,9 @@ export async function checkPermissions(
     console.log('[Permissions] Scope', scope, '=', grant);
     if (grant === 'denied') {
       deniedScopes.push(scope);
-    } else if (grant === 'not-granted') {
+    } else if (grant !== 'granted-once' && grant !== 'granted-always') {
+      // Fail closed: a scope with no grant, including one the status map
+      // doesn't know, is missing rather than granted.
       missingScopes.push(scope);
     }
   }
@@ -354,10 +350,6 @@ export async function listAllPermissions(): Promise<PermissionStatus[]> {
       'web:fetch': 'not-granted',
       // Other
       'chat:open': 'not-granted',
-      'addressBar:suggest': 'not-granted',
-      'addressBar:context': 'not-granted',
-      'addressBar:history': 'not-granted',
-      'addressBar:execute': 'not-granted',
       // Extension 3: Multi-Agent (reserved)
       'agents:register': 'not-granted',
       'agents:discover': 'not-granted',
@@ -761,26 +753,6 @@ export const SCOPE_DESCRIPTIONS: Record<PermissionScope, { title: string; descri
     title: 'Open chat UI',
     description: 'Open the browser\'s chat interface.',
     risk: 'low',
-  },
-  'addressBar:suggest': {
-    title: 'Provide address bar suggestions',
-    description: 'Show AI-powered suggestions in the browser address bar.',
-    risk: 'low',
-  },
-  'addressBar:context': {
-    title: 'Access current tab context',
-    description: 'Use current page information for smarter suggestions.',
-    risk: 'medium',
-  },
-  'addressBar:history': {
-    title: 'Access browsing history',
-    description: 'Use recent browsing history for personalized suggestions.',
-    risk: 'high',
-  },
-  'addressBar:execute': {
-    title: 'Execute from address bar',
-    description: 'Run tools and actions directly from address bar commands.',
-    risk: 'medium',
   },
   // Extension 3: Multi-Agent
   'agents:register': {
