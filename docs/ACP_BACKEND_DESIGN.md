@@ -96,13 +96,14 @@ There are three kinds of tool, handled differently.
 
 Rules:
 
-1. **Every action that changes something needs Harbor's approval while the agent works on a page's request.** When the session starts, Harbor sets the agent's strictest approval mode (see section 5). That mode must ask before edits, deletes, moves, shell commands and network access. Reads may go unasked, because Claude Code's and Codex's strictest modes don't ask before a read; rule 6 confines them. If an agent has no mode that asks before changes, Harbor refuses to start a page's request on it, and the user sees why.
+1. **Every action that changes something needs Harbor's approval while the agent works on a page's request.** When the session starts, Harbor sets the agent's strictest approval mode (see section 5). That mode must ask before the agent changes files. Reads may go unasked, because Claude Code's and Codex's strictest modes don't ask before a read; rule 6 confines them. Shell commands that run without asking are handled by rule 8. If an agent has no mode that asks before changes, Harbor refuses to start a page's request on it, and the user sees why.
 2. **Harbor shows the request in its own prompt**, naming the site, the agent and the action: the tool call's title, kind, input and file locations.
 3. **Harbor never passes "always" through to the agent.** The agent's own "always allow" isn't tied to a site, so it would carry over to the next site's run. Harbor answers `allow_once` or `reject_once`, and keeps any "always" in its own store, keyed by origin, agent and tool kind. Shell commands (kind `execute`) are never remembered: each one is approved on its own.
 4. **Each approval goes through the policy engine** as a new action, so it reaches rules and the audit log. Its effect comes from the tool call's kind: `read`, `search`, `think` and `fetch` are reads; `edit`, `delete`, `move` and `execute` are writes; anything else counts as a write. goose reports every tool call as `other`, so every goose call is treated as a write. The site's grant to use the agent doesn't count as consent for these calls.
 5. **An unanswered prompt times out** and is answered `reject_once`.
-6. **Harbor confines the agent to the site's working directory itself.** It doesn't trust the agent's own framing. Every path the agent reports, in a permission request or in a `tool_call` / `tool_call_update` (its `locations` and path-like fields of its input), is checked against the working directory after both are canonicalized (symlinks resolved; on macOS the temporary directory is a symlink). A path outside it gets `reject_once` if the agent asked. If the agent didn't ask, as with an unasked read, Harbor cancels the run and nothing more reaches the page. This depends on agents reporting the paths they touch; a shell command, which could read anything, is always asked about under rule 1.
+6. **Harbor confines the agent to the site's working directory itself.** It doesn't trust the agent's own framing. Every path the agent reports, in a permission request or in a `tool_call` / `tool_call_update` (its `locations` and path-like fields of its input), is checked against the working directory after both are canonicalized (symlinks resolved; on macOS the temporary directory is a symlink). A path outside it gets `reject_once` if the agent asked. If the agent didn't ask, as with an unasked read, Harbor cancels the run and nothing more reaches the page. This depends on agents reporting the paths they touch. A shell command's paths are in a free-form command string, so it can't be confined this way; see rule 8.
 7. **The agent gets a clean environment.** The bridge starts it with the environment variables from its config plus what it needs to run (such as `PATH` and `HOME`), not the variables that identify the user's terminal or session. In testing, an agent that was allowed to run commands used such a variable to act on the terminal session it was started from.
+8. **A shell command that runs without asking cancels the run.** In testing, Claude Code's and Codex's strictest modes still ran read-only shell commands such as `ls` and `cat` without a permission request. Harbor can't confine those, so when it sees a `tool_call` of kind `execute` that it wasn't asked about, it cancels the run and nothing more reaches the page. Each preset should also use the agent's own settings, where they exist, to make every shell command ask, so this rarely happens.
 
 **Harbor's MCP servers and the page's tools** aren't offered to the ACP agent at first. The agent works with its own tools. Later, there are two ways to offer them:
 
@@ -127,10 +128,10 @@ Rules:
   | Agent | How Harbor sets it | Asks before |
   | --- | --- | --- |
   | goose | `GOOSE_MODE=approve` in the agent's environment at start | every tool call |
-  | Claude Code | `session/set_mode` to `default` ("Manual"); the adapter starts in `auto` | changes and shell commands, not reads |
-  | Codex | `session/set_mode` to `read-only` | edits and network access, not reads |
+  | Claude Code | `session/set_mode` to `default` ("Manual"); the adapter starts in `auto` | file changes; not reads or read-only shell commands |
+  | Codex | `session/set_mode` to `read-only` | file edits; not reads or read-only shell commands |
 
-  Recheck the table when an adapter's version changes.
+  Testing covered reads, file edits and shell commands. Deletes, moves and network access weren't exercised. Recheck the table when an adapter's version changes.
 - The bridge checks that the agent's command exists, and runs `initialize` when the user selects the agent, so setup errors appear in the sidebar, not on a page.
 - The setting is global at first. A per-site choice can come later.
 
@@ -163,7 +164,7 @@ Settled by the maintainer:
 
 1. **Transport.** The bridge spawns the configured agent and relays messages. The ACP client runs in the extension. (The spike uses a development-only WebSocket relay instead.)
 2. **Mapping.** Both `agent.run` and `window.ai` text sessions go to the ACP agent when the user picks one.
-3. **Agent-native tools on a page's behalf.** Every action that changes something needs Harbor's approval. Harbor keeps "always" per origin, never for shell commands, and refuses agents with no mode that asks before changes. Reads may go unasked, and Harbor confines them to the site's working directory (section 3, rules 1, 3 and 6).
+3. **Agent-native tools on a page's behalf.** Every action that changes something needs Harbor's approval. Harbor keeps "always" per origin, never for shell commands, and refuses agents with no mode that asks before changes. Reads may go unasked, and Harbor confines them to the site's working directory. A shell command that runs without asking cancels the run (section 3, rules 1, 3, 6 and 8).
 4. **First-order agents.** goose, Claude Code and Codex are all first-order: each gets a preset and an end-to-end demo in the first release.
 
 Proposed, and open to the maintainer's review on this proposal:
