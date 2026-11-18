@@ -81,6 +81,8 @@ const LOG_TRUNCATE_BYTES: usize = 2000;
 /// config: `PATH` to find the command (and `node` behind `npx` wrappers),
 /// `HOME` and the XDG base directories for their config and credentials,
 /// the user identity and shell, a temp dir, and the locale.
+/// `XDG_RUNTIME_DIR` is left out on purpose: it holds the login session's
+/// sockets (D-Bus, Wayland, sometimes an SSH agent).
 const INHERITED_ENV: &[&str] = &[
     "PATH",
     "HOME",
@@ -93,7 +95,6 @@ const INHERITED_ENV: &[&str] = &[
     "XDG_DATA_HOME",
     "XDG_CACHE_HOME",
     "XDG_STATE_HOME",
-    "XDG_RUNTIME_DIR",
 ];
 
 /// An agent's environment: the allowlisted part of `inherited`, then the

@@ -706,7 +706,6 @@ const INHERITED_ENV: &[&str] = &[
     "XDG_DATA_HOME",
     "XDG_CACHE_HOME",
     "XDG_STATE_HOME",
-    "XDG_RUNTIME_DIR",
 ];
 
 #[test]
@@ -723,6 +722,7 @@ fn agent_gets_only_allowlisted_env_plus_its_config_env() {
             ("TMUX", "/tmp/tmux-leak,1,0"),
             ("TERM_PROGRAM", "leak"),
             ("SSH_AUTH_SOCK", "/tmp/leak.sock"),
+            ("XDG_RUNTIME_DIR", "/tmp/leak-runtime"),
             ("ANTHROPIC_API_KEY", "sk-leak"),
             ("HARBOR_TEST_BRIDGE_ONLY", "leak"),
             ("LANG", "en_US.UTF-8"),
@@ -751,6 +751,7 @@ fn agent_gets_only_allowlisted_env_plus_its_config_env() {
         "TMUX",
         "TERM_PROGRAM",
         "SSH_AUTH_SOCK",
+        "XDG_RUNTIME_DIR",
         "ANTHROPIC_API_KEY",
         "HARBOR_TEST_BRIDGE_ONLY",
     ] {
