@@ -292,37 +292,35 @@ This is capability attenuation in the OCAP sense: the parent passes a strict sub
 
 ## The Watchdog
 
-A background monitor that subscribes to the SessionRegistry and the PolicyEngine audit stream and maintains rolling statistics per `(origin, sessionId)`:
+A background monitor that reads every engine decision from the audit log and keeps rolling counts per origin over a one-minute window:
 
-- Tool-call rate (1m, 5m, 1h windows)
-- Navigation rate
-- Denial count and consecutive denials
-- Budget consumption
-- Unique cross-origin egress targets
-- **Label-flow events** (data with label `X` was about to flow to destination class `Y`)
+- Tool calls
+- Cross-origin egress, including prompts to third-party remote models
+- Distinct sensitive labels the origin's outputs carried (`credentials`, `payments`, `identity`, `regulated`, `confidential`)
+- Label-flow blocks (Tier 3 denies)
+- Consecutive denials
 
-The Watchdog is a complement to the structural defenses (info-flow labels, sensitivity gates, capability tokens), not a replacement. The structural defenses prevent the action; the Watchdog notices the *attempt* and adjusts the envelope so the next attempt is harder.
+The Watchdog is a complement to the structural defenses (info-flow labels, sensitivity gates), not a replacement. The structural defenses prevent the action; the Watchdog notices a pattern of attempts and tightens what the origin can do next.
 
-| Rule | Trigger | Default response |
-|---|---|---|
-| **Velocity spike** | rate > 3× rolling average | Toast notification in sidebar |
-| **Repeated denials** | ≥ 5 consecutive denials | Quarantine the origin until it's reset |
-| **Budget overspend** | > 90% of budget consumed in a single burst | Suspend; ask to extend |
-| **Repeated label-egress attempts** | 2+ blocked egress attempts carrying `credentials`/`payments`/`identity` in a single session | Quarantine session |
-| **Scope escalation** | Origin requests an action outside its current token's `allowedActions` twice in a row | Terminate session; mark origin "needs review" |
-| **New resource class** | navigation/tool category never used in last 50 actions, then used 3+ times | Notify only |
-
-When a rule triggers, the Watchdog walks a **graduated containment ladder**, never jumping straight to a kill switch:
+Each origin is in one of four states. The engine consults the state at Tier 4 on every gated call:
 
 ```
 normal
-  └─ restricted-write    (write tier denied; reads continue)
-       └─ sandbox        (no remote fetch, no nav; read-only on current tab)
-            └─ quarantined   (every action requires explicit allow)
-                 └─ killed   (session terminated; origin in cooldown)
+  └─ flagged       (nothing changes yet; the activity feed marks the origin)
+       └─ restricted    (every action that would be allowed asks first)
+            └─ quarantined   (every action is denied with ERR_QUARANTINED)
 ```
 
-Every transition is reversible by the user from the sidebar in one click.
+| Trigger (within one minute unless noted) | Moves the origin to |
+|---|---|
+| 20 tool calls | flagged |
+| 60 tool calls | restricted |
+| 5 cross-origin egresses | restricted |
+| 3 distinct sensitive labels (no window) | restricted |
+| 3 label-flow blocks | quarantined |
+| 5 consecutive denials (no window) | quarantined |
+
+The state only tightens: an origin never steps back down on its own. It clears when the origin is reset (the `watchdog.resetOrigin` message) or the extension restarts, since the counts live in memory. The thresholds are `DEFAULT_THRESHOLDS` in `extension/src/policy/watchdog.ts`.
 
 ## Audit, activity feed, and the decision simulator
 
@@ -560,9 +558,9 @@ try {
       // A user/org policy rule denied this. Don't retry.
       // err.details.policyRule tells you which rule.
       break;
-    case 'ERR_SESSION_CONTAINED':
-      // The Watchdog has restricted this session.
-      // err.details.containmentLevel = 'restricted-write' | 'sandbox' | ...
+    case 'ERR_QUARANTINED':
+      // The Watchdog has quarantined this origin. Every call is denied
+      // until the user resets it.
       break;
     case 'ERR_LABEL_FLOW_BLOCKED':
       // The action's input carries a data label (credentials, payments, identity)
@@ -578,7 +576,7 @@ try {
 }
 ```
 
-Treat `ERR_BLOCKED_BY_POLICY`, `ERR_LABEL_FLOW_BLOCKED`, and `ERR_SESSION_CONTAINED` as terminal: the user has already been told, and retrying just generates noise in their activity feed.
+Treat `ERR_BLOCKED_BY_POLICY`, `ERR_LABEL_FLOW_BLOCKED`, and `ERR_QUARANTINED` as terminal: the user has already been told, and retrying just generates noise in their activity feed.
 
 ### 6. Make pre-action reviews readable
 
@@ -614,9 +612,6 @@ mock.permissions.applyPolicy({
     { id: 'r2', effect: 'deny',  actions: ['tool.call'], resource: { tool_server: 'filesystem' } },
   ],
 });
-
-// Inject Watchdog state
-mock.permissions.setSessionContainment(sessionId, 'sandbox');
 
 // Force a sensitivity classification for an arbitrary URL
 mock.permissions.markSensitive('https://example.com/payment');
@@ -774,32 +769,9 @@ The engine asks `isTrustedManifest` before lowering a sensitivity gate based on 
 - **Don't store secret data in audit records.** Use a digest. Audit records are user-readable and exportable.
 - **Don't add a sensitivity false positive without an override path.** Every "always confirm" rule needs a corresponding "always allow this on this origin" surface in the sidebar, or you've created an unfixable annoyance.
 
-## Adding a Watchdog rule
+## Changing a Watchdog trigger
 
-A rule is a pure function from `WatchdogState` to a (possibly empty) signal:
-
-```ts
-// extension/src/policy/watchdog.ts
-export const rules: WatchdogRule[] = [
-  // existing rules...
-
-  {
-    name: 'unusual_navigation_burst',
-    evaluate(state) {
-      if (state.navigationsLastMinute > 30) {
-        return {
-          severity: 'warn',
-          message: `${state.origin} navigated ${state.navigationsLastMinute}x in 1 min`,
-          response: { kind: 'downgrade', to: 'restricted-write' },
-        };
-      }
-      return null;
-    },
-  },
-];
-```
-
-Rules are evaluated on every audit-log append. Test them with mocked `Date.now` and an injected stat history (`watchdog.spec.ts`).
+The Watchdog's triggers are fixed checks in `maybeEscalate` in `extension/src/policy/watchdog.ts`, with their limits in `DEFAULT_THRESHOLDS`. To add one, count the new signal in `observe` (it runs on every audit-log append), add a threshold, and escalate in `maybeEscalate`. Keep the ratchet one-way. Test it by feeding audit records to `observe` with chosen timestamps (`extension/src/policy/__tests__/watchdog.test.ts`).
 
 ## Wiring a new prompt UI surface
 
@@ -846,7 +818,7 @@ Harbor's sidebar is the home for everything in this document. It has four tabs:
 
 | Tab | What's there |
 |---|---|
-| **Sessions** | Every active agent session, its origin, its containment level, its budget. One-click Stop, Pause, Revoke. |
+| **Sessions** | Every active agent session, its origin, its budget. One-click Stop, Pause, Revoke. |
 | **Policy** | Your `harbor-policy.json` editor. JSON, with schema validation and rule helpers. |
 | **Origins** | Per-site grants — what you've said "Allow always" or "Allow once" to, on which sites. |
 | **Activity** | Audit feed: every decision the engine has made, with the reason. Filter by site, by decision, by time. |
@@ -908,24 +880,6 @@ When the SensitivityEngine catches something — you're about to delete a repo, 
 
 There's no "always allow" option for sensitive actions, because that would defeat the purpose. You can move the rule to your sensitive-domains list later if you want to suppress this category of prompt for a specific origin, but it's a deliberate decision in the sidebar, not a one-click waiver.
 
-### Containment notice
-
-Not a prompt — a notification. Looks like:
-
-```
-┌────────────────────────────────────────────────┐
-│  Session restricted                            │
-│                                                │
-│  example.com tried to send data tagged         │
-│  `credentials` to an external service.         │
-│  This session is now read-only.                │
-│                                                │
-│  [Show in activity]  [Restore]  [Stop session] │
-└────────────────────────────────────────────────┘
-```
-
-You don't have to do anything. The agent has been quietly restricted, and you can choose to look closer or move on. The "Restore" button clears the restriction if you trust the agent's intent; "Stop session" terminates it cleanly.
-
 ### The decision simulator
 
 Every row in the Activity feed has a **"Why?"** link. Clicking it opens a panel that walks through the decision: which tier of the ladder fired, which rule matched, what labels were on the input, what the resulting effect was. It's how you investigate "why did Harbor block this?" without having to read JSON.
@@ -958,7 +912,7 @@ If a site is hammering you with prompts, that's almost always a sign the site is
 |---|---|
 | See every active agent session | Sidebar → Sessions |
 | Stop a session immediately | Sidebar → Sessions → Stop, or sidebar header Stop All |
-| Restore a contained session | Sidebar → Sessions → Restore, or directly from the containment notice |
+| Reset a quarantined site | Not in the sidebar yet; the `watchdog.resetOrigin` message clears it |
 | Edit your policy file | Sidebar → Policy |
 | Add a rule from a recent action | Sidebar → Activity → "Make this automatic" |
 | See exactly what an agent did and why | Sidebar → Activity |
