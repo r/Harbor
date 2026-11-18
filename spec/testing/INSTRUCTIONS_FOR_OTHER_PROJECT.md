@@ -1,6 +1,6 @@
 # Instructions: Add Harbor Testing to This Project (Option 2 — Submodule)
 
-**Use this in the project that depends on the Web Agents API** (`window.ai` / `window.agent`). Feed this file to Cursor (or follow it yourself) so it: (1) adds Harbor as a submodule, (2) generates the test harness, (3) wires this project’s tests to the harness, and (4) updates this project’s docs.
+**Use this in the project that depends on the Web Agent API** (`window.ai` / `window.agent`). Feed this file to Cursor (or follow it yourself) so it: (1) adds Harbor as a submodule, (2) generates the test harness, (3) wires this project’s tests to the harness, and (4) updates this project’s docs.
 
 ---
 
@@ -35,8 +35,8 @@ node harbor/scripts/generate-test-harness.mjs .
 This creates **`harbor-test/`** with:
 
 - `mock.js` — mock for `window.ai` / `window.agent` (unit tests)
-- `playwright.harbor.config.example.ts` — Playwright config for E2E with extensions
-- `fixtures/harbor.ts` — Playwright fixture that loads Harbor extensions
+- `playwright.harbor.config.example.ts` — Playwright config for E2E with the Harbor extension
+- `fixtures/harbor.ts` — Playwright fixture that loads the Harbor extension
 - `example.test.mjs` — example unit test (Vitest)
 - `e2e/example.spec.ts` — example E2E spec
 - `vitest.config.example.ts`, `web-agents-api.d.ts`, `README.md`
@@ -57,17 +57,16 @@ Commit **`harbor-test/`** (and the submodule if not already committed).
   - In teardown: `mock.uninstall();`
 - **If this project has no tests yet:** add a test script that runs the example: e.g. `npx vitest run harbor-test/example.test.mjs`. Ensure Vitest is a devDependency; copy or merge `harbor-test/vitest.config.example.ts` into this project’s Vitest config if needed, and include `harbor-test/**/*.test.mjs` (or equivalent).
 
-### E2E tests (Playwright + Harbor extensions)
+### E2E tests (Playwright + Harbor extension)
 
 - Copy `harbor-test/playwright.harbor.config.example.ts` into this project (e.g. `playwright.config.ts` at root or in `e2e/`). Adjust `testDir` if you keep specs elsewhere (e.g. `./e2e` or `./tests/e2e`).
-- In **every E2E spec** that should run with Harbor extensions loaded, import the fixture from the harness instead of `@playwright/test`:
+- In **every E2E spec** that should run with the Harbor extension loaded, import the fixture from the harness instead of `@playwright/test`:
   - `import { test, expect } from '../harbor-test/fixtures/harbor.js';` (adjust path from the spec file to `harbor-test/`).
 - Add npm scripts, e.g.:
   - `"test:e2e": "playwright test"`
   - `"test:e2e:headed": "playwright test --headed"`
-- Document that for E2E with real extensions, set env and optionally build Harbor:
+- Document that for E2E with the real extension, set env and optionally build Harbor:
   - `export HARBOR_EXTENSION_PATH=$(pwd)/harbor/extension/dist-chrome`
-  - `export WEB_AGENTS_EXTENSION_PATH=$(pwd)/harbor/web-agents-api/dist-chrome`
   - Optionally: `cd harbor && npm run build && cd ..` (or `npm run build:chrome`).
 
 ### TypeScript
@@ -80,7 +79,7 @@ Commit **`harbor-test/`** (and the submodule if not already committed).
 
 - **README (or main dev doc):** Add a short “Testing” section that says:
   - Unit tests use the Harbor test harness (mock) in `harbor-test/`. Run with the project’s test command (e.g. `npm test` or `npx vitest run`).
-  - E2E tests use Playwright; run `npm run test:e2e` (or equivalent). To run E2E with real Harbor extensions, init the submodule (`git submodule update --init --recursive`), build Harbor in `harbor/`, and set `HARBOR_EXTENSION_PATH` and `WEB_AGENTS_EXTENSION_PATH` to `harbor/extension/dist-chrome` and `harbor/web-agents-api/dist-chrome`.
+  - E2E tests use Playwright; run `npm run test:e2e` (or equivalent). To run E2E with the real Harbor extension, init the submodule (`git submodule update --init --recursive`), build Harbor in `harbor/`, and set `HARBOR_EXTENSION_PATH` to `harbor/extension/dist-chrome`.
   - Harbor is included as a submodule; the harness was generated with `node harbor/scripts/generate-test-harness.mjs .`. To refresh it, run that command again after updating the submodule.
 - **Contributing / setup doc (if any):** Mention that new clones (and CI) must run `git submodule update --init --recursive` so the `harbor` and `harbor-test/` contents are present.
 - **.gitignore:** Do **not** ignore `harbor-test/` if you committed it (so others get the harness without running the generator).

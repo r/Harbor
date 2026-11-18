@@ -83,14 +83,14 @@ async function handleRequest(text) {
   connection.textContent = 'Connecting to your AI through Harbor…';
   try {
     if (!await backend.isAvailable()) {
-      throw new Error('Harbor is unavailable. Load both Harbor extensions in Firefox, configure a provider, then send your request again.');
+      throw new Error('Harbor is unavailable. Load the Harbor extension in Firefox, configure a provider, then send your request again.');
     }
     const permission = await window.agent.requestPermissions({
       scopes: ['model:prompt'],
       reason: 'Use your chosen AI to prepare invoice details for your review.',
     });
     if (permission.granted !== true) {
-      throw new Error('Model permission was denied. Allow this origin in Web Agents API, then send your request again.');
+      throw new Error('Model permission was denied. Allow this origin in Harbor, then send your request again.');
     }
     const manifest = await manifestPromise;
     const catalog = enrichCatalogWithSchema({ actions: new SemanticParser().discoverActions(document.body), url: location.href, timestamp: new Date().toISOString() }, manifest);
@@ -164,5 +164,5 @@ window.addEventListener('pagehide', () => {
 window.addEventListener('storage', refreshCount);
 refreshCount();
 if (!window.ai?.createTextSession || !window.agent?.requestPermissions) {
-  connection.textContent = 'Harbor is unavailable. Load both extensions and configure a provider to use the assistant.';
+  connection.textContent = 'Harbor is unavailable. Load the extension and configure a provider to use the assistant.';
 }

@@ -16,7 +16,7 @@ This guide is for developers who want to contribute to Harbor itself. If you're 
 
 ## Getting Started
 
-Use **[the canonical Quickstart](QUICKSTART.md)** to install prerequisites, build both extensions and the native bridge, load Firefox, configure and test a default model, and run the demos. Browser-specific instructions are linked from that guide.
+Use **[the canonical Quickstart](QUICKSTART.md)** to install prerequisites, build the extension and the native bridge, load Firefox, configure and test a default model, and run the demos. Browser-specific instructions are linked from that guide.
 
 Then continue below for source layout, watch mode and contribution checks.
 
@@ -34,16 +34,6 @@ harbor/
 │   │   ├── wasm/           # In-browser WASM MCP runtime
 │   │   ├── llm/            # LLM provider abstraction
 │   │   ├── mcp/            # MCP protocol & host
-│   │   └── policy/         # Feature flags
-│   ├── dist-firefox/       # Built output (Firefox, default)
-│   └── dist-chrome/        # Built output (Chrome)
-│
-├── web-agents-api/         # Web Agents API Extension - Implements window.ai/agent
-│   ├── src/
-│   │   ├── background.ts   # Cross-extension messaging to Harbor
-│   │   ├── injected.ts     # window.ai / window.agent / navigator.modelContext
-│   │   ├── content-script.ts  # Script injection bridge
-│   │   ├── handlers/       # Message routing (ai.*, agent.*)
 │   │   └── policy/         # Feature flags
 │   ├── dist-firefox/       # Built output (Firefox, default)
 │   └── dist-chrome/        # Built output (Chrome)
@@ -88,9 +78,8 @@ harbor/
 
 | Component | Path | Description |
 |-----------|------|-------------|
-| **Web Agent API** | `web-agents-api/src/injected.ts` | window.ai/window.agent implementation |
-| **Permission System** | `web-agents-api/src/policy/` | Origin permission grants |
-| **Harbor Client** | `web-agents-api/src/harbor-client.ts` | Cross-extension messaging to Harbor |
+| **Web Agent API** | `extension/src/page-api/injected.ts` | window.ai/window.agent implementation |
+| **Permission System** | `extension/src/page-api/policy/` | Origin permission grants |
 | **Native Messaging** | `bridge-rs/src/native_messaging.rs` | Stdin/stdout JSON framing |
 | **RPC Handlers** | `bridge-rs/src/rpc/` | All bridge message types |
 | **LLM Config** | `bridge-rs/src/llm/` | LLM provider configuration |
@@ -102,10 +91,10 @@ harbor/
 
 ## Development Workflow
 
-### Launch Both Firefox Extensions
+### Launch Firefox With Harbor
 
-After completing the [Quickstart](QUICKSTART.md), build both extensions and launch
-them together in a fresh temporary Firefox profile:
+After completing the [Quickstart](QUICKSTART.md), build the extension and launch
+it in a fresh temporary Firefox profile:
 
 ```bash
 npm install --prefix tests/e2e

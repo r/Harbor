@@ -1,6 +1,6 @@
 # Harbor test harness (generated)
 
-This folder was generated from the [Harbor](https://github.com/r/harbor) repo so you can test your app that uses the Web Agents API (`window.ai` and `window.agent`).
+This folder was generated from the [Harbor](https://github.com/r/harbor) repo so you can test your app that uses the Web Agent API (`window.ai` and `window.agent`).
 
 ## Unit / integration tests (mock)
 
@@ -37,13 +37,12 @@ mock.ai.nextError = { code: 'ERR_MODEL_FAILED', message: 'Model unavailable' };
 
 See `mock.js` for the full control API (e.g. `mock.agent.toolsList`, `mock.agent.toolCallResult`).
 
-## E2E tests (Playwright + Harbor extensions)
+## E2E tests (Playwright + Harbor extension)
 
-To run E2E tests against a **real** browser with the Harbor and Web Agents API extensions loaded:
+To run E2E tests against a **real** browser with the Harbor extension loaded:
 
 1. **Build Harbor** (or use a pre-built artifact). You need:
    - Harbor extension: e.g. `path/to/harbor/extension/dist-firefox` or `dist-chrome`
-   - Web Agents API extension: e.g. `path/to/harbor/web-agents-api/dist-firefox` or `dist-chrome`
 
 2. **Install Playwright** in your project if needed:
    ```bash
@@ -53,9 +52,9 @@ To run E2E tests against a **real** browser with the Harbor and Web Agents API e
 
 3. **Copy and customize** the example config:
    - Copy `playwright.harbor.config.example.ts` to your project (e.g. `playwright.config.ts` or `e2e/playwright.config.ts`).
-   - Set `HARBOR_EXTENSION_PATH` and `WEB_AGENTS_EXTENSION_PATH` (env or in config) to the two extension directories above.
+   - Set `HARBOR_EXTENSION_PATH` (env or in config) to the extension directory above.
 
-4. **In your E2E specs**, import `test` and `expect` from the harbor fixture so the browser launches with extensions:
+4. **In your E2E specs**, import `test` and `expect` from the harbor fixture so the browser launches with the extension:
    ```ts
    import { test, expect } from '../harbor-test/fixtures/harbor.js';
    ```

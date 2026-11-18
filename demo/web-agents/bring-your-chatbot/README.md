@@ -22,7 +22,7 @@ This starts the demo server at `http://localhost:8000` (serves demo pages).
 
 ### 2. Visit the demo
 
-Open `http://localhost:8000/web-agents/bring-your-chatbot/` with the Web Agents API extension installed.
+Open `http://localhost:8000/web-agents/bring-your-chatbot/` with Harbor installed.
 
 ### 3. Try it out
 
@@ -34,7 +34,7 @@ Click the chat button in the corner and ask questions like:
 
 ## Key APIs Used
 
-This demo uses **only** the Web Agents API (no direct Harbor access):
+This demo uses **only** the page-facing Web Agent API (`window.ai` / `window.agent`), not any Harbor-specific integration:
 
 ```javascript
 // Request permission for text generation
@@ -63,7 +63,7 @@ for await (const token of session.promptStreaming(userMessage)) {
 
 ## Graceful Degradation
 
-If the Web Agents API isn't available (no extension installed), the demo shows a message directing users to install the extension.
+If the Web Agent API isn't available (Harbor not installed), the demo shows a message directing users to install the extension.
 
 ## Files
 
@@ -78,5 +78,5 @@ bring-your-chatbot/
 
 ## See Also
 
-- [Web Agents API Documentation](../../../docs/WEB_AGENTS_API.md) — Full API reference
-- [Other Demos](../) — More Web Agents API examples
+- [Web Agent API Documentation](../../../docs/WEB_AGENTS_API.md) — Full API reference
+- [Other Demos](../) — More Web Agent API examples

@@ -1,8 +1,8 @@
 # Harbor Test Suite
 
-This directory contains the **test infrastructure for Harbor itself** (unit and E2E tests for the extensions, bridge, and demos).
+This directory contains the **test infrastructure for Harbor itself** (unit and E2E tests for the extension, bridge, and demos).
 
-**Testing your own app that uses the Web Agents API?** See [docs/TESTING_YOUR_APP.md](../docs/TESTING_YOUR_APP.md) — generate a test harness with mocks and Playwright from `scripts/generate-test-harness.mjs`.
+**Testing your own app that uses the Web Agent API?** See [docs/TESTING_YOUR_APP.md](../docs/TESTING_YOUR_APP.md) — generate a test harness with mocks and Playwright from `scripts/generate-test-harness.mjs`.
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ After `npm run build`, run from the repository root:
 node tests/e2e/test-getting-started.mjs
 ```
 
-This launches Firefox with both extensions in a temporary profile and runs all five checklist steps, including the normal localhost permission prompt, time-tool discovery, a real model tool call, and the displayed response. It starts its own demo server on a free loopback port and closes its browser afterward. It does not seed extension settings or configure a model. The native bridge must already be registered and a default model must be available; ready Apple Intelligence works without a saved model. An unavailable model fails the test rather than being skipped.
+This launches Firefox with Harbor in a temporary profile and runs all five checklist steps, including the normal localhost permission prompt, time-tool discovery, a real model tool call, and the displayed response. It starts its own demo server on a free loopback port and closes its browser afterward. It does not seed extension settings or configure a model. The native bridge must already be registered and a default model must be available; ready Apple Intelligence works without a saved model. An unavailable model fails the test rather than being skipped.
 
 ## Test Structure
 
@@ -47,8 +47,7 @@ tests/
 ```
 
 Unit tests live within each package:
-- `extension/src/__tests__/` - Harbor extension unit tests
-- `web-agents-api/src/__tests__/` - Web Agents API unit tests
+- `extension/src/__tests__/` - Harbor extension unit tests, including `extension/src/page-api/__tests__/` for the page API
 - `bridge-rs/` - Rust bridge unit tests (run with Cargo)
 
 ## Prerequisites
@@ -69,7 +68,6 @@ npm run test:setup
 
 This will:
 - Build the extension (`extension/dist/`)
-- Build the web-agents-api extension (`web-agents-api/dist/`)
 - Build the native bridge (`bridge-rs/target/release/harbor-bridge`)
 - Install the native messaging manifest
 
@@ -88,7 +86,7 @@ cargo build --release
 ### Unit Tests
 
 ```bash
-# TypeScript tests (Vitest in both extension packages)
+# TypeScript tests (Vitest in the extension package)
 npm run test:unit:ts
 
 # Rust tests
@@ -96,13 +94,12 @@ npm run test:unit:rust
 
 # Or run tests for a specific package from the repository root
 npm test --prefix extension
-npm test --prefix web-agents-api
 cargo test --manifest-path bridge-rs/Cargo.toml
 ```
 
 ### E2E Tests
 
-E2E tests use Playwright to automate Firefox with the extensions installed.
+E2E tests use Playwright to automate Firefox with the extension installed.
 
 ```bash
 # Run all e2e tests
@@ -164,9 +161,8 @@ test.describe('My Feature', () => {
 
 ### Available Fixtures
 
-- `extensionContext` - Browser context with both extensions loaded
+- `extensionContext` - Browser context with Harbor loaded
 - `extensionId` - Harbor extension UUID
-- `webAgentsId` - Web Agents API extension UUID
 - `sidebarPage` - Harbor sidebar page (already open)
 - `nativeBridge` - Running native bridge process
 - `demoServer` - Local HTTP server serving demo files
@@ -179,7 +175,7 @@ Tests run automatically on GitHub Actions. See `.github/workflows/test.yml`.
 
 ### Extension not loading
 
-1. Make sure extensions are built: `npm run build`
+1. Make sure the extension is built: `npm run build`
 2. Check that `extension/dist/manifest.json` exists
 
 ### Native bridge errors

@@ -1,5 +1,5 @@
 /**
- * TypeScript declarations for the Web Agents API (window.ai and window.agent).
+ * TypeScript declarations for the Web Agent API (window.ai and window.agent).
  * Generated from Harbor's spec/testing harness; matches the real API surface.
  */
 

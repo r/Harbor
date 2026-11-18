@@ -1,6 +1,6 @@
-# Harbor Web Agents API - Reference for AI Coding Assistants
+# Harbor Web Agent API - Reference for AI Coding Assistants
 
-> **WHAT THIS IS**: A compact, token-efficient reference for Claude, Cursor, Copilot, or any AI assistant building web apps with the Web Agents API. This doc matches `web-agents-api/src/injected.ts` exactly — if it's not here, it isn't shipped.
+> **WHAT THIS IS**: A compact, token-efficient reference for Claude, Cursor, Copilot, or any AI assistant building web apps with the Web Agent API. This doc matches `extension/src/page-api/injected.ts` exactly — if it's not here, it isn't shipped.
 >
 > **HUMAN DOCS**: For prose explanations, see `docs/WEB_AGENTS_API.md`, `docs/BUILDING_ON_HARBOR.md`, and `docs/AGENTIC_BROWSER_ROADMAP.md`.
 
@@ -202,7 +202,7 @@ const caps = await window.ai.languageModel.capabilities();
 // { available: 'readily' | 'after-download' | 'no', defaultTemperature, ... }
 ```
 
-> Note: `window.ai.runtime.*` (Firefox/Chrome native AI bridging) is **not** exposed by the Web Agents API extension today. Use `window.ai.providers.list()` and pick a provider explicitly.
+> Note: `window.ai.runtime.*` (Firefox/Chrome native AI bridging) is **not** exposed by Harbor today. Use `window.ai.providers.list()` and pick a provider explicitly.
 
 ---
 
@@ -469,7 +469,7 @@ try {
 
 ## Feature Flags
 
-Users toggle these in the Web Agents API sidebar. Read them at runtime via `agent.capabilities().features`.
+Users toggle these in Harbor's sidebar. Read them at runtime via `agent.capabilities().features`.
 
 | Flag | Default | Surfaces |
 |------|---------|----------|
@@ -622,10 +622,11 @@ async function getAIResponse(prompt) {
 ## Key Files (for Harbor development)
 
 ```
-web-agents-api/src/
+extension/src/page-api/
 ├── injected.ts            # window.ai/agent/navigator.modelContext (this doc's source of truth)
 ├── content-script.ts      # Page ↔ background relay
-├── background.ts          # Cross-extension bridge to Harbor
+├── background.ts          # Port listener; origin from the connecting port's sender
+├── harbor-core.ts         # In-process call into the rest of Harbor
 └── handlers/              # Per-message handlers (browser, agents, sessions, mcp, chat, tools)
 
 extension/src/             # Harbor core: LLM providers, MCP client, native bridge
@@ -636,4 +637,4 @@ bridge-rs/src/             # Native messaging host (Rust)
 
 ## Version
 
-Web Agents API v1.4.0 / Harbor v1
+Web Agent API v1.4.0 / Harbor v1

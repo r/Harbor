@@ -14,7 +14,7 @@ This document outlines a plan to make it easy for developers building on top of 
    From Harbor’s repo: run a script that copies a ready-made test harness into a directory they choose (e.g. their project root or `tests/harbor/`). The harness includes mocks, Playwright config + fixtures, types, and a small README. They then import from that path (e.g. `import { installWebAgentsMock } from './harbor-test/mock'`).
 
 2. **Point Cursor at this repo**  
-   When working in *their* project, they add Harbor as a reference (e.g. `@harbor` or the Harbor repo path). A Cursor rule in Harbor tells the AI: “When the user wants to test their Web Agents API app, use the test harness from Harbor’s `spec/testing/`—either suggest running the generator or copy the relevant files into their project.” The AI can then generate the same harness or wire up mocks/E2E using Harbor’s templates.
+   When working in *their* project, they add Harbor as a reference (e.g. `@harbor` or the Harbor repo path). A Cursor rule in Harbor tells the AI: “When the user wants to test their Web Agent API app, use the test harness from Harbor’s `spec/testing/`—either suggest running the generator or copy the relevant files into their project.” The AI can then generate the same harness or wire up mocks/E2E using Harbor’s templates.
 
 **Concrete deliverables:**
 
@@ -29,19 +29,19 @@ This document outlines a plan to make it easy for developers building on top of 
 | Generate the test harness into my project | Run `node scripts/generate-test-harness.mjs <target-dir>` from Harbor, or see `spec/testing/README.md` |
 | Copy or reference the harness template | `spec/testing/harness-template/` |
 | Understand what the harness contains | `spec/testing/harness-template/README.md` |
-| Have Cursor set up testing in my app | Point Cursor at Harbor and ask for “Harbor test harness” or “test my Web Agents API app”; see `.cursor/rules/third-party-testing.mdc` |
+| Have Cursor set up testing in my app | Point Cursor at Harbor and ask for “Harbor test harness” or “test my Web Agent API app”; see `.cursor/rules/third-party-testing.mdc` |
 | Read the full plan | This doc (`docs/THIRD_PARTY_TESTING_PLAN.md`) |
 
 ---
 
 ## Context
 
-**Who:** Third-party developers whose web apps depend on the Web Agents API (Harbor’s injected `window.ai` and `window.agent`). They do **not** need to clone or build Harbor; they only need the extensions installed.
+**Who:** Third-party developers whose web apps depend on the Web Agent API (Harbor’s injected `window.ai` and `window.agent`). They do **not** need to clone or build Harbor; they only need the extension installed.
 
 **Current gap:** Harbor’s own tests (Playwright e2e + unit tests) are tailored to the monorepo. There is no official story for external devs to:
 
-- Run **unit/integration tests** without a real browser or extensions (e.g. in Node or jsdom).
-- Run **E2E tests** against their app with Harbor extensions (and optionally the native bridge) in a repeatable way.
+- Run **unit/integration tests** without a real browser or extension (e.g. in Node or jsdom).
+- Run **E2E tests** against their app with the Harbor extension (and optionally the native bridge) in a repeatable way.
 
 **References:** [BUILDING_ON_WEB_AGENTS_API.md](./BUILDING_ON_WEB_AGENTS_API.md), [tests/README.md](../tests/README.md), [spec/examples/](../spec/examples/).
 
@@ -49,10 +49,10 @@ This document outlines a plan to make it easy for developers building on top of 
 
 ## Goals
 
-1. **Unit/integration tests** – Third-party apps can test their logic (permission flow, session handling, tool calls, UI) without launching a browser or installing extensions.
-2. **E2E tests** – Third-party apps can run Playwright (or similar) with Harbor + Web Agents API extensions (and optionally the native bridge) so their app is tested in a real environment.
+1. **Unit/integration tests** – Third-party apps can test their logic (permission flow, session handling, tool calls, UI) without launching a browser or installing the extension.
+2. **E2E tests** – Third-party apps can run Playwright (or similar) with the Harbor extension (and optionally the native bridge) so their app is tested in a real environment.
 3. **Low friction** – Setup is documented and, where possible, provided as reusable config or a small package so copying from Harbor’s repo is optional.
-4. **Stability** – Test utilities and fixtures stay aligned with the Web Agents API surface (permissions, `window.ai`, `window.agent`, error codes).
+4. **Stability** – Test utilities and fixtures stay aligned with the Web Agent API surface (permissions, `window.ai`, `window.agent`, error codes).
 
 ---
 
@@ -130,44 +130,43 @@ mock.agent.runOutput = 'Task done';
 **What:** A way for 3rd party projects to run Playwright E2E tests in a Firefox (or Chrome) environment where:
 
 - Harbor extension is loaded.
-- Web Agents API extension is loaded.
 - Optional: native bridge is running (for full LLM/MCP behavior).
 
 **Challenges (from current Harbor e2e):**
 
-- Firefox: Loading unpacked extensions requires a profile with the extension installed; Playwright doesn’t drive `about:debugging`, so Harbor uses `web-ext run` to launch Firefox with the extension, which doesn’t yield a Playwright `BrowserContext` for that same instance.
-- Two extensions must be loaded (Harbor + Web Agents API); paths and IDs must be correct.
+- Firefox: Loading an unpacked extension requires a profile with the extension installed; Playwright doesn’t drive `about:debugging`, so Harbor uses `web-ext run` to launch Firefox with the extension, which doesn’t yield a Playwright `BrowserContext` for that same instance.
+- The Harbor extension must be loaded; its path and ID must be correct.
 - Native bridge: 3rd party may want to skip it for “API presence” tests and enable it for “full stack” tests.
 
 **Possible approaches:**
 
 **Option A – Documented “copy fixtures” approach**
 
-- Document in Harbor how to run Playwright with two extensions (e.g. Chrome with `launchOptions.args` and `--load-extension=path1,path2`, or Firefox with a pre-built profile).
-- Publish a minimal “starter” Playwright config + fixture file (e.g. in `spec/testing/` or `docs/testing/`) that 3rd parties copy into their repo. They point `extensionPath` / `webAgentsPath` to their local Harbor build or to a pre-built artifact (e.g. from a GitHub release).
+- Document in Harbor how to run Playwright with the Harbor extension (e.g. Chrome with `launchOptions.args` and `--load-extension=path`, or Firefox with a pre-built profile).
+- Publish a minimal “starter” Playwright config + fixture file (e.g. in `spec/testing/` or `docs/testing/`) that 3rd parties copy into their repo. They point `extensionPath` to their local Harbor build or to a pre-built artifact (e.g. from a GitHub release).
 
 **Option B – NPM package with Playwright fixtures**
 
 - New package, e.g. `@harbor/playwright` or `harbor-e2e-harness`, that:
   - Depends on `@playwright/test`.
-  - Exports fixtures: e.g. `harborPage` (page with extensions loaded), `demoServer` (optional), `nativeBridge` (optional).
-  - Expects env vars or config for paths to Harbor and Web Agents API build outputs (or downloads them from a release).
+  - Exports fixtures: e.g. `harborPage` (page with the extension loaded), `demoServer` (optional), `nativeBridge` (optional).
+  - Expects env vars or config for the path to Harbor's build output (or downloads it from a release).
 - 3rd party: `npm i -D @harbor/playwright`, extend the base config, and use the fixtures in their specs.
 
 **Option C – Script that builds and runs**
 
-- A small script (e.g. `npx harbor-e2e` or a script in the repo) that: builds Harbor + Web Agents API (or uses pre-built), installs native bridge if requested, then runs the consumer’s Playwright project with the right env/paths. Reduces config burden but adds a custom entry point.
+- A small script (e.g. `npx harbor-e2e` or a script in the repo) that: builds Harbor (or uses pre-built), installs native bridge if requested, then runs the consumer’s Playwright project with the right env/paths. Reduces config burden but adds a custom entry point.
 
 **Recommendation:** Start with **Option A** (documented config + copyable fixtures) to avoid publishing/maintenance overhead; add **Option B** if demand justifies it. Option A should explicitly cover:
 
-- **Chrome:** Loading two unpacked extensions via `launchOptions.args` and a stable way to get extension IDs (e.g. from manifest or a fixed dev build).
-- **Firefox:** Either a persistent profile with both extensions pre-installed (and instructions to create it once), or the existing `web-ext run` approach with a note that the “browser under test” is the one launched by web-ext (and how to point tests at a test page served locally).
+- **Chrome:** Loading the unpacked extension via `launchOptions.args` and a stable way to get its extension ID (e.g. from manifest or a fixed dev build).
+- **Firefox:** Either a persistent profile with the extension pre-installed (and instructions to create it once), or the existing `web-ext run` approach with a note that the “browser under test” is the one launched by web-ext (and how to point tests at a test page served locally).
 
 **Deliverables:**
 
 - `docs/TESTING_YOUR_APP.md` (or a section in DEVELOPER_GUIDE) with:
-  - Playwright config snippet for Chrome (and, if feasible, Firefox) with two extensions.
-  - Optional: link or copy of a minimal fixture file that provides a “page with Harbor + Web Agents API” and optional demo server.
+  - Playwright config snippet for Chrome (and, if feasible, Firefox) with the Harbor extension.
+  - Optional: link or copy of a minimal fixture file that provides a “page with Harbor” and optional demo server.
 - Optional: `spec/testing/playwright.harbor.config.example.ts` and `spec/testing/fixtures/harbor.ts` in the repo for copy-paste.
 
 ---
@@ -199,7 +198,7 @@ mock.agent.runOutput = 'Task done';
 
 - A developer building a site that uses only `window.agent.requestPermissions`, `window.ai.createTextSession`, and `session.prompt` can:
   - Write a unit test that mocks the API and asserts their UI/logic without a browser.
-  - Run an E2E test that loads their page in a browser with Harbor + Web Agents API extensions and asserts that the real API is present (e.g. `expect(await page.evaluate(() => window.ai != null)).toBe(true)` and optionally a short happy path).
+  - Run an E2E test that loads their page in a browser with the Harbor extension and asserts that the real API is present (e.g. `expect(await page.evaluate(() => window.ai != null)).toBe(true)` and optionally a short happy path).
 - The steps to do both are documented in one place (“Testing your Harbor app”) and, where possible, backed by copy-paste or npm-installable artifacts.
 - **Generate → Import:** They can run one command (or have Cursor do it) to get a test harness into their project and start testing with minimal setup.
 - **Cursor at Harbor:** Pointing Cursor at this repo gives the AI clear instructions so it can suggest the generator, copy the harness, or wire mocks/E2E from Harbor’s `spec/testing/` into the user’s project.
@@ -209,7 +208,7 @@ mock.agent.runOutput = 'Task done';
 ## Open Questions
 
 - **Publishing:** Should the mock library and/or types be published to npm under a `@harbor/*` scope, or stay copy-paste / git submodule / file dependency only?
-- **Firefox E2E:** Is “create a profile once with both extensions, then reuse it in Playwright” acceptable for 3rd parties, or do we need a fully automated “no manual steps” flow for Firefox?
+- **Firefox E2E:** Is “create a profile once with the extension, then reuse it in Playwright” acceptable for 3rd parties, or do we need a fully automated “no manual steps” flow for Firefox?
 - **Native bridge in E2E:** Should the harness optionally start/stop the native bridge, or assume it’s already installed and running (or not needed)?
 - **Versioning:** How to keep the mock and types in sync with the real API (e.g. same repo, shared types, or a compatibility matrix in docs)?
 

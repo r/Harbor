@@ -15,9 +15,9 @@
 ### Build an app using the API
 → **[Quickstart Part 2](../QUICKSTART.md#build-your-first-app)** — Write your first AI-powered web app
 
-→ **[Web Agents API Reference](WEB_AGENTS_API.md)** — Complete API documentation
+→ **[Web Agent API Reference](WEB_AGENTS_API.md)** — Complete API documentation
 
-→ **[Building on the Web Agents API](BUILDING_ON_WEB_AGENTS_API.md)** — Portable guide for other projects (copy into your repo; examples, API summary, capabilities)
+→ **[Building on the Web Agent API](BUILDING_ON_WEB_AGENTS_API.md)** — Portable guide for other projects (copy into your repo; examples, API summary, capabilities)
 
 ### Test my app that uses the API
 → **[Testing your app](TESTING_YOUR_APP.md)** — Generate a test harness (mock + Playwright E2E) with `node scripts/generate-test-harness.mjs <target-dir>` from the Harbor repo
@@ -51,9 +51,9 @@
 
 | Document | Description |
 |----------|-------------|
-| **[Web Agents API Reference](WEB_AGENTS_API.md)** | Complete `window.ai` and `window.agent` docs |
-| **[Building on the Web Agents API](BUILDING_ON_WEB_AGENTS_API.md)** | Portable guide for other projects — copy into your repo for examples, API summary, capabilities |
-| **[Testing your app](TESTING_YOUR_APP.md)** | Unit tests with mock, E2E with Playwright + Harbor extensions — generate harness via `scripts/generate-test-harness.mjs` |
+| **[Web Agent API Reference](WEB_AGENTS_API.md)** | Complete `window.ai` and `window.agent` docs |
+| **[Building on the Web Agent API](BUILDING_ON_WEB_AGENTS_API.md)** | Portable guide for other projects — copy into your repo for examples, API summary, capabilities |
+| **[Testing your app](TESTING_YOUR_APP.md)** | Unit tests with mock, E2E with Playwright + the Harbor extension — generate harness via `scripts/generate-test-harness.mjs` |
 | **[JS API Reference](JS_AI_PROVIDER_API.md)** | Detailed API with TypeScript types |
 | [Sessions Guide](SESSIONS_GUIDE.md) | When to use `window.ai` vs `agent.sessions` |
 | [Working Examples](../spec/examples/) | Copy-paste ready code |
@@ -73,7 +73,7 @@
 
 ### For AI Coding Assistants
 
-> **Building with Claude, Cursor, Copilot, or another AI assistant?** Point your AI to **[LLMS.txt](LLMS.txt)** — it's specifically designed for AI tools to quickly understand and build with the Web Agents API.
+> **Building with Claude, Cursor, Copilot, or another AI assistant?** Point your AI to **[LLMS.txt](LLMS.txt)** — it's specifically designed for AI tools to quickly understand and build with the Web Agent API.
 
 | Document | Description |
 |----------|-------------|
@@ -95,7 +95,7 @@
 | [Contributing Guide](../CONTRIBUTING.md) | Development setup and workflow |
 | [MCP Host](MCP_HOST.md) | MCP execution environment internals |
 | [Test Suite](../tests/README.md) | Run and write Harbor's unit and E2E tests |
-| [Testing your app](TESTING_YOUR_APP.md) | Test your Web Agents API app (mock + E2E harness) |
+| [Testing your app](TESTING_YOUR_APP.md) | Test your Web Agent API app (mock + E2E harness) |
 
 ### Reference
 
@@ -141,11 +141,11 @@
 |------|----------|
 | Install Harbor | [Quickstart](../QUICKSTART.md) |
 | Set up Ollama | [Quickstart](../QUICKSTART.md#configure-a-model) |
-| Request permissions | [Web Agents API](WEB_AGENTS_API.md#permissions) |
-| Create a chat session | [Web Agents API](WEB_AGENTS_API.md#windowai-api) |
-| Call MCP tools | [Web Agents API](WEB_AGENTS_API.md#tools) |
-| Run autonomous agents | [Web Agents API](WEB_AGENTS_API.md#autonomous-agent) |
-| Understand feature flags | [Web Agents API](WEB_AGENTS_API.md#feature-flags) |
+| Request permissions | [Web Agent API](WEB_AGENTS_API.md#permissions) |
+| Create a chat session | [Web Agent API](WEB_AGENTS_API.md#windowai-api) |
+| Call MCP tools | [Web Agent API](WEB_AGENTS_API.md#tools) |
+| Run autonomous agents | [Web Agent API](WEB_AGENTS_API.md#autonomous-agent) |
+| Understand feature flags | [Web Agent API](WEB_AGENTS_API.md#feature-flags) |
 | **Test your app** (mock + E2E) | [Testing your app](TESTING_YOUR_APP.md) |
 | **Create a JS MCP server** | [Quickstart Part 3](../QUICKSTART.md#create-your-own-tools) |
 | **Create a WASM MCP server** | [MCP Authoring Guide](../mcp-servers/AUTHORING_GUIDE.md#wasm-servers-rust) |

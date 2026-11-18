@@ -1,5 +1,5 @@
 /**
- * Example unit test using the Web Agents API mock.
+ * Example unit test using the Web Agent API mock.
  * Run with: npx vitest run example.test.mjs
  * (or copy to your test dir and use your runner)
  */
@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { installWebAgentsMock } from './mock.js';
 
-describe('Web Agents API mock', () => {
+describe('Web Agent API mock', () => {
   let mock;
 
   beforeEach(() => {

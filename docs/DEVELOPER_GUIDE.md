@@ -13,7 +13,7 @@ Harbor is an implementation of the Web Agent API. If you're looking to install H
 | Resource | Description |
 |----------|-------------|
 | [Web Agent API Spec](../spec/) | The specification this guide helps you use |
-| [Web Agents API Docs](./WEB_AGENTS_API.md) | Complete injected API documentation with examples |
+| [Web Agent API Docs](./WEB_AGENTS_API.md) | Complete injected API documentation with examples |
 | **[Testing your app](./TESTING_YOUR_APP.md)** | Unit tests (mock) and E2E (Playwright + Harbor) — generate harness from `scripts/generate-test-harness.mjs` |
 | **[LLMS.txt](./LLMS.txt)** | **AI-optimized reference for Claude, Cursor, Copilot** |
 | [JS API Reference](./JS_AI_PROVIDER_API.md) | Detailed `window.ai` and `window.agent` reference |
@@ -21,7 +21,7 @@ Harbor is an implementation of the Web Agent API. If you're looking to install H
 | [Demo Code](../demo/) | Working examples you can run locally |
 | [Architecture](../ARCHITECTURE.md) | Harbor's system design |
 
-> **Using an AI coding assistant?** Point it to **[LLMS.txt](./LLMS.txt)** — it contains everything an AI needs to rapidly build with the Web Agents API.
+> **Using an AI coding assistant?** Point it to **[LLMS.txt](./LLMS.txt)** — it contains everything an AI needs to rapidly build with the Web Agent API.
 
 ---
 
@@ -119,42 +119,31 @@ Harbor has a hybrid architecture with two execution paths:
 
 ### Development Setup
 
-Harbor consists of two browser extensions that work together:
-- **Harbor** — Core platform (MCP servers, native bridge, chat)
-- **Web Agents API** — Injects `window.ai` and `window.agent` into web pages
+Harbor is a single browser extension: core platform (MCP servers, native bridge, chat) and page API (injects `window.ai` and `window.agent` into web pages) in one.
 
 ```bash
 # 1. Clone with submodules
 git clone --recurse-submodules https://github.com/r/harbor.git
 cd harbor
 
-# 2. Build Harbor extension
+# 2. Build the Harbor extension
 cd extension
 npm install
 npm run build          # Firefox
 npm run build:chrome   # Chrome
 cd ..
 
-# 3. Build Web Agents API extension
-cd web-agents-api
-npm install
-npm run build          # Firefox
-npm run build:chrome   # Chrome
-cd ..
-
-# 4. Build the Rust bridge
+# 3. Build the Rust bridge
 cd bridge-rs
 cargo build --release
 ./install.sh
 cd ..
 
-# 5. Load both extensions in your browser
+# 4. Load the extension in your browser
 # Firefox: about:debugging → Load Temporary Add-on
 #   - extension/dist-firefox/manifest.json
-#   - web-agents-api/dist-firefox/manifest.json
 # Chrome: chrome://extensions → Developer mode → Load unpacked
 #   - extension/dist-chrome/
-#   - web-agents-api/dist-chrome/
 #   - Run bridge-rs/install.sh to register the stable Harbor extension ID
 ```
 
@@ -162,11 +151,10 @@ cd ..
 
 On macOS with Homebrew's libvips installed, sharp may try to build from source
 and fail with `Please add node-addon-api to your dependencies`. Retry the
-extension installs using sharp's prebuilt binaries:
+extension install using sharp's prebuilt binaries:
 
 ```bash
 SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --prefix extension
-SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --prefix web-agents-api
 ```
 
 Run these from the repository root, then retry `npm run build`.
@@ -767,24 +755,24 @@ uses the structured calls followed by tool results without a synthetic text
 summary. Ollama tool-call arguments must encode a JSON object; malformed or
 non-object arguments fail as an invalid request before inference.
 
-The cross-extension API keeps its `system` field and maps it to the bridge's
-`system_prompt`. Non-streaming bridge replies are OpenAI-compatible
-`{ choices, model, ... }` completions. Harbor consumers use the shared
-`llm/chat-response.ts` normalizer, directly or through `bridgeChat`, for text,
-message/tool calls, model and finish reason. Null content in a tool-only reply
-becomes empty text while the message and original choices are preserved;
-malformed completions fail instead of appearing to succeed with no reply.
-Extension pages keep their background RPC transport and share only the parser.
+Harbor's extension API (`extension-api.ts`) keeps its `system` field and maps
+it to the bridge's `system_prompt`. Non-streaming bridge replies are
+OpenAI-compatible `{ choices, model, ... }` completions. Harbor consumers use
+the shared `llm/chat-response.ts` normalizer, directly or through
+`bridgeChat`, for text, message/tool calls, model and finish reason. Null
+content in a tool-only reply becomes empty text while the message and
+original choices are preserved; malformed completions fail instead of
+appearing to succeed with no reply. Extension pages keep their background RPC
+transport and share only the parser.
 
-Harbor and the Web Agents API accept cross-extension messages and port
-connections only from each other. Each package lists the other's IDs in
-`src/known-extensions.ts`, and every external listener checks `sender.id`
-against that list before reading the message. The Web Agents API also uses the
-list for discovery, so it only sends requests to a known Harbor ID. Other
-extensions can't call Harbor directly. To change an extension ID, update
-`known-extensions.ts` in the other package and the other package's
-`externally_connectable.ids` in `manifest.chrome.json`. Firefox ignores
-`externally_connectable`, so the runtime check is what applies there.
+Harbor has no cross-extension entry point: it registers no
+`onMessageExternal`/`onConnectExternal` listener, so no other extension can
+reach it. A page's call reaches Harbor through `page-api/harbor-core.ts`,
+which calls `extension-api.ts` (for `llm.*`, `mcp.*`, `session.*`, `system.*`
+and `permissions.*`) or the agent router in-process, inside Harbor's own
+background. Every call still passes through the same policy gate
+(`gatePageCall`/`requireAction`) using the page's origin, which `page-api/background.ts`
+takes from the connecting port's `sender` — never from the message itself.
 
 
 Harbor supports multiple LLM providers for local inference.

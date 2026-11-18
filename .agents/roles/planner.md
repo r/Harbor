@@ -14,6 +14,6 @@ Return:
 
 A one-unit plan is valid.
 
-Respect the component boundaries: the bridge, the Harbor extension, the Web Agents API extension, and the `any-llm-rust` submodule. Don't invent page-facing API, permission scopes or message formats. Flag them as decisions. Highlight consequences for permissions, trust boundaries, secrets and the duplicated demo copies.
+Respect the component boundaries: the bridge, the Harbor extension (including its page-facing API), and the `any-llm-rust` submodule. Don't invent page-facing API, permission scopes or message formats. Flag them as decisions. Highlight consequences for permissions, trust boundaries, secrets and the duplicated demo copies.
 
 The coordinator owns the final plan, and product decisions stay with the maintainer.

@@ -4,9 +4,9 @@ The AAF billing form and embedded widget use the visitor’s Harbor-selected AI.
 
 ## Run in Firefox
 
-1. Build Harbor with `npm run build`. Load **both** `extension/dist-firefox/` and `web-agents-api/dist-firefox/` as temporary Firefox add-ons. Build and register the native bridge using the repository Quickstart, and verify **Bridge: Connected** in Harbor.
+1. Build Harbor with `npm run build`. Load `extension/dist-firefox/` as a temporary Firefox add-on. Build and register the native bridge using the repository Quickstart, and verify **Bridge: Connected** in Harbor.
 2. Configure a provider and model in Harbor. From `demo/`, run `npm install` and `npm start`.
-3. Open `http://localhost:8000/web-agents/aaf-invoice/`. Ask the embedded assistant “Create an invoice for alice@example.com for 120 EUR” and approve model access for this origin. Web Agents API’s current permission prompt also lists agent registration and invocation for model access. This demo requests `model:prompt` and uses the text-session API.
+3. Open `http://localhost:8000/web-agents/aaf-invoice/`. Ask the embedded assistant “Create an invoice for alice@example.com for 120 EUR” and approve model access for this origin. Harbor’s current permission prompt also lists agent registration and invocation for model access. This demo requests `model:prompt` and uses the text-session API.
 4. Check the actual form contains `alice@example.com`, `120`, and `EUR`. The local draft count must stay unchanged while the form awaits review. Press **Save draft** and verify exactly one new draft. Inspect `localStorage['billing-app-invoices']` for the draft’s email, amount, currency, and `status: 'draft'`.
 5. Switch to a second configured provider **in Harbor**, keeping the same URL and page configuration. Send the request again. Record the provider/model in Harbor’s own settings and request logs for each run. For the hosted-provider run, stop local Ollama first and confirm the request still succeeds. The page creates a fresh session for every generation.
 
@@ -14,7 +14,7 @@ Drafts use AAF’s sample storage key `billing-app-invoices` and remain local to
 
 ## Unavailable and denied permission
 
-Open the page in Firefox without the Web Agents API add-on, or deny the model permission prompt. Send a request. The assistant shows the unavailable/denied state and leaves the current form and draft count intact. Restore the add-on or allow this origin in Web Agents API and send the request again.
+Open the page in Firefox without the Harbor add-on, or deny the model permission prompt. Send a request. The assistant shows the unavailable/denied state and leaves the current form and draft count intact. Restore the add-on or allow this origin in Harbor and send the request again.
 
 ## Pinned upstream source
 

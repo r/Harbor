@@ -47,27 +47,25 @@ cd harbor
 
 Harbor uses git submodules for shared libraries (like `bridge-rs/any-llm-rust`). The build will fail if submodules are missing.
 
-### 2. Build Both Extensions
+### 2. Build the Extension
 
-Harbor provides the models, tools and native bridge connection. Web Agents API exposes `window.ai` and `window.agent` to pages. You need both extensions.
+Harbor provides the models, tools and native bridge connection, and exposes `window.ai` and `window.agent` to pages.
 
 ```bash
 npm install --prefix extension
-npm install --prefix web-agents-api
 npm run build
 ```
 
-This produces `extension/dist-firefox/` and `web-agents-api/dist-firefox/`.
+This produces `extension/dist-firefox/`.
 For Chrome, run `npm run build:chrome` instead; for Safari, `npm run build:safari`.
 The outputs are the corresponding `dist-chrome/` or `dist-safari/` directories.
 
 On macOS with Homebrew's libvips installed, sharp may try to build from source
 and fail with `Please add node-addon-api to your dependencies`. Retry the
-extension installs using sharp's prebuilt binaries:
+extension install using sharp's prebuilt binaries:
 
 ```bash
 SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --prefix extension
-SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --prefix web-agents-api
 ```
 
 Run these from the repository root, then retry `npm run build`.
@@ -118,7 +116,7 @@ This installs the native messaging manifest to:
 - **macOS:** `~/Library/Application Support/Mozilla/NativeMessagingHosts/harbor_bridge.json`
 - **Linux:** `~/.mozilla/native-messaging-hosts/harbor_bridge.json`
 
-### Load Both Extensions
+### Load the Extension
 
 1. Open Firefox and go to `about:debugging#/runtime/this-firefox`
 
@@ -127,14 +125,9 @@ This installs the native messaging manifest to:
    - Navigate to `extension/dist-firefox/`
    - Select `manifest.json`
 
-3. **Load Web Agents API:**
-   - Click "Load Temporary Add-on..." again
-   - Navigate to `web-agents-api/dist-firefox/`
-   - Select `manifest.json`
+Harbor should now appear in the list.
 
-Both extensions should now appear in the list.
-
-> **Note:** Temporary add-ons don't persist across Firefox restarts. You'll need to reload them each time. For development, use `npm run dev` in watch mode.
+> **Note:** Temporary add-ons don't persist across Firefox restarts. You'll need to reload it each time. For development, use `npm run dev` in watch mode.
 
 → **[Detailed Firefox guide with troubleshooting](docs/QUICKSTART_FIREFOX.md)**
 
@@ -172,7 +165,7 @@ The Getting Started demo ends with `agent.run()`, which needs all of the followi
 
 - A working [default model](#configure-a-model).
 - The built-in **Time Server**, which starts automatically when first installed. Existing saved server settings are preserved; if you previously stopped it, click **Start** under **MCP Servers**. See [Troubleshooting](#no-tools-available) if no tools are available.
-- **Agentic Tool Use** enabled in the **Web Agents API** sidebar, under **Browser Agent Capabilities**. Manual **Tool Access** allows listing and calling tools directly; it does not enable `agent.run()`. Agentic Tool Use is on by default for new installs. Existing saved choices are preserved: if yours is off, turn it on for this demo, then reload the demo page so it picks up the setting.
+- **Agentic Tool Use** enabled in the **Harbor** sidebar, under **Browser Agent Capabilities**. Manual **Tool Access** allows listing and calling tools directly; it does not enable `agent.run()`. Agentic Tool Use is on by default for new installs. Existing saved choices are preserved: if yours is off, turn it on for this demo, then reload the demo page so it picks up the setting.
 - Permission granted to the demo's origin when it asks for `model:prompt`, `model:tools`, `mcp:tools.list` and `mcp:tools.call`. Enabling an API does not grant websites permission to use it.
 
 Detection, permissions and tool listing can succeed without a model or Agentic Tool Use. Check these prerequisites before **Run Agent** so the final step is ready too.
@@ -361,8 +354,8 @@ const result = await window.agent.tools.call({
 
 ### "Web Agent API not detected"
 
-- Are both extensions loaded? Check `about:debugging` (Firefox) or `chrome://extensions` (Chrome)
-- Refresh the page after loading extensions
+- Is Harbor loaded? Check `about:debugging` (Firefox) or `chrome://extensions` (Chrome)
+- Refresh the page after loading the extension
 - Make sure you loaded from `dist-firefox/` or `dist-chrome/`, not the source folder
 
 ### "Bridge Disconnected"
@@ -370,7 +363,7 @@ const result = await window.agent.tools.call({
 ```bash
 cd bridge-rs && ./install.sh --firefox-only --skip-build
 ```
-For Firefox, restart the browser and reload both temporary add-ons. For Chrome, follow the [native messaging instructions](docs/QUICKSTART_CHROME.md#step-5-configure-native-messaging).
+For Firefox, restart the browser and reload the temporary add-on. For Chrome, follow the [native messaging instructions](docs/QUICKSTART_CHROME.md#step-5-configure-native-messaging).
 
 For Chrome: verify the extension ID in the native messaging manifest matches your actual extension ID.
 
@@ -387,7 +380,7 @@ A running Ollama provider is not a configured model. Follow [Configure a Model](
 
 ### "Feature disabled: toolCalling"
 
-Enable **Agentic Tool Use** in the Web Agents API sidebar and reload the demo page. This is separate from manual Tool Access and from granting site permissions.
+Enable **Agentic Tool Use** in the Harbor sidebar and reload the demo page. This is separate from manual Tool Access and from granting site permissions.
 
 ### "No tools available"
 
@@ -415,13 +408,10 @@ For active development, use watch mode:
 # Terminal 1: Harbor extension
 cd extension && npm run dev
 
-# Terminal 2: Web Agents API extension  
-cd web-agents-api && npm run dev
-
-# Terminal 3: Demo server
+# Terminal 2: Demo server
 cd demo && npm start
 ```
 
-After changes, reload the extensions:
+After changes, reload the extension:
 - Firefox: Click "Reload" in `about:debugging`
 - Chrome: Click the reload icon in `chrome://extensions`

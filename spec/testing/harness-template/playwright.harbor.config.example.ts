@@ -1,15 +1,14 @@
 /**
- * Example Playwright config for E2E tests with Harbor + Web Agents API extensions.
+ * Example Playwright config for E2E tests with the Harbor extension.
  *
  * 1. Copy this file to your project (e.g. playwright.config.ts).
- * 2. Set HARBOR_EXTENSION_PATH and WEB_AGENTS_EXTENSION_PATH to your Harbor build:
+ * 2. Set HARBOR_EXTENSION_PATH to your Harbor build:
  *    export HARBOR_EXTENSION_PATH=/path/to/harbor/extension/dist-chrome
- *    export WEB_AGENTS_EXTENSION_PATH=/path/to/harbor/web-agents-api/dist-chrome
  * 3. In your E2E specs, import test/expect from harbor-test/fixtures/harbor.js (not @playwright/test).
  * 4. Run: npx playwright test
  *
- * Extensions are loaded via the harbor fixture (launchPersistentContext + Chromium).
- * Without the env vars set, tests still run but window.ai/agent won't be present.
+ * The extension is loaded via the harbor fixture (launchPersistentContext + Chromium).
+ * Without the env var set, tests still run but window.ai/agent won't be present.
  */
 
 import { defineConfig } from '@playwright/test';

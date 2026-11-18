@@ -1,5 +1,5 @@
 /**
- * Mock implementation of the Web Agents API (window.ai and window.agent)
+ * Mock implementation of the Web Agent API (window.ai and window.agent)
  * for unit/integration tests. Install on globalThis or window so your app
  * code sees the same API without a real browser or extensions.
  *
@@ -18,7 +18,7 @@ function createApiError(code, message) {
 }
 
 /**
- * Install the Web Agents API mock on the given global object (globalThis or window).
+ * Install the Web Agent API mock on the given global object (globalThis or window).
  * Returns a control object to configure behavior; call .uninstall() when done.
  */
 export function installWebAgentsMock(global) {
