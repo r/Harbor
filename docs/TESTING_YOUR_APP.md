@@ -138,7 +138,7 @@ mock.uninstall();
 | `agent.run()` error | `mock.agent.runError = { code: '…', message: '…' }` |
 | Another agent on the site | `mock.agents.addAgent({ name, capabilities }, { onInvoke, onMessage })` |
 | Another agent invokes or messages your page | `mock.agents.invokePage(fromId, request)`, `mock.agents.sendToPage(fromId, payload)` |
-| `multiAgent` feature off | `mock.agents.featureEnabled = false` |
+| `multiAgent` feature on (off by default, as in Harbor) | `mock.agents.featureEnabled = true` |
 
 Error `code` values should match the real API (e.g. `ERR_PERMISSION_DENIED`, `ERR_SCOPE_REQUIRED`, `ERR_MODEL_FAILED`, `ERR_TOOL_NOT_FOUND`, `ERR_TOOL_FAILED`).
 

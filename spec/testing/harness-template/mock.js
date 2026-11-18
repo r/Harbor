@@ -80,7 +80,7 @@ export function installWebAgentsMock(global) {
   }
 
   const agentsState = {
-    featureEnabled: true,
+    featureEnabled: false, // Harbor's multiAgent feature is off by default
     nextId: 1,
     pageAgentId: null,
     pageAgent: null,
@@ -125,6 +125,12 @@ export function installWebAgentsMock(global) {
     };
   }
 
+  // Every agent on the site, this page's own included (Harbor's discover and list both return it).
+  function allAgents() {
+    const others = [...agentsState.others.values()].map(o => o.info);
+    return agentsState.pageAgent ? [agentsState.pageAgent, ...others] : others;
+  }
+
   function requirePageAgent(message) {
     if (!agentsState.pageAgentId) throw createApiError('ERR_NOT_REGISTERED', message);
     return agentsState.pageAgentId;
@@ -136,8 +142,8 @@ export function installWebAgentsMock(global) {
   const agents = {
     async register(options) {
       checkFeature();
-      requireScope('agents:register');
       if (!options?.name) throw createApiError('ERR_INVALID_REQUEST', 'Missing name');
+      requireScope('agents:register');
       const info = makeAgentInfo(options);
       agentsState.pageAgentId = info.id;
       agentsState.pageAgent = info;
@@ -145,9 +151,9 @@ export function installWebAgentsMock(global) {
     },
     async unregister(agentId) {
       checkFeature();
-      requireScope('agents:register');
       const id = agentId || agentsState.pageAgentId;
       if (!id) throw new Error('Agent not registered');
+      requireScope('agents:register');
       if (id === agentsState.pageAgentId) {
         agentsState.pageAgentId = null;
         agentsState.pageAgent = null;
@@ -163,7 +169,7 @@ export function installWebAgentsMock(global) {
       checkFeature();
       requireScope('agents:discover');
       if (query.includeSameOrigin === false) return { agents: [], total: 0 };
-      const found = [...agentsState.others.values()].map(o => o.info).filter(info =>
+      const found = allAgents().filter(info =>
         info.status === 'active'
         && (!query.name || info.name.toLowerCase().includes(query.name.toLowerCase()))
         && (!query.capabilities?.length || query.capabilities.some(c => info.capabilities.includes(c)))
@@ -172,32 +178,34 @@ export function installWebAgentsMock(global) {
     },
     async list() {
       checkFeature();
-      const all = [...agentsState.others.values()].map(o => o.info);
-      if (agentsState.pageAgent) all.unshift(agentsState.pageAgent);
-      return all.map(summarize);
+      return allAgents().map(summarize);
     },
     async invoke(agentId, request) {
       checkFeature();
-      requireScope('agents:invoke');
       if (!agentId || !request) throw createApiError('ERR_INVALID_REQUEST', 'Missing agentId or request');
+      requireScope('agents:invoke');
       const from = requirePageAgent('Must register as an agent before invoking others');
       const target = agentsState.others.get(agentId);
-      if (!target) return { success: false, error: { code: 'ERR_AGENT_NOT_FOUND', message: 'Agent not found' } };
+      // Error codes and messages from extension/src/multi-agent/messaging.ts.
+      if (!target) return { success: false, error: { code: 'ERR_AGENT_NOT_FOUND', message: 'Target agent not found' } };
+      if (!target.info.acceptsInvocations) {
+        return { success: false, error: { code: 'ERR_NOT_ACCEPTED', message: 'Target agent does not accept invocations' } };
+      }
       if (!target.onInvoke) {
-        return { success: false, error: { code: 'ERR_NO_EXTERNAL_HANDLER', message: 'Invocation handler not found' } };
+        return { success: false, error: { code: 'ERR_NO_HANDLER', message: 'Target agent has no invocation handler' } };
       }
       const started = Date.now();
       try {
         const result = await target.onInvoke({ ...request, from });
         return { success: true, result, executionTime: Date.now() - started };
       } catch (e) {
-        return { success: false, error: { code: 'ERR_FAILED', message: e instanceof Error ? e.message : String(e) } };
+        return { success: false, error: { code: 'ERR_INVOCATION_FAILED', message: e instanceof Error ? e.message : String(e) } };
       }
     },
     async send(agentId, payload) {
       checkFeature();
-      requireScope('agents:message');
       if (!agentId) throw createApiError('ERR_INVALID_REQUEST', 'Missing agentId');
+      requireScope('agents:message');
       const from = requirePageAgent('Must register as an agent before sending messages');
       const target = agentsState.others.get(agentId);
       if (!target?.onMessage) return { delivered: false };
@@ -293,7 +301,7 @@ export function installWebAgentsMock(global) {
       },
     },
     agents: {
-      /** Set to false to get Harbor's ERR_FEATURE_DISABLED (the multiAgent flag is off by default in Harbor). */
+      /** Off by default, like Harbor's multiAgent feature: agent.agents calls fail with ERR_FEATURE_DISABLED. Set to true to turn it on. */
       get featureEnabled() { return agentsState.featureEnabled; },
       set featureEnabled(v) { agentsState.featureEnabled = v; },
       /** The agent this page registered, or null. */
@@ -312,14 +320,14 @@ export function installWebAgentsMock(global) {
       async invokePage(fromAgentId, request) {
         const handler = agentsState.invokeHandlers[0];
         if (!agentsState.pageAgentId || !handler) {
-          return { success: false, error: { code: 'ERR_NO_EXTERNAL_HANDLER', message: 'Invocation handler not found' } };
+          return { success: false, error: { code: 'ERR_NO_HANDLER', message: 'Target agent has no invocation handler' } };
         }
         const started = Date.now();
         try {
           const result = await handler({ ...request, from: fromAgentId });
           return { success: true, result, executionTime: Date.now() - started };
         } catch (e) {
-          return { success: false, error: { code: 'ERR_FAILED', message: e instanceof Error ? e.message : String(e) } };
+          return { success: false, error: { code: 'ERR_INVOCATION_FAILED', message: e instanceof Error ? e.message : String(e) } };
         }
       },
       /** Deliver a message from another agent to the page's onMessage handlers. */

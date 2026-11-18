@@ -17,8 +17,10 @@ describe('multi-agent flow against the mock', () => {
 
   beforeEach(() => {
     mock = installWebAgentsMock(globalThis);
-    // The user allows whatever the page asks for.
+    // The user allows whatever the page asks for, and has turned on Harbor's
+    // multiAgent feature (it's off by default).
     mock.permissions.grantAll();
+    mock.agents.featureEnabled = true;
     received.length = 0;
     summarizer = mock.agents.addAgent(
       { name: 'Summarizer', capabilities: ['summarize'], acceptsInvocations: true, acceptsMessages: true },
@@ -64,6 +66,33 @@ describe('multi-agent flow against the mock', () => {
     expect(permission.scopes['agents:register']).toBe('not-granted');
 
     await expect(agent.agents.register({ name: 'Writer' })).rejects.toMatchObject({ code: 'ERR_SCOPE_REQUIRED' });
+  });
+
+  it('finds the page\'s own agent too, and forgets it after unregister', async () => {
+    const { agent } = globalThis;
+    await agent.requestPermissions({ scopes: ['agents:register', 'agents:discover'] });
+    const me = await agent.agents.register({ name: 'Writer', capabilities: ['write'] });
+
+    expect((await agent.agents.discover({ capabilities: ['write'] })).agents.map((a) => a.id)).toEqual([me.id]);
+    expect((await agent.agents.getInfo(me.id))?.name).toBe('Writer');
+
+    await agent.agents.unregister();
+    expect((await agent.agents.discover({ capabilities: ['write'] })).total).toBe(0);
+    expect(await agent.agents.getInfo(me.id)).toBeNull();
+  });
+
+  it('checks the request before the scope, as Harbor does', async () => {
+    const { agent } = globalThis;
+    await expect(agent.agents.register({})).rejects.toMatchObject({ code: 'ERR_INVALID_REQUEST' });
+    await expect(agent.agents.invoke(summarizer.id)).rejects.toMatchObject({ code: 'ERR_INVALID_REQUEST' });
+  });
+
+  it('reports an unknown agent in the invoke response', async () => {
+    const { agent } = globalThis;
+    await agent.requestPermissions({ scopes: ['agents:register', 'agents:invoke'] });
+    await agent.agents.register({ name: 'Writer' });
+    const response = await agent.agents.invoke('agent-nope', { task: 'summarize' });
+    expect(response).toMatchObject({ success: false, error: { code: 'ERR_AGENT_NOT_FOUND' } });
   });
 
   it('requires registering before invoking another agent', async () => {

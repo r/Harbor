@@ -45,6 +45,7 @@ The mock supports `agent.agents.register`, `unregister`, `getInfo`, `discover`, 
 
 ```js
 mock.permissions.grantAll();
+mock.agents.featureEnabled = true;     // Harbor's multiAgent feature is off by default
 const summarizer = mock.agents.addAgent(
   { name: 'Summarizer', capabilities: ['summarize'] },
   { onInvoke: async ({ task, input }) => ({ summary: '...' }), onMessage: (m) => {} },
@@ -58,7 +59,7 @@ const response = await agent.agents.invoke(agents[0].id, { task: 'summarize', in
 
 - `mock.agents.addAgent(options, { onInvoke, onMessage })` adds an agent as if another tab on your site registered it.
 - `mock.agents.invokePage(fromId, request)` and `mock.agents.sendToPage(fromId, payload)` test your page's own `onInvoke` and `onMessage` handlers.
-- `mock.agents.featureEnabled = false` gives `ERR_FEATURE_DISABLED`. Harbor's `multiAgent` feature is off by default, so real users have to turn it on.
+- `mock.agents.featureEnabled` is `false` by default, like Harbor's `multiAgent` feature, so `agent.agents` calls fail with `ERR_FEATURE_DISABLED` until you set it to `true`. Real users have to turn the feature on in Harbor too.
 
 Each call needs its scope: `agents:register` for `register` and `unregister`, `agents:discover` for `discover`, `agents:invoke` for `invoke`, and `agents:message` for `send`. Calling `invoke` or `send` before `register` fails with `ERR_NOT_REGISTERED`, as in Harbor.
 
