@@ -71,10 +71,30 @@ describe("requests go through Harbor's prompt", () => {
     const call = mocks.harborRequest.mock.calls.find(([type]) => type === 'permissions.request');
     expect(call).toBeDefined();
     expect(call![1]).toMatchObject({ origin: ORIGIN, tabId: 4, reason: 'Summarize' });
-    // Requesting model:prompt still bundles the multi-agent scopes (tracked separately).
-    expect((call![1] as { scopes: string[] }).scopes).toEqual(
-      expect.arrayContaining(['model:prompt', 'agents:register', 'agents:invoke']));
     expect(mocks.harborRequest.mock.calls.some(([type]) => type === 'system.syncPermissions')).toBe(false);
+  });
+});
+
+describe('a request asks only for the scopes the page named', () => {
+  const forwardedScopes = () => {
+    const call = mocks.harborRequest.mock.calls.find(([type]) => type === 'permissions.request');
+    return (call![1] as { scopes: string[] }).scopes;
+  };
+
+  it.each(['model:prompt', 'mcp:tools.call', 'browser:tabs.create'])(
+    'asking for %s adds no agent scopes',
+    async (scope) => {
+      mocks.harborRequest.mockResolvedValue({ granted: true, scopes: { [scope]: 'granted-once' }, allowedTools: [] });
+      await handleRequestPermissions(ctx('agent.requestPermissions', { scopes: [scope] }));
+      expect(forwardedScopes()).toEqual([scope]);
+    },
+  );
+
+  it('a page that names the agent scopes still gets asked for them', async () => {
+    const scopes = ['model:prompt', 'agents:register', 'agents:invoke'];
+    mocks.harborRequest.mockResolvedValue({ granted: true, scopes: {}, allowedTools: [] });
+    await handleRequestPermissions(ctx('agent.requestPermissions', { scopes }));
+    expect(forwardedScopes()).toEqual(scopes);
   });
 });
 
