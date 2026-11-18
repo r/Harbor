@@ -74,6 +74,13 @@
         });
       }
 
+      // Harbor no longer injects a discovery global onto any page — only
+      // the page API (window.ai / window.agent) above. A still-installed,
+      // separate extension (or any page script) must not see window.__harbor.
+      await test('Harbor-only', 'window.__harbor is not defined', async () => {
+        assert(typeof window.__harbor === 'undefined', `Expected window.__harbor to be undefined, got ${JSON.stringify(window.__harbor)}`);
+      });
+
       const passed = results.filter((r) => r.status === 'pass').length;
       const failed = results.filter((r) => r.status === 'fail').length;
       const total = results.length;
