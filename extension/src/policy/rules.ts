@@ -287,6 +287,11 @@ export function ruleMatches(rule: CompiledRule, input: RuleMatchInput): boolean 
   // Context.
   if (rule.context) {
     const c = input.context ?? {};
+    // Policy files can predate the removal of session modes. Every request
+    // ran as 'execute' then, so a rule scoped to any other mode never
+    // matched. Keep it that way rather than let it match everything.
+    const staleMode = (rule.context as { mode?: unknown }).mode;
+    if (staleMode !== undefined && staleMode !== 'execute') return false;
     if (rule.context.destinationLocality && c.destinationLocality) {
       if (!rule.context.destinationLocality.includes(c.destinationLocality)) return false;
     } else if (rule.context.destinationLocality) {

@@ -3,7 +3,7 @@
  *
  * The runtime unit of authority. A token is opaque to callers — they hold
  * an ID; the engine resolves the token's contents internally. Tokens are
- * minted when a session is created or upgraded, attenuated when a session
+ * minted when a session is created, attenuated when a session
  * delegates to a subagent, and validated on every gated action.
  *
  * Attenuation is the one operation worth dwelling on. A child token MUST
@@ -12,8 +12,8 @@
  * (or equal) budgets, shorter (or equal) TTL. The engine refuses to mint
  * a child that widens any of these.
  *
- * See `docs/PERMISSIONS.md` (Part 1: How it works → "Sessions, capability
- * tokens, and modes") for the conceptual model.
+ * See `docs/PERMISSIONS.md` (Part 1: How it works → "Sessions and
+ * capability tokens") for the conceptual model.
  */
 
 import type { TypedAction } from './actions';

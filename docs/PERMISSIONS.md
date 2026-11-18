@@ -306,7 +306,7 @@ The Watchdog is a complement to the structural defenses (info-flow labels, sensi
 | Rule | Trigger | Default response |
 |---|---|---|
 | **Velocity spike** | rate > 3× rolling average | Toast notification in sidebar |
-| **Repeated denials** | ≥ 5 consecutive denials | Quarantine the origin; the user must reset it from the sidebar |
+| **Repeated denials** | ≥ 5 consecutive denials | Quarantine the origin until it's reset |
 | **Budget overspend** | > 90% of budget consumed in a single burst | Suspend; ask to extend |
 | **Repeated label-egress attempts** | 2+ blocked egress attempts carrying `credentials`/`payments`/`identity` in a single session | Quarantine session |
 | **Scope escalation** | Origin requests an action outside its current token's `allowedActions` twice in a row | Terminate session; mark origin "needs review" |
@@ -383,7 +383,7 @@ Each audit row in the sidebar has a **"Why?"** affordance. The **"What if?"** si
 - A modified policy (what if I added this allow rule?)
 - A modified label set (what if the input wasn't tainted with `credentials`?)
 
-The simulator does not affect live state — it's a pure replay against the engine. Output is a side-by-side: actual decision vs simulated decision, with the same Why? trace for both. This is how a user debugs a policy without having to think in JSON, and how a developer authors capability requests against actual production traces.
+The simulator does not affect live state — it's a pure replay against the engine. Output is a side-by-side: actual decision vs simulated decision, with the same Why? trace for both. This is how a developer debugs a policy and authors capability requests against actual production traces.
 
 ## Telemetry goals
 
@@ -978,7 +978,7 @@ If a site is hammering you with prompts, that's almost always a sign the site is
 - **Capability token.** An opaque handle bound to an `(origin, allowedActions, acceptedLabels, budgets, ttl, parentToken)` tuple. The unit of authority a session holds.
 - **Containment.** A graduated reduction of a session's authority, walked by the Watchdog in response to bad behavior; see [The Watchdog](#the-watchdog).
 - **Data label.** A tag (`credentials`, `payments`, `identity`, `confidential`, `regulated`) attached to data flowing through the agent. Tracked through reads, prompts, and tool calls; checked at egress.
-- **Decision simulator.** A read-only replay tool in the activity feed for investigating why a decision was made and what would change under different conditions.
+- **Decision simulator.** A read-only replay of a recorded decision under different rules or labels, reached through the `policy.simulate` and `policy.replay` messages.
 - **Effect.** One of `metadata`, `read`, `egress`, `write`, `identity`, `destructive`. Drives default UX.
 - **Locality.** One of `local`, `same-origin`, `cross-origin`, `remote`. Drives egress treatment.
 - **Manifest provenance.** Whether an MCP manifest is trusted (bundled, locally installed, signed, or pinned in policy) — determines whether the engine honors its self-attested sensitivity claims.
