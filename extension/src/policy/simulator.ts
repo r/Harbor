@@ -3,8 +3,8 @@
  *
  * Replays a past decision (from the audit log) against modified context
  * — modified rules, modified labels, modified watchdog state — without
- * actually performing the action. Used by the sidebar's "What if?" tool
- * and the unit-test harness for policy authors.
+ * actually performing the action. Used by the `policy.simulate` and
+ * `policy.replay` messages and the unit-test harness for policy authors.
  *
  * The simulator is *pure*: it never writes to storage, never updates the
  * watchdog, never appends to the audit log. It builds a sandbox copy of
