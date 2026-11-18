@@ -111,12 +111,7 @@ function createTestServer() {
         fullPath = path.join(__dirname, '../../demo', filePath);
       }
       
-      // Then try extension demo
-      if (!fs.existsSync(fullPath)) {
-        fullPath = path.join(__dirname, '../../extension/demo', filePath);
-      }
-      
-      // Then try extension dist (for demo-bootstrap.js etc)
+      // Then try extension dist
       if (!fs.existsSync(fullPath)) {
         fullPath = path.join(__dirname, '../../extension/dist', filePath);
       }

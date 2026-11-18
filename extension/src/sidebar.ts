@@ -1958,7 +1958,6 @@ const quickActionsHeader = document.getElementById('quick-actions-header') as HT
 const quickActionsToggle = document.getElementById('quick-actions-toggle') as HTMLSpanElement;
 const quickActionsBody = document.getElementById('quick-actions-body') as HTMLDivElement;
 const openDirectoryBtn = document.getElementById('open-directory-btn') as HTMLButtonElement;
-const openChatBtn = document.getElementById('open-chat-btn') as HTMLButtonElement;
 const reloadExtensionBtn = document.getElementById('reload-extension-btn') as HTMLButtonElement;
 
 // Set up panel toggle
@@ -1973,19 +1972,6 @@ openDirectoryBtn.addEventListener('click', async () => {
   } catch (err) {
     console.error('[Sidebar] Failed to open directory:', err);
     showToast('Failed to open directory');
-  }
-});
-
-// Open Chat button - opens the chat demo in a new tab
-openChatBtn.addEventListener('click', async () => {
-  try {
-    // The demo is at the extension root level
-    const chatUrl = browserAPI.runtime.getURL('demo/chat-poc/index.html');
-    console.log('[Sidebar] Opening chat at:', chatUrl);
-    await browserAPI.tabs.create({ url: chatUrl });
-  } catch (err) {
-    console.error('[Sidebar] Failed to open chat:', err);
-    showToast('Failed to open chat');
   }
 });
 

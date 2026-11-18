@@ -28,10 +28,8 @@
       "resources": [
         "dist/page-chat.js",
         "dist/design-tokens.css",
-        "dist/demo-bootstrap.js",
         "dist/js-runtime/builtin-echo-worker.js",
         "dist/wasmer_wasi_js_bg.wasm",
-        "demo/*",
         "assets/*",
         "bundled/*"
       ],
