@@ -85,7 +85,8 @@ export async function handleRequestPermissions(ctx: RequestContext): HandlerResp
       allowedTools?: string[];
     }>(
       'permissions.request',
-      { origin: ctx.origin, tabId: ctx.tabId, scopes, reason, tools },
+      // Ask for exactly the scopes the page named, each once.
+      { origin: ctx.origin, tabId: ctx.tabId, scopes: [...new Set(scopes)], reason, tools },
       { timeoutMs: PERMISSION_PROMPT_TIMEOUT_MS },
     );
     if (!result || typeof result.granted !== 'boolean' || !result.scopes) {

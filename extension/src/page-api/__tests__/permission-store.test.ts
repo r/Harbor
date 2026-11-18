@@ -96,6 +96,12 @@ describe('a request asks only for the scopes the page named', () => {
     await handleRequestPermissions(ctx('agent.requestPermissions', { scopes }));
     expect(forwardedScopes()).toEqual(scopes);
   });
+
+  it('a scope named twice is asked for once', async () => {
+    mocks.harborRequest.mockResolvedValue({ granted: true, scopes: {}, allowedTools: [] });
+    await handleRequestPermissions(ctx('agent.requestPermissions', { scopes: ['model:prompt', 'web:fetch', 'model:prompt'] }));
+    expect(forwardedScopes()).toEqual(['model:prompt', 'web:fetch']);
+  });
 });
 
 describe('a missing tool allowlist denies every tool', () => {
