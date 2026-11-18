@@ -107,7 +107,8 @@ describe('orchestrate calls from a page reach Harbor in the documented shape', (
 
     expect(response).toMatchObject({
       ok: true,
-      result: { selectedAgentId: 'creative', invocationResult: { success: true, result: 'creative:review' } },
+      // injected.ts promises the chosen agent's AgentInvocationResponse.
+      result: { success: true, result: 'creative:review', selectedAgentId: 'creative' },
     });
     expect(invokeAgent).toHaveBeenCalledTimes(1);
     expect(invokeAgent.mock.calls[0][0]).toMatchObject({ agentId: 'creative', task: 'review', input: { poem: 'harbor lights' } });
