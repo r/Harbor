@@ -12,7 +12,7 @@
  * page or a compromised content script could otherwise forge.
  */
 import { harborRequest, harborStreamRequest } from './harbor-core';
-import { getFeatureFlags } from './policy/feature-flags';
+import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
 import { toolResultText } from './tool-messages';
 import type { TransportStreamEvent } from './types';
 
@@ -132,12 +132,9 @@ async function handleAgentRun(
 
   // Enforce the setting at the receiver: a page can send transport messages
   // directly, without going through the injected API's disabled wrapper.
-  if (!(await getFeatureFlags()).toolCalling) {
-    sendEvent({
-      id: ctx.id,
-      event: { type: 'error', error: { code: 'ERR_FEATURE_DISABLED', message: 'Agentic Tool Use is disabled' } },
-      done: true,
-    });
+  const refusal = featureRefusal(ctx.type, await getFeatureFlags());
+  if (refusal) {
+    sendEvent({ id: ctx.id, event: { type: 'error', error: refusal }, done: true });
     return;
   }
 

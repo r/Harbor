@@ -472,7 +472,7 @@ try {
 |------|---------|--------|
 | `textGeneration` | On | `window.ai.*` |
 | `toolAccess` | On | `agent.tools.list()`, `agent.tools.call()` |
-| `toolCalling` | Off | `agent.run()` |
+| `toolCalling` | On | `agent.run()` |
 | `browserInteraction` | Off | `agent.browser.activeTab.*` (click, fill, scroll, screenshot) |
 | `browserControl` | Off | `agent.browser.navigate()`, `tabs.*`, `fetch()` |
 | `multiAgent` | Off | `agent.agents.*` |
