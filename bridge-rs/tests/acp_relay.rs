@@ -641,3 +641,43 @@ fn acp_send_rejects_when_queue_is_full_without_blocking_the_bridge() {
     bridge.close(&ch2);
     bridge.shutdown();
 }
+
+/// An agent can spawn a background process and then exit normally on its
+/// own, with no `acp.close` ever sent. That still has to kill everything
+/// the agent's process group holds, not just reap the (already-exited)
+/// direct child - otherwise a background process it started outlives it.
+#[test]
+fn natural_exit_kills_a_backgrounded_process_the_agent_spawned() {
+    let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
+    let channel = bridge.open("fake", "O1");
+
+    let send_resp = bridge.rpc(
+        "S",
+        "acp.send",
+        json!({ "channel": channel, "message": { "__test_cmd": "spawn_orphan_and_exit" } }),
+    );
+    assert_eq!(send_resp["result"]["ok"], true);
+
+    let spawned = bridge
+        .wait_for(|m| is_stream_event(m, "O1", "message"), Duration::from_secs(5))
+        .expect("orphan-spawn echo");
+    let orphan_pid = spawned["event"]["message"]["orphan_pid"].as_u64().unwrap() as u32;
+    assert!(process_alive(orphan_pid), "orphan should be alive right after it's spawned");
+
+    // No acp.close here: the agent exits on its own.
+    let exit = bridge
+        .wait_for(|m| is_stream_event(m, "O1", "exit"), Duration::from_secs(5))
+        .expect("exit event after the agent exits on its own");
+    assert_eq!(exit["event"]["code"], 0);
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while process_alive(orphan_pid) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        !process_alive(orphan_pid),
+        "a background process the agent started must die with it, even on a natural exit"
+    );
+
+    bridge.shutdown();
+}

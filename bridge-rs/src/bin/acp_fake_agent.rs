@@ -24,6 +24,11 @@
 //!   never exits on its own, modeling a real agent launched through a
 //!   wrapper (e.g. `npx` -> `node`) where killing the direct child alone
 //!   leaves a descendant holding the pipe open.
+//! - `"spawn_orphan_and_exit"`: spawns a second copy of this binary
+//!   (`__sleep_forever`) with its own stdio (not inherited, so it won't
+//!   hold this process's pipes open), then exits with code 0 right away -
+//!   modeling an agent that exits normally while a background process it
+//!   started is still running.
 //! - `"exit"` with `"code": N`: exits immediately with code N.
 
 use std::io::{self, BufRead, Write};
@@ -125,6 +130,21 @@ fn main() {
                     let _ = writeln!(stdout, "{}", serde_json::to_string(&payload).unwrap());
                     let _ = stdout.flush();
                     continue;
+                }
+                "spawn_orphan_and_exit" => {
+                    let exe = std::env::current_exe().expect("current_exe");
+                    let pid = std::process::Command::new(exe)
+                        .arg("__sleep_forever")
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                        .map(|c| c.id())
+                        .unwrap_or(0);
+                    let payload = serde_json::json!({ "orphan_pid": pid });
+                    let _ = writeln!(stdout, "{}", serde_json::to_string(&payload).unwrap());
+                    let _ = stdout.flush();
+                    std::process::exit(0);
                 }
                 _ => {}
             }
