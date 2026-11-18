@@ -833,6 +833,8 @@ const { dataUrl } = await window.agent.browser.activeTab.screenshot();
 document.getElementById('preview').src = dataUrl;
 ```
 
+`screenshot()` captures the calling page only. It fails with `ERR_PERMISSION_DENIED` unless the calling tab is the one showing in its window, for example when the page is in a background tab.
+
 #### Browser Control (browserControl)
 
 Navigate and manage tabs. **Requires:** `browserControl` feature flag.
