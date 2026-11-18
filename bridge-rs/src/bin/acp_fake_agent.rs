@@ -29,6 +29,8 @@
 //!   hold this process's pipes open), then exits with code 0 right away -
 //!   modeling an agent that exits normally while a background process it
 //!   started is still running.
+//! - `"env"`: writes `{"env": {...}}` with every variable in its own
+//!   environment, so a test can check what the bridge passed it.
 //! - `"exit"` with `"code": N`: exits immediately with code N.
 
 use std::io::{self, BufRead, Write};
@@ -69,6 +71,20 @@ fn main() {
                 }
                 "badutf8" => {
                     let _ = stdout.write_all(b"\xff\xfe not utf8 on stdout\n");
+                    let _ = stdout.flush();
+                    continue;
+                }
+                "env" => {
+                    let vars: serde_json::Map<String, serde_json::Value> = std::env::vars_os()
+                        .map(|(k, v)| {
+                            (
+                                k.to_string_lossy().into_owned(),
+                                serde_json::Value::String(v.to_string_lossy().into_owned()),
+                            )
+                        })
+                        .collect();
+                    let payload = serde_json::json!({ "env": vars });
+                    let _ = writeln!(stdout, "{}", serde_json::to_string(&payload).unwrap());
                     let _ = stdout.flush();
                     continue;
                 }
