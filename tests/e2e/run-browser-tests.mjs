@@ -10,9 +10,15 @@
  * 
  * Both Firefox builds are installed in a fresh temporary profile.
  * The native bridge must already be registered for full functionality tests.
- * 
+ *
  * Usage:
- *   node run-browser-tests.mjs [--timeout=60000] [--keep-open]
+ *   node run-browser-tests.mjs [--timeout=60000] [--keep-open] [--harbor-only]
+ *
+ * --harbor-only loads only extension/dist-firefox (no Web Agents API
+ * extension) and runs a smaller page checking that window.ai, window.agent
+ * and navigator.modelContext are still served, in-process, by Harbor alone.
+ * It uses its own test page and a port distinct from the demo
+ * server (8000) and the normal two-extension run (3457).
  */
 
 import http from 'http';
@@ -34,12 +40,16 @@ const getArg = (name, defaultVal) => {
 };
 
 // Configuration - Firefox is the PRIMARY browser
+const harborOnly = args.includes('--harbor-only');
+
 const config = {
   harborExtPath: path.resolve(__dirname, '../../extension/dist-firefox'),
   webAgentsExtPath: path.resolve(__dirname, '../../web-agents-api/dist-firefox'),
-  testServerPort: 3457,
+  testServerPort: harborOnly ? 3462 : 3457,
   timeout: parseInt(getArg('timeout', '60000')),
   keepOpen: args.includes('--keep-open'),
+  harborOnly,
+  testPage: harborOnly ? 'harbor-only-test-runner.html' : 'test-runner.html',
 };
 
 // MIME types
@@ -101,7 +111,7 @@ function createTestServer() {
       
       // Parse URL and remove query string
       const urlPath = req.url.split('?')[0];
-      let filePath = urlPath === '/' ? '/test-runner.html' : urlPath;
+      let filePath = urlPath === '/' ? `/${config.testPage}` : urlPath;
       
       // Try browser-tests directory first
       let fullPath = path.join(__dirname, 'browser-tests', filePath);
@@ -164,21 +174,22 @@ function createTestServer() {
 // Check if extensions are built
 function checkBuilds() {
   const harborManifest = path.join(config.harborExtPath, 'manifest.json');
-  const webAgentsManifest = path.join(config.webAgentsExtPath, 'manifest.json');
-  
+
   if (!fs.existsSync(harborManifest)) {
     console.error(`[error] Harbor extension not built at ${config.harborExtPath}`);
     console.error(`        Run: cd extension && npm run build`);
     process.exit(1);
   }
-  
+  console.log('[build] ✓ Harbor extension ready (Firefox)');
+
+  if (config.harborOnly) return;
+
+  const webAgentsManifest = path.join(config.webAgentsExtPath, 'manifest.json');
   if (!fs.existsSync(webAgentsManifest)) {
     console.error(`[error] Web Agents API extension not built at ${config.webAgentsExtPath}`);
     console.error(`        Run: cd web-agents-api && npm run build`);
     process.exit(1);
   }
-  
-  console.log('[build] ✓ Harbor extension ready (Firefox)');
   console.log('[build] ✓ Web Agents API extension ready (Firefox)');
 }
 
@@ -194,7 +205,11 @@ async function runBrowserTests(testUrl, testResultsPromise) {
   });
   try {
     firefoxSession = await Promise.race([
-      launchFirefox({ startUrl: testUrl, signal: controller.signal }), deadline,
+      launchFirefox({
+        startUrl: testUrl,
+        signal: controller.signal,
+        extensionDirs: config.harborOnly ? ['extension/dist-firefox'] : undefined,
+      }), deadline,
     ]);
     const results = await Promise.race([
       testResultsPromise,
@@ -223,7 +238,7 @@ async function main() {
   // Start test server
   const { server, testResultsPromise } = await createTestServer();
   
-  const testUrl = `http://localhost:${config.testServerPort}/test-runner.html`;
+  const testUrl = `http://localhost:${config.testServerPort}/${config.testPage}`;
   
   try {
     console.log(`\n[test] Opening: ${testUrl}`);

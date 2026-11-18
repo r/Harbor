@@ -3,6 +3,7 @@ export {};
 
 import { browserAPI } from './browser-compat';
 import { configuredModelActions, modelsAvailableToAdd, type ConfiguredModel } from './sidebar-models';
+import { getFeatureFlags, setFeatureFlags, type FeatureFlags } from './page-api/policy/feature-flags';
 
 type SecretDecl = { name: string; label: string; type?: 'text' | 'password' };
 
@@ -1894,6 +1895,60 @@ setupPanelToggle(oauthPanelHeader, oauthPanelToggle, oauthPanelBody);
   // Max retries reached
   console.warn('[Sidebar] Failed to load OAuth status after retries');
 })();
+
+// =============================================================================
+// Browser Agent Capabilities (feature flag toggles)
+// =============================================================================
+
+const apiTogglesHeader = document.getElementById('api-toggles-header') as HTMLDivElement;
+const apiTogglesToggle = document.getElementById('api-toggles-toggle') as HTMLSpanElement;
+const apiTogglesBody = document.getElementById('api-toggles-body') as HTMLDivElement;
+
+const flagTextGeneration = document.getElementById('flag-textGeneration') as HTMLInputElement;
+const flagToolCalling = document.getElementById('flag-toolCalling') as HTMLInputElement;
+const flagToolAccess = document.getElementById('flag-toolAccess') as HTMLInputElement;
+const flagBrowserInteraction = document.getElementById('flag-browserInteraction') as HTMLInputElement;
+const flagBrowserControl = document.getElementById('flag-browserControl') as HTMLInputElement;
+const flagMultiAgent = document.getElementById('flag-multiAgent') as HTMLInputElement;
+const featureFlagReloadHint = document.getElementById('feature-flag-reload-hint') as HTMLDivElement;
+
+setupPanelToggle(apiTogglesHeader, apiTogglesToggle, apiTogglesBody);
+
+async function initFeatureFlags(): Promise<void> {
+  const flags = await getFeatureFlags();
+
+  flagTextGeneration.checked = flags.textGeneration;
+  flagToolCalling.checked = flags.toolCalling;
+  flagToolAccess.checked = flags.toolAccess;
+  flagBrowserInteraction.checked = flags.browserInteraction;
+  flagBrowserControl.checked = flags.browserControl;
+  flagMultiAgent.checked = flags.multiAgent;
+}
+
+function setupFeatureFlagListeners(): void {
+  const inputs: Array<{ el: HTMLInputElement; key: keyof FeatureFlags }> = [
+    { el: flagTextGeneration, key: 'textGeneration' },
+    { el: flagToolCalling, key: 'toolCalling' },
+    { el: flagToolAccess, key: 'toolAccess' },
+    { el: flagBrowserInteraction, key: 'browserInteraction' },
+    { el: flagBrowserControl, key: 'browserControl' },
+    { el: flagMultiAgent, key: 'multiAgent' },
+  ];
+
+  for (const { el, key } of inputs) {
+    el.addEventListener('change', async () => {
+      await setFeatureFlags({ [key]: el.checked });
+
+      // Show reload hint
+      featureFlagReloadHint.classList.add('visible');
+
+      showToast(`${key} ${el.checked ? 'enabled' : 'disabled'}`, 'success');
+    });
+  }
+}
+
+initFeatureFlags().catch((err) => console.error('[Sidebar] Failed to load feature flags:', err));
+setupFeatureFlagListeners();
 
 // =============================================================================
 // Quick Actions Panel

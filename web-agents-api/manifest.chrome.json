@@ -22,13 +22,6 @@
     "http://localhost/*",
     "https://*/*"
   ],
-  "content_scripts": [
-    {
-      "matches": ["http://*/*", "https://*/*", "file://*/*"],
-      "js": ["dist/content-script.js"],
-      "run_at": "document_start"
-    }
-  ],
   "web_accessible_resources": [
     {
       "resources": [

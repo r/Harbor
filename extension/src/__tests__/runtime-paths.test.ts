@@ -27,7 +27,7 @@ const join = (...parts: string[]): string => parts.join('/');
 
 // Source files that the build never bundles. Their paths can't be loaded,
 // so they aren't checked. Kept explicit so a new entry point can't hide here.
-const NOT_BUILT = new Set(['agents/content-script.ts']);
+const NOT_BUILT = new Set<string>([]);
 
 interface BuildOutputs {
   files: Set<string>;

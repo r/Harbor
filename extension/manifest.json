@@ -20,7 +20,8 @@
     "activeTab",
     "tabs",
     "nativeMessaging",
-    "cookies"
+    "cookies",
+    "dns"
   ],
   "optional_permissions": [
     "trialML"
@@ -37,6 +38,12 @@
       "matches": ["<all_urls>"],
       "js": ["dist/discovery.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/page-api/content-script.js"],
+      "run_at": "document_start",
+      "all_frames": false
     }
   ],
   "web_accessible_resources": [
@@ -47,6 +54,7 @@
         "dist/design-tokens.css",
         "dist/demo-bootstrap.js",
         "dist/js-runtime/builtin-echo-worker.js",
+        "dist/page-api/injected.js",
         "demo/*",
         "assets/*",
         "bundled/*"

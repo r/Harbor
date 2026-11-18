@@ -23,7 +23,7 @@ The two extensions together provide:
 | Capability | Provided By | Description |
 |------------|-------------|-------------|
 | **Web Agent API** | Web Agents API | `window.ai` and `window.agent` APIs for web pages |
-| **Permission System** | Harbor | Per-origin capability grants with user consent; the Web Agents API asks Harbor for every check |
+| **Permission System** | Harbor | Per-origin capability grants with user consent; Harbor's page API checks them before every page call |
 | **MCP Server Management** | Harbor | Install, run, and connect to MCP servers |
 | **In-Browser MCP Execution** | Harbor | Run MCP servers as WASM or JavaScript directly in the browser |
 | **LLM Integration** | Harbor | Local model support (Ollama, llamafile) + cloud providers |
@@ -37,7 +37,7 @@ The two extensions together provide:
 
 The system exposes AI capabilities to web pages through a layered architecture involving five key components:
 
-1. **Web Agents API Extension** — Injects JavaScript APIs into web pages and checks each call's permissions with Harbor
+1. **Web Agents API Extension** — Being retired. Harbor now injects the JavaScript APIs into web pages itself (`extension/src/page-api/`); this extension no longer injects anything
 2. **Harbor Extension** — Manages LLM provider selection, MCP servers, and provides the chat sidebar
 3. **Native Bridge (Rust)** — Handles LLM inference and native MCP server communication
 4. **WASM Runtime** — Runs MCP servers compiled to WebAssembly in the browser
@@ -871,7 +871,7 @@ export HARBOR_CATALOG_WORKER=1
 
 ## Permission System
 
-Permissions are scoped per-origin with capability-based grants. Harbor holds the only grant store and the only consent prompt; the Web Agents API keeps no copy and asks Harbor (`permissions.check`, `permissions.request`) for every check and request. A site with no tool allowlist may call no tools.
+Permissions are scoped per-origin with capability-based grants. Harbor holds the only grant store and the only consent prompt; Harbor's page API checks it (`permissions.check`, `permissions.request`) before every page call. A site with no tool allowlist may call no tools.
 
 ### Scopes
 

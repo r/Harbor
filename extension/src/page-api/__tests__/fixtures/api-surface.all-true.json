@@ -1,0 +1,96 @@
+{
+  "ai": {
+    "canCreateTextSession": "function",
+    "createTextSession": "function",
+    "languageModel": {
+      "capabilities": "function",
+      "create": "function"
+    },
+    "providers": {
+      "getActive": "function",
+      "getConfiguredModelsMetadata": "function",
+      "list": "function",
+      "listConfiguredModels": "function"
+    }
+  },
+  "agent": {
+    "agents": {
+      "broadcast": "function",
+      "discover": "function",
+      "getInfo": "function",
+      "invoke": "function",
+      "list": "function",
+      "onInvoke": "function",
+      "onMessage": "function",
+      "orchestrate": {
+        "parallel": "function",
+        "pipeline": "function",
+        "route": "function"
+      },
+      "register": "function",
+      "send": "function",
+      "subscribe": "function",
+      "unregister": "function",
+      "unsubscribe": "function"
+    },
+    "browser": {
+      "activeTab": {
+        "click": "function",
+        "fill": "function",
+        "getElements": "function",
+        "readability": "function",
+        "screenshot": "function",
+        "scroll": "function",
+        "select": "function"
+      },
+      "fetch": "function",
+      "navigate": "function",
+      "tab": {
+        "getHtml": "function",
+        "readability": "function",
+        "waitForLoad": "function"
+      },
+      "tabs": {
+        "close": "function",
+        "create": "function",
+        "list": "function"
+      }
+    },
+    "capabilities": "function",
+    "chat": {
+      "canOpen": "function",
+      "close": "function",
+      "open": "function"
+    },
+    "mcp": {
+      "discover": "function",
+      "register": "function",
+      "unregister": "function"
+    },
+    "permissions": {
+      "list": "function"
+    },
+    "requestCapabilities": "function",
+    "requestPermissions": "function",
+    "run": "function",
+    "sessions": {
+      "create": "function",
+      "get": "function",
+      "list": "function",
+      "terminate": "function",
+      "upgrade": "function"
+    },
+    "tools": {
+      "call": "function",
+      "list": "function"
+    },
+    "upgradeSession": "function"
+  },
+  "modelContext": {
+    "addTool": "function",
+    "removeTool": "function",
+    "tools": {
+      "__array": "empty"
+    }
+  }
+}
