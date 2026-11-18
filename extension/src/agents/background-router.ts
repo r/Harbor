@@ -48,21 +48,6 @@ import {
 } from './handlers';
 
 // =============================================================================
-// Not Implemented Handlers
-// =============================================================================
-
-function handleNotImplemented(ctx: RequestContext, sender: ResponseSender): void {
-  sender.sendResponse({
-    id: ctx.id,
-    ok: false,
-    error: {
-      code: 'ERR_NOT_IMPLEMENTED',
-      message: `Method "${ctx.type}" is not yet implemented`,
-    },
-  });
-}
-
-// =============================================================================
 // Message Router
 // =============================================================================
 
@@ -126,16 +111,6 @@ async function routeMessage(ctx: RequestContext, sender: ResponseSender): Promis
     case 'agents.remote.discover':
       return handleRemoteDiscover(ctx, sender);
 
-    // Regular methods not yet implemented
-    case 'session.clone':
-    case 'ai.providers.getActive':
-    case 'ai.providers.add':
-    case 'ai.providers.remove':
-    case 'ai.providers.setDefault':
-    case 'ai.providers.setTypeDefault':
-    case 'ai.runtime.getBest':
-      return handleNotImplemented(ctx, sender);
-
     // MCP server registration (from websites)
     case 'agent.mcp.discover':
       return handleMcpDiscover(ctx, sender);
@@ -143,19 +118,6 @@ async function routeMessage(ctx: RequestContext, sender: ResponseSender): Promis
       return handleMcpRegister(ctx, sender);
     case 'agent.mcp.unregister':
       return handleMcpUnregister(ctx, sender);
-
-    case 'agent.addressBar.canProvide':
-    case 'agent.addressBar.registerProvider':
-    case 'agent.addressBar.registerToolShortcuts':
-    case 'agent.addressBar.registerSiteProvider':
-    case 'agent.addressBar.discover':
-    case 'agent.addressBar.listProviders':
-    case 'agent.addressBar.unregisterProvider':
-    case 'agent.addressBar.setDefaultProvider':
-    case 'agent.addressBar.getDefaultProvider':
-    case 'agent.addressBar.query':
-    case 'agent.addressBar.select':
-      return handleNotImplemented(ctx, sender);
 
     default:
       sender.sendResponse({
