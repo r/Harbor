@@ -28,7 +28,6 @@ Harbor provides:
 | **In-Browser MCP Execution** | Harbor | Run MCP servers as WASM or JavaScript directly in the browser |
 | **LLM Integration** | Harbor | Local model support (Ollama, llamafile) + cloud providers |
 | **Chat Sidebar** | Harbor | Built-in chat UI with tool calling |
-| **Address Bar Integration** | Harbor | Omnibox suggestions and tool shortcuts |
 | **Bring Your Own Chatbot** | Harbor | Websites can integrate with the user's AI via `agent.mcp.*` and `agent.chat.*` |
 
 ---
@@ -92,7 +91,7 @@ The system supports two execution paths for different capabilities:
 MCP servers can run entirely in the browser using:
 
 - **WASM Runtime** — Servers compiled to WebAssembly (e.g., `mcp-time.wasm`)
-- **JavaScript Runtime** — Servers written in JavaScript running in Web Workers
+- **JavaScript Runtime** — Built-in JavaScript servers running in Web Workers (other JavaScript servers run in the bridge's QuickJS runtime)
 
 This path is ideal for:
 - Privacy-sensitive operations (data never leaves the browser)
@@ -147,14 +146,14 @@ For LLM inference and native MCP servers, Harbor uses a Rust native messaging br
 │  ┌────────────────────────────────┴──────────────────────────────────────┐  │
 │  │                     IN-BROWSER MCP EXECUTION                           │  │
 │  │                                                                        │  │
-│  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐    │  │
-│  │  │   WASM Runtime   │  │   JS Runtime     │  │   Address Bar    │    │  │
-│  │  │   (runtime.ts)   │  │   (sandbox.ts)   │  │   (addressbar.ts)│    │  │
-│  │  │                  │  │                  │  │                  │    │  │
-│  │  │  • WASI support  │  │  • Web Workers   │  │  • Omnibox API   │    │  │
-│  │  │  • Isolated mem  │  │  • Fetch proxy   │  │  • Suggestions   │    │  │
-│  │  │  • MCP protocol  │  │  • MCP protocol  │  │  • Tool shortcuts│    │  │
-│  │  └──────────────────┘  └──────────────────┘  └──────────────────┘    │  │
+│  │  ┌──────────────────┐  ┌──────────────────┐                          │  │
+│  │  │   WASM Runtime   │  │   JS Runtime     │                          │  │
+│  │  │   (runtime.ts)   │  │   (session.ts)   │                          │  │
+│  │  │                  │  │                  │                          │  │
+│  │  │  • WASI support  │  │  • QuickJS/bridge│                          │  │
+│  │  │  • Isolated mem  │  │  • Web Workers   │                          │  │
+│  │  │  • MCP protocol  │  │  • MCP protocol  │                          │  │
+│  │  └──────────────────┘  └──────────────────┘                          │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                   │                                          │
 └───────────────────────────────────┼──────────────────────────────────────────┘
@@ -329,55 +328,12 @@ const result = await callMcpTool('time-wasm', 'time.now', {});
 
 ### JavaScript Runtime
 
-The JS runtime (`extension/src/js-runtime/`) executes JavaScript MCP servers in **sandboxed Web Workers**.
+The JS runtime (`extension/src/js-runtime/session.ts`) runs JavaScript MCP servers in one of two places:
 
-**How it works:**
+- **The bridge's QuickJS runtime.** This is the normal path, and the only one for servers that aren't built in. The extension sends the server's code to the bridge and speaks MCP to it over the bridge connection.
+- **A Web Worker, for built-in servers only.** When the bridge isn't connected, a built-in server (today, `echo-js`) runs from a pre-bundled worker file such as `js-runtime/builtin-echo-worker.js`. That file carries its own preamble: it deletes `fetch`, `XMLHttpRequest`, `WebSocket` and `importScripts`, and provides `MCP.readLine()` / `MCP.writeLine()` for stdio.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    JS MCP Server (Web Worker)                    │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                   SANDBOX PREAMBLE                        │  │
-│  │                                                           │  │
-│  │  • Removes dangerous globals (fetch, XMLHttpRequest,      │  │
-│  │    WebSocket, importScripts)                              │  │
-│  │  • Provides controlled fetch via postMessage proxy        │  │
-│  │  • Provides MCP.readLine() / MCP.writeLine() for stdio    │  │
-│  │  • Provides process.env for secrets injection             │  │
-│  │  • Forwards console.* to host for logging                 │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                              │                                   │
-│  ┌───────────────────────────▼──────────────────────────────┐  │
-│  │                   SERVER CODE                             │  │
-│  │                                                           │  │
-│  │  // MCP server implementation                             │  │
-│  │  while (true) {                                           │  │
-│  │    const request = JSON.parse(await MCP.readLine());      │  │
-│  │    const response = handleRequest(request);               │  │
-│  │    MCP.writeLine(JSON.stringify(response));               │  │
-│  │  }                                                        │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-            │                               ▲
-            │ stdout (MCP responses)        │ stdin (MCP requests)
-            ▼                               │
-┌─────────────────────────────────────────────────────────────────┐
-│                    HOST (Extension Background)                   │
-│                                                                  │
-│  • Routes fetch requests through allowlist                      │
-│  • Injects environment variables (API keys)                     │
-│  • Manages server lifecycle                                      │
-│  • Translates MCP protocol                                       │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Security features of the JS sandbox:**
-
-1. **Network isolation** — `fetch`, `XMLHttpRequest`, and `WebSocket` are removed; network access is only available through a controlled proxy
-2. **No dynamic imports** — `importScripts` is removed
-3. **Environment injection** — Secrets are passed via `process.env`, not hardcoded
-4. **Console forwarding** — All console output is captured for debugging
+Third-party JavaScript never runs in an extension Web Worker.
 
 ---
 
@@ -622,7 +578,7 @@ function createStreamIterable(type, payload) {
 | `agents/handlers/` | Chat, MCP-website and multi-agent handler implementations |
 | `agents/types.ts` | TypeScript type definitions |
 | `js-runtime/` | JavaScript MCP server sandbox |
-| `js-runtime/sandbox.ts` | Web Worker-based JS execution |
+| `js-runtime/worker-loader.ts` | Generic Web Worker loader for JS server code |
 | `js-runtime/session.ts` | JS server session management |
 | `wasm/` | WebAssembly MCP server runtime |
 | `wasm/runtime.ts` | WASI-compatible WASM execution |
