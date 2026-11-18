@@ -117,11 +117,10 @@ For LLM inference and native MCP servers, Harbor uses a Rust native messaging br
 │  window.ai                           window.agent                            │
 │  ├── createTextSession()             ├── requestPermissions()                │
 │  ├── languageModel.create()          ├── capabilities()                      │
-│  ├── providers.list()                ├── tools.list() / tools.call()        │
-│  └── runtime.getBest()               ├── browser.activeTab.*                 │
+│  └── providers.list()                ├── tools.list() / tools.call()        │
+│                                      ├── browser.activeTab.*                 │
 │                                      ├── run({ task })                       │
 │                                      ├── sessions.create()                   │
-│                                      ├── addressBar.registerProvider()      │
 │                                      ├── mcp.discover/register() [BYOC]     │
 │                                      ├── chat.open/close() [BYOC]           │
 │                                      └── agents.* [Multi-Agent]             │
@@ -461,7 +460,6 @@ The `injected.ts` script (`extension/src/page-api/injected.ts`) is the heart of 
 │    sessions: { create(), list(), terminate() },                  │
 │    mcp: { discover(), register() },     // BYOC                  │
 │    chat: { canOpen(), open(), close() } // BYOC                  │
-│    addressBar: { ... },                 // Omnibox integration   │
 │    agents: { ... }                      // Multi-agent           │
 │  }                                                               │
 └─────────────────────────────────────────────────────────────────┘
