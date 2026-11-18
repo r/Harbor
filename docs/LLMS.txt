@@ -230,7 +230,7 @@ Page-defined tools (via `navigator.modelContext`) appear with `serverId: 'page'`
 ```javascript
 for await (const ev of window.agent.run({
   task: 'What time is it in Tokyo?',
-  maxToolCalls: 5,         // default 5
+  maxToolCalls: 5,         // default 5; caps tool calls for the whole run
   systemPrompt: 'Be concise.',
 })) {
   switch (ev.type) {
@@ -451,6 +451,7 @@ await window.agent.chat.close(chat.chatId);
 | `ERR_TOOL_TIMEOUT` | Tool call timed out |
 | `ERR_MODEL_FAILED` | LLM error |
 | `ERR_SESSION_NOT_FOUND` | Session terminated/destroyed |
+| `ERR_BUDGET_EXCEEDED` | A session's `maxToolCalls` budget is spent |
 | `ERR_TIMEOUT` | Request timed out |
 | `ERR_ELEMENT_NOT_FOUND` | DOM ref not found |
 | `ERR_AGENT_NOT_FOUND` | Agent not registered |

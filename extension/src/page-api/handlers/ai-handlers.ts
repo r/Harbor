@@ -92,7 +92,7 @@ export function forgetExplicitTextSession(sessionId: string, origin: string): vo
 }
 
 /** Harbor's refusals from getValidatedSession: the session is gone for this origin. */
-const HARBOR_SESSION_GONE = /^Session (not found|has been terminated|has expired|belongs to different origin)$/;
+export const HARBOR_SESSION_GONE = /^Session (not found|has been terminated|has expired|belongs to different origin)$/;
 
 /**
  * Tell Harbor an explicit session was prompted, so its registry sees the

@@ -673,6 +673,8 @@ Run an AI agent that can use tools to accomplish tasks.
 
 Execute an autonomous agent task. Returns an async iterator of events.
 
+`maxToolCalls` (default 5) caps the tool calls for the whole run, even when the model asks for several in one turn; calls past it don't run, and the model is told. A turn whose tool calls are refused because the site lacks `mcp:tools.call` also counts as one. When the budget is spent, the model gives a final answer without tools.
+
 ```javascript
 for await (const event of window.agent.run({
   task: 'What is the current time in Tokyo?',
@@ -1083,6 +1085,7 @@ try {
 | `ERR_TOOL_FAILED` | Tool execution failed |
 | `ERR_MODEL_FAILED` | LLM request failed |
 | `ERR_SESSION_NOT_FOUND` | Session was destroyed |
+| `ERR_BUDGET_EXCEEDED` | A session's `maxToolCalls` budget is spent |
 | `ERR_HARBOR_NOT_FOUND` | Harbor extension not found |
 | `ERR_AGENT_NOT_FOUND` | Agent not registered |
 | `ERR_AGENT_NOT_ACCEPTING` | Agent not accepting invocations |

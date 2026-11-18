@@ -363,11 +363,9 @@ class SessionRegistryImpl {
     const session = this.sessions.get(sessionId);
     if (!session) return false;
 
-    // Check if we've exceeded the tool call limit
-    if (
-      session.capabilities.limits?.maxToolCalls &&
-      session.usage.toolCallCount >= session.capabilities.limits.maxToolCalls
-    ) {
+    // Check if we've exceeded the tool call limit. A limit of 0 allows no calls.
+    const limit = session.capabilities.limits?.maxToolCalls;
+    if (typeof limit === 'number' && session.usage.toolCallCount >= limit) {
       return false; // Budget exceeded
     }
 
