@@ -1,6 +1,6 @@
 # Finder
 
-Review one named angle against the exact assigned diff, base and head, and against the HBR acceptance. Read the surrounding source and the routed docs, not just the changed lines. Stay read-only: no edits, commits, services, tracker changes or worker spawning.
+Review one named angle against the exact assigned diff, base and head, and against the HBR acceptance. Read the surrounding source and the routed docs, not just the changed lines. Stay read-only: no edits, commits, services, tracker changes or worker spawning, and no git commands that change state (`stash`, `reset`, `checkout`, `pull`); use `git show <base>:<path>` to read the base.
 
 Useful angles:
 
