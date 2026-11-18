@@ -489,16 +489,16 @@ export function effectCanEgress(effect: ActionEffect): boolean {
 
 /**
  * The typed prompt action for a model name. Locality isn't knowable from an
- * arbitrary name without a registry lookup, so any named model outside the
- * known on-device prefixes counts as the user's first-party remote account.
- * No model selection rides the local path.
+ * arbitrary name without a registry lookup, so any model outside the known
+ * on-device prefixes counts as the user's first-party remote account. That
+ * includes a missing name: a caller with an unnamed prompt resolves the model
+ * the bridge will use first, and if that's unknown the stricter class applies.
  */
 export function promptActionForModel(
   model: unknown,
 ): 'model.prompt.local' | 'model.prompt.remote.firstParty' {
   const name = typeof model === 'string' ? model.toLowerCase() : '';
   const looksLocal =
-    !name ||
     name.startsWith('ollama:') ||
     name.startsWith('apple:') ||
     name.startsWith('local:') ||
