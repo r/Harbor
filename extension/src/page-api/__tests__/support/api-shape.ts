@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /**
  * Harness for snapshotting the shape of the page-facing API that `injected.ts`
  * (base: web-agents-api/src/injected.ts; copy: extension/src/page-api/injected.ts)
@@ -7,8 +8,8 @@
  * plain (non-module) content-script injection. We transform it to a plain
  * IIFE with esbuild and run it in a `vm` context whose globals are minimal
  * stand-ins for `window`/`document`/`navigator`, then read back what got
- * registered. This is plain JS (not TypeScript) so it can run unmodified from
- * a one-off fixture-generation script as well as from a vitest test.
+ * registered. Node runs this file directly (type stripping), so the one-off
+ * fixture-generation script can use it as well as the vitest test.
  */
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -18,22 +19,22 @@ import { transformSync } from 'esbuild';
 
 /**
  * Resolve `segments` relative to the directory of the module at `moduleUrl`
- * (pass a test file's `import.meta.url`). Kept here, in plain JS, so
- * extension/'s tsc run (which has no @types/node) never needs to type-check
- * `node:path` / `node:url` from a `.ts` test file.
+ * (pass a test file's `import.meta.url`).
  */
-export function resolveFromModule(moduleUrl, ...segments) {
+export function resolveFromModule(moduleUrl: string, ...segments: string[]): string {
   const dir = path.dirname(fileURLToPath(moduleUrl));
   return path.join(dir, ...segments);
 }
 
 /** Read and JSON.parse a fixture relative to a test file's `import.meta.url`. */
-export function readJsonFixture(moduleUrl, ...segments) {
+export function readJsonFixture(moduleUrl: string, ...segments: string[]): unknown {
   return JSON.parse(readFileSync(resolveFromModule(moduleUrl, ...segments), 'utf-8'));
 }
 
 /** A JSON-safe recursive description of a value's shape: keys and kinds, not data. */
-export function shapeOf(value, seen = new Set()) {
+export type Shape = string | { [key: string]: Shape };
+
+export function shapeOf(value: unknown, seen: Set<unknown> = new Set()): Shape {
   if (value === null) return 'null';
   const t = typeof value;
   if (t === 'function') return 'function';
@@ -43,9 +44,10 @@ export function shapeOf(value, seen = new Set()) {
   }
   if (seen.has(value)) return '__circular__';
   seen.add(value);
-  const out = {};
-  for (const key of Object.keys(value).sort()) {
-    out[key] = shapeOf(value[key], seen);
+  const out: { [key: string]: Shape } = {};
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record).sort()) {
+    out[key] = shapeOf(record[key], seen);
   }
   return out;
 }
@@ -55,19 +57,29 @@ export function shapeOf(value, seen = new Set()) {
  * sandbox with `flags` injected at `flagsElementId`, and return the shape of
  * whatever it registered on window.ai / window.agent / navigator.modelContext.
  */
-export function loadInjectedApiShape(filePath, flags, flagsElementId) {
+export interface ApiShape {
+  ai: Shape;
+  agent: Shape;
+  modelContext: Shape;
+}
+
+export function loadInjectedApiShape(
+  filePath: string,
+  flags: Record<string, boolean>,
+  flagsElementId: string,
+): ApiShape {
   const source = readFileSync(filePath, 'utf-8');
   const { code } = transformSync(source, { loader: 'ts', format: 'iife', target: 'es2022' });
 
   const doc = {
-    getElementById(id) {
+    getElementById(id: string) {
       return id === flagsElementId ? { textContent: JSON.stringify(flags) } : null;
     },
     querySelector() {
       return null;
     },
   };
-  const win = {
+  const win: Record<string, unknown> = {
     addEventListener() {},
     removeEventListener() {},
     dispatchEvent() {
@@ -75,14 +87,16 @@ export function loadInjectedApiShape(filePath, flags, flagsElementId) {
     },
     postMessage() {},
   };
-  const nav = {};
+  const nav: Record<string, unknown> = {};
   const sandbox = {
     window: win,
     document: doc,
     navigator: nav,
     crypto: { randomUUID: () => 'test-uuid' },
     CustomEvent: class CustomEvent {
-      constructor(type, init) {
+      type: string;
+      detail: unknown;
+      constructor(type: string, init?: { detail?: unknown }) {
         this.type = type;
         this.detail = init && init.detail;
       }

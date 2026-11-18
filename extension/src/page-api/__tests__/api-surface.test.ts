@@ -15,8 +15,7 @@ import { describe, expect, it } from 'vitest';
 // Plain JS harness (shared with the fixture generator script): extension/
 // has no @types/node, so file/path handling lives here instead of needing
 // node:fs/path/url typed from a .ts test.
-// @ts-expect-error -- no .d.ts for this .mjs module.
-import { loadInjectedApiShape, ALL_FLAGS_TRUE, ALL_FLAGS_FALSE, resolveFromModule, readJsonFixture } from './support/api-shape.mjs';
+import { loadInjectedApiShape, ALL_FLAGS_TRUE, ALL_FLAGS_FALSE, resolveFromModule, readJsonFixture } from './support/api-shape';
 
 const INJECTED_PATH = resolveFromModule(import.meta.url, '../injected.ts');
 const FLAGS_ELEMENT_ID = 'harbor-page-api-flags';
