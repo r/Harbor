@@ -681,12 +681,22 @@ async fn forward_stdout_line(channel: &str, line: CappedLine, event_tx: &mpsc::S
 /// Remove the channel (if still present) and wait for its process to exit,
 /// returning the exit code. If the channel was already removed (e.g. by an
 /// explicit `acp.close` that already killed and waited on it), there is
-/// nothing left to reap.
+/// nothing left to reap. Called once the agent's stdout has closed - which
+/// can mean `acp.close` already killed it, but can equally mean the agent
+/// exited entirely on its own. Either way, anything still alive in its
+/// process group (e.g. a background process the agent started before
+/// exiting) must die with it, the same as an explicit `acp.close` would
+/// kill it - a natural exit is not a reason to leave that running.
 async fn reap(channel: &str) -> Option<i32> {
     let removed = channels().write().await.remove(channel);
     match removed {
         Some(handle) => {
             let mut child = handle.child.lock().await;
+            #[cfg(unix)]
+            if let Some(pid) = child.id() {
+                kill_process_group(pid).await;
+            }
+            let _ = child.kill().await;
             match child.wait().await {
                 Ok(status) => status.code(),
                 Err(_) => None,

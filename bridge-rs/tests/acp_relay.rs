@@ -662,7 +662,9 @@ fn natural_exit_kills_a_backgrounded_process_the_agent_spawned() {
         .wait_for(|m| is_stream_event(m, "O1", "message"), Duration::from_secs(5))
         .expect("orphan-spawn echo");
     let orphan_pid = spawned["event"]["message"]["orphan_pid"].as_u64().unwrap() as u32;
-    assert!(process_alive(orphan_pid), "orphan should be alive right after it's spawned");
+    // Not asserted alive here: the agent exits immediately after sending
+    // this message, and with the fix, reaping it can kill the orphan
+    // before this test even gets to check - which is the point.
 
     // No acp.close here: the agent exits on its own.
     let exit = bridge
