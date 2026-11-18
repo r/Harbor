@@ -16,7 +16,7 @@
 import { harborRequest } from './harbor-core';
 import { hasPermission } from './handlers';
 import { toolResultText } from './tool-messages';
-import type { StreamToken } from './types';
+import { ErrorCodes, type StreamToken } from './types';
 
 /** A tool the run may offer the model, already filtered to the site's `allowedTools`. */
 export interface AgentBackendTool {
@@ -49,7 +49,7 @@ export interface AgentBackend {
 }
 
 function abortedEvent(): StreamToken {
-  return { type: 'error', error: { code: 'ERR_ABORTED', message: 'Run aborted' } };
+  return { type: 'error', error: { code: ErrorCodes.ABORTED, message: 'Run aborted' } };
 }
 
 /**

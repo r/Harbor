@@ -132,4 +132,33 @@ describe('agent.run cancellation at the background port boundary', () => {
     expect(terminal).toHaveLength(1);
     expect(terminal[0].event).toMatchObject({ type: 'error', error: { code: 'ERR_ABORTED' } });
   });
+  it('still aborts a run whose id a page reused after the earlier run with that id finished', async () => {
+    const resolvers: Array<(value: unknown) => void> = [];
+    mocks.harborRequest.mockImplementation(async (method: string) => {
+      if (method === 'mcp.listTools') return { tools: [] };
+      if (method === 'llm.chat') return new Promise((resolve) => { resolvers.push(resolve); });
+      throw new Error(`unexpected ${method}`);
+    });
+    const start = () => receive({
+      id: 'reused', type: 'agent.run', origin: 'https://example.test', payload: { task: 't' },
+    });
+
+    const first = start();
+    await vi.waitFor(() => expect(resolvers).toHaveLength(1));
+    const second = start();
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+
+    // The first run finishes normally while the second is still waiting on the model.
+    resolvers[0]({ content: 'done', choices: [{ message: { role: 'assistant', content: 'done' } }] });
+    await first;
+
+    // The page aborts the id; the second run must still see it.
+    await receive({ type: 'abort', id: 'reused' });
+    resolvers[1](toolCallResponse('call-2'));
+    await second;
+
+    expect(resolvers).toHaveLength(2);
+    const terminal = postMessage.mock.calls.map(([m]) => m).filter((m) => m.id === 'reused' && m.done);
+    expect(terminal.at(-1).event).toMatchObject({ type: 'error', error: { code: 'ERR_ABORTED' } });
+  });
 });

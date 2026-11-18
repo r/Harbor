@@ -1079,6 +1079,7 @@ try {
 | `ERR_AGENT_NOT_FOUND` | Agent not registered |
 | `ERR_AGENT_NOT_ACCEPTING` | Agent not accepting invocations |
 | `ERR_TIMEOUT` | Request timed out |
+| `ERR_ABORTED` | The page aborted an `agent.run`, or its tab closed |
 | `ERR_INTERNAL` | Internal error |
 
 ---

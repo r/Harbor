@@ -281,7 +281,8 @@ export function initializePageApi(): void {
         try {
           await handleAgentRun(ctx, sendEvent, controller.signal);
         } finally {
-          runControllers.delete(ctx.id);
+          // A page may reuse an id; only remove the controller this run added.
+          if (runControllers.get(ctx.id) === controller) runControllers.delete(ctx.id);
         }
         return;
       }
