@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- The sidebar's **Open Chat** button and the chat page bundled inside the extension. That page ran its own copy of `window.agent` with every permission treated as granted, so it skipped the permission checks and loop fixes that web pages get. To chat with tools, use the demo-site chat (`demo/web-agents/chat-poc/`), which goes through the same `agent.run` as any site. The extension also no longer exposes `demo/*` or `demo-bootstrap.js` to web pages.
 - The old Jekyll scaffolding under `whitepaper/` (`_config.yml`, `_layouts/`, `Gemfile`, `index.md`, `landscape.md`) — replaced by static HTML. `.nojekyll` added so GitHub Pages serves the files as authored.
 
 ## [0.1.0] - 2026-02-04
