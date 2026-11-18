@@ -275,3 +275,74 @@ describe('page-facing streaming chat goes through the PolicyEngine', () => {
     ]);
   });
 });
+
+describe('a prompt that names no model is classified by the model the bridge will use', () => {
+  const chatReply = { choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], model: 'x' };
+  /** The bridge answers llm.get_config with its resolved default, as `get_configuration` does. */
+  const bridgeDefault = (defaultModel: string | null | Error) =>
+    vi.mocked(bridgeRequest).mockImplementation(async (method: string) => {
+      if (method !== 'llm.get_config') return chatReply as never;
+      if (defaultModel instanceof Error) throw defaultModel;
+      return { default_model: defaultModel, providers: {} } as never;
+    });
+  const chat = (payload: Record<string, unknown>) =>
+    routeExtensionApiMessage({ type: 'llm.chat', payload: { origin: ORIGIN, messages, ...payload } }, {});
+  const actions = () => Audit.query({ origin: ORIGIN }).map(r => r.action);
+
+  it('classifies an unnamed prompt as remote when the default model is remote', async () => {
+    bridgeDefault('openai:gpt-x');
+    expect((await chat({})).ok).toBe(true);
+    expect(actions()).toEqual(['model.prompt.remote.firstParty']);
+  });
+
+  it('classifies an unnamed prompt as local when the default model is local', async () => {
+    bridgeDefault('ollama:test');
+    await chat({});
+    expect(actions()).toEqual(['model.prompt.local']);
+  });
+
+  it('treats the explicit "default" model name like an unnamed one', async () => {
+    bridgeDefault('ollama:test');
+    await chat({ model: 'default' });
+    bridgeDefault('openai:gpt-x');
+    await chat({ model: 'default' });
+    expect(actions()).toEqual(['model.prompt.local', 'model.prompt.remote.firstParty']);
+  });
+
+  it('classifies as remote when the default model is unknown', async () => {
+    bridgeDefault(new Error('bridge down'));
+    await chat({});
+    bridgeDefault(null);
+    await chat({});
+    expect(actions()).toEqual(['model.prompt.remote.firstParty', 'model.prompt.remote.firstParty']);
+  });
+
+  it('does not ask the bridge when the prompt names a model', async () => {
+    bridgeDefault('openai:gpt-x');
+    await chat({ model: 'ollama:test' });
+    expect(actions()).toEqual(['model.prompt.local']);
+    expect(vi.mocked(bridgeRequest).mock.calls.map(c => c[0])).not.toContain('llm.get_config');
+  });
+
+  it('applies a remote-model rule to an unnamed stream', async () => {
+    bridgeDefault('openai:gpt-x');
+    loadRules([{ id: 'no-remote', effect: 'deny', principal: { origin: '*' }, action: 'model.prompt.remote.firstParty' }]);
+    vi.mocked(bridgeStreamRequest).mockImplementation(async function* () {
+      yield { id: 's1', type: 'done', finish_reason: 'stop' };
+    });
+    const events: unknown[] = [];
+    for await (const event of streamLlmChat({ origin: ORIGIN, messages }, 'r2')) events.push(event);
+    expect(bridgeStreamRequest).not.toHaveBeenCalled();
+    expect(events).toEqual([expect.objectContaining({ type: 'error' })]);
+    expect(actions()).toEqual(['model.prompt.remote.firstParty']);
+  });
+
+  it('classifies a session.create llm capability with no model by the default', async () => {
+    bridgeDefault('openai:gpt-x');
+    await routeExtensionApiMessage(
+      { type: 'session.create', payload: { origin: ORIGIN, options: { capabilities: { llm: {} } } } },
+      {},
+    );
+    expect(actions()).toEqual(['model.prompt.remote.firstParty']);
+  });
+});
