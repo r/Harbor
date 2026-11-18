@@ -356,13 +356,15 @@ Every PolicyEngine decision — whether it prompted, auto-allowed, denied, or do
 }
 ```
 
-### Page calls through the Web Agents API
+### Page calls
 
-Page model and tool calls reach Harbor through the Web Agents API extension, which forwards the page's origin. Harbor runs each one through the PolicyEngine under that origin: `llm.chat`, `llm.chatStream`, `mcp.listTools`, `mcp.callTool`, and `session.create` (one check per requested capability). An `agent.run` therefore appears in the audit log as its tool listing, each model prompt and each tool call, in order. A forwarded call without an origin is rejected.
+Harbor injects the page API (`window.ai`, `window.agent`, `navigator.modelContext`) itself, from `extension/src/page-api/`. A page's calls arrive over a port from Harbor's own content script, and Harbor takes the page's origin and tab from the browser's record of that port (`port.sender`), never from the message. The page API calls the rest of Harbor in-process through `page-api/harbor-core.ts`. Harbor runs each model and tool call through the PolicyEngine under that origin: `llm.chat`, `llm.chatStream`, `mcp.listTools`, `mcp.callTool`, and `session.create` (one check per requested capability). An `agent.run` therefore appears in the audit log as its tool listing, each model prompt and each tool call, in order. A call without an origin is rejected.
 
-Harbor holds the only store of per-origin grants and the only consent prompt. The Web Agents API keeps no copy: it asks Harbor with `permissions.check` before each page call, and `agent.requestPermissions()` goes to Harbor's prompt through `permissions.request`. So a site revoked in Harbor's sidebar is refused on its next call. If Harbor can't answer (it isn't installed, or the browser is Safari, where page calls go to the bridge and Harbor isn't in the path), nothing is granted.
+Harbor holds the only store of per-origin grants and the only consent prompt. The page API checks Harbor's store (`permissions.check`) before each page call, and `agent.requestPermissions()` goes to Harbor's prompt (`permissions.request`). So a site revoked in Harbor's sidebar is refused on its next call. Harbor's Safari build doesn't inject the page API yet.
 
-For forwarded calls, Harbor enforces `deny` (safety floor, policy rules, a denied origin grant, the watchdog). When the only thing left to settle is the origin grant (Tier 8 or the Tier 9 default), Harbor proceeds without prompting again, because the Web Agents API has just checked that grant in Harbor's store; the audit record carries `consent: "web-agents-api"`. A watchdog restriction (Tier 4) or a policy rule that asks, previews or attenuates (Tier 7) still shows Harbor's prompt.
+The older, separate Web Agents API extension no longer injects anything. Until it's removed, Harbor still accepts its forwarded calls, with the same checks.
+
+For page calls, Harbor enforces `deny` (safety floor, policy rules, a denied origin grant, the watchdog). When the only thing left to settle is the origin grant (Tier 8 or the Tier 9 default), Harbor proceeds without prompting again, because the page API has just checked that grant in Harbor's store; the audit record carries `consent: "web-agents-api"`. A watchdog restriction (Tier 4) or a policy rule that asks, previews or attenuates (Tier 7) still shows Harbor's prompt.
 
 A site's tool allowlist is deny-by-default: a site with no allowlist may call no tools.
 
