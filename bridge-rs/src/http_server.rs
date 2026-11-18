@@ -193,9 +193,16 @@ async fn rpc_handler(
         request.id
     );
 
-    // RED: not wired up yet - see `is_acp_method`/`acp_rejected_over_http`
-    // above and the next commit, which calls them here and in the
-    // WebSocket RPC path below.
+    if is_acp_method(&request.method) {
+        return (
+            StatusCode::OK,
+            Json(HttpRpcResponse {
+                id: request.id.clone(),
+                result: None,
+                error: Some(acp_rejected_over_http(&request.method)),
+            }),
+        );
+    }
 
     // Convert to internal RPC request format
     let internal_request = rpc::RpcRequest {
@@ -324,7 +331,16 @@ async fn handle_ws_message(msg: WsMessage, state: &Arc<RwLock<ServerState>>) {
         WsMessage::Rpc { id, method, params } => {
             tracing::info!("WebSocket RPC request: {} (id: {:?})", method, id);
 
-            // RED: not wired up yet - see the next commit.
+            if is_acp_method(&method) {
+                let response = WsMessage::RpcResponse {
+                    id,
+                    result: None,
+                    error: Some(acp_rejected_over_http(&method)),
+                };
+                let state_read = state.read().await;
+                let _ = state_read.broadcast_tx.send(response);
+                return;
+            }
 
             // Handle streaming requests differently
             let is_stream = method == "llm.chat" && !params.get("safari_no_stream").is_some_and(|v| v == true);

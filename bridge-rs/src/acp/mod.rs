@@ -10,16 +10,31 @@
 //! Messages from the extension can only select an agent by `id`, and can
 //! never carry a command to run. Processes are always spawned directly
 //! (`tokio::process::Command`), never through a shell.
+//!
+//! Two things that are easy to get wrong and are deliberate here:
+//! - stdout/stderr are read as raw, length-capped bytes (`read_capped_line`),
+//!   never with `AsyncBufReadExt::lines()`. A real agent can legitimately
+//!   write non-UTF-8 bytes (binary data in a tool result, a stray control
+//!   byte); `lines()` turns that into an unrecoverable read error, which
+//!   used to tear down the whole relay for one bad line.
+//! - Writes to an agent's stdin go through a single-writer, per-channel
+//!   FIFO queue (`write_tx`/`write_rx`), fed synchronously (never via
+//!   `tokio::spawn`) from the native-messaging read loop. That read loop
+//!   processes one incoming extension frame at a time, so enqueuing
+//!   in-line is what makes `acp.send` order match arrival order; writing
+//!   straight to a shared `Mutex<ChildStdin>` from independently scheduled
+//!   tasks does not.
 
 pub mod config;
 
 use std::collections::HashMap;
+use std::io;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, Mutex, RwLock};
 
@@ -44,11 +59,25 @@ const MAX_SEND_BYTES: usize = 4 * 1024 * 1024;
 /// headroom for that envelope plus JSON escaping.
 const MAX_OUTBOUND_LINE_BYTES: usize = 900 * 1024;
 
-/// How much of a stderr/garbage line to keep when logging it.
+/// How much of a stderr line we buffer for logging. Independent of (and much
+/// smaller than) `MAX_OUTBOUND_LINE_BYTES`: stderr never goes to the
+/// extension, so a flooding or giant stderr line only needs to be bounded
+/// enough to log a useful sample, not preserved in full.
+const STDERR_LOG_CAP_BYTES: usize = 8 * 1024;
+
+/// How much of a dropped (non-JSON/garbage) line to keep in a log message.
 const LOG_TRUNCATE_BYTES: usize = 2000;
 
+/// Depth of each channel's stdin write queue. `acp.send` calls are enqueued
+/// here in arrival order and drained by a single writer task per channel,
+/// which is what makes relay order match send order (see module docs).
+const WRITE_QUEUE_CAPACITY: usize = 256;
+
 struct ChannelHandle {
-    stdin: Mutex<ChildStdin>,
+    /// FIFO queue to this channel's single stdin-writer task. Dropping the
+    /// last `Arc<ChannelHandle>` (i.e. removing it from `CHANNELS`) drops
+    /// this sender, which ends that task once its queue drains.
+    write_tx: mpsc::Sender<Vec<u8>>,
     child: Mutex<Child>,
 }
 
@@ -82,6 +111,70 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 // =============================================================================
+// Raw, length-capped line reading
+// =============================================================================
+
+/// One line read from a child's stdout/stderr, bounded to `cap` bytes.
+struct CappedLine {
+    /// Up to `cap` bytes of the line, excluding the trailing `\n`. Not
+    /// necessarily valid UTF-8: the agent's bytes are never assumed to be.
+    bytes: Vec<u8>,
+    /// True if the real line was longer than `cap`. The remainder (up to
+    /// the next `\n`) was read and discarded, never buffered.
+    overflowed: bool,
+}
+
+/// Reads one newline-delimited line of raw bytes from `reader`. Unlike
+/// `AsyncBufReadExt::lines()`, this never fails on invalid UTF-8 - it
+/// doesn't look at encoding at all, just bytes and `\n` - and never buffers
+/// more than `cap` bytes for a single line no matter how long the agent
+/// makes it, so a misbehaving agent can't grow our memory unboundedly.
+/// Returns `Ok(None)` only at true EOF with no partial line pending.
+async fn read_capped_line<R>(reader: &mut R, cap: usize) -> io::Result<Option<CappedLine>>
+where
+    R: AsyncBufRead + Unpin,
+{
+    let mut bytes = Vec::new();
+    let mut total = 0usize;
+    loop {
+        let buf = reader.fill_buf().await?;
+        if buf.is_empty() {
+            // True EOF (the pipe's write end closed). Flush a trailing
+            // partial line if the agent exited without a final '\n'.
+            return Ok(if total == 0 {
+                None
+            } else {
+                Some(CappedLine {
+                    bytes,
+                    overflowed: total > cap,
+                })
+            });
+        }
+
+        if let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            total += pos;
+            if bytes.len() < cap {
+                let take = (cap - bytes.len()).min(pos);
+                bytes.extend_from_slice(&buf[..take]);
+            }
+            reader.consume(pos + 1);
+            return Ok(Some(CappedLine {
+                bytes,
+                overflowed: total > cap,
+            }));
+        }
+
+        let chunk_len = buf.len();
+        total += chunk_len;
+        if bytes.len() < cap {
+            let take = (cap - bytes.len()).min(chunk_len);
+            bytes.extend_from_slice(&buf[..take]);
+        }
+        reader.consume(chunk_len);
+    }
+}
+
+// =============================================================================
 // RPC handlers (non-streaming)
 // =============================================================================
 
@@ -99,8 +192,15 @@ fn list_agents_for(config: &AcpConfig) -> Result<Value, RpcError> {
     Ok(json!({ "agents": agents }))
 }
 
-/// `acp.send {channel, message}` -> writes `message` + "\n" to the agent's stdin.
-pub async fn send(params: Value) -> Result<Value, RpcError> {
+/// `acp.send {channel, message}`. Validates and enqueues onto the channel's
+/// stdin write queue, then returns - it does not wait for the write to
+/// actually happen. The native messaging loop calls this directly (never via
+/// `tokio::spawn`) exactly once per incoming `acp.send` frame, in arrival
+/// order, which is what keeps writes to the agent's stdin in that same
+/// order: see the per-channel writer task spawned in `open_stream_with_config`.
+/// A write that fails after this returns is reported as an `error` stream
+/// event, not through this call's response.
+pub async fn enqueue_send(params: Value) -> Result<Value, RpcError> {
     let channel = params
         .get("channel")
         .and_then(|v| v.as_str())
@@ -134,16 +234,17 @@ pub async fn send(params: Value) -> Result<Value, RpcError> {
     }
     .ok_or_else(|| RpcError::invalid_params(format!("unknown channel: {}", channel)))?;
 
-    let mut stdin = handle.stdin.lock().await;
-    stdin
-        .write_all(serialized.as_bytes())
+    handle
+        .write_tx
+        .send(serialized.into_bytes())
         .await
-        .map_err(|e| RpcError::internal(format!("failed to write to agent: {}", e)))?;
+        .map_err(|_| RpcError::internal("agent is no longer accepting input".to_string()))?;
 
     Ok(json!({ "ok": true }))
 }
 
-/// `acp.close {channel}` -> kills the agent process and ends its stream.
+/// `acp.close {channel}` -> kills the agent process (and its whole process
+/// group, see `kill`) and ends its stream.
 pub async fn close(params: Value) -> Result<Value, RpcError> {
     let channel = params
         .get("channel")
@@ -164,10 +265,43 @@ pub async fn close(params: Value) -> Result<Value, RpcError> {
     }
 }
 
+/// Kill an agent and everything it spawned. Real agents are often launched
+/// through a wrapper (e.g. `npx` -> `node`); `open_stream_with_config` puts
+/// the direct child in its own process group (`process_group(0)`), so
+/// everything it forks without changing its own group lands in that same
+/// group, and signalling the negative pid reaches all of it. `child.kill()`
+/// is still run afterwards as a fallback (and is the only thing that runs on
+/// non-unix, where there is no process-group signal).
 async fn kill(handle: &ChannelHandle) {
     let mut child = handle.child.lock().await;
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        kill_process_group(pid).await;
+    }
     let _ = child.kill().await;
     let _ = child.wait().await;
+}
+
+/// Best-effort: ask the system `kill` utility to signal the whole process
+/// group (the negative pid), never a shell, and never with anything
+/// extension- or agent-controlled in the command. If `kill` is missing or
+/// the group is already gone, this just does nothing; `child.kill()` in the
+/// caller still covers the direct child.
+#[cfg(unix)]
+async fn kill_process_group(pid: u32) {
+    // `Command` inherits the bridge's own stdio by default; without these,
+    // a stray message from `kill` (e.g. "No such process" on stderr when
+    // the group is already gone) would land on the bridge's real stdout -
+    // the native messaging pipe to the extension - or its stderr/log.
+    let _ = Command::new("kill")
+        .arg("-KILL")
+        .arg(format!("-{}", pid))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .status()
+        .await;
 }
 
 /// Kill every agent process the bridge started. Called on extension
@@ -192,12 +326,14 @@ pub async fn shutdown_all() {
 /// only `stream` events on the calling request's id. The first event is
 /// `{"type":"open","channel":<id>}` carrying the opaque channel used by
 /// subsequent `acp.send` / `acp.close` calls. Each agent stdout line becomes
-/// `{"type":"message","message":<parsed JSON>}`. A non-JSON line is dropped
-/// (logged, not forwarded). An oversized line is dropped with
-/// `{"type":"error",...}` instead of a `message` event. The stream ends with
-/// `{"type":"exit","code":<code or null>}` when the process exits, or an
-/// `{"type":"error","fatal":true,...}` for failures that never produced a
-/// channel (unknown agent, process cap, spawn failure).
+/// `{"type":"message","message":<parsed JSON>}`. A non-JSON or non-UTF-8
+/// line is dropped (logged, not forwarded) and reading continues. An
+/// oversized line is dropped with `{"type":"error",...}` instead of a
+/// `message` event, and reading continues. The stream ends with
+/// `{"type":"exit","code":<code or null>}` when the process (and its whole
+/// process group) exits, or an `{"type":"error","fatal":true,...}` for
+/// failures that never produced a channel (unknown agent, process cap,
+/// spawn failure).
 pub async fn open_stream(params: Value, event_tx: mpsc::Sender<Value>) {
     open_stream_with_config(params, event_tx, AcpConfig::load()).await
 }
@@ -237,6 +373,11 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    // New process group per agent: a real agent spawned through a wrapper
+    // (`npx` -> `node`) leaves grandchildren behind a plain `kill()` of the
+    // direct child. See `kill_process_group`.
+    #[cfg(unix)]
+    command.process_group(0);
 
     let mut child = match command.spawn() {
         Ok(c) => c,
@@ -257,8 +398,9 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
     let stderr = child.stderr.take();
 
     let channel = new_channel_id();
+    let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(WRITE_QUEUE_CAPACITY);
     let handle = Arc::new(ChannelHandle {
-        stdin: Mutex::new(stdin),
+        write_tx,
         child: Mutex::new(child),
     });
 
@@ -290,31 +432,83 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
         kill(&handle).await;
         return;
     }
+    // Drop our extra clone now: the map holds the one that keeps the
+    // channel (and thus `write_tx`, and thus the writer task below) alive
+    // until `close`/`shutdown_all` removes it.
+    drop(handle);
+
+    // Single writer task per channel: the only thing that ever touches this
+    // stdin handle, draining `write_tx`'s queue strictly in enqueue order.
+    let channel_for_writer = channel.clone();
+    let event_tx_for_writer = event_tx.clone();
+    tokio::spawn(async move {
+        let mut stdin: ChildStdin = stdin;
+        let mut write_rx = write_rx;
+        while let Some(bytes) = write_rx.recv().await {
+            if let Err(e) = stdin.write_all(&bytes).await {
+                tracing::error!(
+                    "acp channel '{}' failed to write to agent stdin: {}",
+                    channel_for_writer,
+                    e
+                );
+                let _ = event_tx_for_writer
+                    .send(json!({
+                        "type": "error",
+                        "message": format!("failed to write to agent: {}", e),
+                    }))
+                    .await;
+                break;
+            }
+        }
+    });
 
     if let Some(stderr) = stderr {
         let agent_id_for_log = agent_id.clone();
+        let channel_for_stderr = channel.clone();
         tokio::spawn(async move {
-            let mut lines = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                tracing::warn!(
-                    "acp agent '{}' stderr: {}",
-                    agent_id_for_log,
-                    truncate(&line, LOG_TRUNCATE_BYTES)
-                );
+            let mut reader = BufReader::new(stderr);
+            loop {
+                match read_capped_line(&mut reader, STDERR_LOG_CAP_BYTES).await {
+                    Ok(Some(line)) => {
+                        // Logging only: never fails on invalid UTF-8, and
+                        // never stops draining because of it. A flooding or
+                        // oversized stderr line still gets read and
+                        // discarded past the cap so the agent's write
+                        // doesn't block/EPIPE; we just don't keep it all.
+                        let text = String::from_utf8_lossy(&line.bytes);
+                        let suffix = if line.overflowed { " [line truncated]" } else { "" };
+                        tracing::warn!(
+                            "acp agent '{}' (channel '{}') stderr: {}{}",
+                            agent_id_for_log,
+                            channel_for_stderr,
+                            text,
+                            suffix
+                        );
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        tracing::error!(
+                            "acp channel '{}' stderr read error: {}",
+                            channel_for_stderr,
+                            e
+                        );
+                        break;
+                    }
+                }
             }
         });
     }
 
     let channel_for_stdout = channel.clone();
     tokio::spawn(async move {
-        let mut lines = BufReader::new(stdout).lines();
+        let mut reader = BufReader::new(stdout);
         loop {
-            match lines.next_line().await {
+            match read_capped_line(&mut reader, MAX_OUTBOUND_LINE_BYTES).await {
                 Ok(Some(line)) => {
-                    if line.trim().is_empty() {
+                    if line.bytes.is_empty() && !line.overflowed {
                         continue;
                     }
-                    forward_stdout_line(&channel_for_stdout, &line, &event_tx).await;
+                    forward_stdout_line(&channel_for_stdout, line, &event_tx).await;
                 }
                 Ok(None) => break,
                 Err(e) => {
@@ -333,14 +527,41 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
     });
 }
 
-async fn forward_stdout_line(channel: &str, line: &str, event_tx: &mpsc::Sender<Value>) {
-    let parsed: Value = match serde_json::from_str(line) {
+async fn forward_stdout_line(channel: &str, line: CappedLine, event_tx: &mpsc::Sender<Value>) {
+    if line.overflowed {
+        tracing::error!(
+            "acp channel '{}' dropped oversized stdout line (> {} bytes)",
+            channel,
+            MAX_OUTBOUND_LINE_BYTES
+        );
+        let _ = event_tx
+            .send(json!({
+                "type": "error",
+                "message": "agent output exceeded the outbound message size limit and was dropped",
+            }))
+            .await;
+        return;
+    }
+
+    let text = match std::str::from_utf8(&line.bytes) {
+        Ok(s) => s,
+        Err(_) => {
+            tracing::warn!(
+                "acp channel '{}' dropped non-UTF-8 stdout line ({} bytes)",
+                channel,
+                line.bytes.len()
+            );
+            return;
+        }
+    };
+
+    let parsed: Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(_) => {
             tracing::warn!(
                 "acp channel '{}' dropped non-JSON stdout line: {}",
                 channel,
-                truncate(line, LOG_TRUNCATE_BYTES)
+                truncate(text, LOG_TRUNCATE_BYTES)
             );
             return;
         }
@@ -350,12 +571,15 @@ async fn forward_stdout_line(channel: &str, line: &str, event_tx: &mpsc::Sender<
         tracing::warn!(
             "acp channel '{}' dropped non-object JSON stdout line: {}",
             channel,
-            truncate(line, LOG_TRUNCATE_BYTES)
+            truncate(text, LOG_TRUNCATE_BYTES)
         );
         return;
     }
 
     let event = json!({ "type": "message", "message": parsed });
+    // Belt-and-suspenders: the raw line was already capped, but the
+    // wrapped envelope adds a little overhead, so re-check the actual
+    // outbound size before sending.
     let size = serde_json::to_vec(&event).map(|v| v.len()).unwrap_or(usize::MAX);
     if size > MAX_OUTBOUND_LINE_BYTES {
         tracing::error!(
@@ -404,68 +628,15 @@ async fn send_fatal(event_tx: &mpsc::Sender<Value>, message: &str) {
 mod tests {
     use super::*;
     use config::AgentConfig;
-    use std::time::Duration;
-    use tokio::time::timeout;
 
-    /// Serializes tests that touch the global channel registry/cap, so they
-    /// don't race or step on each other's agent processes.
-    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// Locate the `acp_fake_agent` bin target built alongside this test
-    /// binary. `CARGO_BIN_EXE_<name>` is only set for integration test and
-    /// bench targets, not for a binary crate's own unit test harness (this
-    /// one), so we derive the path from our own executable's location
-    /// instead: `cargo test`/`cargo build` place every `src/bin/*` target
-    /// as a sibling of `debug/deps/<this test binary>`.
-    fn fake_agent_path() -> std::path::PathBuf {
-        let mut path = std::env::current_exe().expect("current_exe");
-        path.pop(); // drop the test binary file name
-        path.pop(); // drop `deps/`
-        path.push(if cfg!(windows) {
-            "acp_fake_agent.exe"
-        } else {
-            "acp_fake_agent"
-        });
-        assert!(
-            path.exists(),
-            "acp_fake_agent not built at {}; run `cargo build` first",
-            path.display()
-        );
-        path
-    }
-
-    fn fake_agent_config(id: &str) -> AcpConfig {
-        AcpConfig {
-            agents: vec![AgentConfig {
-                id: id.to_string(),
-                name: format!("{} display name", id),
-                command: fake_agent_path().to_string_lossy().into_owned(),
-                args: vec![],
-                env: HashMap::new(),
-            }],
-        }
-    }
-
-    async fn recv_timeout(rx: &mut mpsc::Receiver<Value>) -> Option<Value> {
-        timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .expect("timed out waiting for acp event")
-    }
-
-    /// Opens the fake agent and returns its channel id and event receiver,
-    /// after consuming the initial `open` event.
-    async fn open_fake_agent(id: &str) -> (String, mpsc::Receiver<Value>) {
-        let (tx, mut rx) = mpsc::channel(32);
-        let config = fake_agent_config(id);
-        let agent_id = id.to_string();
-        tokio::spawn(async move {
-            open_stream_with_config(json!({ "agentId": agent_id }), tx, config).await;
-        });
-        let event = recv_timeout(&mut rx).await.expect("open event");
-        assert_eq!(event["type"], "open");
-        let channel = event["channel"].as_str().unwrap().to_string();
-        (channel, rx)
-    }
+    // Process-management/relay behavior (open/send/close/cap/disconnect/
+    // non-UTF-8/oversized/FIFO order/process groups) is covered by the
+    // integration tests in `tests/acp_relay.rs`, which drive the real
+    // `harbor-bridge` binary end to end. That's what actually exercises the
+    // native-messaging dispatch this module depends on (see HBR-80 bounce);
+    // a unit-test harness that calls `open_stream_with_config` directly
+    // can't observe that path. What's left here is the pure, no-process
+    // transform that's safe and fast to unit test in-process.
 
     #[test]
     fn list_agents_hides_commands_and_env() {
@@ -486,191 +657,5 @@ mod tests {
         assert!(!serialized.contains("goose\",\"args\""));
         assert!(!serialized.contains("SECRET"));
         assert!(!serialized.contains("command"));
-    }
-
-    #[tokio::test]
-    async fn open_rejects_unknown_agent_id() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let (tx, mut rx) = mpsc::channel(32);
-        let config = AcpConfig::default();
-        open_stream_with_config(json!({ "agentId": "nope" }), tx, config).await;
-
-        let event = recv_timeout(&mut rx).await.expect("error event");
-        assert_eq!(event["type"], "error");
-        assert_eq!(event["fatal"], true);
-        assert!(rx.recv().await.is_none(), "stream should end after a fatal error");
-    }
-
-    #[tokio::test]
-    async fn open_rejects_missing_agent_id() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let (tx, mut rx) = mpsc::channel(32);
-        open_stream_with_config(json!({}), tx, AcpConfig::default()).await;
-        let event = recv_timeout(&mut rx).await.expect("error event");
-        assert_eq!(event["type"], "error");
-        assert_eq!(event["fatal"], true);
-    }
-
-    #[tokio::test]
-    async fn open_and_relay_both_directions() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let (channel, mut rx) = open_fake_agent("echo").await;
-
-        send(json!({ "channel": channel, "message": { "hello": "world" } }))
-            .await
-            .expect("send should succeed");
-
-        let event = recv_timeout(&mut rx).await.expect("message event");
-        assert_eq!(event, json!({ "type": "message", "message": { "hello": "world" } }));
-
-        close(json!({ "channel": channel })).await.expect("close should succeed");
-        let exit = recv_timeout(&mut rx).await.expect("exit event");
-        assert_eq!(exit["type"], "exit");
-    }
-
-    #[tokio::test]
-    async fn non_json_stdout_is_dropped_not_forwarded() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let (channel, mut rx) = open_fake_agent("echo").await;
-
-        send(json!({ "channel": channel.clone(), "message": { "__test_cmd": "garbage" } }))
-            .await
-            .unwrap();
-        send(json!({ "channel": channel.clone(), "message": { "marker": "after-garbage" } }))
-            .await
-            .unwrap();
-
-        // The garbage line must never surface as a message event: the next
-        // event the extension sees is the echo of the second, valid send.
-        let event = recv_timeout(&mut rx).await.expect("message event");
-        assert_eq!(
-            event,
-            json!({ "type": "message", "message": { "marker": "after-garbage" } })
-        );
-
-        close(json!({ "channel": channel })).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn oversized_stdout_line_is_dropped_with_error_event() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let (channel, mut rx) = open_fake_agent("echo").await;
-
-        send(json!({
-            "channel": channel.clone(),
-            "message": { "__test_cmd": "big", "size": MAX_OUTBOUND_LINE_BYTES + 1024 },
-        }))
-        .await
-        .unwrap();
-        send(json!({ "channel": channel.clone(), "message": { "marker": "after-big" } }))
-            .await
-            .unwrap();
-
-        let error_event = recv_timeout(&mut rx).await.expect("error event");
-        assert_eq!(error_event["type"], "error");
-
-        let message_event = recv_timeout(&mut rx).await.expect("message event");
-        assert_eq!(
-            message_event,
-            json!({ "type": "message", "message": { "marker": "after-big" } })
-        );
-
-        close(json!({ "channel": channel })).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn close_kills_the_process() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let (channel, mut rx) = open_fake_agent("echo").await;
-
-        close(json!({ "channel": channel.clone() })).await.unwrap();
-
-        let exit = recv_timeout(&mut rx).await.expect("exit event after close");
-        assert_eq!(exit["type"], "exit");
-
-        // Channel is gone: a second close is rejected as unknown.
-        let err = close(json!({ "channel": channel })).await.unwrap_err();
-        assert_eq!(err.code, -32602);
-    }
-
-    #[tokio::test]
-    async fn disconnect_kills_every_open_agent() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let (_c1, mut rx1) = open_fake_agent("echo").await;
-        let (_c2, mut rx2) = open_fake_agent("echo").await;
-
-        shutdown_all().await;
-
-        let exit1 = recv_timeout(&mut rx1).await.expect("exit event for agent 1");
-        assert_eq!(exit1["type"], "exit");
-        let exit2 = recv_timeout(&mut rx2).await.expect("exit event for agent 2");
-        assert_eq!(exit2["type"], "exit");
-    }
-
-    #[tokio::test]
-    async fn opening_beyond_the_cap_is_rejected() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let mut channels_and_rx = Vec::new();
-        for _ in 0..MAX_LIVE_AGENTS {
-            channels_and_rx.push(open_fake_agent("echo").await);
-        }
-
-        let (tx, mut rx) = mpsc::channel(32);
-        open_stream_with_config(json!({ "agentId": "echo" }), tx, fake_agent_config("echo")).await;
-        let event = recv_timeout(&mut rx).await.expect("cap error event");
-        assert_eq!(event["type"], "error");
-        assert_eq!(event["fatal"], true);
-
-        shutdown_all().await;
-        for (_, mut rx) in channels_and_rx {
-            let exit = recv_timeout(&mut rx).await.expect("exit event during cleanup");
-            assert_eq!(exit["type"], "exit");
-        }
-    }
-
-    #[tokio::test]
-    async fn send_rejects_non_object_message() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let (channel, mut rx) = open_fake_agent("echo").await;
-
-        let err = send(json!({ "channel": channel.clone(), "message": "not-an-object" }))
-            .await
-            .unwrap_err();
-        assert_eq!(err.code, -32602);
-
-        close(json!({ "channel": channel })).await.unwrap();
-        let _ = recv_timeout(&mut rx).await;
-    }
-
-    #[tokio::test]
-    async fn send_rejects_oversized_message() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let (channel, mut rx) = open_fake_agent("echo").await;
-
-        let huge = "x".repeat(MAX_SEND_BYTES + 1024);
-        let err = send(json!({ "channel": channel.clone(), "message": { "data": huge } }))
-            .await
-            .unwrap_err();
-        assert_eq!(err.code, -32602);
-        assert!(err.message.contains("limit"));
-
-        close(json!({ "channel": channel })).await.unwrap();
-        let _ = recv_timeout(&mut rx).await;
-    }
-
-    #[tokio::test]
-    async fn send_rejects_unknown_channel() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let err = send(json!({ "channel": "does-not-exist", "message": {} }))
-            .await
-            .unwrap_err();
-        assert_eq!(err.code, -32602);
-    }
-
-    #[tokio::test]
-    async fn close_rejects_unknown_channel() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let err = close(json!({ "channel": "does-not-exist" })).await.unwrap_err();
-        assert_eq!(err.code, -32602);
     }
 }

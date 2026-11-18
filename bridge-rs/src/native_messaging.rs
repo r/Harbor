@@ -246,40 +246,80 @@ pub async fn run_native_messaging() {
     // Process incoming messages and host requests
     loop {
         tokio::select! {
-            Some(msg) = msg_rx.recv() => {
-                if msg.msg_type == "host_response" {
-                    let id = msg.id.as_ref().and_then(|v| v.as_str()).map(String::from);
-                    if let Some(id) = id {
-                        let outcome = if let Some(err) = msg.error {
-                            Err(err)
-                        } else {
-                            Ok(msg.result.unwrap_or(serde_json::Value::Null))
-                        };
-                        if let Some(tx) = pending_host.write().await.remove(&id) {
-                            let _ = tx.send(outcome);
+            msg = msg_rx.recv() => {
+                match msg {
+                    Some(msg) if msg.msg_type == "host_response" => {
+                        let id = msg.id.as_ref().and_then(|v| v.as_str()).map(String::from);
+                        if let Some(id) = id {
+                            let outcome = if let Some(err) = msg.error {
+                                Err(err)
+                            } else {
+                                Ok(msg.result.unwrap_or(serde_json::Value::Null))
+                            };
+                            if let Some(tx) = pending_host.write().await.remove(&id) {
+                                let _ = tx.send(outcome);
+                            }
                         }
                     }
-                } else {
-                    let writer_clone = writer.clone();
-                    let host_tx = host_request_tx.clone();
-                    tokio::spawn(async move {
-                        handle_message(msg, writer_clone, host_tx).await;
-                    });
+                    // `acp.send` is handled inline, never spawned: the read
+                    // loop below hands stdin frames to `msg_tx` strictly in
+                    // arrival order, and this `recv()` processes them one at
+                    // a time, so enqueuing here (rather than inside a
+                    // separately-scheduled spawned task, which would race
+                    // other such tasks for the agent's stdin) is what keeps
+                    // writes to the agent in the order the extension sent
+                    // them. Every other message type keeps going through
+                    // the existing spawn-per-message dispatch below.
+                    Some(msg) if msg.msg_type == "rpc" && msg.method.as_deref() == Some("acp.send") => {
+                        let id = msg.id.clone().unwrap_or(serde_json::Value::Null);
+                        match acp::enqueue_send(msg.params).await {
+                            Ok(result) => writer.send_rpc_response(id, Some(result), None).await,
+                            Err(e) => writer.send_rpc_response(id, None, Some(serde_json::json!({
+                                "code": e.code,
+                                "message": e.message,
+                            }))).await,
+                        }
+                    }
+                    Some(msg) => {
+                        let writer_clone = writer.clone();
+                        let host_tx = host_request_tx.clone();
+                        tokio::spawn(async move {
+                            handle_message(msg, writer_clone, host_tx).await;
+                        });
+                    }
+                    None => {
+                        // stdin closed (extension disconnected, or the
+                        // native host was torn down): stop the loop so we
+                        // actually shut down below, instead of only waiting
+                        // forever on host_request_rx, which nothing will
+                        // ever send to again.
+                        tracing::info!("Native messaging stdin closed");
+                        break;
+                    }
                 }
             }
             Some((id, method, params, context, response_tx)) = host_request_rx.recv() => {
                 pending_host.write().await.insert(id.clone(), response_tx);
                 writer.send_host_request(&id, &method, params, context).await;
             }
-            else => break,
         }
     }
 
     tracing::info!("Native messaging handler exiting");
+    drop(write_handle);
     // The extension disconnected (or we're shutting down): every agent
     // process the bridge started must die with it.
     acp::shutdown_all().await;
-    drop(write_handle);
+    // Exit directly rather than falling off the end of main(): a lingering
+    // clone of the outbound-message sender (e.g. held by the console-log
+    // forwarder task, which loops forever on a broadcast channel that is
+    // never closed) would otherwise keep the blocking stdout-writer task
+    // parked in `write_rx.blocking_recv()` forever, and dropping the tokio
+    // Runtime at the end of `main()` waits for exactly that kind of
+    // outstanding blocking task - hanging the process on a clean stdin EOF
+    // instead of exiting. `std::process::exit` sidesteps that, matching the
+    // explicit `"shutdown"` message handling below.
+    std::process::exit(0);
 }
 
 /// Handle an incoming message

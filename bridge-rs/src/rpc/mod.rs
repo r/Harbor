@@ -193,8 +193,17 @@ fn register_acp_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
   // `acp.open` is a streaming method (see `is_streaming_method` and
   // `native_messaging::handle_streaming_rpc`) and is deliberately not
   // registered here, matching how `llm.chat_stream` is handled.
+  //
+  // `acp.send` is also deliberately not registered here: native messaging
+  // intercepts it before it would reach this registry and calls
+  // `acp::enqueue_send` inline (never via `tokio::spawn`), so sends are
+  // processed in the exact order the extension sent them. See
+  // `native_messaging::run_native_messaging`.
+  //
+  // All `acp.*` methods, including the two registered below, are also
+  // rejected outright over the HTTP/WebSocket (Safari) surface; see
+  // `http_server::is_acp_method`.
   handlers.insert("acp.list_agents", |_| Box::pin(acp::list_agents()));
-  handlers.insert("acp.send", |p| Box::pin(acp::send(p)));
   handlers.insert("acp.close", |p| Box::pin(acp::close(p)));
 }
 
