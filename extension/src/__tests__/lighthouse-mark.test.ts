@@ -17,7 +17,6 @@ const BADGES = [
   'extension/src/permission-prompt.html',
   'extension/src/directory.html',
   'extension/src/page-chat.ts',
-  'extension/demo/chat-poc/index.html',
   'demo/web-agents/chat-poc/index.html',
 ];
 

@@ -3,7 +3,7 @@
 ## What to Test
 
 1. **Bridge**: When a JS MCP server calls `MCP.requestHost(method, params)`, the bridge sends `host_request` to the extension and blocks until `host_response` is received, then returns the result to the server.
-2. **Harbor extension**: When it receives `host_request` from the bridge, it handles the request itself and sends `host_response` back. `browser.*` methods run only when the tool call came from Harbor's own pages (the sidebar, the Tool Tester or the bundled chat demo); tool calls a web page starts are refused. `http.get` runs for any caller, without cookies.
+2. **Harbor extension**: When it receives `host_request` from the bridge, it handles the request itself and sends `host_response` back. `browser.*` methods run only when the tool call came from Harbor's own pages (the sidebar or the Tool Tester); tool calls a web page starts are refused. `http.get` runs for any caller, without cookies.
 3. **Web Agents (older path)**: When it receives `agent.host.run` with `browser.capturePage` or `browser.getCookies`, it limits a page-origin request to that page's own origin, opens a tab (or uses an existing one), and returns content/cookies.
 
 ## Test Levels
