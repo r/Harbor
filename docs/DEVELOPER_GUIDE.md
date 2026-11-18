@@ -514,9 +514,8 @@ extension code.
    cannot override.
 4. **Sessions and capability tokens.** Every active agent session is
    bound to an unforgeable token that captures `allowedActions`,
-   `acceptedLabels`, budgets, TTL, and **mode** (`plan` /
-   `execute` / `watch`). Subagent delegations attenuate, never
-   widen, the parent token.
+   `acceptedLabels`, budgets, and TTL. Subagent delegations
+   attenuate, never widen, the parent token.
 5. **Audit + simulator.** Every decision lands in
    `extension/src/policy/audit.ts` and shows up in the sidebar's
    Activity panel, with "Why?" / "What if?" affordances backed by

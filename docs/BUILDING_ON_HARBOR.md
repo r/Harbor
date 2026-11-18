@@ -26,7 +26,7 @@ If you're just looking for the API reference, read [`WEB_AGENTS_API.md`](./WEB_A
 ## What Harbor gives you, in five lines
 
 1. A **page-facing API** that brokers AI to any website: `window.ai`, `window.agent`, `navigator.modelContext`. The page never sees your keys.
-2. A **layered permission system** (see [`PERMISSIONS.md`](./PERMISSIONS.md)) — typed actions, declarative policy rules, capability tokens with mode (`plan`/`execute`/`watch`), information-flow labels, watchdog containment, and an audit log every decision lands in. Per-origin grants and per-tool allowlists still exist; they're now Tier 8 of the engine ladder.
+2. A **layered permission system** (see [`PERMISSIONS.md`](./PERMISSIONS.md)) — typed actions, declarative policy rules, capability tokens, information-flow labels, watchdog containment, and an audit log every decision lands in. Per-origin grants and per-tool allowlists still exist; they're now Tier 8 of the engine ladder.
 3. A **broker** (the Harbor extension + Rust bridge) that holds your provider configs, hosts MCP servers, and routes calls.
 4. **Cross-origin agent communication** via a registry, with orchestration primitives (pipeline, parallel, route).
 5. A **trust ladder**: same-tab → spawn-and-control → (proposed) extension-driver. Each tier requires explicit user opt-in.

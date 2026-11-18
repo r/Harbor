@@ -230,9 +230,8 @@ Tools, browser access, sessions, and multi-agent capabilities.
 All agent capabilities require user permission. The permission system is **per-origin** — each website must request and be granted permissions separately.
 
 > **Recommended for new code:** call
-> [`agent.requestCapabilities()`](#agentrequestcapabilitiesoptions) and
-> [`agent.upgradeSession()`](#agentupgradesessionsessionid-options) instead of the
-> legacy `requestPermissions` flow. The new APIs operate in the same
+> [`agent.requestCapabilities()`](#agentrequestcapabilitiesoptions) instead of the
+> legacy `requestPermissions` flow. The new API operates in the same
 > typed-action vocabulary as the policy engine, so what you ask for,
 > what the user sees, and what the audit log records all line up.
 > The full design is in
@@ -362,7 +361,6 @@ the session object you can pass to `agent.tools.call`,
 const session = await window.agent.requestCapabilities({
   name: 'Article assistant',
   reason: 'Read the page and propose follow-ups.',
-  mode: 'plan',                       // 'plan' | 'execute' | 'watch'
   require: [
     { action: 'model.prompt.local' },
     { action: 'browser.read.activeTab' },
@@ -385,30 +383,14 @@ asks for, and what your origin policy allows. Subagents the session
 spawns are attenuated from this token automatically — they cannot
 gain authority you didn't have.
 
-#### agent.upgradeSession(sessionId, options)
-
-Change a session's mode after creation. Capability tokens are
-one-way: this method can **narrow** a session (Execute → Watch →
-Plan) but cannot widen it. Widening calls return `false` and leave
-the session unchanged.
-
-```javascript
-// Drop a long-running session back to Plan when the user idles or
-// wants to review.
-await window.agent.upgradeSession(session.id, { mode: 'plan' });
-
-// Or narrow into Watch so each write previews before running.
-await window.agent.upgradeSession(session.id, { mode: 'watch' });
-```
-
-To **widen** a session — e.g. to grant write authority after the
-user clicks "Apply" — call `agent.requestCapabilities()` again with
-the additional actions and a `reason`. The user gets a fresh prompt
+To get more authority later — e.g. write access after the user
+clicks "Apply" — call `agent.requestCapabilities()` again with the
+additional actions and a `reason`. The user gets a fresh prompt
 scoped to exactly the new authority, and the new session carries its
 own capability token; the original session continues with its
-narrower scope.
+narrower scope. Terminate a session when you're done with it.
 
-For the full mode semantics, see
+For the full design, see
 [`docs/PERMISSIONS.md`](./PERMISSIONS.md).
 
 #### agent.permissions.list()
