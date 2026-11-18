@@ -65,7 +65,7 @@ describe('a stream refused while the page awaits the next token', () => {
     expect(outcome.error).toMatchObject({ code: 'ERR_PERMISSION_DENIED', message: 'Permission model:prompt required' });
   });
 
-  it('rejects agent.run with the permission error', async () => {
+  it('ends agent.run with an error event carrying the permission error', async () => {
     const { window, deliver, lastRequestId } = page();
     const iterator = window.agent.run({ task: 'What time is it?' })[Symbol.asyncIterator]();
     const next = iterator.next();
@@ -73,7 +73,11 @@ describe('a stream refused while the page awaits the next token', () => {
 
     const outcome = await settled(next);
     expect(outcome).not.toBe('pending');
-    expect(outcome.error).toMatchObject({ code: 'ERR_PERMISSION_DENIED' });
+    expect(outcome.value).toEqual({
+      done: false,
+      value: { type: 'error', error: { code: 'ERR_PERMISSION_DENIED', message: 'Permission model:prompt required' } },
+    });
+    expect(await iterator.next()).toEqual({ done: true, value: undefined });
   });
 
   it('still delivers tokens that arrive while the page waits', async () => {
@@ -89,5 +93,38 @@ describe('a stream refused while the page awaits the next token', () => {
     expect(await next).toEqual({ done: false, value: 'Hel' });
     deliver({ streamEvent: { id, event: { type: 'done' }, done: true } });
     expect(await iterator.next()).toEqual({ done: true, value: undefined });
+  });
+});
+
+describe('agent.run reports every failure as an error event', () => {
+  const runEvent = (event) => ({ type: 'token', token: JSON.stringify(event) });
+
+  it('when the run is refused before the page reads', async () => {
+    const { window, deliver, lastRequestId } = page();
+    const iterator = window.agent.run({ task: 'Hi' })[Symbol.asyncIterator]();
+    deliver({ streamEvent: { id: lastRequestId('agent.run'), event: denied, done: true } });
+
+    expect(await iterator.next()).toEqual({
+      done: false,
+      value: { type: 'error', error: { code: 'ERR_PERMISSION_DENIED', message: 'Permission model:prompt required' } },
+    });
+    expect(await iterator.next()).toEqual({ done: true, value: undefined });
+  });
+
+  it('when the model fails partway through, after earlier events', async () => {
+    const { window, deliver, lastRequestId } = page();
+    const events = [];
+    const running = (async () => {
+      for await (const event of window.agent.run({ task: 'Hi' })) events.push(event);
+    })();
+    const id = lastRequestId('agent.run');
+    deliver({ streamEvent: { id, event: runEvent({ type: 'thinking', content: 'Planning' }) } });
+    deliver({ streamEvent: { id, event: { type: 'error', error: { code: 'ERR_MODEL_FAILED', message: 'LLM request failed: boom' } }, done: true } });
+    await running;
+
+    expect(events).toEqual([
+      { type: 'thinking', content: 'Planning' },
+      { type: 'error', error: { code: 'ERR_MODEL_FAILED', message: 'LLM request failed: boom' } },
+    ]);
   });
 });

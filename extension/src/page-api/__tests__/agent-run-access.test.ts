@@ -106,6 +106,18 @@ describe('agent.run receiving boundary', () => {
     }));
   });
 
+  it('ends with a coded error event when the model call fails', async () => {
+    mocks.harborRequest.mockImplementation(async (method) => {
+      if (method === 'mcp.listTools') return { tools: [] };
+      throw new Error('bridge unavailable');
+    });
+    await run();
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      done: true,
+      event: { type: 'error', error: { code: 'ERR_MODEL_FAILED', message: 'LLM request failed: bridge unavailable' } },
+    }));
+  });
+
   it('runs when enabled and explicitly permitted', async () => {
     await run();
     expect(mocks.harborRequest).toHaveBeenCalledWith('llm.chat', expect.anything());

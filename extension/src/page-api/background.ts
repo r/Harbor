@@ -246,9 +246,9 @@ async function handleAgentRun(
       } catch (e) {
         sendEvent({
           id: ctx.id,
-          event: { type: 'token', token: JSON.stringify({ type: 'error', error: `LLM request failed: ${e}` }) },
+          event: { type: 'error', error: { code: 'ERR_MODEL_FAILED', message: `LLM request failed: ${e instanceof Error ? e.message : String(e)}` } },
+          done: true,
         });
-        sendEvent({ id: ctx.id, event: { type: 'done' }, done: true });
         return;
       }
 
