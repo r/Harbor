@@ -28,8 +28,6 @@ const common = {
 
 const entryPoints = [
   'src/background.ts',
-  'src/discovery.ts',
-  'src/discovery-injected.ts',
   'src/page-chat.ts',
   'src/permission-prompt.ts',
   'src/directory.ts',

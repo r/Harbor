@@ -174,22 +174,6 @@ export function logWithBrowser(prefix: string, ...args: unknown[]): void {
 }
 
 /**
- * Check if the omnibox API is available.
- * Available in Firefox and Chrome, but may have different features.
- */
-export function hasOmnibox(): boolean {
-  return 'omnibox' in browserAPI;
-}
-
-/**
- * Check if externally_connectable is available.
- * Only Chrome supports onMessageExternal/onConnectExternal.
- */
-export function hasExternalMessaging(): boolean {
-  return 'onMessageExternal' in browserAPI.runtime;
-}
-
-/**
  * Check if web navigation API is available.
  */
 export function hasWebNavigation(): boolean {
@@ -262,11 +246,9 @@ export function getFeatureSummary(): Record<string, boolean | string> {
     isServiceWorker: isServiceWorker(),
     isManifestV3: isManifestV3(),
     hasSidebar: hasSidebar(),
-    hasOmnibox: hasOmnibox(),
     hasFirefoxML: hasFirefoxML(),
     hasFirefoxWllama: hasFirefoxWllama(),
     hasScriptingAPI: hasScriptingAPI(),
-    hasExternalMessaging: hasExternalMessaging(),
     hasWebNavigation: hasWebNavigation(),
   };
 }

@@ -23,17 +23,9 @@
     "http://127.0.0.1/*",
     "https://*/*"
   ],
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["dist/discovery.js"],
-      "run_at": "document_start"
-    }
-  ],
   "web_accessible_resources": [
     {
       "resources": [
-        "dist/discovery-injected.js",
         "dist/page-chat.js",
         "dist/design-tokens.css",
         "dist/demo-bootstrap.js",

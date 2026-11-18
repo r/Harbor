@@ -60,20 +60,11 @@ import { handleIncomingInvocation } from '../../page-api/handlers/agent-handlers
 // Track which agent each origin has registered (origin -> agentId)
 const originAgents = new Map<string, string>();
 
-// Track which agents have external handlers (via Web Agents API), or an
-// in-process handler registered through Harbor's own page API.
-const externalInvocationHandlers = new Map<string, {
+// Track which agents have an invocation handler registered through Harbor's
+// own in-process page API, and where to deliver an invocation (origin/tab).
+const invocationHandlers = new Map<string, {
   origin: string;
   tabId?: number;
-  extensionId?: string;
-  /**
-   * True when the registration came from Harbor's own in-process page API
-   * (harbor-core.ts's PAGE_API_SENDER carries Harbor's own extension id, or
-   * no id at all). False when it came from a genuinely separate,
-   * still-installed Web Agents API extension, which still needs the
-   * cross-extension hop until that extension is retired.
-   */
-  local: boolean;
 }>();
 
 // =============================================================================
@@ -441,50 +432,41 @@ export function handleAgentsRegisterInvocationHandler(
   sender: ResponseSender,
 ): void {
   log('handleAgentsRegisterInvocationHandler called, payload:', JSON.stringify(ctx.payload));
-  
+
   const payload = ctx.payload as { agentId?: string; origin?: string; tabId?: number } | undefined;
-  
-  // If agentId is provided directly (from Web Agents API), use it
-  // Otherwise, look up by origin (for content script registrations)
+
+  // If agentId is provided directly, use it; otherwise look up by origin
+  // (for content script registrations).
   const agentId = payload?.agentId || originAgents.get(ctx.origin);
-  
+
   log('Resolved agentId:', agentId, 'from payload.agentId:', payload?.agentId, 'or originAgents lookup');
-  
+
   if (!agentId) {
     log('No agent found for invocation handler registration:', ctx.origin);
     sender.sendResponse({ id: ctx.id, ok: true, result: undefined });
     return;
   }
-  
+
   const handlerOrigin = payload?.origin || ctx.origin;
   const handlerTabId = payload?.tabId || ctx.tabId;
-  const handlerExtensionId = ctx.senderExtensionId;
-  // harbor-core.ts's in-process dispatch stamps its sender with Harbor's own
-  // extension id (see page-api/harbor-core.ts's PAGE_API_SENDER); a missing
-  // id is treated the same way defensively. Anything else is a genuinely
-  // separate extension (the still-installed Web Agents API) that still
-  // needs the cross-extension hop.
-  const isLocal = !handlerExtensionId || handlerExtensionId === browserAPI.runtime.id;
 
-  log('Registering invocation handler for', agentId, 'origin:', handlerOrigin, 'tabId:', handlerTabId, 'extensionId:', handlerExtensionId, 'local:', isLocal);
+  log('Registering invocation handler for', agentId, 'origin:', handlerOrigin, 'tabId:', handlerTabId);
 
-  // Track that this agent has a handler (including the sender's extension ID for forwarding)
-  externalInvocationHandlers.set(agentId, { origin: handlerOrigin, tabId: handlerTabId, extensionId: handlerExtensionId, local: isLocal });
+  // Track where to deliver an invocation for this agent.
+  invocationHandlers.set(agentId, { origin: handlerOrigin, tabId: handlerTabId });
 
   // Register a handler that delivers invocations to the registered handler,
-  // in-process when it was registered by Harbor's own page API, or via the
-  // cross-extension hop when it belongs to a still-installed, separate
-  // Web Agents API extension.
+  // in-process through Harbor's own page API. Every registration is local
+  // now: there is no second extension to forward to.
   registerInvocationHandler(agentId, async (request, fromAgentId, traceId) => {
     const trace = traceId || 'no-trace';
     log(`[TRACE ${trace}] Proxy handler called for ${agentId}, task: ${request.task}`);
 
-    const externalInfo = externalInvocationHandlers.get(agentId);
-    if (!externalInfo) {
-      log(`[TRACE ${trace}] ERROR - no external handler info`);
+    if (!invocationHandlers.has(agentId)) {
+      log(`[TRACE ${trace}] ERROR - no invocation handler info`);
       return {
         success: false,
-        error: { code: 'ERR_NO_EXTERNAL_HANDLER', message: 'External handler not found' },
+        error: { code: 'ERR_NO_EXTERNAL_HANDLER', message: 'Invocation handler not found' },
         executionTime: 0,
       };
     }
@@ -496,109 +478,23 @@ export function handleAgentsRegisterInvocationHandler(
       timeout: request.timeout,
     };
 
-    if (externalInfo.local) {
-      log(`[TRACE ${trace}] Delivering in-process via Harbor's own page API...`);
-      const startTime = Date.now();
-      try {
-        const response = await handleIncomingInvocation(agentId, forwardRequest, trace);
-        log(`[TRACE ${trace}] handleIncomingInvocation returned, success: ${response.success}`);
-        return { ...response, executionTime: Date.now() - startTime };
-      } catch (e) {
-        log(`[TRACE ${trace}] handleIncomingInvocation ERROR: ${e instanceof Error ? e.message : 'Unknown'}`);
-        return {
-          success: false,
-          error: { code: 'ERR_FORWARD_FAILED', message: e instanceof Error ? e.message : 'Delivery failed' },
-          executionTime: Date.now() - startTime,
-        };
-      }
-    }
-
-    log(`[TRACE ${trace}] Forwarding to Web Agents API...`);
-
-    // Forward to Web Agents API for delivery to the page
-    // Web Agents API will handle forwarding to the correct tab
+    log(`[TRACE ${trace}] Delivering in-process via Harbor's own page API...`);
+    const startTime = Date.now();
     try {
-      const response = await forwardInvocationToExtension(agentId, forwardRequest, externalInfo, trace);
-      log(`[TRACE ${trace}] forwardInvocationToExtension returned, success: ${response.success}`);
-      return response;
+      const response = await handleIncomingInvocation(agentId, forwardRequest, trace);
+      log(`[TRACE ${trace}] handleIncomingInvocation returned, success: ${response.success}`);
+      return { ...response, executionTime: Date.now() - startTime };
     } catch (e) {
-      log(`[TRACE ${trace}] forwardInvocationToExtension ERROR: ${e instanceof Error ? e.message : 'Unknown'}`);
+      log(`[TRACE ${trace}] handleIncomingInvocation ERROR: ${e instanceof Error ? e.message : 'Unknown'}`);
       return {
         success: false,
-        error: { code: 'ERR_FORWARD_FAILED', message: e instanceof Error ? e.message : 'Forward failed' },
-        executionTime: 0,
+        error: { code: 'ERR_FORWARD_FAILED', message: e instanceof Error ? e.message : 'Delivery failed' },
+        executionTime: Date.now() - startTime,
       };
     }
   });
 
   sender.sendResponse({ id: ctx.id, ok: true, result: undefined });
-}
-
-/**
- * Forward an invocation to the Web Agents API extension via runtime.sendMessage.
- */
-async function forwardInvocationToExtension(
-  agentId: string,
-  request: { from: string; task: string; input?: unknown; timeout?: number },
-  handlerInfo: { origin: string; tabId?: number; extensionId?: string },
-  traceId?: string
-): Promise<{ success: boolean; result?: unknown; error?: { code: string; message: string }; executionTime: number }> {
-  const trace = traceId || 'no-trace';
-  const startTime = Date.now();
-  
-  log(`[TRACE ${trace}] forwardInvocationToExtension - agentId: ${agentId}, task: ${request.task}, extensionId: ${handlerInfo.extensionId}, tabId: ${handlerInfo.tabId}`);
-  
-  if (!handlerInfo.extensionId) {
-    log(`[TRACE ${trace}] ERROR - no extensionId in handlerInfo`);
-    return {
-      success: false,
-      error: { code: 'ERR_NO_EXTENSION', message: 'No extension ID available for invocation forwarding' },
-      executionTime: Date.now() - startTime,
-    };
-  }
-  
-  return new Promise((resolve) => {
-    const timeout = request.timeout || 30000;
-    const timeoutId = setTimeout(() => {
-      log(`[TRACE ${trace}] forwardInvocationToExtension TIMEOUT`);
-      resolve({
-        success: false,
-        error: { code: 'ERR_TIMEOUT', message: 'Invocation timed out' },
-        executionTime: Date.now() - startTime,
-      });
-    }, timeout);
-    
-    log(`[TRACE ${trace}] Sending to extension ${handlerInfo.extensionId}...`);
-    
-    // Send to the Web Agents API extension's background script
-    browserAPI.runtime.sendMessage(
-      handlerInfo.extensionId,
-      {
-        type: 'harbor.forwardInvocation',
-        agentId,
-        request,
-        handlerInfo: { origin: handlerInfo.origin, tabId: handlerInfo.tabId },
-        traceId: trace,
-      },
-      (response) => {
-        clearTimeout(timeoutId);
-        if (browserAPI.runtime.lastError) {
-          log(`[TRACE ${trace}] runtime.sendMessage error: ${browserAPI.runtime.lastError.message}`);
-          resolve({
-            success: false,
-            error: { code: 'ERR_SEND_FAILED', message: browserAPI.runtime.lastError.message || 'Send failed' },
-            executionTime: Date.now() - startTime,
-          });
-          return;
-        }
-        log(`[TRACE ${trace}] Got response from extension: ${JSON.stringify(response)}`);
-        resolve({
-          ...response,
-          executionTime: Date.now() - startTime,
-        });
-      }
-    );
-  });
 }
 
 /**

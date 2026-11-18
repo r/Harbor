@@ -442,56 +442,62 @@ async function runIntegrationTests(bridgePath) {
     
     async function checkHarbor() {
       log('harbor', '>>> Starting Harbor check');
-      
-      // Simple polling approach
+
+      // Harbor serves window.agent/window.ai itself now; there is no
+      // separate discovery object to poll for.
       for (let i = 0; i < 25; i++) { // 5 seconds max
         await new Promise(r => setTimeout(r, 200));
-        
-        if (window.__harbor && window.__harbor.installed) {
-          log('harbor', '>>> SUCCESS: ' + JSON.stringify(window.__harbor));
+
+        if (typeof window.agent !== 'undefined' && typeof window.ai !== 'undefined') {
+          log('harbor', '>>> SUCCESS: window.agent and window.ai are present');
           setStatus('harbor', 'pass');
           return true;
         }
-        
+
         if (i % 5 === 0) {
-          log('harbor', 'Poll ' + i + '/25: __harbor=' + (window.__harbor ? 'exists' : 'undefined'));
+          log('harbor', 'Poll ' + i + '/25: window.agent=' + (typeof window.agent !== 'undefined' ? 'exists' : 'undefined'));
         }
       }
-      
+
       log('harbor', '>>> TIMEOUT after 25 polls');
       setStatus('harbor', 'fail');
       return false;
     }
-    
+
     async function checkBridge() {
       log('bridge', 'Checking native bridge connection (15s timeout)...');
-      
+
       return new Promise((resolve) => {
         let attempts = 0;
         const maxAttempts = 30; // 15 seconds
-        
-        const check = setInterval(() => {
+
+        const check = setInterval(async () => {
           attempts++;
-          const harbor = window.__harbor || {};
-          const status = harbor.bridge;
-          
+          // window.ai.canCreateTextSession() is ambient (no permission
+          // prompt) and reflects Harbor's system.getCapabilities().bridgeReady.
+          let status;
+          try {
+            status = await window.ai.canCreateTextSession();
+          } catch (e) {
+            status = 'no';
+          }
+
           // Log status periodically
           if (attempts % 5 === 0) {
-            log('bridge', 'Attempt ' + attempts + ': bridge=' + status);
+            log('bridge', 'Attempt ' + attempts + ': canCreateTextSession=' + status);
           }
-          
-          if (status === 'connected') {
+
+          if (status === 'readily') {
             clearInterval(check);
             log('bridge', 'Connected! Native bridge is ready.');
             setStatus('bridge', 'pass');
             resolve(true);
             return;
           }
-          
+
           if (attempts >= maxAttempts) {
             clearInterval(check);
-            log('bridge', 'Final status: bridge=' + (status || 'undefined'));
-            log('bridge', 'Full __harbor: ' + JSON.stringify(harbor));
+            log('bridge', 'Final status: canCreateTextSession=' + (status || 'undefined'));
             log('bridge', 'Bridge not connected after ' + (attempts * 0.5) + ' seconds');
             log('bridge', '');
             log('bridge', 'Possible causes:');

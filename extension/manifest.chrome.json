@@ -4,9 +4,6 @@
   "version": "0.1.0",
   "description": "Infrastructure extension for AI and MCP capabilities. Provides LLM access and tool execution for other extensions.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoEnMSnvC8KBGkwY84OZX3ourJC63t+ONy4YeQe0Zvmdloae0UOR4ZW1QaY8F7SbMU5VqyfL2tyyi31lMTf66b27vk2Ia2VMuIa0aDbj1bVdPSeEKwVcsmzKfrTYW2eJhzfDmqRE7qVhcGGvgY5ODx5Ksaj7UM2XtyUrIEQcC9KW1Z8UduCE/B6HWH0Hy3cnak5oF8CNYQDefu3XWV5rCASNExUe3/DcYq5YBMx4EAiX6MryLKvCEuF9pGFlItRi3yrstdZ08W+pau5YrixyP9EeuivsNeFs2VzKwg4umMwBh/vvcG8g3LEnL9xSwQUHa2CixtC5jL08D0/wXicsmMQIDAQAB",
-  "externally_connectable": {
-    "ids": ["ogmmelahbpdfnmgemkcbpoaekdnfdapn"]
-  },
   "background": {
     "service_worker": "dist/background.js",
     "type": "module"
@@ -19,19 +16,11 @@
     "nativeMessaging",
     "cookies"
   ],
-  "omnibox": {
-    "keyword": "h"
-  },
   "host_permissions": [
     "http://localhost/*",
     "https://*/*"
   ],
   "content_scripts": [
-    {
-      "matches": ["http://*/*", "https://*/*", "file://*/*"],
-      "js": ["dist/discovery.js"],
-      "run_at": "document_start"
-    },
     {
       "matches": ["http://*/*", "https://*/*", "file://*/*"],
       "js": ["dist/page-api/content-script.js"],
@@ -42,7 +31,6 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "dist/discovery-injected.js",
         "dist/page-chat.js",
         "dist/design-tokens.css",
         "dist/demo-bootstrap.js",

@@ -1,11 +1,11 @@
 /**
  * Harbor Extension API
- * 
- * This module handles external messages from other extensions.
- * It provides a typed API for LLM, MCP, and system operations.
- * 
- * Only the Web Agents API extension may call it (see known-extensions.ts):
- *   chrome.runtime.sendMessage(HARBOR_EXTENSION_ID, { type: '...', payload: {...} })
+ *
+ * The typed API for LLM, MCP, session, permissions and system operations.
+ * `routeExtensionApiMessage` is Harbor's in-process core: page-api/harbor-core.ts
+ * calls it directly for every page call, so a page's request reaches the
+ * same handler and the same policy gate (`gatePageCall`/`requireAction`)
+ * either way.
  */
 
 import { bridgeChat, type BridgeChatRequest } from './llm/chat';
@@ -16,11 +16,9 @@ import { isNativeBridgeReady } from './llm/native-bridge';
 import { listAllProviders, getRuntimeCapabilities } from './llm/provider-registry';
 import { SessionRegistry } from './sessions';
 import type { CreateSessionOptions, SessionSummary } from './sessions';
-import { routeExternalMessage } from './agents/background-router';
 import { Audit } from './policy/audit';
 import { simulate, replay } from './policy/simulator';
 import { Watchdog } from './policy/watchdog';
-import { isTrustedExtensionSender } from './known-extensions';
 import { requireAction } from './agents/handlers/helpers';
 import type { RequestContext, ResponseSender } from './agents/handlers/router-types';
 import { promptActionForModel, type TypedAction } from './policy/actions';
@@ -42,18 +40,6 @@ export interface ExtensionApiResponse {
   ok: boolean;
   result?: unknown;
   error?: string;
-}
-
-export interface StreamChunk {
-  type: 'stream';
-  requestId: string;
-  event: {
-    type: 'token' | 'done' | 'error';
-    token?: string;
-    finish_reason?: string;
-    model?: string;
-    error?: { code: number; message: string };
-  };
 }
 
 // Message types for the extension API
@@ -687,14 +673,17 @@ function sessionToResponse(session: ReturnType<typeof SessionRegistry.getSession
 // =============================================================================
 
 /**
- * Only the Web Agents API can reach this router (see `isTrustedExtensionSender`),
- * so the page-facing calls below are page calls it forwarded, carrying the
- * page's origin. Each goes through the PolicyEngine via `requireAction`:
- * the decision is audited, and `deny` (safety floor, rules, origin deny,
- * watchdog) is enforced. The Web Agents API has already asked the user with
- * its own grant store, so a grant-level ask or preview proceeds without a
- * second Harbor prompt and the audit records that consent. A watchdog
- * restriction or a policy rule that asks still prompts.
+ * Every page-facing call reaching this router carries the calling page's
+ * origin (`page-api/harbor-core.ts` calls this module in-process, and
+ * `page-api/background.ts` always sets that origin from the connecting
+ * port's sender, never from the message). Each goes through the
+ * PolicyEngine via `requireAction`: the decision is audited, and `deny`
+ * (safety floor, rules, origin deny, watchdog) is enforced. The page API
+ * has already checked the origin's grant in Harbor's own store
+ * (`permissions.check`), so a grant-level ask or preview proceeds without a
+ * second Harbor prompt, and the audit records that consent as
+ * `origin-grant`. A watchdog restriction or a policy rule that asks still
+ * prompts.
  */
 interface PageCheck {
   action: TypedAction;
@@ -770,7 +759,7 @@ async function gatePageCall(
   for (const check of checksFor(p)) {
     const allowed = await requireAction(ctx, sender, check.action, {
       resource: check.resource,
-      upstreamConsent: 'web-agents-api',
+      upstreamConsent: 'origin-grant',
     });
     if (!allowed) return denied ?? failure('Permission denied');
   }
@@ -994,7 +983,7 @@ async function handleWatchdogResetOrigin(payload: unknown): Promise<ExtensionApi
 // Streaming Handler (for llm.chatStream)
 // =============================================================================
 
-/** Looser than `StreamChunk['event']`: callers here only ever read `.message`. */
+/** Callers here only ever read `.message` off the error. */
 export type ChatStreamEvent = {
   type: 'token' | 'done' | 'error';
   token?: string;
@@ -1004,12 +993,10 @@ export type ChatStreamEvent = {
 };
 
 /**
- * The gated `llm.chatStream` generator, shared by every caller that needs a
- * live stream of chat events: the cross-extension port handler below (while
- * the Web Agents API extension may still be installed) and page-api's
- * `harbor-core.ts`, which calls this in-process. Runs `gatePageCall` exactly
- * as a forwarded call does, so the policy gate and audit log see the same
- * decision either way.
+ * The gated `llm.chatStream` generator. page-api's `harbor-core.ts` calls
+ * this in-process for every page's streaming chat request, running
+ * `gatePageCall` exactly as a non-streaming call does, so the policy gate
+ * and audit log see the same decision either way.
  */
 export async function* streamLlmChat(payload: unknown, requestId?: string): AsyncGenerator<ChatStreamEvent> {
   const { messages, model, max_tokens, temperature, system, tools } = (payload || {}) as {
@@ -1048,31 +1035,6 @@ export async function* streamLlmChat(payload: unknown, requestId?: string): Asyn
   }
 }
 
-async function handleStreamingChat(
-  message: ExtensionApiRequest,
-  sender: { id?: string; url?: string; tab?: { id?: number } },
-  port: ReturnType<typeof browserAPI.runtime.connect>,
-): Promise<void> {
-  log('handleStreamingChat called', {
-    senderId: sender.id,
-    requestId: message.requestId,
-    payloadKeys: message.payload ? Object.keys(message.payload as Record<string, unknown>) : [],
-  });
-
-  const { payload, requestId } = message;
-
-  if (!requestId) {
-    log('handleStreamingChat: No requestId provided');
-    port.postMessage({ type: 'stream', requestId: '', event: { type: 'error', error: { message: 'Missing requestId for streaming' } } });
-    return;
-  }
-
-  for await (const event of streamLlmChat(payload, requestId)) {
-    port.postMessage({ type: 'stream', requestId, event } as StreamChunk);
-    if (event.type === 'done' || event.type === 'error') break;
-  }
-}
-
 // =============================================================================
 // Initialization
 // =============================================================================
@@ -1091,87 +1053,6 @@ export function initializeExtensionApi(): void {
       ...(event.type === 'session_terminated' ? { sessionId: event.sessionId, origin: event.origin } : {}),
     }).catch(() => {
       // Ignore errors - sidebar may not be open
-    });
-  });
-
-  // Handle ALL one-shot messages from other extensions
-  // This is the single entry point for cross-extension communication
-  // Routes to appropriate handler based on message type prefix
-  browserAPI.runtime.onMessageExternal.addListener(
-    (message: ExtensionApiRequest, sender, sendResponse) => {
-      // Only the Web Agents API may call Harbor. Check before reading the message.
-      if (!isTrustedExtensionSender(sender)) {
-        log('Rejected external message from untrusted sender:', sender?.id);
-        sendResponse(failure('Unauthorized sender'));
-        return false;
-      }
-
-      if (!message?.type) {
-        sendResponse(failure('Invalid message: missing type'));
-        return true;
-      }
-      
-      const msgType = message.type as string;
-      log('External message:', msgType, 'from', sender.id);
-      
-      // Route based on message type prefix:
-      // - llm.*, mcp.*, session.*, system.*, permissions.* -> this module (extension API)
-      // - agent.*, agents.* -> agent router
-      const isExtensionApiMessage = msgType.startsWith('llm.') ||
-                                     msgType.startsWith('mcp.') ||
-                                     msgType.startsWith('session.') ||
-                                     msgType.startsWith('system.') ||
-                                     msgType.startsWith('permissions.');
-      
-      if (isExtensionApiMessage) {
-        // Streaming requests need a port connection, not sendMessage
-        if (message.type === 'llm.chatStream') {
-          sendResponse(failure('Use browser.runtime.connect for streaming requests'));
-          return true;
-        }
-
-        // Route the message and send response
-        routeExtensionApiMessage(message, sender)
-          .then(sendResponse)
-          .catch((e) => sendResponse(failure(e)));
-      } else {
-        // Route to agent router for agent.* and agents.* messages
-        routeExternalMessage(
-          message as { type: string; payload?: unknown; requestId?: string },
-          sender,
-          sendResponse
-        );
-      }
-
-      return true; // Keep channel open for async response
-    }
-  );
-
-  // Handle port connections for streaming
-  browserAPI.runtime.onConnectExternal.addListener((port) => {
-    if (!isTrustedExtensionSender(port.sender)) {
-      log('Rejected external port from untrusted sender:', port.sender?.id);
-      port.disconnect();
-      return;
-    }
-    log('External port connection from:', port.sender?.id, 'port name:', port.name);
-
-    port.onMessage.addListener((message: ExtensionApiRequest) => {
-      log('Port message received:', message.type, 'requestId:', message.requestId);
-      
-      if (message.type === 'llm.chatStream') {
-        handleStreamingChat(message, port.sender!, port);
-      } else {
-        log('Non-streaming port message:', message.type);
-        // Non-streaming requests via port
-        routeExtensionApiMessage(message, port.sender!)
-          .then((response) => port.postMessage({ type: 'response', ...response }))
-          .catch((e) => port.postMessage({ type: 'response', ok: false, error: String(e) }));
-      }
-    });
-    
-    port.onDisconnect.addListener(() => {
-      log('External port disconnected:', port.sender?.id);
     });
   });
 

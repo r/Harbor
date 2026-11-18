@@ -4,9 +4,9 @@
  * Replaces the old Web Agents API's harbor-client.ts, which crossed an
  * extension boundary via chrome.runtime.sendMessage/connect to reach Harbor.
  * Everything here now runs inside Harbor's own background, so a page call
- * reaches exactly the handler a forwarded cross-extension call would have
- * reached — including the policy gate (gatePageCall/requireAction) and the
- * audit log, which record it the same way either way.
+ * reaches the same handler through the same policy gate
+ * (gatePageCall/requireAction) and the same audit log as any other call
+ * into Harbor's agent router or extension API.
  *
  * This is the ONLY file under page-api/ allowed to import from outside
  * page-api/, browser-compat, or a type-only import (see
@@ -15,7 +15,7 @@
  * changes shape later.
  */
 import { routeExtensionApiMessage, streamLlmChat } from '../extension-api';
-import { routeExternalMessage } from '../agents/background-router';
+import { routeAgentMessage } from '../agents/background-router';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
 
@@ -32,26 +32,21 @@ export interface StreamEvent {
 }
 
 /**
- * In-process dispatch doesn't need a real sender identity: the trust check
- * (isTrustedExtensionSender) only applies to the cross-extension listeners
- * in extension-api.ts, which this module bypasses entirely by calling the
- * router functions directly. Callers always pass the verified page origin
- * in the payload (see page-api/background.ts), exactly as a forwarded
- * cross-extension call does today.
+ * In-process dispatch doesn't need a real sender identity: Harbor accepts
+ * no cross-extension messages, so there is no sender trust check left to
+ * satisfy. Callers always pass the verified page origin in the payload
+ * (see page-api/background.ts), which is what `gatePageCall`/`requireAction`
+ * and `routeAgentMessage` actually check.
  *
- * `id` carries Harbor's own extension id rather than being left unset, so a
- * handler that only sees `ctx.senderExtensionId` can tell "this registration
- * came from Harbor's own page API, in-process" apart from "this came from a
- * still-installed, separate Web Agents API extension" (see
- * agents/handlers/multi-agent.ts's `handleAgentsRegisterInvocationHandler`).
+ * `id` carries Harbor's own extension id purely so `routeExtensionApiMessage`'s
+ * request log line has something to print.
  */
 const PAGE_API_SENDER: { id?: string; url?: string; tab?: { id?: number } } = {
   id: browserAPI.runtime?.id,
 };
 
 // `llm.*`, `mcp.*`, `session.*`, `system.*` and `permissions.*` go through
-// Harbor's extension-api router — the same gate (gatePageCall/requireAction)
-// a forwarded Web Agents API call goes through today.
+// Harbor's extension-api router, gated by gatePageCall/requireAction.
 const EXTENSION_API_PREFIXES = ['llm.', 'mcp.', 'session.', 'system.', 'permissions.'];
 
 function isExtensionApiType(type: string): boolean {
@@ -102,14 +97,12 @@ async function dispatch<T>(type: string, payload: unknown): Promise<T> {
   }
 
   // agent.chat.*, agent.mcp.* and agents.* — the agent router's in-process
-  // entry. routeExternalMessage itself does no sender-trust check (that
-  // lives in extension-api.ts's onMessageExternal listener, which this call
-  // bypasses); it only reads payload.origin/tabId, which background.ts
-  // always sets from the connecting port's sender.
+  // entry. routeAgentMessage only reads payload.origin/tabId, which
+  // background.ts always sets from the connecting port's sender, and
+  // rejects a call with no origin.
   return new Promise<T>((resolve, reject) => {
-    routeExternalMessage(
+    routeAgentMessage(
       { type, payload },
-      PAGE_API_SENDER as chrome.runtime.MessageSender,
       (response: { ok: boolean; result?: unknown; error?: string }) => {
         if (response.ok) resolve(response.result as T);
         else reject(createError(response.error ?? 'Unknown error from Harbor'));

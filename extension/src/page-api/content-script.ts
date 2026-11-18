@@ -175,22 +175,6 @@ async function injectAgentsAPI(): Promise<void> {
   // Mark content script presence for debugging.
   document.documentElement?.setAttribute('data-harbor-page-api-content-script', 'true');
 
-  // Wait for Harbor discovery to be available
-  const checkHarbor = () => {
-    const harborInfo = (window as { __harbor?: { extensionId: string } }).__harbor;
-    if (harborInfo?.extensionId) {
-      // Harbor found, notify background
-      chrome.runtime.sendMessage({ 
-        type: 'harbor_discovered', 
-        extensionId: harborInfo.extensionId 
-      });
-    }
-  };
-
-  // Check immediately and also listen for discovery event
-  checkHarbor();
-  window.addEventListener('harbor-discovered', checkHarbor);
-
   // Get feature flags from background
   const flags = await getFeatureFlags();
 

@@ -26,19 +26,11 @@
   "optional_permissions": [
     "trialML"
   ],
-  "omnibox": {
-    "keyword": "h"
-  },
   "host_permissions": [
     "http://localhost/*",
     "https://*/*"
   ],
   "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["dist/discovery.js"],
-      "run_at": "document_start"
-    },
     {
       "matches": ["<all_urls>"],
       "js": ["dist/page-api/content-script.js"],
@@ -49,7 +41,6 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "dist/discovery-injected.js",
         "dist/page-chat.js",
         "dist/design-tokens.css",
         "dist/demo-bootstrap.js",
