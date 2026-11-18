@@ -89,7 +89,7 @@ The extension exposes different APIs based on feature flags. Users control these
 | `textGeneration` | ✅ On | `window.ai.*` |
 | `toolAccess` | ✅ On | `agent.tools.list()`, `agent.tools.call()` |
 | `toolCalling` | ✅ On | `agent.run()` |
-| `browserInteraction` | ❌ Off | `agent.browser.activeTab.*` (click, fill, scroll) |
+| `browserInteraction` | ❌ Off | `agent.browser.activeTab.*` (click, fill, scroll); `activeTab.readability()` also works under `browserControl` |
 | `browserControl` | ❌ Off | `agent.browser.navigate()`, `agent.browser.tabs.*`, `agent.browser.fetch()` |
 | `multiAgent` | ❌ Off | `agent.agents.*` |
 

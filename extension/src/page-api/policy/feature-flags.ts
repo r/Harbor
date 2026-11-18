@@ -30,14 +30,6 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
 }
 
 /**
- * Get feature flags synchronously from cache.
- * Returns defaults if not yet loaded.
- */
-export function getFeatureFlagsSync(): FeatureFlags {
-  return cachedFlags || DEFAULT_FLAGS;
-}
-
-/**
  * Update feature flags.
  */
 export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<void> {
@@ -46,14 +38,6 @@ export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<voi
   
   await chrome.storage.local.set({ [STORAGE_KEY]: updated });
   cachedFlags = updated;
-}
-
-/**
- * Check if a specific feature is enabled.
- */
-export async function isFeatureEnabled(feature: keyof FeatureFlags): Promise<boolean> {
-  const flags = await getFeatureFlags();
-  return flags[feature];
 }
 
 /**

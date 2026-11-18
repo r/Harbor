@@ -47,7 +47,7 @@ vi.mock('../../sessions', () => ({
 }));
 
 type Listener = (port: unknown) => void;
-type Reply = { id?: string; ok?: boolean; error?: { code: string }; event?: { type: string; error?: { code: string } } };
+type Reply = { id?: string; ok?: boolean; error?: { code: string; message?: string }; event?: { type: string; error?: { code: string; message?: string } } };
 
 const ORIGIN = 'https://a.example';
 let onConnect: Listener;
@@ -148,6 +148,13 @@ describe('a disabled feature is refused at the receiver', () => {
   it.each(gated)('%s on lets %s through to its own checks', async (flag, type, payload) => {
     await setFlags({});
     expect(errorCode(await send(type, payload))).not.toBe('ERR_FEATURE_DISABLED');
+  });
+
+  it('names the setting as the sidebar does', async () => {
+    await setFlags({ multiAgent: false, toolCalling: false });
+    expect((await send('agent.agents.list')).error?.message).toBe('Multi-Agent is disabled');
+    const run = await send('agent.run', { task: 'What time is it?' });
+    expect(run.event?.error).toMatchObject({ code: 'ERR_FEATURE_DISABLED', message: 'Agentic Tool Use is disabled' });
   });
 
   it('refuses active-tab readability only when both browser settings are off', async () => {
