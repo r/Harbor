@@ -71,9 +71,9 @@ Safari reaches the bridge over HTTP without streaming. The ACP backend is Firefo
 
 How a run maps onto ACP:
 
-- **Session:** a fresh session per run. Its `cwd` is an empty working directory for that origin, under Harbor's data directory, so the agent doesn't start in the user's home or a project. Sessions aren't resumed across runs at first. Pages can't name a session.
+- **Session:** a fresh session per run. Its `cwd` is an empty working directory for that origin, under Harbor's data directory, canonicalized before use, so the agent doesn't start in the user's home or a project. Sessions aren't resumed across runs at first. Pages can't name a session.
 - **Prompt:** the page's `task` becomes the user message. A page's `systemPrompt` is sent as part of the prompt and labelled as coming from the site, never as the agent's own instructions.
-- **Updates to page events:** `agent_message_chunk` becomes streamed tokens, `agent_thought_chunk` becomes thinking, and `tool_call` / `tool_call_update` become tool-call and tool-result events. Plans and usage are dropped at first. The prompt's `stopReason` becomes the final event, or an error for `refusal`, `max_tokens` or `max_turn_requests`.
+- **Updates to page events:** `agent_message_chunk` becomes streamed tokens, `agent_thought_chunk` becomes thinking, and `tool_call` / `tool_call_update` become tool-call and tool-result events. Plans and usage are dropped at first. The prompt's `stopReason` becomes the final event, or an error for `refusal`, `max_tokens` or `max_turn_requests`. `cancelled` arrives both when Harbor cancels the run and, from Codex, when the user rejects a single tool call, so Harbor tells the two apart from its own state, not from the stop reason.
 - **Cancellation:** the page's abort, a revoked grant and a tab closing all send `session/cancel`, and Harbor answers any pending permission request with `cancelled`. The built-in loop needs the same cancellation; that's part of the shared backend interface below.
 - **`maxToolCalls`:** counted from `tool_call` updates. When the limit is reached, Harbor cancels the session.
 - **Timeouts:** an agent turn can take minutes, so ACP runs don't use the 30-second default request timeout. A run has its own overall limit.
@@ -94,13 +94,15 @@ There are three kinds of tool, handled differently.
 
 **The agent's own tools** (goose's shell and file editing, for example) are the new risk. A page's request now runs on an agent that can read the user's files and run commands, and the page's text reaches that agent. Content on a page could steer the agent into reading a secret and returning it in the run's final answer to the page.
 
-Proposed rules:
+Rules:
 
-1. **Every agent tool call needs Harbor's approval while it works on a page's request.** Harbor sets the agent to an approval mode when the session starts (`session/set_mode` in v1; goose's `approve` mode). If the agent can't be put in a mode that asks before acting, Harbor refuses to start a page's request on it. The user sees why.
+1. **Every action that changes something needs Harbor's approval while the agent works on a page's request.** When the session starts, Harbor sets the agent's strictest approval mode (see section 5). That mode must ask before edits, deletes, moves, shell commands and network access. Reads may go unasked, because Claude Code's and Codex's strictest modes don't ask before a read; rule 6 confines them. If an agent has no mode that asks before changes, Harbor refuses to start a page's request on it, and the user sees why.
 2. **Harbor shows the request in its own prompt**, naming the site, the agent and the action: the tool call's title, kind, input and file locations.
-3. **Harbor never passes "always" through to the agent.** The agent's own "always allow" isn't tied to a site, so it would carry over to the next site's run. Harbor answers `allow_once` or `reject_once`, and keeps any "always" in its own store, keyed by origin, agent and tool kind.
-4. **Each approval goes through the policy engine** as a new action, so it reaches rules and the audit log. Its effect comes from the tool call's kind: `read`, `search`, `think` and `fetch` are reads; `edit`, `delete`, `move` and `execute` are writes; anything else counts as a write. The site's grant to use the agent doesn't count as consent for these calls.
+3. **Harbor never passes "always" through to the agent.** The agent's own "always allow" isn't tied to a site, so it would carry over to the next site's run. Harbor answers `allow_once` or `reject_once`, and keeps any "always" in its own store, keyed by origin, agent and tool kind. Shell commands (kind `execute`) are never remembered: each one is approved on its own.
+4. **Each approval goes through the policy engine** as a new action, so it reaches rules and the audit log. Its effect comes from the tool call's kind: `read`, `search`, `think` and `fetch` are reads; `edit`, `delete`, `move` and `execute` are writes; anything else counts as a write. goose reports every tool call as `other`, so every goose call is treated as a write. The site's grant to use the agent doesn't count as consent for these calls.
 5. **An unanswered prompt times out** and is answered `reject_once`.
+6. **Harbor confines the agent to the site's working directory itself.** It doesn't trust the agent's own framing. Every path the agent reports, in a permission request or in a `tool_call` / `tool_call_update` (its `locations` and path-like fields of its input), is checked against the working directory after both are canonicalized (symlinks resolved; on macOS the temporary directory is a symlink). A path outside it gets `reject_once` if the agent asked. If the agent didn't ask, as with an unasked read, Harbor cancels the run and nothing more reaches the page. This depends on agents reporting the paths they touch; a shell command, which could read anything, is always asked about under rule 1.
+7. **The agent gets a clean environment.** The bridge starts it with the environment variables from its config plus what it needs to run (such as `PATH` and `HOME`), not the variables that identify the user's terminal or session. In testing, an agent that was allowed to run commands used such a variable to act on the terminal session it was started from.
 
 **Harbor's MCP servers and the page's tools** aren't offered to the ACP agent at first. The agent works with its own tools. Later, there are two ways to offer them:
 
@@ -120,7 +122,15 @@ Proposed rules:
 
 - The sidebar's model panel gets an **Agent** setting: *Harbor (built-in)* or a configured ACP agent.
 - Three presets ship together: goose (`goose acp`), Claude Code (`claude-agent-acp`) and Codex (`codex-acp`). Each uses the user's own install and account. A user can also add any other ACP agent by command line.
-- Each preset records how Harbor puts that agent in an approval mode. goose has `approve`. The Claude Code adapter and `codex-acp` expose their own permission modes; the spike confirms which ones ask before every tool call.
+- Each preset records how Harbor puts that agent in its strictest approval mode. These were checked by hand, because a mode's description doesn't reliably say what it gates:
+
+  | Agent | How Harbor sets it | Asks before |
+  | --- | --- | --- |
+  | goose | `GOOSE_MODE=approve` in the agent's environment at start | every tool call |
+  | Claude Code | `session/set_mode` to `default` ("Manual"); the adapter starts in `auto` | changes and shell commands, not reads |
+  | Codex | `session/set_mode` to `read-only` | edits and network access, not reads |
+
+  Recheck the table when an adapter's version changes.
 - The bridge checks that the agent's command exists, and runs `initialize` when the user selects the agent, so setup errors appear in the sidebar, not on a page.
 - The setting is global at first. A per-site choice can come later.
 
@@ -153,7 +163,7 @@ Settled by the maintainer:
 
 1. **Transport.** The bridge spawns the configured agent and relays messages. The ACP client runs in the extension. (The spike uses a development-only WebSocket relay instead.)
 2. **Mapping.** Both `agent.run` and `window.ai` text sessions go to the ACP agent when the user picks one.
-3. **Agent-native tools on a page's behalf.** Each call needs Harbor's approval. Harbor keeps "always" per origin and refuses agents it can't put in an approval mode.
+3. **Agent-native tools on a page's behalf.** Every action that changes something needs Harbor's approval. Harbor keeps "always" per origin, never for shell commands, and refuses agents with no mode that asks before changes. Reads may go unasked, and Harbor confines them to the site's working directory (section 3, rules 1, 3 and 6).
 4. **First-order agents.** goose, Claude Code and Codex are all first-order: each gets a preset and an end-to-end demo in the first release.
 
 Proposed, and open to the maintainer's review on this proposal:
