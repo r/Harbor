@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Harbor",
   "version": "0.1.0",
-  "description": "Infrastructure extension for AI and MCP capabilities. Provides LLM access and tool execution for other extensions.",
+  "description": "Let websites use your agent.",
   "browser_specific_settings": {
     "gecko": {
       "id": "harbor@krikorian.co",

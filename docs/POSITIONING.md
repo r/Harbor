@@ -30,7 +30,7 @@ Harbor is an implementation of a spec, not an endpoint. It's a polyfill: it make
 
 We expect most of a person's dealings with companies to go through their agent. Some of the time a company will want to offer something richer than a conversation: an interface, which is what a website is today. That interface needs an API to the person's agent, and the Web Agent API is one proposal for it. Harbor is the working implementation that lets people try it. It's one answer, and it's also meant to push the web toward a standard.
 
-**Where the surface lives doesn't matter.** It's a Gecko or WebKit rendering. It can be a tab in an ordinary browser or a surface inside an agent's own app, and each agent decides where to put it. Today Harbor runs as browser extensions in Firefox and Chrome.
+**Where the surface lives doesn't matter.** It's a Gecko or WebKit rendering. It can be a tab in an ordinary browser or a surface inside an agent's own app, and each agent decides where to put it. Today Harbor runs as a browser extension in Firefox and Chrome.
 
 **Browser control is a stopgap.** Harbor also lets an agent click, fill and navigate in a page (`agent.browser.*`). It's necessary for now, but it isn't the model. Those actions run under the person's login, and the company can't tell them from the person's own. When the agent acts through the page's tools instead, the company's code can tell the agent's actions from the person's by the channel each arrives on.
 
@@ -40,7 +40,7 @@ We expect most of a person's dealings with companies to go through their agent. 
 
 **The pitch:** *Let websites use your agent.* Use it for the extension's store listing and anywhere else with room for one short line. The one-line summary above stays the longer version.
 
-**One extension.** Harbor is moving to a single browser extension, the thing a person installs from an extension store. Today it's split in two: a page-facing extension that puts `window.ai` and `window.agent` on pages, and the Harbor extension that holds models, tools, permissions and the sidebar. The page-facing extension is called the Web Agents API extension. It's folding into Harbor and will be retired. After that there's one install, and one place to see which sites can use your agent and take their access away.
+**One extension.** Harbor is a single browser extension, the thing a person installs from an extension store. It holds models, tools, permissions and the sidebar, and it puts `window.ai` and `window.agent` on pages itself. That used to be split in two: a page-facing extension (the Web Agents API extension) and the Harbor extension. The page-facing extension has folded into Harbor and is retired. There's one install, and one place to see which sites can use your agent and take their access away.
 
 **Names.** Two names are enough:
 
@@ -49,7 +49,7 @@ We expect most of a person's dealings with companies to go through their agent. 
 
 Don't use "Web Agents API" (plural) in pitches, site copy, decks or posts. It's one letter away from the spec's name.
 
-**What to say today.** Until the single extension ships, setup and install instructions still name both extensions: Harbor, and the Web Agents API extension. Everywhere else, talk about Harbor as one thing. Once the merge ships, install copy drops the second extension too.
+**What to say today.** The repo builds one extension. Install and setup copy names only Harbor.
 
 **Harbor decides; the agent does the work.** Deciding whether a site may use the person's agent is the browser's job. Until browsers do it themselves, Harbor does it for them: per-site, per-scope grants, the consent prompt, policy rules and the audit log. The agent does the work the site asked for. Today that means the models and tools the person has connected to Harbor, for example a local model through Ollama or a hosted one, plus their MCP servers.
 
@@ -183,7 +183,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 
 > Every website that wants AI features has three bad options today: ask users for API keys, run their own AI backend, or embed someone else's. The new "AI browsers" — Atlas, Comet, Dia, Copilot Mode, Gemini in Chrome — try to solve this from the wrong end: they replace your browser with their agent and route your context to one vendor. Standards like WebMCP and Chrome's Prompt API are real progress, but each solves only a slice.
 >
-> Harbor proposes a fourth option: AI as a browser capability. The browser holds your model connections, your credentials, and your tools. Websites declare what they need through `window.ai` and `window.agent`. Pages can expose their own functions through WebMCP. Permissions are per-origin and revocable. You bring your AI to the web; the web doesn't drag you into someone else's AI. We've shipped a working implementation — browser extensions and a Rust bridge — on Firefox and Chrome to prove it's viable. It's a starting point for a conversation, not a product.
+> Harbor proposes a fourth option: AI as a browser capability. The browser holds your model connections, your credentials, and your tools. Websites declare what they need through `window.ai` and `window.agent`. Pages can expose their own functions through WebMCP. Permissions are per-origin and revocable. You bring your AI to the web; the web doesn't drag you into someone else's AI. We've shipped a working implementation — a browser extension and a Rust bridge — on Firefox and Chrome to prove it's viable. It's a starting point for a conversation, not a product.
 
 ---
 
@@ -236,7 +236,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 ## Headlines we avoid
 
 - "Harbor is an AI browser." (We're not a browser.)
-- "Web Agents API" as a product name in pitches or site copy. (Say Harbor. "Web Agent API" is the spec. Install instructions are the exception until the single extension ships.)
+- "Web Agents API" as a product name in pitches or site copy. (Say Harbor. "Web Agent API" is the spec.)
 - "Harbor is a Mozilla product." (It isn't.)
 - "Replace ChatGPT/Claude/Gemini with Harbor." (We're not a model.)
 - "Harbor is secure because it has fewer features." (We have a positive security story; lead with it.)

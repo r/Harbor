@@ -43,7 +43,7 @@
     <p class="eyebrow">build · quickstart</p>
     <h1>Build with Harbor.</h1>
     <p class="deck">
-      Build the two Firefox extensions and their native bridge, connect a local model, then try it on an article or add a prompt to your own page.
+      Build the Firefox extension and its native bridge, connect a local model, then try it on an article or add a prompt to your own page.
     </p>
     <div class="meta">
       <span>Firefox primary</span>
@@ -53,8 +53,8 @@
 
     <h2 id="install">1. Install Harbor</h2>
     <p>
-      Harbor is two browser extensions and a small native bridge (Rust). Both
-      extensions need to be loaded for the Web Agent API to work end-to-end.
+      Harbor is one browser extension and a small native bridge (Rust). The
+      extension needs to be loaded for the Web Agent API to work end-to-end.
     </p>
 
     <h3>Prerequisites</h3>
@@ -72,9 +72,6 @@ cd harbor
 # Build the Harbor extension
 cd extension && npm install && npm run build && cd ..
 
-# Build the Web Agents API extension
-cd web-agents-api && npm install && npm run build && cd ..
-
 # Build and install the native bridge
 cd bridge-rs && cargo build --release && ./install.sh && cd ..</pre>
 
@@ -82,17 +79,16 @@ cd bridge-rs && cargo build --release && ./install.sh && cd ..</pre>
     <pre class="ex-code" style="white-space: pre">ollama serve &amp;
 ollama pull llama3.2</pre>
 
-    <h3>Load both extensions in Firefox</h3>
+    <h3>Load Harbor in Firefox</h3>
     <ol>
       <li>Open <code>about:debugging#/runtime/this-firefox</code></li>
       <li>"Load Temporary Add-on…" → <code>extension/dist-firefox/manifest.json</code></li>
-      <li>"Load Temporary Add-on…" again → <code>web-agents-api/dist-firefox/manifest.json</code></li>
       <li>Open the Harbor sidebar from the toolbar and check for <em>Bridge: Connected</em>.</li>
       <li>Under <strong>LLM Providers → Configured Models</strong>, select your Ollama model and click <strong>Add</strong>. Make it the default, then use <strong>Test connection</strong>. Look for <em>Model works!</em></li>
     </ol>
     <p>
       Chrome works the same way with <code>chrome://extensions</code> →
-      <em>Load unpacked</em> → the two <code>dist-chrome/</code> directories.
+      <em>Load unpacked</em> → the <code>dist-chrome/</code> directory.
       One extra step for Chrome's native messaging is documented in the repo.
     </p>
 
@@ -126,7 +122,7 @@ document.getElementById("ask").onclick = async () =&gt; {
       when they have something to apply. The session carries a capability
       token that bounds everything the agent can do — when you upgrade, the
       token is re-minted with the new actions. <code>agent.run</code> remains
-      gated by the <code>toolCalling</code> feature flag in the Web Agents API
+      gated by the <code>toolCalling</code> feature flag in Harbor's
       sidebar — flip it on for development.
     </p>
     <pre class="ex-code" style="white-space: pre">const session = await agent.requestCapabilities({
