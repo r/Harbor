@@ -52,22 +52,29 @@ export function shapeOf(value: unknown, seen: Set<unknown> = new Set()): Shape {
   return out;
 }
 
-/**
- * Load `filePath` (a standalone TS content-script, no imports) in a minimal
- * sandbox with `flags` injected at `flagsElementId`, and return the shape of
- * whatever it registered on window.ai / window.agent / navigator.modelContext.
- */
 export interface ApiShape {
   ai: Shape;
   agent: Shape;
   modelContext: Shape;
 }
 
-export function loadInjectedApiShape(
+/** What `injected.ts` registered on window.ai / window.agent / navigator.modelContext. */
+export interface InjectedApi {
+  ai: unknown;
+  agent: unknown;
+  modelContext: unknown;
+}
+
+/**
+ * Load `filePath` (a standalone TS content-script, no imports) in a minimal
+ * sandbox with `flags` injected at `flagsElementId`, and return the live
+ * objects it registered on window.ai / window.agent / navigator.modelContext.
+ */
+export function loadInjectedApi(
   filePath: string,
   flags: Record<string, boolean>,
   flagsElementId: string,
-): ApiShape {
+): InjectedApi {
   const source = readFileSync(filePath, 'utf-8');
   const { code } = transformSync(source, { loader: 'ts', format: 'iife', target: 'es2022' });
 
@@ -107,10 +114,20 @@ export function loadInjectedApiShape(
   vm.createContext(sandbox);
   vm.runInContext(code, sandbox, { filename: filePath });
 
+  return { ai: win.ai, agent: win.agent, modelContext: nav.modelContext };
+}
+
+/** The shape of what `loadInjectedApi` returns: keys and kinds, not data. */
+export function loadInjectedApiShape(
+  filePath: string,
+  flags: Record<string, boolean>,
+  flagsElementId: string,
+): ApiShape {
+  const api = loadInjectedApi(filePath, flags, flagsElementId);
   return {
-    ai: shapeOf(win.ai),
-    agent: shapeOf(win.agent),
-    modelContext: shapeOf(nav.modelContext),
+    ai: shapeOf(api.ai),
+    agent: shapeOf(api.agent),
+    modelContext: shapeOf(api.modelContext),
   };
 }
 

@@ -1350,7 +1350,7 @@ const agentApi = Object.freeze({
         },
         mcp: true,
         chat: true,
-        sessions: f.toolAccess,
+        sessions: true,
         agents: f.multiAgent,
         modelContext: true,
       },
