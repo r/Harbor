@@ -761,7 +761,110 @@
         color: var(--color-text-secondary);
         font-weight: var(--weight-medium);
       }
-      
+
+      /* Browser Agent Capabilities (feature flag toggles) */
+      .toggle-switch {
+        position: relative;
+        width: 40px;
+        height: 22px;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+      .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: var(--color-surface-tertiary);
+        transition: 0.2s;
+        border-radius: 22px;
+        border: 1px solid var(--color-border-default);
+      }
+      .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 16px;
+        width: 16px;
+        left: 2px;
+        bottom: 2px;
+        background-color: var(--color-text-muted);
+        transition: 0.2s;
+        border-radius: 50%;
+      }
+      .toggle-switch input:checked + .toggle-slider {
+        background-color: var(--color-accent-primary);
+        border-color: var(--color-accent-primary);
+      }
+      .toggle-switch input:checked + .toggle-slider:before {
+        transform: translateX(18px);
+        background-color: white;
+      }
+      .toggle-switch input:disabled + .toggle-slider {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .feature-flag-item {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--space-2);
+        padding: var(--space-2);
+        background: var(--color-surface-secondary);
+        border-radius: var(--radius-sm);
+        margin-bottom: var(--space-2);
+      }
+      .feature-flag-item:last-child {
+        margin-bottom: 0;
+      }
+      .feature-flag-info {
+        flex: 1;
+      }
+      .feature-flag-name {
+        font-size: var(--text-sm);
+        font-weight: var(--weight-medium);
+        color: var(--color-text-primary);
+        margin-bottom: 4px;
+      }
+      .feature-flag-desc {
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+        line-height: 1.4;
+      }
+      .feature-flag-api {
+        margin-top: 6px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .feature-flag-api code {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        background: var(--color-surface-tertiary);
+        padding: 2px 6px;
+        border-radius: var(--radius-sm);
+        color: var(--color-accent-primary);
+      }
+      .feature-flag-reload-hint {
+        font-size: var(--text-xs);
+        color: var(--color-warning);
+        text-align: center;
+        padding: var(--space-2);
+        background: var(--color-warning-bg);
+        border-radius: var(--radius-sm);
+        margin-top: var(--space-2);
+        display: none;
+      }
+      .feature-flag-reload-hint.visible {
+        display: block;
+      }
+
       /* Permissions Panel */
       .permissions-list {
         display: flex;
@@ -1257,6 +1360,87 @@
       </div>
       <div class="panel-body collapsed" id="permissions-list">
         <div class="empty-state">No site permissions granted yet.</div>
+      </div>
+    </div>
+
+    <!-- Browser Agent Capabilities Panel -->
+    <div class="panel" id="api-toggles-panel">
+      <div class="panel-header" id="api-toggles-header">
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon" id="api-toggles-toggle">&#9660;</span>
+          <div class="panel-title">Browser Agent Capabilities</div>
+        </div>
+      </div>
+      <div class="panel-body" id="api-toggles-body">
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Text Generation</div>
+            <div class="feature-flag-desc">Sites can send prompts to an AI and get responses back. This is the basic building block for any AI-powered feature.</div>
+            <div class="feature-flag-api"><code>window.ai.prompt()</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-textGeneration" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Tool Access</div>
+            <div class="feature-flag-desc">The site's code can call specific tools directly—e.g., "call the Gmail tool to fetch inbox." The developer decides exactly which tools run and when.</div>
+            <div class="feature-flag-api"><code>agent.tools.list()</code> <code>agent.tools.call()</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-toolAccess" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Agentic Tool Use</div>
+            <div class="feature-flag-desc">The AI autonomously decides which tools to call. Give it a task like "summarize my unread emails" and it figures out the steps itself. More powerful, but the AI has more control.</div>
+            <div class="feature-flag-api"><code>agent.run()</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-toolCalling" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Browser Interaction</div>
+            <div class="feature-flag-desc">The AI can click buttons, fill out forms, and scroll on the current page. Useful for automating tasks within a single site.</div>
+            <div class="feature-flag-api"><code>agent.browser.click()</code> <code>agent.browser.fill()</code> <code>agent.browser.scroll()</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-browserInteraction" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Browser Control</div>
+            <div class="feature-flag-desc">The AI can open new tabs, navigate to URLs, and fetch content from other websites. Enables research and multi-site workflows.</div>
+            <div class="feature-flag-api"><code>agent.browser.tabs</code> <code>agent.browser.navigate()</code> <code>agent.browser.fetch()</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-browserControl" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-item">
+          <div class="feature-flag-info">
+            <div class="feature-flag-name">Multi-Agent</div>
+            <div class="feature-flag-desc">Multiple AI agents can work together and coordinate. Enables complex workflows where specialized agents collaborate on tasks.</div>
+            <div class="feature-flag-api"><code>agent.a2a</code></div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flag-multiAgent" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="feature-flag-reload-hint" id="feature-flag-reload-hint">
+          ⚠️ Reload pages to apply changes
+        </div>
       </div>
     </div>
 
