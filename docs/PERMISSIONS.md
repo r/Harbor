@@ -38,7 +38,7 @@ The system is **provider-agnostic**: permissions are expressed in terms of *effe
 
 Every API call from a website goes through a single chokepoint: the **PolicyEngine**. The engine answers one question per call:
 
-> Given this **principal** (origin + session + capability token), this typed **action** (`model.prompt.remote`, `tool.call`, `network.egress.cross_origin`, …), this **resource** (a tool, a URL, an element, a data label set), and this **context** (session mode, watchdog state, time, user gesture) — should this action be allowed, denied, previewed, or asked about?
+> Given this **principal** (origin + session + capability token), this typed **action** (`model.prompt.remote`, `tool.call`, `network.egress.cross_origin`, …), this **resource** (a tool, a URL, an element, a data label set), and this **context** (watchdog state, time, user gesture) — should this action be allowed, denied, previewed, or asked about?
 
 It answers by walking a **tier ladder**, top to bottom, returning the first decisive answer.
 
@@ -173,7 +173,7 @@ The schema is **typed**: every rule is `{id, effect, principal, action, resource
       "principal": { "origin": "https://docs.example.com" },
       "actions": ["model.prompt.local", "browser.read.activeTab"],
       "resource": { "kind": "active_tab" },
-      "context": { "session_mode": ["plan", "execute"], "ttl": "30d" }
+      "context": { "ttl": "30d" }
     },
     {
       "id": "block-cross-origin-egress-of-credentials",
@@ -252,15 +252,14 @@ When any classifier says "sensitive," PolicyEngine returns **ask** with `promptK
 
 Sensitivity gates cannot be turned off site-by-site through ordinary "Allow always" — they require an explicit "I understand, always allow this category" decision in the sidebar that records exactly what was waived.
 
-## Sessions, capability tokens, and modes
+## Sessions and capability tokens
 
 A **session** is the agent context for a particular task. Each session is bound to:
 
 - An origin (the requesting site)
 - A **capability token** — an opaque identifier that the engine maps to a specific allowed-action set, label-acceptance set, budget, TTL, and parent token (if delegated)
-- A **mode**: `plan`, `execute`, or `watch`
 
-The capability token is the unit of authority. It's how Harbor implements the review's recommendation that authority be **attenuated**, not ambient: every agent action checks the token, and a session in Plan mode literally has a token whose `allowedActions` excludes every `effect: 'write'` action — there is nothing for the engine to "force deny," because the authority isn't there to begin with.
+The capability token is the unit of authority. It's how Harbor implements the review's recommendation that authority be **attenuated**, not ambient: every agent action checks the token, and the token's `allowedActions` is the exhaustive list of what the session may do — there is nothing for the engine to "force deny" beyond that, because the authority isn't there to begin with.
 
 ### What's in a token
 
@@ -273,19 +272,12 @@ type CapabilityToken = {
   acceptedLabels: DataLabel[];   // labels this token can carry across egress
   budgets: { toolCalls?: number; navigations?: number; remotePromptUsd?: number };
   ttl: number;                   // expires at this timestamp
-  mode: 'plan' | 'execute' | 'watch';
 };
 ```
 
-### The three modes
+### Getting more authority later
 
-| Mode | What the token allows | When it's used |
-|---|---|---|
-| **Plan** | Reads, prompts, summarization. Token's `allowedActions` excludes all `write` and `egress` actions. | Default for unknown origins. The agent can explore and propose, but cannot modify or transmit. |
-| **Execute** | Normal evaluation per the tier ladder. Token has the requested action set. | Default for trusted origins, or after the user moves a session out of Plan. |
-| **Watch** | Like Execute, but every `write`-effect or labeled-`egress` action returns **preview** and pauses for explicit user confirmation. | Auto-engaged on sensitive domains; user can engage manually. |
-
-Mode transitions don't just change a flag — they **mint a new token** with a different `allowedActions` set. Old tokens, if cached anywhere, become invalid; new ones are bound to the new mode.
+A session only ever holds the actions it was granted. There's no in-place upgrade: when a site needs more than its current session allows — say, write access it didn't ask for up front — it calls `agent.requestCapabilities()` again for a new session scoped to exactly the additional actions, with its own `reason`. The user sees a fresh, narrowly scoped prompt; the original session keeps working with what it already had. Terminate a session when you're done with it so its authority goes away.
 
 ### Delegation: subagents inherit a strict subset
 
@@ -295,11 +287,8 @@ When a session calls `agent.delegate` to invoke a subagent, the parent must mint
 - Child `acceptedLabels` ⊆ parent `acceptedLabels`
 - Child `budgets` ≤ parent `budgets` (and consume from the parent's pool)
 - Child `ttl` ≤ parent `ttl`
-- Child can have a tighter `mode` than the parent (parent in Execute can spawn a child in Plan), but never broader
 
 This is capability attenuation in the OCAP sense: the parent passes a strict subset of its authority to the child, and the child cannot accumulate authority by recursion. Sanity check: if you revoke the parent token, every descendant token is revoked.
-
-The Watchdog can downgrade modes automatically (Execute → Watch → Plan) in response to bad behavior; this is implemented as re-minting the token with a tighter `allowedActions` set. The user can always re-upgrade them from the sidebar.
 
 ## The Watchdog
 
@@ -317,7 +306,7 @@ The Watchdog is a complement to the structural defenses (info-flow labels, sensi
 | Rule | Trigger | Default response |
 |---|---|---|
 | **Velocity spike** | rate > 3× rolling average | Toast notification in sidebar |
-| **Repeated denials** | ≥ 3 consecutive denials | Re-mint session token in Plan mode |
+| **Repeated denials** | ≥ 5 consecutive denials | Quarantine the origin; the user must reset it from the sidebar |
 | **Budget overspend** | > 90% of budget consumed in a single burst | Suspend; ask to extend |
 | **Repeated label-egress attempts** | 2+ blocked egress attempts carrying `credentials`/`payments`/`identity` in a single session | Quarantine session |
 | **Scope escalation** | Origin requests an action outside its current token's `allowedActions` twice in a row | Terminate session; mark origin "needs review" |
@@ -392,7 +381,6 @@ Each audit row has a **"Why?"** affordance and a **"What if?"** affordance.
 
 - A modified action set (what if the origin had asked for `model.prompt.local` instead of `.remote`?)
 - A modified policy (what if I added this allow rule?)
-- A modified session mode (what if this had been in Execute instead of Plan?)
 - A modified label set (what if the input wasn't tainted with `credentials`?)
 
 The simulator does not affect live state — it's a pure replay against the engine. Output is a side-by-side: actual decision vs simulated decision, with the same Why? trace for both. This is how a user debugs a policy without having to think in JSON, and how a developer authors capability requests against actual production traces.
@@ -404,7 +392,7 @@ Once the system is deployed we want to track, in aggregate and locally:
 - **Prompt rate** per origin and per action, so we know when a site is creating prompt fatigue.
 - **Sensitivity false-positive rate** — how often a sensitivity gate fires on something the user immediately allows. Tells us where to tighten the classifier.
 - **Label-egress block rate** — how often the info-flow tracker prevents a labeled-data exfiltration attempt. Tells us whether the label set covers reality.
-- **Containment trigger frequency** — how often the watchdog re-mints a token at lower authority, by rule.
+- **Containment trigger frequency** — how often the watchdog tightens an origin's containment state, by rule.
 - **Token attenuation depth** — how often agents delegate to subagents and how many levels deep delegation goes in practice.
 
 This data is local-first; nothing is exported by default. The user can opt in to anonymized aggregates in the sidebar.
@@ -419,7 +407,6 @@ This is what you, as an author of a website using `window.ai` and `window.agent`
 
 ```ts
 const session = await agent.requestCapabilities({
-  mode: 'plan',                     // start narrow
   require: [
     { action: 'model.prompt.local' },
     { action: 'browser.read.activeTab' },
@@ -492,16 +479,15 @@ If your task can be done with a local model, ask for `model.prompt.local` only. 
 
 Some scope combinations are common enough that the prompt batches them as a single decision (e.g. `model:prompt + browser:activeTab.read + browser:activeTab.screenshot` is a "Reader assistant" preset). Asking for them together — instead of one at a time as you discover you need them — gets the user to a single decision faster.
 
-### 3. Default to Plan mode; mint fresh authority after a user gesture
+### 3. Start narrow; request more when the user gives you a reason to
 
-Create your sessions in Plan mode and only request Execute (or specific write actions) when the user explicitly takes an action that requires writes. This is the same shape Cursor and Claude Code use, and it gives the user a natural moment to grant write authority.
+Create your session with only the actions you need right away, and request a new, additionally-scoped session when the user explicitly takes an action that needs more — for example, clicking "Apply." This is the same shape Cursor and Claude Code use, and it gives the user a natural moment to grant write authority.
 
-Capability tokens are intentionally one-way: `agent.upgradeSession()` can **narrow** a session (Execute → Watch → Plan) but cannot widen it. To widen, you mint a fresh capability token by calling `agent.requestCapabilities()` again. The user gets a new prompt that names the additional authority — that's the "natural moment" for a re-grant, and it keeps the audit log honest about which token was acting when.
+Capability tokens don't widen in place: call `agent.requestCapabilities()` again to mint a fresh token for the new actions. The user gets a new prompt that names the additional authority — that's the "natural moment" for a re-grant, and it keeps the audit log honest about which token was acting when.
 
 ```ts
-const planSession = await agent.requestCapabilities({
+const readSession = await agent.requestCapabilities({
   name: 'Article assistant',
-  mode: 'plan',
   require: [
     { action: 'model.prompt.local' },
     { action: 'browser.read.activeTab' },
@@ -514,7 +500,6 @@ const planSession = await agent.requestCapabilities({
 // to exactly the new actions.
 const writeSession = await agent.requestCapabilities({
   name: 'Apply suggested edit',
-  mode: 'execute',
   require: [
     { action: 'browser.write.interact' },
   ],
@@ -522,7 +507,7 @@ const writeSession = await agent.requestCapabilities({
 });
 ```
 
-The user gets two prompts, but each is small and scoped to a real moment of intent. That's much cheaper to grant than one giant upfront prompt. The two sessions hold separate capability tokens; the original Plan session keeps working for further reads, and the new Execute session covers the write you just authorized. When the write is done, terminate it.
+The user gets two prompts, but each is small and scoped to a real moment of intent. That's much cheaper to grant than one giant upfront prompt. The two sessions hold separate capability tokens; the original read-only session keeps working for further reads, and the new session covers the write you just authorized. When the write is done, terminate it.
 
 ### 4. Annotate destructive tools in your MCP manifests, but don't expect them to be trusted
 
@@ -861,38 +846,12 @@ Harbor's sidebar is the home for everything in this document. It has four tabs:
 
 | Tab | What's there |
 |---|---|
-| **Sessions** | Every active agent session, its origin, its mode (Plan/Execute/Watch), its containment level, its budget. One-click Stop, Pause, Mode change, Revoke. |
+| **Sessions** | Every active agent session, its origin, its containment level, its budget. One-click Stop, Pause, Revoke. |
 | **Policy** | Your `harbor-policy.json` editor. JSON, with schema validation and rule helpers. |
 | **Origins** | Per-site grants — what you've said "Allow always" or "Allow once" to, on which sites. |
 | **Activity** | Audit feed: every decision the engine has made, with the reason. Filter by site, by decision, by time. |
 
 A small Harbor icon also lives in the browser toolbar with a single state indicator: green (idle), blue (an agent is acting), yellow (an agent is waiting on you), red (a containment has fired).
-
-## Plan, Execute, Watch — what these modes feel like
-
-When a session starts, it's in one of three modes. Think of these as how much rope you're giving the agent.
-
-### Plan mode (default for new sites)
-
-The agent can read the page, see your tabs (with permission), summarize, search, and propose. **It can't click anything, fill anything, navigate anywhere, or call any tool that changes the world.** Use this mode whenever you want to know what the agent thinks, before letting it act.
-
-You'll see a pale green border on the sidebar in this mode. The agent's responses might look like:
-
-> *I'd suggest filing this bug as a GitHub issue with title "X" and body "Y". Want me to actually create it? You'd need to switch this session to Execute first.*
-
-### Execute mode (default for trusted sites)
-
-Normal operation. The agent reads, prompts, calls tools, fills forms, clicks buttons. Things you've previously said yes to keep working without prompts. New sensitive things still confirm.
-
-You'll see a yellow border on the sidebar. The Stop button in the sidebar header is your single point of control — pressing it terminates every active session immediately.
-
-### Watch mode (auto-engages on sensitive sites)
-
-Like Execute, but every write-tier action **previews and pauses**. You see exactly what the agent is about to click, fill, or navigate to, and approve each step. Slow, but the right mode for banking, government services, healthcare, and anything you marked as sensitive.
-
-You'll see a red border on the sidebar and a "Step / Skip / Stop" control next to each pending action.
-
-You can change a session's mode at any time. The agent doesn't get to refuse.
 
 ## How prompts feel different now
 
@@ -965,7 +924,7 @@ Not a prompt — a notification. Looks like:
 └────────────────────────────────────────────────┘
 ```
 
-You don't have to do anything. The agent has been quietly restricted, and you can choose to look closer or move on. The "Restore" button puts the session back into Execute mode if you trust the agent's intent; "Stop session" terminates it cleanly.
+You don't have to do anything. The agent has been quietly restricted, and you can choose to look closer or move on. The "Restore" button clears the restriction if you trust the agent's intent; "Stop session" terminates it cleanly.
 
 ### The decision simulator
 
@@ -974,7 +933,6 @@ Every row in the Activity feed has a **"Why?"** link. Clicking it opens a panel 
 - What if this had been a local prompt instead of remote?
 - What if this rule was changed to allow?
 - What if the input wasn't tainted with `confidential`?
-- What if the session was in Execute instead of Plan?
 
 The simulator is read-only — replaying doesn't change anything. It's how you investigate "why did Harbor block this?" without having to read JSON. It's also how you pre-check a policy change before saving it.
 
@@ -996,7 +954,7 @@ A few things to check first, in order:
 1. **Is the session containment level above "normal"?** Sidebar → Sessions → look for a yellow or red badge. If yes, the Watchdog restricted it for a reason; the Activity tab will tell you what.
 2. **Is there a deny rule matching what the site is trying to do?** Sidebar → Policy. Look for a `deny` rule that mentions the scope or tool the site is asking about. The Activity tab also shows the rule that fired.
 3. **Did you grant "Allow once"?** Sidebar → Origins → look for the origin. If the grant has expired (10 minutes after grant, or when the tab closed), the next call will re-prompt.
-4. **Is the site in Plan mode by default?** If it's a new origin and you haven't moved it to Execute, every write-tier call will fail with `ERR_PERMISSION_DENIED`. The Sessions tab shows the mode.
+4. **Does the session hold the capability the site is trying to use?** A session only has the actions it was granted; a write it never asked for (or that you never granted) fails with `ERR_PERMISSION_DENIED`. The Sessions tab shows what each session can do.
 
 If a site is hammering you with prompts, that's almost always a sign the site is asking poorly — broad scopes with vague reasons, or asking for one scope at a time when it should batch. Use the activity feed to identify which scope is coming up most often, then either grant it always (if you trust the site) or write a deny rule (if you don't).
 
@@ -1005,7 +963,6 @@ If a site is hammering you with prompts, that's almost always a sign the site is
 | You can... | Where |
 |---|---|
 | See every active agent session | Sidebar → Sessions |
-| Change a session's mode (Plan / Execute / Watch) | Sidebar → Sessions → Mode dropdown |
 | Stop a session immediately | Sidebar → Sessions → Stop, or sidebar header Stop All |
 | Restore a contained session | Sidebar → Sessions → Restore, or directly from the containment notice |
 | Edit your policy file | Sidebar → Policy |
@@ -1025,7 +982,7 @@ If a site is hammering you with prompts, that's almost always a sign the site is
 - **Ambient.** An action whose `effect` is `metadata` — auto-allowed, never prompts.
 - **Audit record.** A single decision logged by the PolicyEngine, with full trace including matched rule, source, and labels.
 - **Capability token.** An opaque handle bound to an `(origin, allowedActions, acceptedLabels, budgets, ttl, parentToken)` tuple. The unit of authority a session holds.
-- **Containment.** A graduated reduction of a session's authority — implemented as re-minting the capability token with a tighter `allowedActions` set.
+- **Containment.** A graduated reduction of a session's authority, walked by the Watchdog in response to bad behavior; see [The Watchdog](#the-watchdog).
 - **Data label.** A tag (`credentials`, `payments`, `identity`, `confidential`, `regulated`) attached to data flowing through the agent. Tracked through reads, prompts, and tool calls; checked at egress.
 - **Decision simulator.** A read-only replay tool in the activity feed for investigating why a decision was made and what would change under different conditions.
 - **Effect.** One of `metadata`, `read`, `egress`, `write`, `identity`, `destructive`. Drives default UX.
@@ -1035,9 +992,8 @@ If a site is hammering you with prompts, that's almost always a sign the site is
 - **PolicyEngine.** The single function that decides whether to allow, deny, ask, or preview each API call.
 - **Policy file.** `harbor-policy.json` v2 — the user's declarative typed rules, merged with managed-storage policies.
 - **Sensitivity.** Structural classification (safe / sensitive / destructive) independent of policy. Cannot be lowered by an `allow` rule.
-- **Session mode.** `plan`, `execute`, or `watch` — the per-session stance, implemented as a property of the capability token.
 - **Sidebar.** Harbor's primary UI surface, where sessions, policy, origins, and activity live.
-- **Watchdog.** The background monitor that maintains rolling statistics and label-flow events; triggers containment by re-minting tokens.
+- **Watchdog.** The background monitor that maintains rolling statistics and label-flow events; tightens an origin's containment state in response.
 
 ---
 

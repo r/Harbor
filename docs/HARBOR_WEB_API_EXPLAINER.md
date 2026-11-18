@@ -180,9 +180,9 @@ The model has four properties page authors should know:
 3. **Sessions are bound to a capability token.** When a page calls
    `agent.requestCapabilities()` (the recommended entry point), the
    extension mints an unforgeable token that carries the session's
-   `allowedActions`, `acceptedLabels`, budgets, TTL, and **mode**
-   (`plan` / `execute` / `watch`). Subagent delegations re-attenuate
-   the parent token; authority can shrink, never grow.
+   `allowedActions`, `acceptedLabels`, budgets, and TTL. Subagent
+   delegations re-attenuate the parent token; authority can shrink,
+   never grow.
 4. **Auditable.** Every decision, including silent allows, is recorded
    and surfaced in the sidebar's Activity feed with a "Why?" trace
    and a "What if?" simulator.
@@ -191,16 +191,14 @@ The legacy `agent.requestPermissions()` and `PermissionScope` surface
 documented further below remains a working path for simple
 origin-level grants; it is implemented by mapping each scope to its
 typed action(s) on the way in. New code should prefer
-`agent.requestCapabilities()` and `agent.upgradeSession()` because
-those map directly to the engine's vocabulary and play nicely with
-mode and budgets.
+`agent.requestCapabilities()` because it maps directly to the
+engine's vocabulary and plays nicely with budgets.
 
 ```javascript
 // Recommended: request typed actions up front.
 const session = await agent.requestCapabilities({
   name: 'Article assistant',
   reason: 'Read the page and propose follow-ups.',
-  mode: 'plan',
   require: [
     { action: 'model.prompt.local' },
     { action: 'browser.read.activeTab' },
@@ -208,8 +206,13 @@ const session = await agent.requestCapabilities({
   budget: { maxToolCalls: 30, ttlMinutes: 15 },
 });
 
-// Later, narrow into Execute (only on user-driven write):
-await agent.upgradeSession(session.id, { mode: 'execute' });
+// Later, when the user takes an action that needs more, request a
+// new session scoped to exactly the additional actions:
+const writeSession = await agent.requestCapabilities({
+  name: 'Apply edit',
+  reason: 'Apply the change you approved.',
+  require: [{ action: 'browser.write.interact' }],
+});
 ```
 
 ---

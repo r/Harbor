@@ -109,8 +109,7 @@ one that fits your codebase.
 ### Recommended: `agent.requestCapabilities()` (typed actions)
 
 `requestCapabilities` mints a session bound to a capability token in
-the same vocabulary the policy engine uses internally. It also lets
-you pick a starting **mode** (Plan / Execute / Watch) and a
+the same vocabulary the policy engine uses internally, with a
 per-session budget. See [`docs/PERMISSIONS.md`](./PERMISSIONS.md) for
 the full design.
 
@@ -118,7 +117,6 @@ the full design.
 const session = await window.agent.requestCapabilities({
   name: 'Article assistant',
   reason: 'Read the page and propose follow-ups.',
-  mode: 'plan',
   require: [
     { action: 'model.prompt.local' },
     { action: 'browser.read.activeTab' },
@@ -127,17 +125,18 @@ const session = await window.agent.requestCapabilities({
   budget: { maxToolCalls: 30, ttlMinutes: 15 },
 });
 
-// Later, narrow into Watch when the user clicks "Run":
-await window.agent.upgradeSession(session.id, { mode: 'watch' });
-
 await session.tools.call('time-wasm', 'time.now', {});
 ```
+
+Need more later — e.g. write access once the user clicks "Run"? Call
+`agent.requestCapabilities()` again for a new session scoped to the
+additional actions.
 
 ### Legacy: `agent.requestPermissions()` (origin-level scopes)
 
 Still supported and internally mapped to typed actions. Use this if
-you only need a single origin-level grant and don't need session
-modes or budgets.
+you only need a single origin-level grant and don't need
+session budgets.
 
 ```javascript
 const result = await window.agent.requestPermissions({
