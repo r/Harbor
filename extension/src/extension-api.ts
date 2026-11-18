@@ -698,9 +698,30 @@ const BROWSER_CAPABILITY_ACTIONS: Record<'read' | 'interact' | 'screenshot', Typ
   screenshot: 'browser.read.screenshot',
 };
 
-const PAGE_GATES: Partial<Record<MessageType, (payload: PagePayload) => PageCheck[]>> = {
-  'llm.chat': (p) => [{ action: promptActionForModel(p.model) }],
-  'llm.chatStream': (p) => [{ action: promptActionForModel(p.model) }],
+/**
+ * The model a prompt will run on. A prompt that names no model (or names
+ * "default") runs on the bridge's default, which `llm.get_config` reports
+ * as the bridge resolves it for chat. Returns undefined when that's unknown.
+ */
+async function modelForPrompt(model: unknown): Promise<string | undefined> {
+  if (typeof model === 'string' && model && model !== 'default') return model;
+  try {
+    const config = await bridgeRequest<{ default_model?: string | null }>('llm.get_config');
+    return config.default_model ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function promptCheck(model: unknown): Promise<PageCheck> {
+  return { action: promptActionForModel(await modelForPrompt(model)) };
+}
+
+const PAGE_GATES: Partial<
+  Record<MessageType, (payload: PagePayload) => PageCheck[] | Promise<PageCheck[]>>
+> = {
+  'llm.chat': async (p) => [await promptCheck(p.model)],
+  'llm.chatStream': async (p) => [await promptCheck(p.model)],
   'mcp.listTools': () => [{ action: 'tool.list' }],
   'mcp.callTool': (p) => [
     {
@@ -711,11 +732,11 @@ const PAGE_GATES: Partial<Record<MessageType, (payload: PagePayload) => PageChec
       },
     },
   ],
-  'session.create': (p) => {
+  'session.create': async (p) => {
     const options = (p.options || {}) as CreateSessionOptions;
     const checks: PageCheck[] = [];
     const caps = options.capabilities;
-    if (caps?.llm) checks.push({ action: promptActionForModel(caps.llm.model) });
+    if (caps?.llm) checks.push(await promptCheck(caps.llm.model));
     if (caps?.tools?.length) checks.push({ action: 'tool.call' });
     for (const access of caps?.browser ?? []) {
       checks.push({ action: BROWSER_CAPABILITY_ACTIONS[access] });
@@ -756,7 +777,7 @@ async function gatePageCall(
     sendStreamEvent: () => {},
   };
 
-  for (const check of checksFor(p)) {
+  for (const check of await checksFor(p)) {
     const allowed = await requireAction(ctx, sender, check.action, {
       resource: check.resource,
       upstreamConsent: 'origin-grant',
