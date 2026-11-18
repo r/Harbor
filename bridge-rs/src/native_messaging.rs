@@ -14,6 +14,7 @@ use std::io::{self, Read, Write};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 
+use crate::acp;
 use crate::llm;
 use crate::rpc::{self, RpcRequest};
 
@@ -275,6 +276,9 @@ pub async fn run_native_messaging() {
     }
 
     tracing::info!("Native messaging handler exiting");
+    // The extension disconnected (or we're shutting down): every agent
+    // process the bridge started must die with it.
+    acp::shutdown_all().await;
     drop(write_handle);
 }
 
@@ -292,6 +296,7 @@ async fn handle_message(msg: IncomingMessage, writer: Arc<MessageWriter>, host_r
         
         "shutdown" => {
             tracing::info!("Received shutdown request");
+            acp::shutdown_all().await;
             std::process::exit(0);
         }
         
@@ -371,6 +376,26 @@ async fn handle_streaming_rpc(
                 writer.send_stream_event(id.clone(), event_json).await;
                 
                 if event.event_type == "done" || event.event_type == "error" {
+                    break;
+                }
+            }
+        }
+        "acp.open" => {
+            let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(32);
+
+            tokio::spawn(async move {
+                acp::open_stream(params, event_tx).await;
+            });
+
+            // The stream stays open for the life of the agent process: it
+            // ends when the process exits (an "exit" event) or when
+            // `open_stream` returns early without ever opening a channel
+            // (a fatal "error" event, after which the sender is dropped and
+            // `recv` returns `None`).
+            while let Some(event) = event_rx.recv().await {
+                let is_exit = event.get("type").and_then(|t| t.as_str()) == Some("exit");
+                writer.send_stream_event(id.clone(), event).await;
+                if is_exit {
                     break;
                 }
             }

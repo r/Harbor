@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{fs, js, llm, mcp, oauth};
+use crate::{acp, fs, js, llm, mcp, oauth};
 
 // =============================================================================
 // Types
@@ -120,6 +120,9 @@ fn get_handlers() -> &'static HashMap<&'static str, RpcHandler> {
     // MCP tool registry handlers
     register_mcp_handlers(&mut handlers);
 
+    // ACP (Agent Client Protocol) process relay handlers
+    register_acp_handlers(&mut handlers);
+
     handlers
   })
 }
@@ -186,6 +189,15 @@ fn register_mcp_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
   handlers.insert("mcp.submit_call_result", |p| Box::pin(mcp::submit_call_result(p)));
 }
 
+fn register_acp_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
+  // `acp.open` is a streaming method (see `is_streaming_method` and
+  // `native_messaging::handle_streaming_rpc`) and is deliberately not
+  // registered here, matching how `llm.chat_stream` is handled.
+  handlers.insert("acp.list_agents", |_| Box::pin(acp::list_agents()));
+  handlers.insert("acp.send", |p| Box::pin(acp::send(p)));
+  handlers.insert("acp.close", |p| Box::pin(acp::close(p)));
+}
+
 // =============================================================================
 // Request Handling
 // =============================================================================
@@ -209,7 +221,7 @@ pub async fn handle(request: RpcRequest) -> RpcResponse {
 /// Check if a method is a streaming method.
 /// Streaming methods are handled differently (they send multiple messages).
 pub fn is_streaming_method(method: &str) -> bool {
-  matches!(method, "llm.chat_stream")
+  matches!(method, "llm.chat_stream" | "acp.open")
 }
 
 /// List all registered RPC methods.
