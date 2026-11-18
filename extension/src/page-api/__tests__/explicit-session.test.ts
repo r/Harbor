@@ -134,6 +134,14 @@ describe('prompting an explicit session', () => {
       .toMatchObject({ ok: true });
   });
 
+  it('refuses a prompt once the origin no longer holds model:prompt', async () => {
+    const sessionId = await createExplicit();
+    mocks.hasPermission.mockImplementation(async (_origin: string, scope: string) => scope !== 'model:prompt');
+    const res = await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }));
+    expect(res).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
+    expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
+  });
+
   it('refuses a session created without the llm capability', async () => {
     const sessionId = await createExplicit({ tools: ['time/now'] });
     const res = await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }));

@@ -65,7 +65,7 @@ async function handleSessionPromptStreaming(
 ): Promise<void> {
   const { sessionId, input } = ctx.payload as { sessionId: string; input: string };
 
-  const resolved = await resolveTextSession(sessionId, ctx.origin);
+  const resolved = await resolveTextSession(sessionId, ctx.origin, ctx.tabId);
   if (!('session' in resolved)) {
     sendEvent({ id: ctx.id, event: { type: 'error', error: { code: resolved.code, message: resolved.message } }, done: true });
     return;

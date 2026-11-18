@@ -8,10 +8,12 @@
  *
  * Everything that applies to every backend stays in background.ts's
  * handleAgentRun: the `toolCalling` feature flag, the `model:prompt` /
- * `model:tools` grant checks, listing Harbor's tools and filtering them to
- * the site's `allowedTools`, and delivering events to the page. A backend
- * only runs the task against the model and the tools it's handed, and
- * stops promptly once its signal aborts.
+ * `model:tools` grant checks before the run starts, listing Harbor's tools
+ * and filtering them to the site's `allowedTools`, and delivering events to
+ * the page. A backend runs the task against the model and the tools it's
+ * handed, stops promptly once its signal aborts, and re-checks the grants
+ * that cover each step as it takes it: `model:prompt` before each model
+ * call after the first, `mcp:tools.call` before each tool call.
  */
 import { harborRequest } from './harbor-core';
 import { hasPermission } from './handlers';
@@ -50,6 +52,17 @@ export interface AgentBackend {
 
 function abortedEvent(): StreamToken {
   return { type: 'error', error: { code: ErrorCodes.ABORTED, message: 'Run aborted' } };
+}
+
+/**
+ * A run spans several model calls, so a grant checked when it started can
+ * be gone by a later one: the user revoked the site, or a one-time grant
+ * expired. Ends the run with a permission error when `model:prompt` is gone.
+ */
+async function promptRevoked(origin: string, tabId: number | undefined, emit: (event: StreamToken) => void): Promise<boolean> {
+  if (await hasPermission(origin, 'model:prompt', tabId)) return false;
+  emit({ type: 'error', error: { code: ErrorCodes.PERMISSION_DENIED, message: 'Permission model:prompt required' } });
+  return true;
 }
 
 /**
@@ -93,12 +106,16 @@ export const builtinAgentBackend: AgentBackend = {
     messages.push({ role: 'user', content: task });
 
     let toolCallCount = 0;
+    // handleAgentRun checked model:prompt just before the first model call.
+    let firstTurn = true;
 
     while (toolCallCount < maxToolCalls) {
       if (signal.aborted) {
         emit(abortedEvent());
         return;
       }
+      if (!firstTurn && await promptRevoked(origin, tabId, emit)) return;
+      firstTurn = false;
 
       type LLMResponse = {
         content: string;
@@ -125,8 +142,10 @@ export const builtinAgentBackend: AgentBackend = {
           })) : undefined,
         });
       } catch (e) {
-        emit({ type: 'token', token: JSON.stringify({ type: 'error', error: `LLM request failed: ${e}` }) });
-        emit({ type: 'done' });
+        emit({
+          type: 'error',
+          error: { code: ErrorCodes.MODEL_FAILED, message: `LLM request failed: ${e instanceof Error ? e.message : String(e)}` },
+        });
         return;
       }
 
@@ -213,6 +232,7 @@ export const builtinAgentBackend: AgentBackend = {
       emit(abortedEvent());
       return;
     }
+    if (await promptRevoked(origin, tabId, emit)) return;
 
     // Max tool calls reached
     messages.push({ role: 'user', content: 'Please provide your final answer based on the information gathered.' });

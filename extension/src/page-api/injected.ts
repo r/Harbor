@@ -1544,26 +1544,46 @@ const agentApi = Object.freeze({
         | { type: 'tool_call'; tool: string; args: Record<string, unknown> }
         | { type: 'tool_result'; tool: string; result: unknown }
         | { type: 'final'; output: string }
-        | { type: 'error'; error: string }
+        | { type: 'error'; error: { code: string; message: string } }
       > {
         type AgentEvent =
           | { type: 'thinking'; content: string }
           | { type: 'tool_call'; tool: string; args: Record<string, unknown> }
           | { type: 'tool_result'; tool: string; result: unknown }
           | { type: 'final'; output: string }
-          | { type: 'error'; error: string };
+          | { type: 'error'; error: { code: string; message: string } };
 
         const tokenStream = createStreamIterable<StreamToken>('agent.run', options);
 
         return {
           [Symbol.asyncIterator](): AsyncIterator<AgentEvent> {
             const tokenIterator = tokenStream[Symbol.asyncIterator]();
+            // After an error event the run is over: later reads report done.
+            let ended = false;
 
             return {
               async next(): Promise<IteratorResult<AgentEvent>> {
                 while (true) {
-                  const result = await tokenIterator.next();
-                  
+                  if (ended) {
+                    return { done: true, value: undefined };
+                  }
+
+                  // Every failure reaches the page the same way: as an `error`
+                  // event carrying Harbor's code and message, then the end of
+                  // the run. That includes refusals (a missing permission, a
+                  // disabled feature) and failures partway through.
+                  let result: IteratorResult<StreamToken>;
+                  try {
+                    result = await tokenIterator.next();
+                  } catch (e) {
+                    ended = true;
+                    const err = e as Error & { code?: string };
+                    return {
+                      done: false,
+                      value: { type: 'error', error: { code: err.code || 'ERR_INTERNAL', message: err.message || 'Agent run failed' } },
+                    };
+                  }
+
                   if (result.done) {
                     return { done: true, value: undefined };
                   }
@@ -1572,13 +1592,6 @@ const agentApi = Object.freeze({
                   
                   if (token.type === 'done') {
                     return { done: true, value: undefined };
-                  }
-
-                  if (token.type === 'error') {
-                    return {
-                      done: false,
-                      value: { type: 'error', error: token.error?.message || 'Unknown error' },
-                    };
                   }
 
                   if (token.type === 'token' && token.token) {
