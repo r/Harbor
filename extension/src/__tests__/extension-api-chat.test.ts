@@ -31,3 +31,21 @@ describe('page chat request adapter', () => {
     expect(events).toEqual([{ id: 'stream1', type: 'done', finish_reason: 'stop' }]);
   });
 });
+
+describe('page chat logging', () => {
+  it('does not log the model reply to a page llm.chat call', async () => {
+    const secret = 'MARKER-7f3a-model-reply';
+    vi.mocked(bridgeRequest).mockResolvedValue({
+      choices: [{ message: { role: 'assistant', content: secret }, finish_reason: 'stop' }], model: 'ollama:test',
+    });
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => { lines.push(args.map(String).join(' ')); });
+    try {
+      const response = await routeExtensionApiMessage({ type: 'llm.chat', payload: { origin: 'https://page.example', messages } }, {});
+      expect(response).toMatchObject({ ok: true, result: { content: secret } });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lines.filter((l) => l.includes(secret))).toEqual([]);
+  });
+});

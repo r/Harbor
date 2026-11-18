@@ -132,7 +132,7 @@ async function handleLlmChat(payload: unknown): Promise<ExtensionApiResponse> {
 
     const result = await bridgeChat(request);
 
-    log('LLM chat result:', JSON.stringify(result).substring(0, 500));
+    log('LLM chat result:', { model: result.model, contentLength: result.content?.length ?? 0 });
 
     return success({ content: result.content, model: result.model, choices: result.choices });
   } catch (e) {

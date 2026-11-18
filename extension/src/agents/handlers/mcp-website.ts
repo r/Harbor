@@ -116,7 +116,7 @@ export async function handleMcpRegister(
     const isSameOrigin = serverUrl.origin === originUrl.origin;
     
     if (!isLocalhost && !isSameOrigin) {
-      log('MCP register rejected - cross-origin:', url, 'from', ctx.origin);
+      log('MCP register rejected - cross-origin server from', ctx.origin);
       sender.sendResponse({
         id: ctx.id,
         ok: false,
@@ -152,7 +152,7 @@ export async function handleMcpRegister(
 
   // Store the server
   websiteMcpServers.set(serverId, server);
-  log('MCP server registered:', serverId, url);
+  log('MCP server registered:', serverId);
 
   // TODO: Connect to the server and verify tools
   // For now, we just register it and trust the declared tools

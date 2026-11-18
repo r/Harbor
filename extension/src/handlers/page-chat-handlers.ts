@@ -24,7 +24,7 @@ export function registerPageChatHandlers(): void {
       pageContext?: { url: string; title: string };
     };
 
-    console.log('[Harbor] page_chat_message:', chatId, userMessage?.slice(0, 50));
+    console.log('[Harbor] page_chat_message:', chatId, { messageLength: userMessage?.length ?? 0 });
 
     if (!userMessage) {
       sendResponse({ type: 'error', error: { message: 'Missing message' }, ok: false });
@@ -47,7 +47,7 @@ export function registerPageChatHandlers(): void {
 
         const responseText = result.content;
 
-        console.log('[Harbor] page_chat_message response:', responseText.slice(0, 100));
+        console.log('[Harbor] page_chat_message response:', chatId, { responseLength: responseText.length });
 
         sendResponse({
           type: 'page_chat_response',

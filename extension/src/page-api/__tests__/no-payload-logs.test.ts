@@ -119,3 +119,9 @@ describe('message logging at the extension boundaries', () => {
     expect(source).not.toMatch(/console\.\w+\([^;]*promptUrl/);
   });
 });
+
+describe('logs outside the page API', () => {
+  it("Safari's HTTP bridge transport does not log response bodies", () => {
+    expect(read('../../llm/native-bridge.ts')).not.toMatch(/console\.\w+\([^;]*JSON\.stringify\(data\)/);
+  });
+});
