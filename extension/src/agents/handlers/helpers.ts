@@ -262,15 +262,6 @@ function primaryLegacyScope(action: TypedAction): PermissionScope | null {
 
     case 'chat.open':
       return 'chat:open';
-
-    case 'addressBar.suggest':
-      return 'addressBar:suggest';
-    case 'addressBar.read.context':
-      return 'addressBar:context';
-    case 'addressBar.read.history':
-      return 'addressBar:history';
-    case 'addressBar.execute':
-      return 'addressBar:execute';
   }
 }
 
