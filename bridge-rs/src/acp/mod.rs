@@ -711,10 +711,10 @@ mod tests {
     // non-UTF-8/oversized/FIFO order/process groups) is covered by the
     // integration tests in `tests/acp_relay.rs`, which drive the real
     // `harbor-bridge` binary end to end. That's what actually exercises the
-    // native-messaging dispatch this module depends on (see HBR-80 bounce);
-    // a unit-test harness that calls `open_stream_with_config` directly
-    // can't observe that path. What's left here is the pure, no-process
-    // transform that's safe and fast to unit test in-process.
+    // native-messaging dispatch this module depends on; a unit-test harness
+    // that calls `open_stream_with_config` directly can't observe that
+    // path. What's left here is the pure, no-process transform that's safe
+    // and fast to unit test in-process.
 
     #[test]
     fn list_agents_hides_commands_and_env() {

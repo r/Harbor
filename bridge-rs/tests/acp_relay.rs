@@ -1,14 +1,14 @@
 //! End-to-end tests for the ACP relay, driving the real `harbor-bridge`
 //! binary over native-messaging framing exactly as the extension would.
 //!
-//! These exist because the bugs they guard against (found in HBR-80's
-//! verification bounce) only show up in the real dispatch path: the native
-//! messaging read loop's stdin-EOF handling, concurrently-spawned message
-//! handlers racing for an agent's stdin, and the process *tree* a real
-//! agent wrapper (e.g. `npx` -> `node`) creates. A unit test that calls
-//! `acp::open_stream_with_config` directly in-process can't observe any of
-//! that - only a real subprocess exercising `native_messaging.rs`'s actual
-//! loop can. Pure, no-process logic (config parsing, the `list_agents`
+//! These exist because the bugs they guard against only show up in the real
+//! dispatch path: the native messaging read loop's stdin-EOF handling,
+//! concurrently-spawned message handlers racing for an agent's stdin, and
+//! the process *tree* a real agent wrapper (e.g. `npx` -> `node`) creates. A
+//! unit test that calls `acp::open_stream_with_config` directly in-process
+//! can't observe any of that - only a real subprocess exercising
+//! `native_messaging.rs`'s actual loop can. Pure, no-process logic (config
+//! parsing, the `list_agents`
 //! transform, the `acp.*`-over-HTTP rejection) stays unit-tested in
 //! `src/acp/` and `src/http_server.rs`.
 //!
@@ -357,10 +357,10 @@ fn non_json_stdout_is_dropped_not_forwarded() {
     bridge.shutdown();
 }
 
-/// Regression test for HBR-80 bounce item 2: an agent writing an invalid
-/// UTF-8 line to stdout used to break the whole read loop (the line read
-/// errored, the task broke, `reap()` removed the channel while the process
-/// was still alive, and no exit event - or further relay - ever happened).
+/// An agent writing an invalid UTF-8 line to stdout used to break the whole
+/// read loop (the line read errored, the task broke, `reap()` removed the
+/// channel while the process was still alive, and no exit event - or
+/// further relay - ever happened).
 #[test]
 fn invalid_utf8_stdout_is_dropped_and_relay_continues() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
@@ -384,9 +384,9 @@ fn invalid_utf8_stdout_is_dropped_and_relay_continues() {
     bridge.shutdown();
 }
 
-/// Regression test for HBR-80 bounce item 2's stderr half: invalid UTF-8 or
-/// a flood of stderr output used to stop the stderr drain, which then
-/// leaves the agent blocked (or killed by EPIPE) writing to a closed pipe.
+/// Invalid UTF-8 or a flood of stderr output used to stop the stderr drain,
+/// which then leaves the agent blocked (or killed by EPIPE) writing to a
+/// closed pipe.
 #[test]
 fn invalid_utf8_and_flooding_stderr_does_not_break_the_relay() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
@@ -436,9 +436,8 @@ fn oversized_stdout_line_is_dropped_with_error_event() {
     bridge.shutdown();
 }
 
-/// Regression test for HBR-80 bounce item 3: concurrent `acp.send` calls
-/// used to be dispatched via `tokio::spawn`, so they raced for the stdin
-/// lock and could reach the agent out of order.
+/// Concurrent `acp.send` calls used to be dispatched via `tokio::spawn`, so
+/// they raced for the stdin lock and could reach the agent out of order.
 #[test]
 fn acp_send_preserves_fifo_order() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
@@ -484,10 +483,9 @@ fn close_kills_the_process() {
     bridge.shutdown();
 }
 
-/// Regression test for HBR-80 bounce item 5: a real agent is often launched
-/// through a wrapper (e.g. `npx` -> `node`); killing only the direct child
-/// leaves descendants alive, holding the stdout pipe open forever, so no
-/// exit event ever arrives.
+/// A real agent is often launched through a wrapper (e.g. `npx` -> `node`);
+/// killing only the direct child leaves descendants alive, holding the
+/// stdout pipe open forever, so no exit event ever arrives.
 #[test]
 fn close_kills_the_whole_process_group_including_grandchildren() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
@@ -518,10 +516,9 @@ fn close_kills_the_whole_process_group_including_grandchildren() {
     bridge.shutdown();
 }
 
-/// Regression test for HBR-80 bounce item 1: stdin EOF used to never reach
-/// `else => break` in the select loop (one branch was permanently disabled
-/// on mismatch, the other never resolved), so the bridge hung forever and
-/// needed an external SIGTERM.
+/// Stdin EOF used to never reach `else => break` in the select loop (one
+/// branch was permanently disabled on mismatch, the other never resolved),
+/// so the bridge hung forever and needed an external SIGTERM.
 #[test]
 fn disconnect_terminates_the_bridge_without_external_signal() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
@@ -573,12 +570,12 @@ fn send_validation_errors() {
     bridge.shutdown();
 }
 
-/// Regression test for HBR-80 bounce 2 item 1: `acp.send` used to enqueue
-/// onto the channel's stdin queue with an *awaited* `send`, inline in the
-/// single native-messaging read loop. An agent that stops draining its
-/// stdin fills that queue and never frees a slot, so that await never
-/// resolves - stalling the entire loop: pings, other channels, and the very
-/// acp.close that could kill the stuck agent all go unanswered, forever.
+/// `acp.send` used to enqueue onto the channel's stdin queue with an
+/// *awaited* `send`, inline in the single native-messaging read loop. An
+/// agent that stops draining its stdin fills that queue and never frees a
+/// slot, so that await never resolves - stalling the entire loop: pings,
+/// other channels, and the very acp.close that could kill the stuck agent
+/// all go unanswered, forever.
 #[test]
 fn acp_send_rejects_when_queue_is_full_without_blocking_the_bridge() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
