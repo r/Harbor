@@ -31,6 +31,7 @@ import {
   getAllSpawnedTabs,
   // Agent utilities
   cleanupAgentsForTab,
+  resolveInvocationResponse,
 } from './handlers';
 import { browserAPI } from '../browser-compat';
 
@@ -430,6 +431,42 @@ export function initializePageApi(): void {
     }
     return false;
   });
+
+  // A tab's content script relaying the page's answer to an invocation it
+  // was asked to handle (see content-script.ts's `agentInvocationResponse`
+  // forwarding). Every tab's content script now shares this one extension,
+  // so this is checked carefully before resolving anything:
+  //  - only Harbor's own content script may answer (never a page directly,
+  //    and never another extension);
+  //  - only the tab the invocation was actually sent to may answer, and
+  //    only from that tab's top frame — resolveInvocationResponse() enforces
+  //    the tab match, and content-script.ts only runs in the top frame
+  //    (manifest.json's `all_frames: false`), so frameId is always 0 there.
+  browserAPI.runtime.onMessage.addListener(
+    (
+      message: { type?: string; response?: Parameters<typeof resolveInvocationResponse>[0] },
+      sender: chrome.runtime.MessageSender,
+      _sendResponse: (response?: unknown) => void,
+    ) => {
+      if (message?.type !== 'agentInvocationResponse') return false;
+
+      if (sender.id !== browserAPI.runtime.id || !sender.tab) {
+        log('Ignoring agentInvocationResponse: not from Harbor\'s own content script', sender.id);
+        return false;
+      }
+      if (sender.frameId !== undefined && sender.frameId !== 0) {
+        log('Ignoring agentInvocationResponse: not the top frame', sender.frameId);
+        return false;
+      }
+      if (!message.response) return false;
+
+      const resolved = resolveInvocationResponse(message.response, sender.tab.id!);
+      if (!resolved) {
+        log('agentInvocationResponse did not match a pending invocation for this tab:', message.response.invocationId, sender.tab.id);
+      }
+      return false;
+    },
+  );
 
   log('Initialized.');
 }

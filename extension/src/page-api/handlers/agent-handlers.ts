@@ -21,11 +21,17 @@ const registeredAgents = new Map<string, {
   capabilities: string[];
 }>();
 
-// Track pending invocations waiting for responses from pages
+// Track pending invocations waiting for responses from pages. Bound to the
+// tab the invocation was actually sent to (background.ts's
+// agentInvocationResponse listener checks this before resolving), since
+// every tab's content script now shares this one extension: without the
+// binding, a page in another tab that guessed the invocationId could answer
+// on the real handler's behalf.
 const pendingInvocations = new Map<string, {
   resolve: (response: unknown) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
+  tabId: number;
 }>();
 
 // Track tabs that have invocation handlers set up (agentId -> tabId)
@@ -95,6 +101,7 @@ export async function handleIncomingInvocation(
         resolve({ success: false, error: { code: 'ERR_FAILED', message: error.message } });
       },
       timeout: timeoutId,
+      tabId: tabId!,
     });
     
     chrome.tabs.sendMessage(tabId!, {
@@ -114,20 +121,32 @@ export async function handleIncomingInvocation(
 }
 
 /**
- * Resolve an invocation response from a page.
+ * Resolve an invocation response from a page. `senderTabId` must match the
+ * tab the invocation was actually sent to — the response's own
+ * `invocationId` is not enough on its own, since any page could try to
+ * guess it. background.ts supplies `senderTabId` from the replying
+ * content script's `sender.tab.id`, which a page cannot forge.
  */
-export function resolveInvocationResponse(response: {
-  invocationId: string;
-  success: boolean;
-  result?: unknown;
-  error?: { code: string; message: string };
-}): boolean {
+export function resolveInvocationResponse(
+  response: {
+    invocationId: string;
+    success: boolean;
+    result?: unknown;
+    error?: { code: string; message: string };
+  },
+  senderTabId: number,
+): boolean {
   const pending = pendingInvocations.get(response.invocationId);
-  if (pending) {
-    pending.resolve(response);
-    return true;
+  if (!pending) return false;
+  if (pending.tabId !== senderTabId) {
+    console.warn(
+      '[Harbor PageAPI] Ignoring agentInvocationResponse from a mismatched tab',
+      { invocationId: response.invocationId, expectedTabId: pending.tabId, senderTabId },
+    );
+    return false;
   }
-  return false;
+  pending.resolve(response);
+  return true;
 }
 
 // =============================================================================

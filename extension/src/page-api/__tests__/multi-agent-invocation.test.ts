@@ -8,9 +8,10 @@
  * `runtime.onMessage` listener — exactly as the real content script would.
  *
  * Per docs/agent-workflow.md's "Test a new cross-extension message through
- * the listener, not the router" pitfall, this never calls a router function
- * directly: every step goes through a captured `onConnect`/`onMessage`
- * listener.
+ * the listener, not the router" pitfall, registration and invocation go
+ * through a captured `onConnect`/`onMessage` listener in every test. The
+ * timeout test additionally drives the invoke step through
+ * `routeExternalMessage` directly — see the comment there for why.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetMockBrowser } from '../../__tests__/test-setup';
@@ -247,20 +248,40 @@ describe('multi-agent invocation, delivered entirely in-process (no cross-extens
       const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
       await registerHandlerAgent(tab2, 'invoker');
 
-      tab2.send({
-        id: 'invoke-3',
-        type: 'agent.agents.invoke',
-        payload: { agentId: handlerAgentId, request: { task: 'summarize' } },
-      });
+      // Drive the invoke step one layer below the full page round trip:
+      // through `routeExternalMessage`, the same production entry point
+      // harbor-core.ts's in-process dispatch uses for `agents.*` types (and
+      // that a still-installed, separate extension would reach too). The
+      // full round trip through tab 2's own port also works (test above),
+      // but page-api/harbor-core.ts wraps every page call in its own
+      // independent 30-second limit (see harbor-core-timeout.test.ts) that
+      // is registered first and so would win this race against the
+      // mechanism this test targets — the invocation's own ERR_TIMEOUT,
+      // unchanged from before this unit. Calling the same function
+      // directly isolates that mechanism.
+      const { routeExternalMessage } = await import('../../agents/background-router');
+      let settled: { ok: boolean; result?: unknown; error?: string } | undefined;
+      routeExternalMessage(
+        {
+          type: 'agents.invoke',
+          payload: {
+            agentId: handlerAgentId,
+            task: 'summarize',
+            origin: 'https://b.example',
+            tabId: 2,
+          },
+        },
+        {} as chrome.runtime.MessageSender,
+        (response) => { settled = response; },
+      );
 
       await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalled());
 
       await vi.advanceTimersByTimeAsync(30_000);
 
-      await vi.waitFor(() => expect(tab2.posted.some((p) => p.id === 'invoke-3')).toBe(true));
-      const invokeReply = tab2.posted.find((p) => p.id === 'invoke-3')!;
-      expect(invokeReply.ok).toBe(true);
-      const result = invokeReply.result as { success: boolean; error?: { code: string } };
+      await vi.waitFor(() => expect(settled).toBeDefined());
+      expect(settled!.ok).toBe(true);
+      const result = settled!.result as { success: boolean; error?: { code: string } };
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe('ERR_TIMEOUT');
     } finally {

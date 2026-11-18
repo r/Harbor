@@ -364,62 +364,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-// Track pending Harbor invocations waiting for page response
-const pendingHarborInvocations = new Map<string, (response: unknown) => void>();
-
-// Listen for invocation responses from the page
-window.addEventListener('message', (event) => {
-  if (event.source !== window) return;
-  const data = event.data;
-  if (!data || data.channel !== CHANNEL) return;
-  
-  // Handle invocation response from page (used by both internal and Harbor invocations)
-  if (data.agentInvocationResponse) {
-    const { invocationId, success, result, error } = data.agentInvocationResponse;
-    const resolver = pendingHarborInvocations.get(invocationId);
-    if (resolver) {
-      pendingHarborInvocations.delete(invocationId);
-      // Format response for Harbor
-      resolver({ success, result, error });
-    }
-  }
-});
-
-// Listen for Harbor's forwarded invocations (sent directly to tab)
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== 'harbor.forwardInvocation') {
-    return false;
-  }
-  
-  const trace = message.traceId || 'no-trace';
-  const { agentId, request } = message;
-  const invocationId = `harbor-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  
-  console.log(`[TRACE ${trace}] Content: Harbor forward invocation - agentId: ${agentId}, task: ${request?.task}`);
-  
-  // Store the sendResponse callback for when the page responds
-  pendingHarborInvocations.set(invocationId, (response) => {
-    console.log(`[TRACE ${trace}] Content: Sending response back to Harbor`);
-    sendResponse(response);
-  });
-  
-  // Forward to page
-  window.postMessage({
-    channel: CHANNEL,
-    agentEvent: {
-      type: 'invocation',
-      invocation: {
-        invocationId,
-        from: request?.from,
-        task: request?.task,
-        input: request?.input,
-      },
-    },
-  }, '*');
-  
-  // Keep channel open for async response
-  return true;
-});
+// Note: there is no listener here for `harbor.forwardInvocation`. That type
+// is sent background-to-background (runtime.sendMessage(extensionId, ...)
+// from agents/handlers/multi-agent.ts to a *separate* extension's
+// background), never to a content script — the receiving background turns
+// it into the `agentInvocation` message the listener above handles. A
+// content-script listener for it was dead code even before Harbor folded
+// the page API in (the original Web Agents API's content-script.ts never
+// received it either), so it's removed here rather than carried forward.
 
 // Initialize
 injectAgentsAPI().catch(console.error);

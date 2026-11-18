@@ -46,6 +46,12 @@ import {
   pingRemoteAgent,
   discoverRemoteAgents,
 } from '../../multi-agent/remote';
+// Harbor's agents/ code may import from page-api (the reverse direction is
+// an import-boundary violation; see page-api/__tests__/import-boundary.test.ts).
+// A handler registered by Harbor's own in-process page API is delivered by
+// calling straight into its `handleIncomingInvocation`, instead of crossing
+// an extension boundary that no longer exists for that handler.
+import { handleIncomingInvocation } from '../../page-api/handlers/agent-handlers';
 
 // =============================================================================
 // State Management
@@ -54,8 +60,21 @@ import {
 // Track which agent each origin has registered (origin -> agentId)
 const originAgents = new Map<string, string>();
 
-// Track which agents have external handlers (via Web Agents API)
-const externalInvocationHandlers = new Map<string, { origin: string; tabId?: number; extensionId?: string }>();
+// Track which agents have external handlers (via Web Agents API), or an
+// in-process handler registered through Harbor's own page API.
+const externalInvocationHandlers = new Map<string, {
+  origin: string;
+  tabId?: number;
+  extensionId?: string;
+  /**
+   * True when the registration came from Harbor's own in-process page API
+   * (harbor-core.ts's PAGE_API_SENDER carries Harbor's own extension id, or
+   * no id at all). False when it came from a genuinely separate,
+   * still-installed Web Agents API extension, which still needs the
+   * cross-extension hop until that extension is retired.
+   */
+  local: boolean;
+}>();
 
 // =============================================================================
 // Agent Registration Handlers
@@ -440,17 +459,26 @@ export function handleAgentsRegisterInvocationHandler(
   const handlerOrigin = payload?.origin || ctx.origin;
   const handlerTabId = payload?.tabId || ctx.tabId;
   const handlerExtensionId = ctx.senderExtensionId;
-  
-  log('Registering invocation handler for', agentId, 'origin:', handlerOrigin, 'tabId:', handlerTabId, 'extensionId:', handlerExtensionId);
-  
-  // Track that this agent has an external handler (including the sender's extension ID for forwarding)
-  externalInvocationHandlers.set(agentId, { origin: handlerOrigin, tabId: handlerTabId, extensionId: handlerExtensionId });
-  
-  // Register a handler that will forward invocations to the external handler
+  // harbor-core.ts's in-process dispatch stamps its sender with Harbor's own
+  // extension id (see page-api/harbor-core.ts's PAGE_API_SENDER); a missing
+  // id is treated the same way defensively. Anything else is a genuinely
+  // separate extension (the still-installed Web Agents API) that still
+  // needs the cross-extension hop.
+  const isLocal = !handlerExtensionId || handlerExtensionId === browserAPI.runtime.id;
+
+  log('Registering invocation handler for', agentId, 'origin:', handlerOrigin, 'tabId:', handlerTabId, 'extensionId:', handlerExtensionId, 'local:', isLocal);
+
+  // Track that this agent has a handler (including the sender's extension ID for forwarding)
+  externalInvocationHandlers.set(agentId, { origin: handlerOrigin, tabId: handlerTabId, extensionId: handlerExtensionId, local: isLocal });
+
+  // Register a handler that delivers invocations to the registered handler,
+  // in-process when it was registered by Harbor's own page API, or via the
+  // cross-extension hop when it belongs to a still-installed, separate
+  // Web Agents API extension.
   registerInvocationHandler(agentId, async (request, fromAgentId, traceId) => {
     const trace = traceId || 'no-trace';
     log(`[TRACE ${trace}] Proxy handler called for ${agentId}, task: ${request.task}`);
-    
+
     const externalInfo = externalInvocationHandlers.get(agentId);
     if (!externalInfo) {
       log(`[TRACE ${trace}] ERROR - no external handler info`);
@@ -460,18 +488,36 @@ export function handleAgentsRegisterInvocationHandler(
         executionTime: 0,
       };
     }
-    
+
+    const forwardRequest = {
+      from: fromAgentId,
+      task: request.task,
+      input: request.input,
+      timeout: request.timeout,
+    };
+
+    if (externalInfo.local) {
+      log(`[TRACE ${trace}] Delivering in-process via Harbor's own page API...`);
+      const startTime = Date.now();
+      try {
+        const response = await handleIncomingInvocation(agentId, forwardRequest, trace);
+        log(`[TRACE ${trace}] handleIncomingInvocation returned, success: ${response.success}`);
+        return { ...response, executionTime: Date.now() - startTime };
+      } catch (e) {
+        log(`[TRACE ${trace}] handleIncomingInvocation ERROR: ${e instanceof Error ? e.message : 'Unknown'}`);
+        return {
+          success: false,
+          error: { code: 'ERR_FORWARD_FAILED', message: e instanceof Error ? e.message : 'Delivery failed' },
+          executionTime: Date.now() - startTime,
+        };
+      }
+    }
+
     log(`[TRACE ${trace}] Forwarding to Web Agents API...`);
-    
+
     // Forward to Web Agents API for delivery to the page
     // Web Agents API will handle forwarding to the correct tab
     try {
-      const forwardRequest = {
-        from: fromAgentId,
-        task: request.task,
-        input: request.input,
-        timeout: request.timeout,
-      };
       const response = await forwardInvocationToExtension(agentId, forwardRequest, externalInfo, trace);
       log(`[TRACE ${trace}] forwardInvocationToExtension returned, success: ${response.success}`);
       return response;

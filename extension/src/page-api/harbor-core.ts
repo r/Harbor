@@ -16,6 +16,7 @@
  */
 import { routeExtensionApiMessage, streamLlmChat } from '../extension-api';
 import { routeExternalMessage } from '../agents/background-router';
+import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
 
 // =============================================================================
@@ -37,8 +38,16 @@ export interface StreamEvent {
  * router functions directly. Callers always pass the verified page origin
  * in the payload (see page-api/background.ts), exactly as a forwarded
  * cross-extension call does today.
+ *
+ * `id` carries Harbor's own extension id rather than being left unset, so a
+ * handler that only sees `ctx.senderExtensionId` can tell "this registration
+ * came from Harbor's own page API, in-process" apart from "this came from a
+ * still-installed, separate Web Agents API extension" (see
+ * agents/handlers/multi-agent.ts's `handleAgentsRegisterInvocationHandler`).
  */
-const PAGE_API_SENDER: { id?: string; url?: string; tab?: { id?: number } } = {};
+const PAGE_API_SENDER: { id?: string; url?: string; tab?: { id?: number } } = {
+  id: browserAPI.runtime?.id,
+};
 
 // `llm.*`, `mcp.*`, `session.*`, `system.*` and `permissions.*` go through
 // Harbor's extension-api router — the same gate (gatePageCall/requireAction)
