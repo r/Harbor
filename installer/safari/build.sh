@@ -60,7 +60,7 @@ PROJECT="$PROJECT_DIR/$APP_NAME.xcodeproj"
 # app's. The converter keeps them aligned only when the bundle ID's last part
 # matches the app name, as APP_ID does here. Check rather than trust it.
 echo "==> Checking bundle identifiers"
-IDS="$(grep -rhoE 'PRODUCT_BUNDLE_IDENTIFIER"?[[:space:]]*[=:][[:space:]]*"?[A-Za-z0-9.-]+' "$PROJECT" | grep -oE '[A-Za-z0-9.-]+$' | sort -u)"
+IDS="$(grep -rhoE 'PRODUCT_BUNDLE_IDENTIFIER"?[[:space:]]*[=:][[:space:]]*"?[A-Za-z0-9.-]+' "$PROJECT" | grep -oE '[A-Za-z0-9.-]+$' | sort -u || true)"
 if [ "$IDS" != "$(printf '%s\n%s' "$APP_ID" "$EXTENSION_ID")" ]; then
     echo "The generated project has unexpected bundle IDs (want $APP_ID and $EXTENSION_ID):" >&2
     echo "$IDS" >&2
