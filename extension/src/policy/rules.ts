@@ -100,12 +100,10 @@ export interface ResourcePredicate {
  * Context predicate. Conditions evaluated against the live request.
  *
  * The engine populates the `context` of every request with information like
- * the current session mode, the labels on the input, the destination
- * locality, and so on. A rule can match on any of those.
+ * the labels on the input, the destination locality, and so on. A rule can
+ * match on any of those.
  */
 export interface ContextPredicate {
-  /** Match only if the session is in this mode. */
-  mode?: 'plan' | 'execute' | 'watch';
   /** Match only if the input carries any of these labels. */
   hasAnyLabel?: readonly DataLabel[];
   /** Match only if the input carries all of these labels. */
@@ -241,7 +239,6 @@ export interface RuleMatchInput {
     path?: string;
   };
   context?: {
-    mode?: 'plan' | 'execute' | 'watch';
     labels?: readonly DataLabel[];
     destinationLocality?:
       | 'local'
@@ -290,7 +287,6 @@ export function ruleMatches(rule: CompiledRule, input: RuleMatchInput): boolean 
   // Context.
   if (rule.context) {
     const c = input.context ?? {};
-    if (rule.context.mode && c.mode !== rule.context.mode) return false;
     if (rule.context.destinationLocality && c.destinationLocality) {
       if (!rule.context.destinationLocality.includes(c.destinationLocality)) return false;
     } else if (rule.context.destinationLocality) {

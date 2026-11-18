@@ -9,13 +9,11 @@ describe('Tokens.mint', () => {
     const t = Tokens.mint({
       sessionId: 'sess1',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: ['model.prompt.local', 'browser.read.activeTab'],
       acceptedLabels: ['confidential'],
     });
     expect(t.sessionId).toBe('sess1');
     expect(t.origin).toBe('https://example.com');
-    expect(t.mode).toBe('plan');
     expect(t.attenuationDepth).toBe(0);
     expect(t.parentId).toBeUndefined();
     expect(t.allowedActions.has('model.prompt.local')).toBe(true);
@@ -28,7 +26,6 @@ describe('Tokens.mint', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       // Cast through unknown to bypass the literal-type check for test purposes.
       allowedActions: ['fake.action' as unknown as 'tool.call', 'model.prompt.local'],
       acceptedLabels: ['ghosts' as unknown as 'confidential', 'confidential'],
@@ -43,7 +40,6 @@ describe('Tokens.mint', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: [],
       acceptedLabels: [],
     });
@@ -56,7 +52,6 @@ describe('Tokens.mint', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: [],
       acceptedLabels: [],
       ttlMs: Infinity,
@@ -72,7 +67,6 @@ describe('Tokens.validate', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: ['tool.list'],
       acceptedLabels: [],
     });
@@ -84,7 +78,6 @@ describe('Tokens.validate', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: ['tool.list'],
       acceptedLabels: [],
     });
@@ -95,7 +88,6 @@ describe('Tokens.validate', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: ['tool.list'],
       acceptedLabels: [],
     });
@@ -106,7 +98,6 @@ describe('Tokens.validate', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: ['tool.list'],
       acceptedLabels: [],
     });
@@ -126,7 +117,6 @@ describe('Tokens.attenuate', () => {
     return Tokens.mint({
       sessionId: 'parent',
       origin: 'https://example.com',
-      mode: 'execute',
       allowedActions: ['tool.list', 'tool.call', 'browser.read.activeTab'],
       acceptedLabels: ['confidential'],
       budgets: { toolCalls: 10, navigations: 5, wallClockMs: 60_000 },
@@ -149,7 +139,6 @@ describe('Tokens.attenuate', () => {
     const p = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: ['tool.list'],
       acceptedLabels: [],
     });
@@ -171,22 +160,6 @@ describe('Tokens.attenuate', () => {
     ).toThrow(/ERR_ATTENUATION_NOT_SUBSET/);
   });
 
-  it('refuses to widen mode', () => {
-    const p = Tokens.mint({
-      sessionId: 's',
-      origin: 'https://example.com',
-      mode: 'plan',
-      allowedActions: ['tool.list'],
-      acceptedLabels: [],
-    });
-    expect(() =>
-      Tokens.attenuate(p.id, {
-        sessionId: 'child',
-        mode: 'execute',
-      }),
-    ).toThrow(/ERR_ATTENUATION_NOT_SUBSET/);
-  });
-
   it('intersects budgets to the lower of parent and child', () => {
     const p = parent();
     const c = Tokens.attenuate(p.id, {
@@ -202,7 +175,6 @@ describe('Tokens.attenuate', () => {
     const p = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'execute',
       allowedActions: ['tool.list'],
       acceptedLabels: [],
       ttlMs: 1_000,
@@ -219,7 +191,6 @@ describe('Tokens.attenuate', () => {
     const c = Tokens.attenuate(p.id, { sessionId: 'child' });
     expect([...c.allowedActions].sort()).toEqual([...p.allowedActions].sort());
     expect([...c.acceptedLabels].sort()).toEqual([...p.acceptedLabels].sort());
-    expect(c.mode).toBe(p.mode);
   });
 });
 
@@ -230,7 +201,6 @@ describe('Tokens.revoke', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: [],
       acceptedLabels: [],
     });
@@ -243,7 +213,6 @@ describe('Tokens.revoke', () => {
     const root = Tokens.mint({
       sessionId: 'r',
       origin: 'https://example.com',
-      mode: 'execute',
       allowedActions: ['tool.list'],
       acceptedLabels: [],
     });
@@ -264,7 +233,6 @@ describe('Tokens.cleanup', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: [],
       acceptedLabels: [],
       ttlMs: 1,
@@ -284,7 +252,6 @@ describe('Tokens.cleanup', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: [],
       acceptedLabels: [],
     });
@@ -301,7 +268,6 @@ describe('Tokens.toView', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: ['tool.list', 'browser.read.activeTab'],
       acceptedLabels: ['confidential'],
     });

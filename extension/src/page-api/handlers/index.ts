@@ -40,7 +40,6 @@ import {
   handleSessionsGet,
   handleSessionsList,
   handleSessionsTerminate,
-  handleSessionsUpgrade,
 } from './session-handlers';
 
 import {
@@ -137,8 +136,6 @@ handlers.set('agent.sessions.create', handleSessionsCreate);
 handlers.set('agent.sessions.get', handleSessionsGet);
 handlers.set('agent.sessions.list', handleSessionsList);
 handlers.set('agent.sessions.terminate', handleSessionsTerminate);
-handlers.set('agent.sessions.upgrade', handleSessionsUpgrade);
-handlers.set('agent.upgradeSession', handleSessionsUpgrade);
 
 // MCP handlers
 handlers.set('agent.mcp.discover', handleMcpDiscover);

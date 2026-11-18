@@ -77,14 +77,12 @@
       "create": "function",
       "get": "function",
       "list": "function",
-      "terminate": "function",
-      "upgrade": "function"
+      "terminate": "function"
     },
     "tools": {
       "call": "function",
       "list": "function"
-    },
-    "upgradeSession": "function"
+    }
   },
   "modelContext": {
     "addTool": "function",

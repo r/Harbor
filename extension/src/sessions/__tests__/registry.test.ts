@@ -3,8 +3,8 @@
  *
  * Covers the integration between sessions and capability tokens: every
  * session created by the registry must mint a token; every termination
- * must revoke it; setMode must re-attenuate; subagent delegation must
- * always strictly attenuate the parent.
+ * must revoke it; subagent delegation must always strictly attenuate the
+ * parent.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -23,7 +23,6 @@ describe('SessionRegistry', () => {
     it('mints a capability token bound to the session', () => {
       const session = SessionRegistry.createImplicitSession('https://impl.example');
       expect(session.tokenId).toBeDefined();
-      expect(session.mode).toBe('execute');
 
       const token = Tokens.get(session.tokenId!);
       expect(token).toBeDefined();
@@ -79,67 +78,18 @@ describe('SessionRegistry', () => {
       expect(token.budgets.wallClockMs!).toBeLessThanOrEqual(5 * 60 * 1000);
     });
 
-    it('honors the requested initial mode (default: execute)', () => {
-      const result = SessionRegistry.createExplicitSession(
-        'https://mode.example',
-        {
-          mode: 'plan',
-          capabilities: { browser: ['read'] },
-        },
+    it('accepts the identity label, unlike implicit sessions', () => {
+      const explicitResult = SessionRegistry.createExplicitSession(
+        'https://explicit-labels.example',
+        { capabilities: { browser: ['read'] } },
       );
+      const implicitSession = SessionRegistry.createImplicitSession('https://implicit-labels.example');
 
-      const session = SessionRegistry.getSession(result.sessionId!)!;
-      expect(session.mode).toBe('plan');
-      expect(Tokens.get(session.tokenId!)!.mode).toBe('plan');
-    });
+      const explicitToken = Tokens.get(SessionRegistry.getSession(explicitResult.sessionId!)!.tokenId!)!;
+      const implicitToken = Tokens.get(implicitSession.tokenId!)!;
 
-    it('plan-mode tokens accept fewer labels than execute-mode', () => {
-      const planResult = SessionRegistry.createExplicitSession(
-        'https://plan-labels.example',
-        { mode: 'plan', capabilities: { browser: ['read'] } },
-      );
-      const execResult = SessionRegistry.createExplicitSession(
-        'https://exec-labels.example',
-        { mode: 'execute', capabilities: { browser: ['read'] } },
-      );
-
-      const planToken = Tokens.get(SessionRegistry.getSession(planResult.sessionId!)!.tokenId!)!;
-      const execToken = Tokens.get(SessionRegistry.getSession(execResult.sessionId!)!.tokenId!)!;
-
-      expect(planToken.acceptedLabels.has('identity')).toBe(false);
-      expect(execToken.acceptedLabels.has('identity')).toBe(true);
-    });
-  });
-
-  describe('setMode', () => {
-    it('re-attenuates the token when narrowing mode', () => {
-      const result = SessionRegistry.createExplicitSession(
-        'https://setmode.example',
-        { mode: 'execute', capabilities: { browser: ['read'] } },
-      );
-      const sessionId = result.sessionId!;
-      const session = SessionRegistry.getSession(sessionId)!;
-      const oldTokenId = session.tokenId!;
-
-      const ok = SessionRegistry.setMode(sessionId, 'https://setmode.example', 'plan');
-      expect(ok).toBe(true);
-
-      const updated = SessionRegistry.getSession(sessionId)!;
-      expect(updated.mode).toBe('plan');
-      expect(updated.tokenId).not.toBe(oldTokenId);
-      expect(Tokens.get(updated.tokenId!)!.mode).toBe('plan');
-    });
-
-    it('rejects widening attempts (plan → execute)', () => {
-      const result = SessionRegistry.createExplicitSession(
-        'https://widen.example',
-        { mode: 'plan', capabilities: { browser: ['read'] } },
-      );
-      const ok = SessionRegistry.setMode(result.sessionId!, 'https://widen.example', 'execute');
-      expect(ok).toBe(false);
-
-      const session = SessionRegistry.getSession(result.sessionId!)!;
-      expect(session.mode).toBe('plan');
+      expect(implicitToken.acceptedLabels.has('identity')).toBe(false);
+      expect(explicitToken.acceptedLabels.has('identity')).toBe(true);
     });
   });
 
@@ -165,7 +115,6 @@ describe('SessionRegistry', () => {
         childId,
         {
           allowedActions: ['tool.call', 'tool.list'],
-          mode: 'plan',
           maxToolCalls: 5,
         },
       );
@@ -173,7 +122,6 @@ describe('SessionRegistry', () => {
       expect(child).not.toBeNull();
       expect(child!.sessionId).toBe(childId);
       expect(child!.parentId).toBeDefined();
-      expect(child!.mode).toBe('plan');
       expect(child!.allowedActions.has('browser.read.activeTab')).toBe(false);
       expect(child!.budgets.toolCalls).toBe(5);
     });
@@ -181,14 +129,14 @@ describe('SessionRegistry', () => {
     it('returns null on widening request', () => {
       const parent = SessionRegistry.createExplicitSession(
         'https://parent2.example',
-        { mode: 'plan', capabilities: { browser: ['read'] } },
+        { capabilities: { browser: ['read'] } },
       );
       const child = SessionRegistry.attenuateForSubagent(
         parent.sessionId!,
         'https://parent2.example',
         crypto.randomUUID(),
-        // Try to escalate from plan to execute — must be refused.
-        { mode: 'execute' },
+        // Try to escalate beyond what the parent allows — must be refused.
+        { allowedActions: ['tool.call'] },
       );
       expect(child).toBeNull();
     });

@@ -9,9 +9,8 @@
  * Attenuation is the one operation worth dwelling on. A child token MUST
  * be a *strict subset* of its parent on every dimension: smaller (or
  * equal) `allowedActions`, smaller (or equal) `acceptedLabels`, smaller
- * (or equal) budgets, shorter (or equal) TTL, and `mode` no more
- * permissive than the parent's. The engine refuses to mint a child that
- * widens any of these.
+ * (or equal) budgets, shorter (or equal) TTL. The engine refuses to mint
+ * a child that widens any of these.
  *
  * See `docs/PERMISSIONS.md` (Part 1: How it works → "Sessions, capability
  * tokens, and modes") for the conceptual model.
@@ -25,8 +24,6 @@ import { isDataLabel } from './labels';
 // =============================================================================
 // Types
 // =============================================================================
-
-export type SessionMode = 'plan' | 'execute' | 'watch';
 
 /**
  * Budgets that travel with the token. The engine decrements live counters
@@ -57,8 +54,6 @@ export interface CapabilityToken {
   origin: string;
   /** Parent token id (for delegation chains). Undefined for root tokens. */
   parentId?: string;
-  /** Session mode. The most permissive: `execute`. */
-  mode: SessionMode;
   /** Set of typed actions this token authorizes. */
   allowedActions: ReadonlySet<TypedAction>;
   /** Set of data labels this token's holder may handle. */
@@ -85,7 +80,6 @@ export interface CapabilityTokenView {
   sessionId: string;
   origin: string;
   parentId?: string;
-  mode: SessionMode;
   allowedActions: TypedAction[];
   acceptedLabels: DataLabel[];
   budgets: TokenBudgets;
@@ -98,7 +92,6 @@ export interface CapabilityTokenView {
 export interface MintTokenOptions {
   sessionId: string;
   origin: string;
-  mode: SessionMode;
   allowedActions: readonly TypedAction[];
   acceptedLabels: readonly DataLabel[];
   budgets?: TokenBudgets;
@@ -113,30 +106,11 @@ export interface MintTokenOptions {
  */
 export interface AttenuationRequest {
   sessionId: string;
-  mode?: SessionMode;
   allowedActions?: readonly TypedAction[];
   acceptedLabels?: readonly DataLabel[];
   budgets?: TokenBudgets;
   /** TTL in ms relative to now. Cannot exceed parent's remaining TTL. */
   ttlMs?: number;
-}
-
-// =============================================================================
-// Mode ordering
-// =============================================================================
-
-/**
- * Mode lattice. `watch < plan < execute`. A child token's mode must be
- * less than or equal to its parent's mode.
- */
-const MODE_RANK: Record<SessionMode, number> = {
-  watch: 0,
-  plan: 1,
-  execute: 2,
-};
-
-function modeAtMost(child: SessionMode, parent: SessionMode): boolean {
-  return MODE_RANK[child] <= MODE_RANK[parent];
 }
 
 // =============================================================================
@@ -245,7 +219,6 @@ class TokenRegistry {
       sessionId: options.sessionId,
       origin: options.origin,
       parentId: undefined,
-      mode: options.mode,
       allowedActions: new Set(options.allowedActions.filter(isTypedAction)),
       acceptedLabels: new Set(options.acceptedLabels.filter(isDataLabel)),
       budgets: sanitizeBudgets(options.budgets),
@@ -265,14 +238,6 @@ class TokenRegistry {
    */
   attenuate(parentId: string, req: AttenuationRequest): CapabilityToken {
     const parent = this.requireValid(parentId);
-
-    const childMode = req.mode ?? parent.mode;
-    if (!modeAtMost(childMode, parent.mode)) {
-      throw new TokenError(
-        'ERR_ATTENUATION_NOT_SUBSET',
-        `Cannot widen mode from ${parent.mode} to ${childMode}.`,
-      );
-    }
 
     let childActions: ReadonlySet<TypedAction>;
     if (req.allowedActions !== undefined) {
@@ -315,7 +280,6 @@ class TokenRegistry {
       sessionId: req.sessionId,
       origin: parent.origin,
       parentId: parent.id,
-      mode: childMode,
       allowedActions: childActions,
       acceptedLabels: childLabels,
       budgets: childBudgets,
@@ -421,7 +385,6 @@ class TokenRegistry {
       sessionId: token.sessionId,
       origin: token.origin,
       parentId: token.parentId,
-      mode: token.mode,
       allowedActions: [...token.allowedActions].sort() as TypedAction[],
       acceptedLabels: [...token.acceptedLabels].sort() as DataLabel[],
       budgets: { ...token.budgets },

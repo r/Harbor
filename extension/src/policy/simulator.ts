@@ -2,9 +2,9 @@
  * Decision Simulator
  *
  * Replays a past decision (from the audit log) against modified context
- * — modified rules, modified labels, modified mode, modified watchdog
- * state — without actually performing the action. Used by the sidebar's
- * "What if?" tool and the unit-test harness for policy authors.
+ * — modified rules, modified labels, modified watchdog state — without
+ * actually performing the action. Used by the sidebar's "What if?" tool
+ * and the unit-test harness for policy authors.
  *
  * The simulator is *pure*: it never writes to storage, never updates the
  * watchdog, never appends to the audit log. It builds a sandbox copy of
@@ -17,7 +17,6 @@ import type { CompiledRule, Rule } from './rules';
 import { compileRule } from './rules';
 import { LabelSet, type DataLabel } from './labels';
 import type { TypedAction } from './actions';
-import type { SessionMode } from './tokens';
 import { Audit, type AuditRecord } from './audit';
 
 // =============================================================================
@@ -30,7 +29,6 @@ export interface SimulationInput {
   action?: TypedAction;
   resource?: PolicyResource;
   inputLabels?: readonly DataLabel[];
-  mode?: SessionMode;
   isSubagent?: boolean;
   /** Replace the loaded rule set with these rules during simulation. */
   rulesOverride?: Rule[];
@@ -80,7 +78,6 @@ export async function simulate(input: SimulationInput): Promise<SimulationResult
     action: input.action,
     resource: input.resource,
     inputLabels: input.inputLabels ? new LabelSet(input.inputLabels) : undefined,
-    mode: input.mode,
     isSubagent: input.isSubagent,
     correlationId: 'simulator',
   };
@@ -116,7 +113,6 @@ export async function replay(
     inputLabels: modifications.inputLabels
       ? new LabelSet(modifications.inputLabels)
       : new LabelSet(record.labelsIn as DataLabel[]),
-    mode: modifications.mode,
     isSubagent: modifications.isSubagent ?? record.isSubagent,
     correlationId: 'simulator-replay',
   };

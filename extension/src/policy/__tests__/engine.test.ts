@@ -182,7 +182,6 @@ describe('Tier 5: capability tokens', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: ['tool.list'],
       acceptedLabels: [],
     });
@@ -194,7 +193,6 @@ describe('Tier 5: capability tokens', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: ['model.prompt.local'],
       acceptedLabels: [],
     });
@@ -208,7 +206,6 @@ describe('Tier 5: capability tokens', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://other.com',
-      mode: 'plan',
       allowedActions: ['tool.list'],
       acceptedLabels: [],
     });

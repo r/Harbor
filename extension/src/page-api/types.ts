@@ -211,30 +211,11 @@ export interface SessionSummary {
 /**
  * Options for creating an explicit session.
  */
-/**
- * Session mode governs what the session's capability token authorizes.
- *
- * - `plan` reads and prompts only — no writes leave the page.
- * - `execute` is the default; normal evaluation per the policy ladder.
- * - `watch` is execute, but writes return *preview* and pause for explicit
- *    confirmation.
- *
- * See `docs/PERMISSIONS.md` for the full mode lattice.
- */
-export type SessionMode = 'plan' | 'execute' | 'watch';
-
 export interface CreateSessionOptions {
   /** Human-readable name for display */
   name?: string;
   /** Reason for requesting these capabilities */
   reason?: string;
-  /**
-   * Initial session mode. Defaults to `execute`. Pages opting into the
-   * plan/execute split should pass `mode: 'plan'` and call
-   * `agent.upgradeSession(sessionId, { mode: 'execute' })` after the user
-   * confirms a plan.
-   */
-  mode?: SessionMode;
   /** Requested capabilities */
   capabilities: {
     llm?: {

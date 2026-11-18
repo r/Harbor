@@ -42,7 +42,7 @@ import {
   type ElementDescriptor,
 } from './sensitivity';
 import { trustManifest, type ManifestProvenance } from './manifest-trust';
-import { Tokens, TokenError, type SessionMode } from './tokens';
+import { Tokens, TokenError } from './tokens';
 
 // =============================================================================
 // Request / decision shapes
@@ -78,8 +78,6 @@ export interface PolicyRequest {
   tokenId?: string;
   /** Labels carried on input (from the caller's existing context). */
   inputLabels?: LabelSet;
-  /** Session mode. Defaults to `execute` if omitted. */
-  mode?: SessionMode;
   /** Free-text reason from the caller, surfaced in prompts. */
   reason?: string;
   /** Correlation id for the audit log. */
@@ -177,7 +175,7 @@ export interface OriginGrantOutcome {
 export type WatchdogResolver = (
   origin: string,
   action: TypedAction,
-  context: { sessionId?: string; mode?: SessionMode },
+  context: { sessionId?: string },
 ) => Promise<WatchdogOutcome> | WatchdogOutcome;
 
 export interface WatchdogOutcome {
@@ -245,7 +243,7 @@ function ruleEffectToDecision(effect: RuleEffect): DecisionEffect {
 function toMatchInput(
   req: PolicyRequest,
   meta: ActionMeta,
-  context: { trustedManifest: boolean; mode: SessionMode; labels: LabelSet },
+  context: { trustedManifest: boolean; labels: LabelSet },
 ): RuleMatchInput {
   return {
     principal: { origin: req.origin, isSubagent: req.isSubagent },
@@ -258,7 +256,6 @@ function toMatchInput(
       path: req.resource?.path,
     },
     context: {
-      mode: context.mode,
       labels: context.labels.toArray(),
       destinationLocality: meta.locality,
       reversible: meta.reversible ?? null,
@@ -274,7 +271,6 @@ function toMatchInput(
 export async function evaluate(req: PolicyRequest): Promise<PolicyDecision> {
   const trace: TraceStep[] = [];
   const inputLabels = req.inputLabels ?? LabelSet.empty();
-  const mode: SessionMode = req.mode ?? 'execute';
 
   // Tier 0: Ambient. Unknown actions are denied; bare metadata reads about
   // Harbor itself are always allowed.
@@ -316,7 +312,7 @@ export async function evaluate(req: PolicyRequest): Promise<PolicyDecision> {
     Policy.rules(),
     'deny',
     'managed',
-    toMatchInput(req, meta, { trustedManifest: manifestTrusted, mode, labels: inputLabels }),
+    toMatchInput(req, meta, { trustedManifest: manifestTrusted, labels: inputLabels }),
   );
   if (managedDeny) {
     trace.push({
@@ -395,7 +391,7 @@ export async function evaluate(req: PolicyRequest): Promise<PolicyDecision> {
 
   // Tier 4: Watchdog containment.
   const watchdog = await Promise.resolve(
-    watchdogResolver(req.origin, req.action, { sessionId: req.tokenId, mode }),
+    watchdogResolver(req.origin, req.action, { sessionId: req.tokenId }),
   );
   if (watchdog.status === 'quarantined') {
     trace.push({
@@ -480,7 +476,6 @@ export async function evaluate(req: PolicyRequest): Promise<PolicyDecision> {
   // sources are already merged in priority order by the store).
   const matchInput = toMatchInput(req, meta, {
     trustedManifest: manifestTrusted,
-    mode,
     labels: labelsAfterTier2,
   });
   const rule = findFirstRule(Policy.rules(), matchInput);

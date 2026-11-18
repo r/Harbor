@@ -27,7 +27,6 @@ import type { TypedAction } from './actions';
 import type { AuditRecord } from './audit';
 import { Audit } from './audit';
 import type { WatchdogResolver, WatchdogOutcome } from './engine';
-import type { SessionMode } from './tokens';
 
 // =============================================================================
 // Thresholds
@@ -125,8 +124,8 @@ class Watchdog {
   /**
    * Engine resolver. Called on every gated decision.
    */
-  resolve: WatchdogResolver = (origin, action, context) => {
-    return this.evaluateOrigin(origin, action, context.mode);
+  resolve: WatchdogResolver = (origin, action, _context) => {
+    return this.evaluateOrigin(origin, action);
   };
 
   /**
@@ -254,7 +253,6 @@ class Watchdog {
   private evaluateOrigin(
     origin: string,
     _action: TypedAction,
-    _mode?: SessionMode,
   ): WatchdogOutcome {
     const s = this.state.get(origin);
     if (!s) return { status: 'normal' };

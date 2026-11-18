@@ -24,7 +24,7 @@ import type {
 } from './types';
 import { getDefaultImplicitCapabilities, buildCapabilitiesFromRequest } from './types';
 import type { ConversationMessage } from '../agents/types';
-import { Tokens, type SessionMode, type CapabilityToken, TokenError } from '../policy/tokens';
+import { Tokens, type CapabilityToken, TokenError } from '../policy/tokens';
 import type { TypedAction } from '../policy/actions';
 import type { DataLabel } from '../policy/labels';
 
@@ -63,12 +63,10 @@ class SessionRegistryImpl {
     const capabilities = getDefaultImplicitCapabilities();
     // Implicit sessions only get the local-prompt action — they're created
     // by ai.createTextSession and the user hasn't been prompted for
-    // anything else. The token's mode is `execute` because there's no
-    // explicit plan/execute distinction at the implicit level.
+    // anything else.
     const token = Tokens.mint({
       sessionId,
       origin,
-      mode: 'execute',
       allowedActions: capabilitiesToActions(capabilities, /*toolsAllowList=*/ []),
       acceptedLabels: ['confidential'],
       ttlMs: 60 * 60 * 1000,
@@ -89,7 +87,6 @@ class SessionRegistryImpl {
         promptCount: 0,
         toolCallCount: 0,
       },
-      mode: 'execute',
       tokenId: token.id,
     };
 
@@ -127,16 +124,14 @@ class SessionRegistryImpl {
     }
 
     // Explicit sessions get a capability token sized to the request.
-    const mode: SessionMode = request.mode ?? 'execute';
     const ttlMs = capabilities.limits?.expiresAt
       ? Math.max(0, capabilities.limits.expiresAt - now)
       : 30 * 60 * 1000;
     const token = Tokens.mint({
       sessionId,
       origin,
-      mode,
       allowedActions: capabilitiesToActions(capabilities, capabilities.tools.allowedTools),
-      acceptedLabels: defaultAcceptedLabelsForMode(mode),
+      acceptedLabels: ['confidential', 'identity'],
       budgets: {
         toolCalls: capabilities.limits?.maxToolCalls,
         wallClockMs: ttlMs,
@@ -161,7 +156,6 @@ class SessionRegistryImpl {
         promptCount: 0,
         toolCallCount: 0,
       },
-      mode,
       tokenId: token.id,
     };
 
@@ -182,33 +176,6 @@ class SessionRegistryImpl {
   }
 
   /**
-   * Change the mode of an existing session. Re-mints the capability token
-   * with the new mode (cannot widen — see Tokens.attenuate's mode lattice).
-   * Used by `agent.upgradeSession`.
-   */
-  setMode(sessionId: string, origin: string, mode: SessionMode): boolean {
-    const session = this.getValidatedSession(sessionId, origin);
-    if (session.mode === mode) return true;
-    if (!session.tokenId) {
-      session.mode = mode;
-      return true;
-    }
-    try {
-      // Re-attenuate the token. The mode lattice will reject widenings.
-      const child = Tokens.attenuate(session.tokenId, { sessionId, mode });
-      session.mode = mode;
-      session.tokenId = child.id;
-      return true;
-    } catch (err) {
-      if (err instanceof TokenError) {
-        console.warn('[SessionRegistry] setMode rejected:', err.message);
-        return false;
-      }
-      throw err;
-    }
-  }
-
-  /**
    * Mint a child capability token for a subagent the session is about to
    * delegate to. Always strictly attenuated from the parent. Used by the
    * multi-agent invoke path.
@@ -220,7 +187,6 @@ class SessionRegistryImpl {
     restrictions: {
       allowedActions?: TypedAction[];
       acceptedLabels?: DataLabel[];
-      mode?: SessionMode;
       ttlMs?: number;
       maxToolCalls?: number;
     } = {},
@@ -232,7 +198,6 @@ class SessionRegistryImpl {
         sessionId: childSessionId,
         allowedActions: restrictions.allowedActions,
         acceptedLabels: restrictions.acceptedLabels,
-        mode: restrictions.mode,
         ttlMs: restrictions.ttlMs,
         budgets: {
           toolCalls: restrictions.maxToolCalls,
@@ -646,7 +611,6 @@ class SessionRegistryImpl {
       type: session.type,
       origin: session.origin,
       status: session.status,
-      mode: session.mode,
       tokenId: session.tokenId,
       name: session.name,
       createdAt: session.createdAt,
@@ -740,24 +704,6 @@ function capabilitiesToActions(
   actions.push('network.egress.same_origin');
 
   return actions;
-}
-
-/**
- * Default accepted label set for a session of the given mode. Plan and
- * watch sessions never accept sensitive labels at the egress boundary; only
- * execute sessions can carry credentials/payments/identity into outgoing
- * requests, and even then only with explicit user consent.
- */
-function defaultAcceptedLabelsForMode(mode: SessionMode): DataLabel[] {
-  switch (mode) {
-    case 'plan':
-    case 'watch':
-      return ['confidential'];
-    case 'execute':
-      return ['confidential', 'identity'];
-    default:
-      return ['confidential'];
-  }
 }
 
 // =============================================================================

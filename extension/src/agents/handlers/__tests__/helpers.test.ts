@@ -94,7 +94,6 @@ describe('requireAction', () => {
     const t = Tokens.mint({
       sessionId: 's',
       origin: 'https://example.com',
-      mode: 'plan',
       allowedActions: ['model.prompt.local'],
       acceptedLabels: [],
     });

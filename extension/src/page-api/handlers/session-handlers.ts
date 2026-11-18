@@ -128,36 +128,6 @@ export async function handleSessionsList(ctx: RequestContext): HandlerResponse {
 }
 
 /**
- * Upgrade a session's mode. The Harbor extension will re-mint the
- * capability token; cannot widen authority.
- */
-export async function handleSessionsUpgrade(ctx: RequestContext): HandlerResponse {
-  const { sessionId, mode } = ctx.payload as {
-    sessionId?: string;
-    mode?: 'plan' | 'execute' | 'watch';
-  };
-
-  if (!sessionId || !mode) {
-    return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', 'Missing sessionId or mode');
-  }
-
-  try {
-    const result = await harborRequest<{ upgraded: boolean }>('session.upgrade', {
-      sessionId,
-      origin: ctx.origin,
-      mode,
-    });
-    return successResponse(ctx.id, { upgraded: result.upgraded });
-  } catch (e) {
-    return errorResponse(
-      ctx.id,
-      'ERR_SESSION_NOT_FOUND',
-      e instanceof Error ? e.message : 'Session not found'
-    );
-  }
-}
-
-/**
  * Terminate a session.
  */
 export async function handleSessionsTerminate(ctx: RequestContext): HandlerResponse {

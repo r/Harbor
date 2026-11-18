@@ -1653,35 +1653,7 @@ const agentApi = Object.freeze({
       const result = await sendRequest<{ terminated: boolean }>('agent.sessions.terminate', { sessionId });
       return result.terminated;
     },
-
-    /**
-     * Upgrade an existing session's mode. The Harbor extension re-mints the
-     * session's capability token; cannot widen authority — request a new
-     * session if you need a more permissive mode.
-     *
-     * @example
-     * // After the user clicks "Apply suggested edit":
-     * const ok = await agent.sessions.upgrade(session.id, 'execute');
-     * if (!ok) console.warn('User declined the upgrade');
-     */
-    async upgrade(sessionId: string, mode: 'plan' | 'execute' | 'watch'): Promise<boolean> {
-      const result = await sendRequest<{ upgraded: boolean }>('agent.sessions.upgrade', { sessionId, mode });
-      return result.upgraded;
-    },
   }),
-
-  /**
-   * Convenience: change the mode of an existing session. Equivalent to
-   * `agent.sessions.upgrade(sessionId, mode)` but matches the prose in
-   * `docs/PERMISSIONS.md` and the website's plan→execute pattern.
-   */
-  async upgradeSession(sessionId: string, options: { mode: 'plan' | 'execute' | 'watch' }): Promise<boolean> {
-    const result = await sendRequest<{ upgraded: boolean }>('agent.upgradeSession', {
-      sessionId,
-      mode: options.mode,
-    });
-    return result.upgraded;
-  },
 
   /**
    * Request capabilities in the typed-action vocabulary. This is the
@@ -1693,7 +1665,6 @@ const agentApi = Object.freeze({
    * @example
    * const session = await agent.requestCapabilities({
    *   name: 'Article assistant',
-   *   mode: 'plan',
    *   require: [
    *     { action: 'model.prompt.local' },
    *     { action: 'browser.read.activeTab' },
@@ -1704,7 +1675,6 @@ const agentApi = Object.freeze({
   async requestCapabilities(opts: {
     name?: string;
     reason?: string;
-    mode?: 'plan' | 'execute' | 'watch';
     require: Array<{ action: string; server?: string; toolNames?: string[] }>;
     optional?: Array<{ action: string; server?: string; toolNames?: string[] }>;
     budget?: { maxToolCalls?: number; ttlMinutes?: number };
@@ -1730,7 +1700,6 @@ const agentApi = Object.freeze({
     const createOptions: CreateSessionOptions = {
       name: opts.name,
       reason: opts.reason,
-      mode: opts.mode,
       capabilities: {
         ...(wantsLLM ? { llm: {} } : {}),
         tools,

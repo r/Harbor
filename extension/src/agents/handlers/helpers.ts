@@ -13,7 +13,6 @@ import type { RequestContext, ResponseSender } from './router-types';
 import { evaluate, type PolicyResource, type PolicyDecision } from '../../policy/engine';
 import type { TypedAction } from '../../policy/actions';
 import type { LabelSet } from '../../policy/labels';
-import type { SessionMode } from '../../policy/tokens';
 import { showPermissionPrompt } from '../../policy/permissions';
 import { grantPermissions } from '../../policy/permissions';
 import { Audit } from '../../policy/audit';
@@ -37,8 +36,6 @@ export interface RequireActionOptions {
   inputLabels?: LabelSet;
   /** Capability token id, if the handler is operating inside a session. */
   tokenId?: string;
-  /** Session mode override. Defaults to 'execute'. */
-  mode?: SessionMode;
   /**
    * If the engine returns `ask` or `preview`, fall back to the legacy
    * prompt with this scope. When omitted, we derive a default from the
@@ -85,7 +82,6 @@ export async function requireAction(
     resource: options.resource,
     inputLabels: options.inputLabels,
     tokenId: options.tokenId,
-    mode: options.mode,
     reason: options.reason,
     correlationId: ctx.id,
     tabId: ctx.tabId,

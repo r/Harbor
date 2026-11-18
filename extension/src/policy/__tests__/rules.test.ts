@@ -24,7 +24,6 @@ const githubInput: RuleMatchInput = {
     host: 'api.github.com',
   },
   context: {
-    mode: 'execute',
     destinationLocality: 'cross_origin',
     reversible: false,
     trustedManifest: true,
@@ -140,20 +139,6 @@ describe('Rule matching', () => {
         ...githubInput,
         principal: { origin: 'https://api.github.com' },
       }),
-    ).toBe(true);
-  });
-
-  it('matches when context.mode aligns', () => {
-    const rule = compile({
-      id: 'plan-only',
-      effect: 'deny',
-      principal: { origin: '*' },
-      action: 'tool.call',
-      context: { mode: 'plan' },
-    });
-    expect(ruleMatches(rule, githubInput)).toBe(false);
-    expect(
-      ruleMatches(rule, { ...githubInput, context: { ...githubInput.context, mode: 'plan' } }),
     ).toBe(true);
   });
 

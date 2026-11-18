@@ -52,8 +52,6 @@ export interface PolicyDocument {
     algorithm: 'ed25519';
     allowedServerGlob?: string;
   }[];
-  /** Optional default mode override per origin. */
-  defaultModes?: Record<string, 'plan' | 'execute' | 'watch'>;
 }
 
 // =============================================================================
@@ -205,7 +203,6 @@ interface LoadedPolicy {
   managed: PolicyDocument | null;
   user: PolicyDocument | null;
   rules: CompiledRule[];
-  defaultModes: Record<string, 'plan' | 'execute' | 'watch'>;
   loadedAt: number;
 }
 
@@ -214,7 +211,6 @@ class PolicyStore {
     managed: null,
     user: null,
     rules: [],
-    defaultModes: {},
     loadedAt: 0,
   };
 
@@ -231,16 +227,10 @@ class PolicyStore {
     if (managed) compiled.push(...compileDocument(managed, 'managed'));
     if (user) compiled.push(...compileDocument(user, 'user'));
 
-    const defaultModes: Record<string, 'plan' | 'execute' | 'watch'> = {
-      ...(managed?.defaultModes ?? {}),
-      ...(user?.defaultModes ?? {}),
-    };
-
     this.loaded = {
       managed,
       user,
       rules: compiled,
-      defaultModes,
       loadedAt: Date.now(),
     };
 
@@ -263,29 +253,6 @@ class PolicyStore {
     return this.loaded.rules;
   }
 
-  /**
-   * Get the default mode for an origin, or `undefined` if no policy
-   * specifies one.
-   */
-  defaultModeFor(origin: string): 'plan' | 'execute' | 'watch' | undefined {
-    if (origin in this.loaded.defaultModes) return this.loaded.defaultModes[origin];
-    // Fall through to glob lookup.
-    for (const [pattern, mode] of Object.entries(this.loaded.defaultModes)) {
-      if (pattern === '*' || pattern === origin) return mode;
-      if (pattern.includes('*')) {
-        const re = new RegExp(
-          '^' +
-            pattern
-              .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-              .replace(/\*/g, '.*') +
-            '$',
-        );
-        if (re.test(origin)) return mode;
-      }
-    }
-    return undefined;
-  }
-
   /** Subscribe to policy reloads. Returns an unsubscribe function. */
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -298,12 +265,11 @@ class PolicyStore {
   }
 
   /** Test escape hatch: replace the loaded state without touching storage. */
-  __setForTesting(rules: CompiledRule[], defaultModes: Record<string, 'plan' | 'execute' | 'watch'> = {}): void {
+  __setForTesting(rules: CompiledRule[]): void {
     this.loaded = {
       managed: null,
       user: null,
       rules,
-      defaultModes,
       loadedAt: Date.now(),
     };
     this.notify();
@@ -311,7 +277,7 @@ class PolicyStore {
 
   /** Test escape hatch: clear the store. */
   __reset(): void {
-    this.loaded = { managed: null, user: null, rules: [], defaultModes: {}, loadedAt: 0 };
+    this.loaded = { managed: null, user: null, rules: [], loadedAt: 0 };
     this.listeners.clear();
   }
 
