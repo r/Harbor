@@ -13,7 +13,7 @@
  */
 import { harborRequest, harborStreamRequest } from './harbor-core';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
-import { toolResultText } from './tool-messages';
+import { builtinAgentBackend, type AgentBackend } from './agent-backend';
 import type { TransportStreamEvent } from './types';
 
 import {
@@ -121,6 +121,8 @@ async function handleSessionPromptStreaming(
 async function handleAgentRun(
   ctx: RequestContext,
   sendEvent: (event: TransportStreamEvent) => void,
+  signal: AbortSignal,
+  backend: AgentBackend = builtinAgentBackend,
 ): Promise<void> {
   const { task, maxToolCalls = 5, systemPrompt } = ctx.payload as {
     task: string;
@@ -132,6 +134,9 @@ async function handleAgentRun(
 
   // Enforce the setting at the receiver: a page can send transport messages
   // directly, without going through the injected API's disabled wrapper.
+  // This, the grant checks below, tool listing/filtering and delivering
+  // events to the page apply to every backend, so they stay here rather
+  // than in the backend itself.
   const refusal = featureRefusal(ctx.type, await getFeatureFlags());
   if (refusal) {
     sendEvent({ id: ctx.id, event: { type: 'error', error: refusal }, done: true });
@@ -168,165 +173,11 @@ async function handleAgentRun(
       );
     }
 
-    // Build tool definitions for the LLM
-    const llmTools = tools.map(t => ({
-      name: `${t.serverId}_${t.name}`.replace(/[^a-zA-Z0-9_]/g, '_'),
-      description: t.description || `Tool: ${t.serverId}/${t.name}`,
-      input_schema: t.inputSchema || { type: 'object', properties: {} },
-      _serverId: t.serverId,
-      _toolName: t.name,
-    }));
-
-    // Send thinking event
-    sendEvent({
-      id: ctx.id,
-      event: { type: 'token', token: JSON.stringify({
-        type: 'thinking',
-        content: llmTools.length > 0
-          ? `Available tools: ${tools.map(t => `${t.serverId}/${t.name}`).join(', ')}`
-          : 'No tools available (check mcp:tools.list permission)'
-      }) },
-    });
-
-    // Agentic loop
-    type LLMToolCall = { id: string; type?: string; function: { name: string; arguments: string } };
-    const messages: Array<{
-      role: string;
-      content: string;
-      tool_calls?: LLMToolCall[];
-      tool_call_id?: string;
-    }> = [];
-    messages.push({ role: 'system', content: systemPrompt || 'You are a helpful assistant that can use tools to help users.' });
-    messages.push({ role: 'user', content: task });
-
-    let toolCallCount = 0;
-
-    while (toolCallCount < maxToolCalls) {
-      type LLMResponse = {
-        content: string;
-        choices?: Array<{
-          message: {
-            role: string;
-            content: string;
-            tool_calls?: LLMToolCall[];
-          };
-          finish_reason?: string;
-        }>;
-      };
-
-      let result: LLMResponse;
-      try {
-        result = await harborRequest<LLMResponse>('llm.chat', {
-          origin: ctx.origin,
-          tabId: ctx.tabId,
-          messages,
-          tools: llmTools.length > 0 ? llmTools.map(t => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.input_schema,
-          })) : undefined,
-        });
-      } catch (e) {
-        sendEvent({
-          id: ctx.id,
-          event: { type: 'token', token: JSON.stringify({ type: 'error', error: `LLM request failed: ${e}` }) },
-        });
-        sendEvent({ id: ctx.id, event: { type: 'done' }, done: true });
-        return;
-      }
-
-      const choice = result.choices?.[0];
-      const responseContent = result.content;
-      const toolCalls = choice?.message?.tool_calls;
-
-      if (toolCalls && toolCalls.length > 0) {
-        if (!await hasPermission(ctx.origin, 'mcp:tools.call', ctx.tabId)) {
-          messages.push({ role: 'assistant', content: responseContent || 'I need to use tools but permission was denied.' });
-          messages.push({ role: 'user', content: 'Tool calling is not permitted. Please provide an answer without using tools.' });
-          continue;
-        }
-
-        // Record the model's tool calls as a real assistant turn, then answer each
-        // with a `tool` message. Sending results back as plain user text ("Tool X
-        // returned: …") makes local models call the same tool again until they
-        // hit maxToolCalls.
-        messages.push({
-          role: 'assistant',
-          content: responseContent || '',
-          tool_calls: toolCalls.map(tc => ({ ...tc, type: tc.type || 'function' })),
-        });
-
-        for (const tc of toolCalls) {
-          const llmToolName = tc.function.name;
-          let args: Record<string, unknown> = {};
-          try {
-            args = JSON.parse(tc.function.arguments || '{}');
-          } catch {
-            args = {};
-          }
-
-          const toolInfo = llmTools.find(t => t.name === llmToolName);
-          const serverId = toolInfo?._serverId || '';
-          const actualToolName = toolInfo?._toolName || llmToolName;
-          const displayName = `${serverId}/${actualToolName}`;
-
-          sendEvent({
-            id: ctx.id,
-            event: { type: 'token', token: JSON.stringify({ type: 'tool_call', tool: displayName, args }) },
-          });
-
-          let toolResult: unknown;
-          try {
-            const callResult = await harborRequest<{ result: unknown }>('mcp.callTool', {
-              origin: ctx.origin,
-              tabId: ctx.tabId,
-              serverId,
-              toolName: actualToolName,
-              args,
-            });
-            toolResult = callResult.result;
-          } catch (e) {
-            toolResult = { error: e instanceof Error ? e.message : 'Tool call failed' };
-          }
-
-          sendEvent({
-            id: ctx.id,
-            event: { type: 'token', token: JSON.stringify({ type: 'tool_result', tool: displayName, result: toolResult }) },
-          });
-
-          messages.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: toolResultText(toolResult),
-          });
-
-          toolCallCount++;
-        }
-      } else {
-        sendEvent({
-          id: ctx.id,
-          event: { type: 'token', token: JSON.stringify({ type: 'final', output: responseContent }) },
-        });
-        sendEvent({ id: ctx.id, event: { type: 'done' }, done: true });
-        return;
-      }
-    }
-
-    // Max tool calls reached
-    messages.push({ role: 'user', content: 'Please provide your final answer based on the information gathered.' });
-    const finalResult = await harborRequest<{ content: string }>('llm.chat', {
-      origin: ctx.origin,
-      tabId: ctx.tabId,
-      messages,
-    });
-    const finalContent = finalResult.content;
-
-    sendEvent({
-      id: ctx.id,
-      event: { type: 'token', token: JSON.stringify({ type: 'final', output: finalContent }) },
-    });
-    sendEvent({ id: ctx.id, event: { type: 'done' }, done: true });
-
+    await backend.run(
+      { origin: ctx.origin, tabId: ctx.tabId, task, systemPrompt, maxToolCalls, tools },
+      (event) => sendEvent({ id: ctx.id, event, done: event.type === 'done' || event.type === 'error' }),
+      signal,
+    );
   } catch (e) {
     sendEvent({
       id: ctx.id,
@@ -382,7 +233,22 @@ export function initializePageApi(): void {
     const tabId = port.sender?.tab?.id;
     const cookieStoreId = (port.sender?.tab as (chrome.tabs.Tab & { cookieStoreId?: string }) | undefined)?.cookieStoreId;
 
+    // One AbortController per in-flight agent.run on this port, keyed by
+    // request id. The content script posts {type:'abort', id} when the page
+    // breaks its for-await loop (injected.ts's createStreamIterable.return());
+    // the port disconnecting (tab closed or navigated) aborts every run
+    // still in flight on it.
+    const runControllers = new Map<string, AbortController>();
+
     port.onMessage.addListener(async (message: { id: string; type: string; payload: unknown }) => {
+      if (message?.type === 'abort') {
+        // The id crosses the page/extension boundary, so it's validated
+        // here rather than trusted as the declared type.
+        if (typeof message.id !== 'string') return;
+        runControllers.get(message.id)?.abort();
+        return;
+      }
+
       const ctx: RequestContext = {
         id: message.id,
         type: message.type,
@@ -407,7 +273,14 @@ export function initializePageApi(): void {
         const sendEvent = (event: TransportStreamEvent) => {
           try { port.postMessage(event); } catch { /* Port disconnected */ }
         };
-        await handleAgentRun(ctx, sendEvent);
+        const controller = new AbortController();
+        runControllers.set(ctx.id, controller);
+        try {
+          await handleAgentRun(ctx, sendEvent, controller.signal);
+        } finally {
+          // A page may reuse an id; only remove the controller this run added.
+          if (runControllers.get(ctx.id) === controller) runControllers.delete(ctx.id);
+        }
         return;
       }
 
@@ -417,6 +290,11 @@ export function initializePageApi(): void {
       } catch {
         /* Port disconnected */
       }
+    });
+
+    port.onDisconnect?.addListener(() => {
+      for (const controller of runControllers.values()) controller.abort();
+      runControllers.clear();
     });
   });
 
