@@ -310,7 +310,7 @@ describe('Tier 8: per-origin grants', () => {
   });
 
   it.each(['agent.invoke', 'agent.message'] as const)(
-    'without a grant, %s still asks first',
+    'without a grant, %s still prompts (preview)',
     async (action) => {
       const decision = await evaluate({ origin: 'https://example.com', action });
       expect(decision.effect).toBe('preview');
