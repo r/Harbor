@@ -118,6 +118,19 @@ describe('agent.run receiving boundary', () => {
     }));
   });
 
+  it('ends with a coded error event when the run fails for another reason', async () => {
+    mocks.harborRequest.mockImplementation(async (method) => {
+      if (method === 'mcp.listTools') throw new Error('tool host crashed');
+      return { content: 'unused' };
+    });
+    await run();
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      done: true,
+      event: { type: 'error', error: { code: 'ERR_AGENT_FAILED', message: 'tool host crashed' } },
+    }));
+    expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
+  });
+
   it('runs when enabled and explicitly permitted', async () => {
     await run();
     expect(mocks.harborRequest).toHaveBeenCalledWith('llm.chat', expect.anything());
