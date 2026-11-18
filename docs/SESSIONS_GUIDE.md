@@ -153,8 +153,6 @@ For example, if you request `tools: ['brave-search/search', 'filesystem/read_fil
 
 Harbor checks that a session is still alive, and belongs to your origin, before every `prompt()` and `promptStreaming()`. A terminated or expired session fails with `ERR_SESSION_NOT_FOUND`.
 
-Explicit sessions aren't available in Safari yet: `agent.sessions.create()` fails there with a "not supported" message. Use `window.ai.createTextSession()` instead.
-
 ---
 
 ## Comparison Examples

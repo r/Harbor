@@ -16,7 +16,7 @@ This repository contains a browser extension plus a small native bridge that imp
 |---------|--------|-------|
 | **Firefox** | ✅ Primary | Best supported, recommended for development |
 | **Chrome** | ✅ Supported | Also works with Edge, Brave, Arc, Vivaldi |
-| **Safari** | ⚠️ Experimental | macOS only, code in repo but not fully supported |
+| **Safari** | ⚠️ Experimental | macOS only; a local build that shows the API runs on WebKit |
 
 ---
 
@@ -226,7 +226,7 @@ harbor/
 ├── demo/               # Working examples
 ├── docs/               # Implementation documentation
 ├── mcp-servers/        # Built-in MCP servers (WASM, JS)
-└── installer/          # Safari Xcode project (experimental)
+└── installer/          # Packaging scripts, including the Safari app build
 ```
 
 ---

@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../../src/js-runtime/worker-loader.ts"],
-  "sourcesContent": ["/**\n * Generic worker loader script.\n * This is compiled to a static file that can be loaded as a worker,\n * then receives the actual code to execute via postMessage.\n */\n\n// Make this a module to avoid global scope conflicts\nexport {};\n\n// In worker context, use globalThis which is already the worker scope\n\n// Wait for code injection\nglobalThis.addEventListener('message', function initHandler(event: MessageEvent) {\n  if (event.data?.type === 'load-code') {\n    globalThis.removeEventListener('message', initHandler);\n    \n    const code = event.data.code;\n    \n    try {\n      // Execute the sandboxed code\n      // Using Function constructor instead of eval for slightly better scoping\n      const fn = new Function(code);\n      fn();\n    } catch (e) {\n      postMessage({ \n        type: 'error', \n        message: e instanceof Error ? e.message : String(e) \n      });\n    }\n  }\n});\n\n// Signal that loader is ready for code\npostMessage({ type: 'loader-ready' });\n"],
-  "mappings": ";AAYA,WAAW,iBAAiB,WAAW,SAAS,YAAY,OAAqB;AAC/E,MAAI,MAAM,MAAM,SAAS,aAAa;AACpC,eAAW,oBAAoB,WAAW,WAAW;AAErD,UAAM,OAAO,MAAM,KAAK;AAExB,QAAI;AAGF,YAAM,KAAK,IAAI,SAAS,IAAI;AAC5B,SAAG;AAAA,IACL,SAAS,GAAG;AACV,kBAAY;AAAA,QACV,MAAM;AAAA,QACN,SAAS,aAAa,QAAQ,EAAE,UAAU,OAAO,CAAC;AAAA,MACpD,CAAC;AAAA,IACH;AAAA,EACF;AACF,CAAC;AAGD,YAAY,EAAE,MAAM,eAAe,CAAC;",
-  "names": []
-}

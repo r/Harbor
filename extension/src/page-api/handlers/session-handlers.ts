@@ -58,8 +58,7 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
     });
 
     if (!result.sessionId) {
-      // Safari's HTTP bridge answers { supported: false } for session.*.
-      return errorResponse(ctx.id, 'ERR_INTERNAL', 'Explicit sessions are not supported in this browser');
+      return errorResponse(ctx.id, 'ERR_INTERNAL', 'Harbor did not create a session');
     }
 
     registerExplicitTextSession(result.sessionId, ctx.origin, {

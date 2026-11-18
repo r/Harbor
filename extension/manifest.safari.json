@@ -9,9 +9,25 @@
     }
   },
   "background": {
-    "scripts": ["dist/background.js"],
+    "scripts": [
+      "dist/background.js"
+    ],
     "persistent": false
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*",
+        "file://*/*"
+      ],
+      "js": [
+        "dist/page-api/content-script.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
   "permissions": [
     "storage",
     "scripting",
@@ -27,13 +43,16 @@
     {
       "resources": [
         "dist/page-chat.js",
+        "dist/page-api/injected.js",
         "dist/design-tokens.css",
         "dist/js-runtime/builtin-echo-worker.js",
         "dist/wasmer_wasi_js_bg.wasm",
         "assets/*",
         "bundled/*"
       ],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "icons": {

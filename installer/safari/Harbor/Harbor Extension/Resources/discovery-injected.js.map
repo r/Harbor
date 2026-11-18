@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../src/discovery-injected.ts"],
-  "sourcesContent": ["/**\n * Harbor Discovery - Injected Script\n * \n * This runs in the page context to expose window.__harbor.\n * Loaded as an external script to avoid CSP inline script violations.\n */\n\n(function() {\n  // Only set if not already defined\n  if (typeof (window as { __harbor?: unknown }).__harbor !== 'undefined') return;\n  \n  // Read extension ID from data attribute set by content script\n  const extensionId = document.documentElement.getAttribute('data-harbor-extension-id') || 'unknown';\n  \n  Object.defineProperty(window, '__harbor', {\n    value: Object.freeze({\n      version: '0.1.0',\n      extensionId,\n      installed: true\n    }),\n    writable: false,\n    configurable: false,\n    enumerable: true\n  });\n  \n  // Dispatch event for extensions waiting for Harbor\n  window.dispatchEvent(new CustomEvent('harbor-discovered', {\n    detail: { version: '0.1.0', extensionId }\n  }));\n})();\n"],
-  "mappings": ";CAOC,WAAW;AAEV,MAAI,OAAQ,OAAkC,aAAa,YAAa;AAGxE,QAAM,cAAc,SAAS,gBAAgB,aAAa,0BAA0B,KAAK;AAEzF,SAAO,eAAe,QAAQ,YAAY;AAAA,IACxC,OAAO,OAAO,OAAO;AAAA,MACnB,SAAS;AAAA,MACT;AAAA,MACA,WAAW;AAAA,IACb,CAAC;AAAA,IACD,UAAU;AAAA,IACV,cAAc;AAAA,IACd,YAAY;AAAA,EACd,CAAC;AAGD,SAAO,cAAc,IAAI,YAAY,qBAAqB;AAAA,IACxD,QAAQ,EAAE,SAAS,SAAS,YAAY;AAAA,EAC1C,CAAC,CAAC;AACJ,GAAG;",
-  "names": []
-}
