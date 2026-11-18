@@ -347,6 +347,7 @@ function createStreamIterable<T extends StreamToken>(
     [Symbol.asyncIterator](): AsyncIterator<T> {
       const queue: T[] = [];
       let resolveNext: ((result: IteratorResult<T>) => void) | null = null;
+      let rejectNext: ((error: Error) => void) | null = null;
       let done = false;
       let error: Error | null = null;
 
@@ -374,12 +375,21 @@ function createStreamIterable<T extends StreamToken>(
           error = new Error(event.error?.message || 'Stream error');
           (error as Error & { code?: string }).code = event.error?.code || 'ERR_INTERNAL';
           done = true;
+          // A page already waiting on next() must see the error, or its
+          // `for await` never ends.
+          if (rejectNext) {
+            rejectNext(error);
+            resolveNext = null;
+            rejectNext = null;
+          }
+          return;
         }
 
-        if (resolveNext && !error) {
+        if (resolveNext) {
           resolveNext({ done: false, value: event as T });
           resolveNext = null;
-        } else if (!error) {
+          rejectNext = null;
+        } else {
           queue.push(event as T);
         }
       });
@@ -389,26 +399,33 @@ function createStreamIterable<T extends StreamToken>(
 
       return {
         async next(): Promise<IteratorResult<T>> {
-          if (error) {
-            throw error;
-          }
-
+          // Hand over tokens that arrived before an error, then the error.
           if (queue.length > 0) {
             return { done: false, value: queue.shift()! };
+          }
+
+          if (error) {
+            throw error;
           }
 
           if (done) {
             return { done: true, value: undefined };
           }
 
-          return new Promise((resolve) => {
+          return new Promise((resolve, reject) => {
             resolveNext = resolve;
+            rejectNext = reject;
           });
         },
 
         async return(): Promise<IteratorResult<T>> {
           done = true;
           streamListeners.delete(id);
+          if (resolveNext) {
+            resolveNext({ done: true, value: undefined });
+            resolveNext = null;
+            rejectNext = null;
+          }
           // Send abort signal
           window.postMessage({ channel: CHANNEL, abort: { id } }, '*');
           return { done: true, value: undefined };

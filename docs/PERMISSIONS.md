@@ -360,11 +360,13 @@ Every PolicyEngine decision — whether it prompted, auto-allowed, denied, or do
 
 Harbor injects the page API (`window.ai`, `window.agent`, `navigator.modelContext`) itself, from `extension/src/page-api/`. A page's calls arrive over a port from Harbor's own content script, and Harbor takes the page's origin and tab from the browser's record of that port (`port.sender`), never from the message. The page API calls the rest of Harbor in-process through `page-api/harbor-core.ts`. Harbor runs each model and tool call through the PolicyEngine under that origin: `llm.chat`, `llm.chatStream`, `mcp.listTools`, `mcp.callTool`, and `session.create` (one check per requested capability). An `agent.run` therefore appears in the audit log as its tool listing, each model prompt and each tool call, in order. A prompt is classified as local or remote by the model it will run on. A prompt that names no model, as every `agent.run` prompt does, runs on the bridge's default model and is classified by that model. If the default model is unknown, the prompt counts as remote. A call without an origin is rejected.
 
-Harbor holds the only store of per-origin grants and the only consent prompt. The page API checks Harbor's store (`permissions.check`) before each page call, and `agent.requestPermissions()` goes to Harbor's prompt (`permissions.request`). So a site revoked in Harbor's sidebar is refused on its next call. Harbor's Safari build doesn't inject the page API yet.
+Harbor holds the only store of per-origin grants and the only consent prompt. The page API checks Harbor's store (`permissions.check`) before each page call, and `agent.requestPermissions()` goes to Harbor's prompt (`permissions.request`). So a site revoked in Harbor's sidebar is refused on its next call. This holds in Safari too: its build injects the same page API.
 
 The older, separate Web Agents API extension no longer injects anything, and Harbor no longer accepts a message or connection from it, or from any other extension: there is no cross-extension entry point left to reach.
 
 For page calls, Harbor enforces `deny` (safety floor, policy rules, a denied origin grant, the watchdog). When the only thing left to settle is the origin grant (Tier 8 or the Tier 9 default), Harbor proceeds without prompting again, because the page API has just checked that grant in Harbor's store; the audit record carries `consent: "origin-grant"`. A watchdog restriction (Tier 4) or a policy rule that asks, previews or attenuates (Tier 7) still shows Harbor's prompt.
+
+The engine treats a write that can't be undone as needing a preview even when the origin holds a grant. Calling or messaging another agent on this device (`agent.invoke`, `agent.message`) doesn't count as one: the call itself changes nothing, and the other agent's own actions are checked separately. So once a site holds `agents:invoke` or `agents:message`, later calls go through without another prompt. An "Allow once" grant covers only the tab that granted it, for ten minutes; another tab on the same site is asked again.
 
 A site's tool allowlist is deny-by-default: a site with no allowlist may call no tools.
 
@@ -1071,6 +1073,8 @@ The `reason` string is always site-supplied, so trust the structural information
 **Q: How does this interact with prompt injection?**
 
 The PolicyEngine is the structural defense: even if the agent is convinced by injected instructions to do something dangerous, the engine evaluates the action against your policy and the SensitivityEngine and the data-label flow tracker, all of which are blind to the agent's reasoning. Sensitive actions still confirm; deny rules still deny; tainted data still can't reach a remote model without your consent. None of this prevents the agent from being misled, but it bounds what a misled agent can do.
+
+One limit applies to requests from web pages. The engine gates their calls to the model and to tools, but those calls don't carry data labels yet, so the label check described above doesn't cover them. See [Against Prompt Injection](../spec/security-privacy.md#against-prompt-injection) for what limits a page's session today and what is planned.
 
 **Q: How does multi-agent delegation work?**
 

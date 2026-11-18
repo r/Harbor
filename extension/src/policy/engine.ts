@@ -84,6 +84,8 @@ export interface PolicyRequest {
   reason?: string;
   /** Correlation id for the audit log. */
   correlationId?: string;
+  /** The calling tab, when known. An "Allow once" grant covers only its own tab. */
+  tabId?: number;
 }
 
 export type DecisionEffect = 'allow' | 'ask' | 'deny' | 'preview' | 'attenuate';
@@ -158,6 +160,7 @@ export type OriginGrantResolver = (
   origin: string,
   action: TypedAction,
   resource?: PolicyResource,
+  tabId?: number,
 ) => Promise<OriginGrantOutcome | null> | OriginGrantOutcome | null;
 
 export interface OriginGrantOutcome {
@@ -512,7 +515,7 @@ export async function evaluate(req: PolicyRequest): Promise<PolicyDecision> {
   });
 
   // Tier 8: Per-origin grant.
-  const grant = await Promise.resolve(originGrantResolver(req.origin, req.action, req.resource));
+  const grant = await Promise.resolve(originGrantResolver(req.origin, req.action, req.resource, req.tabId));
   if (grant) {
     const granted = grant.effect === 'allow' ? 'allow' : 'deny';
     const effect = applyForcedMin(granted, forcedMin);

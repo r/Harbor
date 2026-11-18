@@ -1,6 +1,5 @@
 import { build, context } from 'esbuild';
 import { copyFile, mkdir, cp, rm, readFile, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import sharp from 'sharp';
 
 const isWatch = process.argv.includes('--watch');
@@ -32,7 +31,6 @@ const entryPoints = [
   'src/permission-prompt.ts',
   'src/directory.ts',
   'src/sidebar.ts',
-  'src/demo-bootstrap.ts',
   'src/js-runtime/worker-loader.ts',
   'src/page-api/content-script.ts',
   'src/page-api/injected.ts',
@@ -84,25 +82,6 @@ async function copyStatic() {
   await copyFile('src/js-runtime/sandbox.html', `${outDir}/js-runtime/sandbox.html`).catch(() => {});
   await copyFile('src/js-runtime/builtin-echo-worker.js', `${outDir}/js-runtime/builtin-echo-worker.js`);
   
-  // Copy demo files into dist for self-contained extension
-  // Need to adjust paths in HTML files since the structure changes when copied
-  await cp('demo', `${outDir}/demo`, { recursive: true }).catch(() => {});
-  
-  // Fix paths in demo HTML files (they reference src/ and dist/ which don't exist in the output)
-  const demoHtmlFiles = [
-    `${outDir}/demo/chat-poc/index.html`,
-  ];
-  for (const htmlFile of demoHtmlFiles) {
-    if (existsSync(htmlFile)) {
-      let html = await readFile(htmlFile, 'utf-8');
-      // Fix CSS path: ../../src/design-tokens.css -> ../../design-tokens.css
-      html = html.replace(/\.\.\/\.\.\/src\/design-tokens\.css/g, '../../design-tokens.css');
-      // Fix JS path: ../../dist/demo-bootstrap.js -> ../../demo-bootstrap.js
-      html = html.replace(/\.\.\/\.\.\/dist\/demo-bootstrap\.js/g, '../../demo-bootstrap.js');
-      await writeFile(htmlFile, html);
-    }
-  }
-  
   // Copy bundled MCP servers from mcp-servers/examples
   await mkdir(`${outDir}/bundled/gmail-harbor`, { recursive: true });
   await cp('../mcp-servers/examples/gmail', `${outDir}/bundled/gmail-harbor`, { recursive: true }).catch(() => {});
@@ -134,7 +113,7 @@ async function copyStatic() {
   if (isChrome) {
     console.log('[Harbor]   → chrome://extensions → Enable Developer Mode → Load unpacked');
   } else if (isSafari) {
-    console.log('[Harbor]   → See installer/safari/README.md for Xcode setup');
+    console.log('[Harbor]   → Run installer/safari/build.sh to build the Safari app (docs/QUICKSTART_SAFARI.md)');
   } else {
     console.log('[Harbor]   → about:debugging → This Firefox → Load Temporary Add-on');
   }

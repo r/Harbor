@@ -74,9 +74,13 @@ The installer registers Firefox and Google Chrome on macOS and Linux. Other Chro
 
 ### Safari
 
-Safari is different — the bridge is **bundled inside the Harbor.app** and doesn't use native messaging manifests. The app handles communication internally.
+Safari doesn't use native messaging. The extension reaches the bridge over HTTP at `127.0.0.1:8766`, so run the bridge yourself in HTTP mode:
 
-You don't need to run `install.sh` for Safari; just build and run the Xcode project.
+```bash
+./target/release/harbor-bridge --http-server
+```
+
+You don't need to run `install.sh` for Safari. See [Safari Setup](../docs/QUICKSTART_SAFARI.md) to build and load the Safari app.
 
 ---
 

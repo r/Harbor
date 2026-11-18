@@ -16,7 +16,9 @@ vi.mock('../handlers/permission-handlers', async (importOriginal) => ({
 vi.mock('../../browser-compat', async (importOriginal) => ({
   ...(await importOriginal<object>()), executeScriptInTab: mocks.executeScriptInTab,
 }));
-vi.mock('../policy/feature-flags', () => ({ getFeatureFlags: mocks.getFeatureFlags }));
+vi.mock('../policy/feature-flags', async (importOriginal) => ({
+  ...(await importOriginal<object>()), getFeatureFlags: mocks.getFeatureFlags,
+}));
 
 const CALLER = 'https://news.example';
 let tabUrls: Map<number, string>;

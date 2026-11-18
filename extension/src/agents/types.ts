@@ -79,10 +79,6 @@ export type PermissionScope =
   | 'web:fetch'                    // proxy HTTP requests (with allowlist)
   // Other
   | 'chat:open'
-  | 'addressBar:suggest'
-  | 'addressBar:context'
-  | 'addressBar:history'
-  | 'addressBar:execute'
   // Extension 3: Multi-Agent (reserved)
   | 'agents:register'              // register as an agent
   | 'agents:discover'              // discover other agents
@@ -518,18 +514,10 @@ export type MessageType =
   | 'ai.languageModel.capabilities'
   | 'ai.languageModel.create'
   | 'ai.providers.list'
-  | 'ai.providers.getActive'
-  | 'ai.providers.add'
-  | 'ai.providers.remove'
-  | 'ai.providers.setDefault'
-  | 'ai.providers.setTypeDefault'
-  | 'ai.runtime.getBest'
-  | 'ai.runtime.getCapabilities'
   // Session methods
   | 'session.prompt'
   | 'session.promptStreaming'
   | 'session.destroy'
-  | 'session.clone'
   // Agent methods
   | 'agent.requestPermissions'
   | 'agent.permissions.list'
@@ -560,7 +548,6 @@ export type MessageType =
   | 'agent.browser.tab.navigate'
   // Extension 2: Web Fetch
   | 'agent.fetch'
-  | 'agent.run'
   // Extension 3: Multi-Agent
   | 'agents.register'
   | 'agents.unregister'
@@ -591,19 +578,7 @@ export type MessageType =
   | 'agent.mcp.unregister'
   | 'agent.chat.canOpen'
   | 'agent.chat.open'
-  | 'agent.chat.close'
-  // Address Bar methods
-  | 'agent.addressBar.canProvide'
-  | 'agent.addressBar.registerProvider'
-  | 'agent.addressBar.registerToolShortcuts'
-  | 'agent.addressBar.registerSiteProvider'
-  | 'agent.addressBar.discover'
-  | 'agent.addressBar.listProviders'
-  | 'agent.addressBar.unregisterProvider'
-  | 'agent.addressBar.setDefaultProvider'
-  | 'agent.addressBar.getDefaultProvider'
-  | 'agent.addressBar.query'
-  | 'agent.addressBar.select';
+  | 'agent.chat.close';
 
 export interface TransportRequest {
   id: string;
@@ -622,188 +597,4 @@ export interface TransportStreamEvent {
   id: string;
   event: RunEvent | StreamToken;
   done?: boolean;
-}
-
-// =============================================================================
-// Required Permission Scopes per Method
-// =============================================================================
-
-export const REQUIRED_SCOPES: Partial<Record<MessageType, PermissionScope[]>> = {
-  // Extension 1: Core AI
-  'ai.createTextSession': ['model:prompt'],
-  'ai.languageModel.create': ['model:prompt'],
-  'ai.providers.list': ['model:list'],
-  'ai.providers.getActive': ['model:list'],
-  'ai.providers.add': ['model:list'],
-  'ai.providers.remove': ['model:list'],
-  'ai.providers.setDefault': ['model:list'],
-  'ai.providers.setTypeDefault': ['model:list'],
-  'session.prompt': ['model:prompt'],
-  'session.promptStreaming': ['model:prompt'],
-  // Extension 1: Tools
-  'agent.tools.list': ['mcp:tools.list'],
-  'agent.tools.call': ['mcp:tools.call'],
-  // Extension 1: Browser (same-tab)
-  'agent.browser.activeTab.readability': ['browser:activeTab.read'],
-  'agent.browser.activeTab.click': ['browser:activeTab.interact'],
-  'agent.browser.activeTab.fill': ['browser:activeTab.interact'],
-  'agent.browser.activeTab.select': ['browser:activeTab.interact'],
-  'agent.browser.activeTab.scroll': ['browser:activeTab.interact'],
-  'agent.browser.activeTab.getElement': ['browser:activeTab.read'],
-  'agent.browser.activeTab.waitForSelector': ['browser:activeTab.read'],
-  'agent.browser.activeTab.screenshot': ['browser:activeTab.screenshot'],
-  'agent.run': ['model:tools'],
-  'agent.mcp.register': ['mcp:servers.register'],
-  'agent.chat.open': ['chat:open'],
-  'agent.addressBar.registerProvider': ['addressBar:suggest'],
-  'agent.addressBar.registerToolShortcuts': ['addressBar:suggest', 'addressBar:execute'],
-  'agent.addressBar.registerSiteProvider': ['addressBar:suggest'],
-  // Extension 2: Navigation
-  'agent.browser.navigate': ['browser:navigate'],
-  'agent.browser.waitForNavigation': ['browser:navigate'],
-  // Extension 2: Tabs
-  'agent.browser.tabs.list': ['browser:tabs.read'],
-  'agent.browser.tabs.create': ['browser:tabs.create'],
-  'agent.browser.tabs.get': ['browser:tabs.read'],
-  'agent.browser.tabs.close': ['browser:tabs.create'], // Can only close tabs we created
-  // Extension 2: Spawned tab operations (requires tabs.create since you must have created the tab)
-  'agent.browser.tab.readability': ['browser:tabs.create'],
-  'agent.browser.tab.click': ['browser:tabs.create'],
-  'agent.browser.tab.fill': ['browser:tabs.create'],
-  'agent.browser.tab.scroll': ['browser:tabs.create'],
-  'agent.browser.tab.screenshot': ['browser:tabs.create'],
-  'agent.browser.tab.navigate': ['browser:tabs.create'],
-  // Extension 2: Web Fetch
-  'agent.fetch': ['web:fetch'],
-};
-
-// =============================================================================
-// Address Bar Types
-// =============================================================================
-
-export type AddressBarTriggerType = 'prefix' | 'keyword' | 'regex' | 'always';
-
-export interface AddressBarTrigger {
-  type: AddressBarTriggerType;
-  value: string;
-  hint?: string;
-}
-
-export interface AddressBarQueryContext {
-  query: string;
-  trigger: AddressBarTrigger;
-  currentTab?: {
-    url: string;
-    title: string;
-    domain: string;
-  };
-  recentHistory?: {
-    url: string;
-    title: string;
-    visitCount: number;
-    lastVisit: number;
-  }[];
-  isTyping: boolean;
-  timeSinceLastKeystroke: number;
-}
-
-export type AddressBarSuggestionType = 'url' | 'search' | 'tool' | 'action' | 'answer';
-
-export interface AddressBarSuggestion {
-  id: string;
-  type: AddressBarSuggestionType;
-  title: string;
-  description?: string;
-  icon?: string;
-  url?: string;
-  searchQuery?: string;
-  searchEngine?: string;
-  tool?: {
-    name: string;
-    args: Record<string, unknown>;
-  };
-  action?: AddressBarAction;
-  answer?: {
-    text: string;
-    source?: string;
-    copyable?: boolean;
-  };
-  confidence?: number;
-  provider: string;
-}
-
-export type AddressBarAction =
-  | { type: 'navigate'; url: string }
-  | { type: 'search'; query: string; engine?: string }
-  | { type: 'copy'; text: string; notify?: boolean }
-  | { type: 'execute'; tool: string; args: Record<string, unknown> }
-  | { type: 'show'; content: string; format: 'text' | 'markdown' | 'html' }
-  | { type: 'agent'; task: string; tools?: string[] };
-
-export type AddressBarResultHandler = 'inline' | 'popup' | 'navigate' | 'clipboard';
-
-export interface ToolShortcut {
-  trigger: string;
-  tool: string;
-  description: string;
-  examples?: string[];
-  argParser?: string; // Serialized function or built-in parser name
-  useLLMParser?: boolean;
-  llmParserPrompt?: string;
-}
-
-export interface ToolShortcutsOptions {
-  shortcuts: ToolShortcut[];
-  resultHandler: AddressBarResultHandler;
-}
-
-export interface AddressBarProviderOptions {
-  id: string;
-  name: string;
-  description: string;
-  triggers: AddressBarTrigger[];
-  // Note: onQuery is handled via message passing, not stored
-}
-
-export interface SiteProviderOptions {
-  origin: string;
-  name: string;
-  description: string;
-  patterns: string[];
-  icon?: string;
-  endpoint?: string;
-  // Note: onQuery is handled via message passing if no endpoint
-}
-
-export interface DeclaredAddressBarProvider {
-  origin: string;
-  name: string;
-  description?: string;
-  endpoint: string;
-  patterns: string[];
-  icon?: string;
-}
-
-export interface AddressBarProviderInfo {
-  id: string;
-  name: string;
-  description: string;
-  triggers: AddressBarTrigger[];
-  isDefault: boolean;
-  origin?: string;
-  type: 'ai' | 'tool' | 'site';
-}
-
-export interface StoredAddressBarProvider {
-  id: string;
-  name: string;
-  description: string;
-  triggers: AddressBarTrigger[];
-  origin: string;
-  type: 'ai' | 'tool' | 'site';
-  patterns?: string[];
-  endpoint?: string;
-  shortcuts?: ToolShortcut[];
-  resultHandler?: AddressBarResultHandler;
-  createdAt: number;
 }

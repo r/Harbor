@@ -89,13 +89,13 @@ The extension exposes different APIs based on feature flags. Users control these
 | `textGeneration` | ✅ On | `window.ai.*` |
 | `toolAccess` | ✅ On | `agent.tools.list()`, `agent.tools.call()` |
 | `toolCalling` | ✅ On | `agent.run()` |
-| `browserInteraction` | ❌ Off | `agent.browser.activeTab.*` (click, fill, scroll) |
+| `browserInteraction` | ❌ Off | `agent.browser.activeTab.*` (click, fill, scroll); `activeTab.readability()` also works under `browserControl` |
 | `browserControl` | ❌ Off | `agent.browser.navigate()`, `agent.browser.tabs.*`, `agent.browser.fetch()` |
 | `multiAgent` | ❌ Off | `agent.agents.*` |
 
 Agentic Tool Use (`toolCalling`) is enabled by default when no saved value exists. Saved choices, including an explicit off setting, are preserved. Feature availability does not grant site permissions: model and tool requests still go through the existing permission checks. Browser interaction, browser control and multi-agent features remain off by default.
 
-When a feature is disabled, calling its APIs throws an error with code `ERR_FEATURE_DISABLED`.
+When a feature is disabled, calling its APIs throws an error with code `ERR_FEATURE_DISABLED`. Harbor checks the setting again when the request arrives, so a page can't reach a disabled feature by messaging the extension directly. Prompts on an existing `window.ai` session are refused once `textGeneration` is off. A session's `callTool()` follows `toolAccess`.
 
 ---
 

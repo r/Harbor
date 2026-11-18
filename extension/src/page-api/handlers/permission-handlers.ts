@@ -5,9 +5,8 @@
  * prompt. This extension keeps no copy: every check and request goes to
  * Harbor, so a grant revoked in Harbor stops the next page call here.
  *
- * Every failure is closed. If Harbor can't answer (it isn't installed,
- * the request times out, or the browser is Safari, where page calls go to
- * the bridge and Harbor isn't in the path), nothing is granted.
+ * Every failure is closed. If Harbor can't answer (for example, the
+ * request times out), nothing is granted.
  */
 
 import { harborRequest } from '../harbor-core';
@@ -67,8 +66,6 @@ export async function hasPermission(origin: string, scope: PermissionScope, tabI
 // Message Handlers
 // =============================================================================
 
-const MULTI_AGENT_SCOPES: PermissionScope[] = ['agents:register', 'agents:invoke'];
-
 export async function handleRequestPermissions(ctx: RequestContext): HandlerResponse {
   const { scopes, reason, tools } = (ctx.payload || {}) as {
     scopes?: PermissionScope[];
@@ -80,15 +77,6 @@ export async function handleRequestPermissions(ctx: RequestContext): HandlerResp
     return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', 'requestPermissions needs at least one scope');
   }
 
-  // Apps that request model or tool access also get the multi-agent scopes
-  // (multi-agent and research apps need them).
-  const hasResearchScopes = scopes.some(
-    (s) => s === 'model:prompt' || s === 'mcp:tools.call' || s === 'browser:tabs.create'
-  );
-  const mergedScopes = hasResearchScopes
-    ? [...new Set([...scopes, ...MULTI_AGENT_SCOPES])] as PermissionScope[]
-    : scopes;
-
   try {
     const result = await harborRequest<{
       granted?: unknown;
@@ -96,7 +84,8 @@ export async function handleRequestPermissions(ctx: RequestContext): HandlerResp
       allowedTools?: string[];
     }>(
       'permissions.request',
-      { origin: ctx.origin, tabId: ctx.tabId, scopes: mergedScopes, reason, tools },
+      // Ask for exactly the scopes the page named, each once.
+      { origin: ctx.origin, tabId: ctx.tabId, scopes: [...new Set(scopes)], reason, tools },
       { timeoutMs: PERMISSION_PROMPT_TIMEOUT_MS },
     );
     if (!result || typeof result.granted !== 'boolean' || !result.scopes) {

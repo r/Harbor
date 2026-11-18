@@ -10,7 +10,7 @@ Use the mock when you want to test your logic **without** a real browser or exte
 ```bash
 npm i -D vitest
 cp harbor-test/vitest.config.example.ts vitest.config.ts   # or merge into your config
-npx vitest run harbor-test/example.test.mjs
+npx vitest run harbor-test/example.test.mjs harbor-test/example.multi-agent.test.mjs
 ```
 
 1. In your test setup (e.g. Vitest, Jest, Node), install the mock on `globalThis` or `window`:
@@ -19,7 +19,7 @@ npx vitest run harbor-test/example.test.mjs
 import { installWebAgentsMock } from './harbor-test/mock.js';
 
 const mock = installWebAgentsMock(globalThis);
-mock.permissions.grantAll();           // requestPermissions() will resolve with granted: true
+mock.permissions.grantAll();           // the user allows whatever requestPermissions() asks for
 mock.ai.textSessionResponse = 'Hi!';   // session.prompt() will return this
 mock.agent.runOutput = 'Task done.';   // agent.run() will emit final with this
 ```
@@ -35,7 +35,38 @@ mock.permissions.grantScopes(['model:prompt']);
 mock.ai.nextError = { code: 'ERR_MODEL_FAILED', message: 'Model unavailable' };
 ```
 
+Like Harbor, `requestPermissions()` grants exactly the scopes it names. `grantAll()` doesn't grant anything up front; it means the user says yes when the page asks. `grantScopes([...])` stands for scopes the site already holds.
+
 See `mock.js` for the full control API (e.g. `mock.agent.toolsList`, `mock.agent.toolCallResult`).
+
+### Multi-agent (`agent.agents`)
+
+The mock supports `agent.agents.register`, `unregister`, `getInfo`, `discover`, `list`, `invoke`, `send`, `onMessage` and `onInvoke`, with Harbor's shapes. `example.multi-agent.test.mjs` walks through a full flow.
+
+```js
+mock.permissions.grantAll();
+mock.agents.featureEnabled = true;     // Harbor's multiAgent feature is off by default
+const summarizer = mock.agents.addAgent(
+  { name: 'Summarizer', capabilities: ['summarize'] },
+  { onInvoke: async ({ task, input }) => ({ summary: '...' }), onMessage: (m) => {} },
+);
+
+await agent.requestPermissions({ scopes: ['agents:register', 'agents:discover', 'agents:invoke'] });
+await agent.agents.register({ name: 'Writer' });
+const { agents } = await agent.agents.discover({ capabilities: ['summarize'] });
+const response = await agent.agents.invoke(agents[0].id, { task: 'summarize', input: { text } });
+```
+
+- `mock.agents.addAgent(options, { onInvoke, onMessage })` adds an agent as if another tab on your site registered it.
+- `mock.agents.invokePage(fromId, request)` and `mock.agents.sendToPage(fromId, payload)` test your page's own `onInvoke` and `onMessage` handlers.
+- `mock.agents.featureEnabled` is `false` by default, like Harbor's `multiAgent` feature, so `agent.agents` calls fail with `ERR_FEATURE_DISABLED` until you set it to `true`. Real users have to turn the feature on in Harbor too.
+
+Each call needs its scope: `agents:register` for `register` and `unregister`, `agents:discover` for `discover`, `agents:invoke` for `invoke`, and `agents:message` for `send`. Calling `invoke` or `send` before `register` fails with `ERR_NOT_REGISTERED`, as in Harbor.
+
+Two differences from Harbor:
+
+- If the page calls without the scope, Harbor shows a permission prompt. The mock can't prompt, so the call fails with `ERR_SCOPE_REQUIRED`. That way a test shows whether your page requests the scope before it uses it.
+- The mock leaves out `subscribe`, `unsubscribe`, `broadcast`, `orchestrate.*`, and cross-origin and remote agents. `broadcast` always fails in Harbor today.
 
 ## E2E tests (Playwright + Harbor extension)
 

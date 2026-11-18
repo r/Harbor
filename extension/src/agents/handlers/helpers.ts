@@ -88,6 +88,7 @@ export async function requireAction(
     mode: options.mode,
     reason: options.reason,
     correlationId: ctx.id,
+    tabId: ctx.tabId,
   };
   const decision = await evaluate(request);
   const proceedsOnUpstreamConsent =
@@ -262,15 +263,6 @@ function primaryLegacyScope(action: TypedAction): PermissionScope | null {
 
     case 'chat.open':
       return 'chat:open';
-
-    case 'addressBar.suggest':
-      return 'addressBar:suggest';
-    case 'addressBar.read.context':
-      return 'addressBar:context';
-    case 'addressBar.read.history':
-      return 'addressBar:history';
-    case 'addressBar.execute':
-      return 'addressBar:execute';
   }
 }
 

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The test harness for third-party apps (`spec/testing/`) mocks the multi-agent API: `agent.agents.register`, `discover`, `invoke`, `send` and their handlers, with the agent scopes and real TypeScript types, plus an example multi-agent test. Its `requestPermissions()` now grants only the scopes it names, as Harbor does, and `grantAll()` means the user allows each request rather than granting every scope up front.
 - Harbor's icon is now the lighthouse from the site's favicon, in the toolbar, the add-ons page and Harbor's own UI (sidebar, permission prompt, directory, in-page chat), replacing the "H". `npm run favicon` in `extension/` rebuilds `whitepaper/favicon.ico` from `extension/assets/icon.svg`.
 - Harbor is now a single browser extension: it injects and serves `window.ai`, `window.agent` and `navigator.modelContext` itself (`extension/src/page-api/`). The separate Web Agents API extension is retired.
 - Site, `README.md` and `spec/README.md` follow the updated positioning: homepage example 02 shows the airline's page handing the trip to your agent, which asks before holding a seat; the spec page says Harbor implements the Web Agent API; both READMEs mention agent-to-company protocols; browser-control APIs are described as a stopgap.
@@ -29,9 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Harbor no longer writes what a page sends to the browser console: prompts, system prompts, `agent.run` tasks, tasks passed between agents, URLs a page opens or registers, a page's reason for a permission request, and model replies. Logs keep the request type, IDs, origin and sizes. The debug listener that logged every message reaching Harbor's background is gone.
+- `agent.requestPermissions()` asks for exactly the scopes the page names. A request for `model:prompt`, `mcp:tools.call` or `browser:tabs.create` no longer also asks for `agents:register` and `agents:invoke`. Pages that register or invoke agents must request those scopes themselves; if they don't, Harbor asks when they call the agent API.
+- A site that has been granted `agents:invoke` or `agents:message` is no longer asked again on every `agent.agents.invoke()` or message call. The grant now covers later calls. Calling another agent on this device changes nothing by itself, and that agent's own actions are still checked.
+- An "Allow once" grant now covers only the tab where it was given, in Harbor's policy checks as well as in the page API. Before, another tab on the same site could use it, for example to register an agent.
 
 ### Removed
 
+- The sidebar's **Open Chat** button and the chat page bundled inside the extension. That page ran its own copy of `window.agent` with every permission treated as granted, so it skipped the permission checks and loop fixes that web pages get. To chat with tools, use the demo-site chat (`demo/web-agents/chat-poc/`), which goes through the same `agent.run` as any site. The extension also no longer exposes `demo/*` or `demo-bootstrap.js` to web pages.
 - The old Jekyll scaffolding under `whitepaper/` (`_config.yml`, `_layouts/`, `Gemfile`, `index.md`, `landscape.md`) — replaced by static HTML. `.nojekyll` added so GitHub Pages serves the files as authored.
 
 ## [0.1.0] - 2026-02-04
