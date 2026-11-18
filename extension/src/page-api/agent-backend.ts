@@ -163,6 +163,9 @@ export const builtinAgentBackend: AgentBackend = {
         if (!await hasPermission(origin, 'mcp:tools.call', tabId)) {
           messages.push({ role: 'assistant', content: responseContent || 'I need to use tools but permission was denied.' });
           messages.push({ role: 'user', content: 'Tool calling is not permitted. Please provide an answer without using tools.' });
+          // A denied turn uses one unit of the budget, so a model that keeps
+          // asking for tools still reaches the final answer below.
+          toolCallCount++;
           continue;
         }
 
@@ -180,6 +183,17 @@ export const builtinAgentBackend: AgentBackend = {
           if (signal.aborted) {
             emit(abortedEvent());
             return;
+          }
+
+          // The budget holds within a turn too: a call past it isn't run, but
+          // still gets a `tool` answer so the model knows why.
+          if (toolCallCount >= maxToolCalls) {
+            messages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: toolResultText({ error: 'Tool call budget exceeded; this call was not run.' }),
+            });
+            continue;
           }
 
           const llmToolName = tc.function.name;

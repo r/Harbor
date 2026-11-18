@@ -1083,6 +1083,7 @@ try {
 | `ERR_TOOL_FAILED` | Tool execution failed |
 | `ERR_MODEL_FAILED` | LLM request failed |
 | `ERR_SESSION_NOT_FOUND` | Session was destroyed |
+| `ERR_BUDGET_EXCEEDED` | A session's `maxToolCalls` budget is spent |
 | `ERR_HARBOR_NOT_FOUND` | Harbor extension not found |
 | `ERR_AGENT_NOT_FOUND` | Agent not registered |
 | `ERR_AGENT_NOT_ACCEPTING` | Agent not accepting invocations |
