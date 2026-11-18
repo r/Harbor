@@ -113,6 +113,46 @@ describe('a session tool budget', () => {
     expect(host.callTool).toHaveBeenCalledTimes(2);
   });
 
+  it('refuses every call when the budget is 0', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 0);
+
+    const reply = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_BUDGET_EXCEEDED');
+    expect(host.callTool).not.toHaveBeenCalled();
+  });
+
+  it('does not limit a session created without maxToolCalls', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const created = await request('agent.sessions.create', { capabilities: { tools: [TOOL] } });
+    const { sessionId } = created.result as { sessionId: string };
+
+    for (let i = 0; i < 7; i++) {
+      const reply = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+      expect(reply.ok, reply.error?.message).toBe(true);
+    }
+    expect(host.callTool).toHaveBeenCalledTimes(7);
+  });
+
+  it('does not spend the budget on a call the allowlist refuses', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+
+    const refused = await request('agent.tools.call', { tool: 'other/tool', args: {}, sessionId });
+    expect(refused.error?.code).toBe('ERR_TOOL_NOT_ALLOWED');
+
+    const allowed = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(allowed.ok, allowed.error?.message).toBe(true);
+  });
+
+  it('refuses a call against an unknown session', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const reply = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId: 'no-such-session' });
+    expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
+    expect(host.callTool).not.toHaveBeenCalled();
+  });
+
   it("refuses a call against another origin's session", async () => {
     const owner = connectPort(`${ORIGIN}/page`);
     const sessionId = await createSession(owner, 5);

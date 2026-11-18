@@ -9,6 +9,7 @@ import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission, getPermissions } from './permission-handlers';
 import { ErrorCodes } from '../types';
+import { HARBOR_SESSION_GONE } from './ai-handlers';
 
 // =============================================================================
 // Handlers
@@ -125,7 +126,11 @@ async function recordSessionToolCall(
     if (message === BUDGET_EXCEEDED_MESSAGE) {
       return { code: ErrorCodes.BUDGET_EXCEEDED, message: 'Session tool call budget exceeded' };
     }
-    // Not found, terminated, expired, or another origin's session.
-    return { code: ErrorCodes.SESSION_NOT_FOUND, message: 'Session not found' };
+    // Not found, terminated, expired, or another origin's session: all look
+    // the same to the page. Anything else is Harbor failing, and still refuses.
+    if (HARBOR_SESSION_GONE.test(message)) {
+      return { code: ErrorCodes.SESSION_NOT_FOUND, message: 'Session not found' };
+    }
+    return { code: ErrorCodes.INTERNAL, message: 'Could not check the session tool budget' };
   }
 }
