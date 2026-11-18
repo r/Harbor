@@ -207,6 +207,7 @@ bridge-rs/
 ├── src/
 │   ├── main.rs              # Entry point, native messaging loop
 │   ├── native_messaging.rs  # Native messaging protocol
+│   ├── acp/                  # Starts ACP agents and relays their messages
 │   ├── llm/                  # LLM provider integrations
 │   ├── mcp/                  # MCP server host
 │   ├── oauth/                # OAuth flow handling
@@ -233,6 +234,33 @@ The bridge reads configuration from:
 | `OPENAI_API_KEY` | OpenAI API key |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `OLLAMA_HOST` | Ollama server URL (default: `http://localhost:11434`) |
+
+### ACP agents
+
+The bridge can start an agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com/get-started/introduction) (ACP) and relay its messages to the extension. The bridge only starts the process and passes messages; the ACP client runs in the extension. See [the ACP backend design](../docs/ACP_BACKEND_DESIGN.md).
+
+Agents are configured in `acp.json`, next to the LLM config (`~/Library/Application Support/harbor/acp.json` on macOS). A missing file means no agents.
+
+```json
+{
+  "agents": [
+    { "id": "goose", "name": "goose", "command": "goose", "args": ["acp"], "env": {} }
+  ]
+}
+```
+
+| Method | What it does |
+|--------|--------------|
+| `acp.list_agents` | Lists configured agents by `id` and `name`. Commands and environment aren't returned. |
+| `acp.open { agentId }` | Starts the agent and streams its output: an `open` event with a `channel`, a `message` event per line the agent prints, and an `exit` event when it stops. |
+| `acp.send { channel, message }` | Writes one JSON object to the agent's stdin, in the order received. |
+| `acp.close { channel }` | Kills the agent and everything it started. |
+
+- The bridge only runs commands from `acp.json`, never one named in a message, and never through a shell.
+- Each agent runs in its own process group, so closing it also stops anything it started (for example `npx` and the `node` process under it).
+- When the extension disconnects, the bridge stops every agent it started and exits.
+- Limits: 8 agents at once; 4 MiB per `acp.send`; 64 queued messages or 16 MiB per agent, after which `acp.send` is rejected rather than waiting; output lines over 900 KiB are dropped with an error event. Output lines that aren't valid JSON or UTF-8 are dropped and logged.
+- `acp.*` isn't available in the HTTP server mode that Safari uses.
 
 ---
 

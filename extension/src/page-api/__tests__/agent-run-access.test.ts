@@ -71,6 +71,66 @@ describe('agent.run receiving boundary', () => {
     expect(mocks.harborRequest).not.toHaveBeenCalled();
   });
 
+  it('stops before the next model turn once model:prompt is revoked mid-run', async () => {
+    const toolCall = { id: 'call-clock', function: { name: 'clock_time', arguments: '{}' } };
+    let promptGranted = true;
+    mocks.hasPermission.mockImplementation(async (_origin, scope) => scope !== 'model:prompt' || promptGranted);
+    mocks.harborRequest.mockImplementation(async (method) => {
+      if (method === 'mcp.listTools') return { tools: [{ name: 'time', serverId: 'clock' }] };
+      if (method === 'mcp.callTool') { promptGranted = false; return { result: 'Noon' }; }
+      return { content: '', choices: [{ message: { role: 'assistant', content: '', tool_calls: [toolCall] } }] };
+    });
+    await run();
+    expect(mocks.harborRequest.mock.calls.filter(([m]) => m === 'llm.chat')).toHaveLength(1);
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      done: true, event: expect.objectContaining({ error: expect.objectContaining({
+        code: 'ERR_PERMISSION_DENIED', message: 'Permission model:prompt required',
+      }) }),
+    }));
+  });
+
+  it('skips the final answer once model:prompt is revoked as the tool budget runs out', async () => {
+    const toolCall = { id: 'call-clock', function: { name: 'clock_time', arguments: '{}' } };
+    let promptGranted = true;
+    mocks.hasPermission.mockImplementation(async (_origin, scope) => scope !== 'model:prompt' || promptGranted);
+    mocks.harborRequest.mockImplementation(async (method) => {
+      if (method === 'mcp.listTools') return { tools: [{ name: 'time', serverId: 'clock' }] };
+      if (method === 'mcp.callTool') { promptGranted = false; return { result: 'Noon' }; }
+      return { content: '', choices: [{ message: { role: 'assistant', content: '', tool_calls: [toolCall] } }] };
+    });
+    await receive({ id: 'budget-run', type: 'agent.run', origin: 'https://example.test',
+      payload: { task: 'What time is it?', maxToolCalls: 1 } });
+    expect(mocks.harborRequest.mock.calls.filter(([m]) => m === 'llm.chat')).toHaveLength(1);
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      done: true, event: expect.objectContaining({ error: expect.objectContaining({ code: 'ERR_PERMISSION_DENIED' }) }),
+    }));
+  });
+
+  it('ends with a coded error event when the model call fails', async () => {
+    mocks.harborRequest.mockImplementation(async (method) => {
+      if (method === 'mcp.listTools') return { tools: [] };
+      throw new Error('bridge unavailable');
+    });
+    await run();
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      done: true,
+      event: { type: 'error', error: { code: 'ERR_MODEL_FAILED', message: 'LLM request failed: bridge unavailable' } },
+    }));
+  });
+
+  it('ends with a coded error event when the run fails for another reason', async () => {
+    mocks.harborRequest.mockImplementation(async (method) => {
+      if (method === 'mcp.listTools') throw new Error('tool host crashed');
+      return { content: 'unused' };
+    });
+    await run();
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      done: true,
+      event: { type: 'error', error: { code: 'ERR_AGENT_FAILED', message: 'tool host crashed' } },
+    }));
+    expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
+  });
+
   it('runs when enabled and explicitly permitted', async () => {
     await run();
     expect(mocks.harborRequest).toHaveBeenCalledWith('llm.chat', expect.anything());

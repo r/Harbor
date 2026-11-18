@@ -155,6 +155,23 @@ pub async fn run_http_server(port: u16) -> Result<(), String> {
         .map_err(|e| format!("HTTP server error: {}", e))
 }
 
+/// ACP (`acp.*`) methods are only reachable over native messaging, never
+/// over the HTTP/WebSocket (Safari) surface: the bridge spawns and owns the
+/// agent process end to end, and that surface has no equivalent of native
+/// messaging's single long-lived, single-extension connection to hold a
+/// per-process relay stream on. Checked ahead of `rpc::handle` in both the
+/// HTTP and WebSocket RPC paths below.
+fn is_acp_method(method: &str) -> bool {
+    method.starts_with("acp.")
+}
+
+fn acp_rejected_over_http(method: &str) -> HttpRpcErrorResponse {
+    HttpRpcErrorResponse {
+        code: -32601,
+        message: format!("{} is not available over HTTP/WebSocket", method),
+    }
+}
+
 /// Health check endpoint
 async fn health_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({
@@ -175,6 +192,17 @@ async fn rpc_handler(
         request.method,
         request.id
     );
+
+    if is_acp_method(&request.method) {
+        return (
+            StatusCode::OK,
+            Json(HttpRpcResponse {
+                id: request.id.clone(),
+                result: None,
+                error: Some(acp_rejected_over_http(&request.method)),
+            }),
+        );
+    }
 
     // Convert to internal RPC request format
     let internal_request = rpc::RpcRequest {
@@ -303,6 +331,17 @@ async fn handle_ws_message(msg: WsMessage, state: &Arc<RwLock<ServerState>>) {
         WsMessage::Rpc { id, method, params } => {
             tracing::info!("WebSocket RPC request: {} (id: {:?})", method, id);
 
+            if is_acp_method(&method) {
+                let response = WsMessage::RpcResponse {
+                    id,
+                    result: None,
+                    error: Some(acp_rejected_over_http(&method)),
+                };
+                let state_read = state.read().await;
+                let _ = state_read.broadcast_tx.send(response);
+                return;
+            }
+
             // Handle streaming requests differently
             let is_stream = method == "llm.chat" && !params.get("safari_no_stream").is_some_and(|v| v == true);
 
@@ -421,4 +460,62 @@ async fn handle_streaming_rpc(
 async fn broadcast_message(_state: &Arc<RwLock<ServerState>>, _msg: WsMessage) {
     // This function can be used by other modules to push messages
     // For now, it's a placeholder for future use (e.g., console log forwarding)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn acp_methods_are_recognized_for_rejection() {
+        assert!(is_acp_method("acp.list_agents"));
+        assert!(is_acp_method("acp.open"));
+        assert!(is_acp_method("acp.send"));
+        assert!(is_acp_method("acp.close"));
+        assert!(!is_acp_method("llm.chat"));
+        assert!(!is_acp_method("acplike.notreally"));
+    }
+
+    /// Finds a free port by briefly binding to port 0, matching the pattern
+    /// `run_http_server` itself uses (a fixed, OS-caller-chosen port) - this
+    /// is only for the test's own ephemeral server, not for anything shipped.
+    async fn free_port() -> u16 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        listener.local_addr().unwrap().port()
+    }
+
+    #[tokio::test]
+    async fn http_rejects_acp_methods() {
+        let port = free_port().await;
+        tokio::spawn(async move {
+            let _ = run_http_server(port).await;
+        });
+        // Give the server a moment to bind before hitting it.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("http://127.0.0.1:{}/rpc", port))
+            .json(&serde_json::json!({ "id": 1, "method": "acp.list_agents", "params": {} }))
+            .send()
+            .await
+            .expect("request should succeed");
+        let body: serde_json::Value = resp.json().await.expect("valid JSON response");
+
+        assert!(body.get("result").is_none(), "acp.list_agents must not run over HTTP");
+        let error = body.get("error").expect("error field");
+        assert_eq!(error["code"], -32601);
+        assert!(error["message"].as_str().unwrap().contains("acp.list_agents"));
+
+        // A non-acp method still works over HTTP, proving the rejection is
+        // specific to `acp.*` and not a general breakage.
+        let resp = client
+            .post(format!("http://127.0.0.1:{}/rpc", port))
+            .json(&serde_json::json!({ "id": 2, "method": "system.health", "params": {} }))
+            .send()
+            .await
+            .expect("request should succeed");
+        let body: serde_json::Value = resp.json().await.expect("valid JSON response");
+        assert_eq!(body["result"]["status"], "ok");
+    }
 }

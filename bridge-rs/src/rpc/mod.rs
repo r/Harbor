@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{fs, js, llm, mcp, oauth};
+use crate::{acp, fs, js, llm, mcp, oauth};
 
 // =============================================================================
 // Types
@@ -120,6 +120,9 @@ fn get_handlers() -> &'static HashMap<&'static str, RpcHandler> {
     // MCP tool registry handlers
     register_mcp_handlers(&mut handlers);
 
+    // ACP (Agent Client Protocol) process relay handlers
+    register_acp_handlers(&mut handlers);
+
     handlers
   })
 }
@@ -186,6 +189,24 @@ fn register_mcp_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
   handlers.insert("mcp.submit_call_result", |p| Box::pin(mcp::submit_call_result(p)));
 }
 
+fn register_acp_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
+  // `acp.open` is a streaming method (see `is_streaming_method` and
+  // `native_messaging::handle_streaming_rpc`) and is deliberately not
+  // registered here, matching how `llm.chat_stream` is handled.
+  //
+  // `acp.send` is also deliberately not registered here: native messaging
+  // intercepts it before it would reach this registry and calls
+  // `acp::enqueue_send` inline (never via `tokio::spawn`), so sends are
+  // processed in the exact order the extension sent them. See
+  // `native_messaging::run_native_messaging`.
+  //
+  // All `acp.*` methods, including the two registered below, are also
+  // rejected outright over the HTTP/WebSocket (Safari) surface; see
+  // `http_server::is_acp_method`.
+  handlers.insert("acp.list_agents", |_| Box::pin(acp::list_agents()));
+  handlers.insert("acp.close", |p| Box::pin(acp::close(p)));
+}
+
 // =============================================================================
 // Request Handling
 // =============================================================================
@@ -209,7 +230,7 @@ pub async fn handle(request: RpcRequest) -> RpcResponse {
 /// Check if a method is a streaming method.
 /// Streaming methods are handled differently (they send multiple messages).
 pub fn is_streaming_method(method: &str) -> bool {
-  matches!(method, "llm.chat_stream")
+  matches!(method, "llm.chat_stream" | "acp.open")
 }
 
 /// List all registered RPC methods.

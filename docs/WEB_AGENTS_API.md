@@ -175,9 +175,15 @@ console.log(response);
 // Follow-up (maintains conversation context)
 const followUp = await session.prompt('Tell me more');
 
-// Streaming response
-for await (const token of session.promptStreaming('Write a poem')) {
-  process.stdout.write(token);
+// Streaming response. It yields plain strings, so a failure (such as
+// ERR_PERMISSION_DENIED after the site's permission is revoked) throws,
+// the same as prompt(). The error has a `code` and a `message`.
+try {
+  for await (const token of session.promptStreaming('Write a poem')) {
+    process.stdout.write(token);
+  }
+} catch (err) {
+  console.error(err.code, err.message);
 }
 
 // Clean up when done
@@ -673,7 +679,7 @@ for await (const event of window.agent.run({
       break;
       
     case 'error':
-      console.error('[Error]', event.error);
+      console.error('[Error]', event.error.code, event.error.message);
       break;
   }
 }
@@ -687,7 +693,9 @@ for await (const event of window.agent.run({
 | `tool_call` | `tool`, `args` | Tool being called |
 | `tool_result` | `tool`, `result` | Tool execution result |
 | `final` | `output` | Final response |
-| `error` | `error` | Error message |
+| `error` | `error` (`{ code, message }`) | The run failed and is over |
+
+`agent.run()` doesn't throw when a run fails. Every failure arrives as one `error` event, after which the run ends: a refusal before it starts (for example, `ERR_PERMISSION_DENIED` without `model:prompt`), the site's permission being revoked partway through, or a model call failing (`ERR_MODEL_FAILED`).
 
 ---
 
@@ -1061,6 +1069,7 @@ try {
 | `ERR_AGENT_NOT_FOUND` | Agent not registered |
 | `ERR_AGENT_NOT_ACCEPTING` | Agent not accepting invocations |
 | `ERR_TIMEOUT` | Request timed out |
+| `ERR_ABORTED` | The page aborted an `agent.run`, or its tab closed |
 | `ERR_INTERNAL` | Internal error |
 
 ---

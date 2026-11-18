@@ -526,7 +526,13 @@ export async function handleOrchestratePipeline(
     return;
   }
 
-  const payload = ctx.payload as { pipeline: Pipeline; initialInput: unknown };
+  // The page API sends { config: { steps: [{ agentId, task, outputTransform? }] }, initialInput },
+  // and its handler has already rejected a pipeline with no steps.
+  const payload = ctx.payload as {
+    config: { steps: Array<{ agentId: string; task: string; outputTransform?: string }> };
+    initialInput?: unknown;
+  };
+
   const agentId = originAgents.get(ctx.origin);
 
   if (!agentId) {
@@ -538,8 +544,21 @@ export async function handleOrchestratePipeline(
     return;
   }
 
-  const result = await executePipeline(payload.pipeline, payload.initialInput, agentId, ctx.origin);
-  sender.sendResponse({ id: ctx.id, ok: true, result });
+  const pipelineId = `pipeline-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const pipeline: Pipeline = {
+    id: pipelineId,
+    name: pipelineId,
+    steps: payload.config.steps.map((step, i) => ({
+      id: `step-${i + 1}`,
+      agentId: step.agentId,
+      taskTemplate: step.task,
+      outputTransform: step.outputTransform,
+    })),
+  };
+
+  const result = await executePipeline(pipeline, payload.initialInput, agentId, ctx.origin);
+  // The page API promises { success, result, stepResults }; Harbor calls the result finalOutput.
+  sender.sendResponse({ id: ctx.id, ok: true, result: { ...result, result: result.finalOutput } });
 }
 
 /**
@@ -611,7 +630,14 @@ export async function handleOrchestrateRoute(
     return;
   }
 
-  const payload = ctx.payload as { router: AgentRouter; input: unknown; task: string };
+  // The page API sends { config: { routes, defaultAgentId? }, input, task },
+  // and its handler has already rejected a router with no routes.
+  const payload = ctx.payload as {
+    config: { routes: Array<{ condition: string; agentId: string }>; defaultAgentId?: string };
+    input?: unknown;
+    task: string;
+  };
+
   const agentId = originAgents.get(ctx.origin);
 
   if (!agentId) {
@@ -623,8 +649,18 @@ export async function handleOrchestrateRoute(
     return;
   }
 
-  const result = await executeRouter(payload.router, payload.input, payload.task, agentId, ctx.origin);
-  sender.sendResponse({ id: ctx.id, ok: true, result });
+  const routerId = `router-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const router: AgentRouter = {
+    id: routerId,
+    name: routerId,
+    routes: payload.config.routes,
+    defaultAgentId: payload.config.defaultAgentId,
+  };
+
+  const result = await executeRouter(router, payload.input, payload.task, agentId, ctx.origin);
+  // The page API promises the chosen agent's invocation response ({ success, result?, error? });
+  // the routing details stay alongside it.
+  sender.sendResponse({ id: ctx.id, ok: true, result: { ...result, ...result.invocationResult } });
 }
 
 /**

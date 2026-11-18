@@ -117,10 +117,15 @@ export function recordExplicitPrompt(
  * revalidated with Harbor on every prompt, so termination and expiry apply.
  * A window.ai session is refused while Text Generation is off, even one made
  * before it was turned off.
+ *
+ * Every prompt needs a live `model:prompt` grant, not just the one the origin
+ * held when it created the session: revoking the site, or a one-time grant
+ * expiring, stops the next prompt on a session it already has open.
  */
 export async function resolveTextSession(
   sessionId: string,
   origin: string,
+  tabId?: number,
 ): Promise<{ session: TextSessionState } | { code: string; message: string }> {
   const session = textSessions.get(sessionId);
   if (!session) {
@@ -131,6 +136,9 @@ export async function resolveTextSession(
   }
   if (!session.explicit && !(await getFeatureFlags()).textGeneration) {
     return { code: 'ERR_FEATURE_DISABLED', message: `${FEATURE_LABELS.textGeneration} is disabled` };
+  }
+  if (!await hasPermission(origin, 'model:prompt', tabId)) {
+    return { code: 'ERR_PERMISSION_DENIED', message: 'Permission model:prompt required' };
   }
   if (session.explicit) {
     let hasLLM: boolean;
@@ -160,7 +168,7 @@ export async function resolveTextSession(
 export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse {
   const { sessionId, input } = ctx.payload as { sessionId: string; input: string };
   
-  const resolved = await resolveTextSession(sessionId, ctx.origin);
+  const resolved = await resolveTextSession(sessionId, ctx.origin, ctx.tabId);
   if (!('session' in resolved)) {
     return errorResponse(ctx.id, resolved.code, resolved.message);
   }
