@@ -2,8 +2,8 @@
 
 **Status**: Draft Proposal
 **Author**: Raffi Krikorian
-**Last Updated**: May 2026
-**Version**: 1.4
+**Last Updated**: November 2026
+**Version**: 1.5
 
 ---
 
@@ -39,8 +39,6 @@ synchronous `window.agent.capabilities()` call to feature-detect at runtime.
 **Proposed but NOT yet in the reference implementation** (treated as future
 work — sections below are kept so the spec reflects the full design intent):
 
-- `window.ai.runtime.*` (Firefox-ML / Chrome-AI / Harbor runtime selection).
-- `window.agent.addressBar.*` and `window.agent.commandBar.*`.
 - A privileged "extension-driver" trust tier that lets one tab observe or
   drive arbitrary other tabs (today only same-origin and "owned/spawned"
   tabs are addressable). See `docs/AGENTIC_BROWSER_ROADMAP.md`.
@@ -815,102 +813,6 @@ console.log(`Active model: ${active.model}`);
 // Example output:
 // Active provider: ollama
 // Active model: llama3.2:3b
-```
-
----
-
-#### `ai.runtime`
-
-> **Status: Proposed, not yet shipped.** The Harbor reference implementation
-> does not currently expose `window.ai.runtime`. Use
-> `window.ai.providers.list()` / `getActive()` and pass `provider`/`model` to
-> `createTextSession()` to pick a backend explicitly.
-
-The `ai.runtime` namespace provides direct access to specific AI backends (Firefox ML, Chrome's built-in AI, or Harbor's bridge). This is useful when you want to explicitly choose which runtime to use.
-
-**Properties:**
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `harbor` | `AIApi` | Direct access to Harbor's bridge API |
-| `firefox` | `object \| null` | Firefox's `browser.trial.ml` API (if available) |
-| `chrome` | `object \| null` | Chrome's built-in AI API (if available) |
-
-**Methods:**
-
-#### `ai.runtime.getBest()`
-
-Get the best available AI backend. Respects user preferences when configured.
-
-**Signature:**
-```typescript
-ai.runtime.getBest(): Promise<'firefox' | 'chrome' | 'harbor' | null>
-```
-
-**Returns:** The identifier of the best available runtime, or `null` if none available.
-
-**Selection Priority:**
-1. User's configured default (if set)
-2. Firefox wllama (if available, for privacy-first local inference)
-3. Chrome AI (if available)
-4. Harbor bridge (if connected)
-
-**Example:**
-```javascript
-// Check which backends are available
-const best = await window.ai.runtime.getBest();
-console.log('Best available backend:', best);
-
-// Use Harbor's API directly (bypasses native browser AI)
-const harborSession = await window.ai.runtime.harbor.createTextSession({
-  systemPrompt: 'You are helpful.'
-});
-const response = await harborSession.prompt('Hello');
-
-// Use Firefox's native AI if available
-if (window.ai.runtime.firefox) {
-  // Access Firefox ML API directly
-  const engine = await window.ai.runtime.firefox.createEngine({
-    modelId: 'llama-3.2-1b'
-  });
-}
-
-// Use Chrome's API if available
-if (window.ai.runtime.chrome) {
-  const chromeSession = await window.ai.runtime.chrome.languageModel.create();
-  // Use Chrome's on-device AI
-}
-```
-
-#### `ai.runtime.getCapabilities()`
-
-Get detailed capabilities of each available runtime.
-
-**Signature:**
-```typescript
-ai.runtime.getCapabilities(): Promise<RuntimeCapabilities>
-```
-
-**Returns:**
-```typescript
-interface RuntimeCapabilities {
-  firefox: {
-    available: boolean;
-    hasWllama: boolean;      // Firefox 142+ LLM support
-    hasTransformers: boolean; // Firefox 134+ embeddings
-    supportsTools: boolean;
-    models: string[];
-  } | null;
-  chrome: {
-    available: boolean;
-    supportsTools: boolean;
-  } | null;
-  harbor: {
-    available: boolean;
-    bridgeConnected: boolean;
-    providers: string[];     // Connected bridge providers
-  };
-}
 ```
 
 ---
@@ -1825,45 +1727,11 @@ interface Providers {
   Promise<ActiveLLMConfig> getActive();
 };
 
-interface AIRuntime {
-  readonly attribute AI harbor;
-  readonly attribute object? firefox;
-  readonly attribute object? chrome;
-  Promise<DOMString?> getBest();
-  Promise<RuntimeCapabilities> getCapabilities();
-};
-
-dictionary RuntimeCapabilities {
-  FirefoxCapabilities? firefox;
-  ChromeCapabilities? chrome;
-  HarborCapabilities harbor;
-};
-
-dictionary FirefoxCapabilities {
-  required boolean available;
-  required boolean hasWllama;
-  required boolean hasTransformers;
-  required boolean supportsTools;
-  required sequence<DOMString> models;
-};
-
-dictionary ChromeCapabilities {
-  required boolean available;
-  required boolean supportsTools;
-};
-
-dictionary HarborCapabilities {
-  required boolean available;
-  required boolean bridgeConnected;
-  required sequence<DOMString> providers;
-};
-
 interface AI {
   Promise<AICapabilityAvailability> canCreateTextSession();
   Promise<AITextSession> createTextSession(optional TextSessionOptions options = {});
   readonly attribute LanguageModel languageModel;
   readonly attribute Providers providers;
-  readonly attribute AIRuntime runtime;
 };
 
 interface Permissions {
@@ -2297,22 +2165,6 @@ for await (const event of window.agent.run({
   }
 }
 
-// Use the best available runtime explicitly
-const best = await window.ai.runtime.getBest();
-switch (best) {
-  case 'firefox':
-    // Use Firefox's local AI (private, no network)
-    const ffSession = await window.ai.createTextSession({ provider: 'firefox-wllama' });
-    break;
-  case 'chrome':
-    // Use Chrome's on-device AI
-    const chromeSession = await window.ai.runtime.chrome.languageModel.create();
-    break;
-  case 'harbor':
-    // Use Harbor's backend (supports tools, multiple providers)
-    const harborSession = await window.ai.runtime.harbor.createTextSession();
-    break;
-}
 ```
 
 ### Example: Tool-Specific Integration
@@ -2511,11 +2363,6 @@ const providers = await window.ai.providers.list();
 const nativeProviders = providers.filter(p => p.isNative);
 console.log('Native providers:', nativeProviders.map(p => p.id));
 // Example: ['firefox-wllama', 'firefox-transformers']
-
-// Check specific runtime availability
-const best = await window.ai.runtime.getBest();
-console.log('Best available:', best);
-// Returns: 'firefox' | 'chrome' | 'harbor' | null
 ```
 
 ### Firefox ML Integration
@@ -2540,13 +2387,6 @@ const session = await window.ai.createTextSession({
   model: 'llama-3.2-1b',
   systemPrompt: 'You are a helpful assistant.'
 });
-
-// Or access the Firefox runtime directly
-if (window.ai.runtime.firefox) {
-  const engine = await window.ai.runtime.firefox.createEngine({
-    modelId: 'llama-3.2-1b'
-  });
-}
 ```
 
 ### Chrome AI Integration
@@ -2559,13 +2399,6 @@ const session = await window.ai.createTextSession({
   provider: 'chrome',
   systemPrompt: 'Be helpful and concise.'
 });
-
-// Or access Chrome's API directly
-if (window.ai.runtime.chrome) {
-  const chromeSession = await window.ai.runtime.chrome.languageModel.create({
-    systemPrompt: 'You are helpful.'
-  });
-}
 ```
 
 ### Split Routing
@@ -2730,6 +2563,7 @@ console.log(caps.permissions.llm.prompt); // 'granted-always'
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5 | November 2026 | Removed `ai.runtime.*` and the Address Bar API (`agent.addressBar.*`, `agent.commandBar.*`). `ai.runtime` shipped briefly in an early page script and was dropped; page calls to the Address Bar API were never connected. Neither is in the reference implementation. |
 | 1.4 | May 2026 | Synchronous `agent.capabilities()` shipped; `agent.browser.navigate` and `agent.browser.fetch` wired up; permission scope set reconciled with implementation; debug logging gated behind `web-agents-api:debug`. |
 | 1.3 | January 2026 | Native browser AI providers (Firefox ML, Chrome AI), split routing, `ai.runtime.*` (proposed, not yet shipped). |
 | 1.2 | January 2026 | Address Bar API (`agent.addressBar.*`, `agent.commandBar.*`) (proposed, not yet shipped). |
