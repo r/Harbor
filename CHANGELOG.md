@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Harbor's icon is now the lighthouse from the site's favicon, in the toolbar, the add-ons page and Harbor's own UI (sidebar, permission prompt, directory, in-page chat), replacing the "H". `npm run favicon` in `extension/` rebuilds `whitepaper/favicon.ico` from `extension/assets/icon.svg`.
 - Harbor is now a single browser extension: it injects and serves `window.ai`, `window.agent` and `navigator.modelContext` itself (`extension/src/page-api/`). The separate Web Agents API extension is retired.
 - Site, `README.md` and `spec/README.md` follow the updated positioning: homepage example 02 shows the airline's page handing the trip to your agent, which asks before holding a seat; the spec page says Harbor implements the Web Agent API; both READMEs mention agent-to-company protocols; browser-control APIs are described as a stopgap.
 - `docs/POSITIONING.md` — describes Harbor as an implementation of the Web Agent API: an API for how a web surface and the person's agent talk, wherever the surface is rendered, with browser control as a stopgap. Adds agent-to-company protocols (remote MCP, A2A, Personal Agent Protocol, UCP, Web Bot Auth) as a fifth camp, a standards row, talking points for agent builders, and sources. "Not an agent" now explains what "your agent" means.

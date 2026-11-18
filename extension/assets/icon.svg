@@ -1,7 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
-  <!-- Harbor H logo - nautical blue -->
-  <rect x="4" y="4" width="120" height="120" rx="24" fill="#1a4a6e"/>
-  
-  <!-- Letter H -->
-  <path d="M38 32 L38 96 L54 96 L54 70 L74 70 L74 96 L90 96 L90 32 L74 32 L74 54 L54 54 L54 32 Z" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Harbor lighthouse mark. Same artwork as whitepaper/favicon.ico and the
+       inline badges in Harbor's UI (kept in sync by lighthouse-mark.test.ts). -->
+  <rect width="64" height="64" fill="#00d230"/><path d="M33 17L64 6V27.5L34 23Z" fill="#efffce"/><path d="M26 7.5L37 17H15Z" fill="#151b17"/><rect x="18" y="17" width="16" height="7" fill="#151b17"/><rect x="22" y="17.75" width="8" height="4.5" fill="#efffce"/><rect x="14" y="24" width="24" height="4" fill="#151b17"/><path d="M20 28H32.5L38 52H14Z" fill="#151b17"/><path d="M18.68 33.26L33.05 30.39L34.71 37.65L16.61 41.57Z" fill="#efffce"/><path d="M0 57Q8 53 13.5 51.5H38.5Q45 53 49 55.5Q56 53.5 64 53.5V64H0Z" fill="#151b17"/>
 </svg>
