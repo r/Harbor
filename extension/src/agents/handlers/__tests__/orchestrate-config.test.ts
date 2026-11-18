@@ -16,7 +16,9 @@ vi.mock('../helpers', async (importOriginal) => ({
 
 // Record what Harbor would deliver to each target agent instead of
 // delivering it to a page.
-const invokeAgent = vi.fn(async (request: { agentId: string; task: string; input?: unknown }) => ({
+type Invocation = { agentId: string; task: string; input?: unknown };
+type InvocationResponse = { success: boolean; result?: unknown; error?: { code: string; message: string }; executionTime: number };
+const invokeAgent = vi.fn(async (request: Invocation): Promise<InvocationResponse> => ({
   success: true,
   result: `${request.agentId}:${request.task}`,
   executionTime: 0,
@@ -90,6 +92,7 @@ describe('orchestrate calls from a page reach Harbor in the documented shape', (
     ]);
     expect(invokeAgent.mock.calls[0][0].input).toEqual({ topic: 'tides' });
     expect(invokeAgent.mock.calls[1][0].input).toBe('researcher:research');
+    expect((response as { result: { stepResults: unknown[] } }).result.stepResults).toHaveLength(2);
   });
 
   it('route sends the task to the agent whose condition matches', async () => {
@@ -121,6 +124,79 @@ describe('orchestrate calls from a page reach Harbor in the documented shape', (
       task: 'answer',
     }));
 
-    expect(response).toMatchObject({ ok: true, result: { selectedAgentId: 'general' } });
+    expect(response).toMatchObject({
+      ok: true,
+      result: { success: true, result: 'general:answer', selectedAgentId: 'general', matchedCondition: null },
+    });
+  });
+
+  it('route with no match and no default reports ERR_NO_ROUTE', async () => {
+    const response = await handleAgentsRoute(pageCtx('agent.agents.orchestrate.route', {
+      config: { routes: [{ condition: 'hasProperty:code', agentId: 'tech' }] },
+      input: { note: 'hello' },
+      task: 'answer',
+    }));
+
+    expect(response).toMatchObject({ ok: true, result: { success: false, error: { code: 'ERR_NO_ROUTE' } } });
+    expect(invokeAgent).not.toHaveBeenCalled();
+  });
+
+  it('pipeline stops at a failed step and reports it', async () => {
+    invokeAgent.mockImplementationOnce(async (request) => ({ success: true, result: `${request.agentId}:${request.task}`, executionTime: 0 }));
+    invokeAgent.mockImplementationOnce(async () => ({
+      success: false,
+      error: { code: 'ERR_AGENT_NOT_FOUND', message: 'Target agent not found' },
+      executionTime: 0,
+    }));
+
+    const response = await handleAgentsPipeline(pageCtx('agent.agents.orchestrate.pipeline', {
+      config: {
+        steps: [
+          { agentId: 'researcher', task: 'research' },
+          { agentId: 'missing', task: 'write' },
+          { agentId: 'reviewer', task: 'review' },
+        ],
+      },
+      initialInput: 'x',
+    }));
+
+    expect(response).toMatchObject({ ok: true, result: { success: false, result: undefined } });
+    expect((response as { result: { stepResults: unknown[]; error: string } }).result.stepResults).toHaveLength(2);
+    expect((response as { result: { error: string } }).result.error).toContain('Target agent not found');
+    expect(invokeAgent).toHaveBeenCalledTimes(2);
+  });
+
+  it('pipeline applies a step\'s outputTransform and fills {{input}} in the next task', async () => {
+    invokeAgent.mockImplementationOnce(async () => ({ success: true, result: { title: 'Tides' }, executionTime: 0 }));
+
+    await handleAgentsPipeline(pageCtx('agent.agents.orchestrate.pipeline', {
+      config: {
+        steps: [
+          { agentId: 'researcher', task: 'research', outputTransform: '.title' },
+          { agentId: 'writer', task: 'write about {{input}}' },
+        ],
+      },
+      initialInput: 'x',
+    }));
+
+    expect(invokeAgent.mock.calls[1][0]).toMatchObject({ agentId: 'writer', task: 'write about Tides', input: 'Tides' });
+  });
+
+  it('both calls refuse a page that has not registered as an agent', async () => {
+    const other = (type: string, payload: unknown) =>
+      ({ id: 'p2', type, origin: 'https://unregistered.example', tabId: 4, payload }) as PageRequestContext;
+
+    const pipeline = await handleAgentsPipeline(other('agent.agents.orchestrate.pipeline', {
+      config: { steps: [{ agentId: 'a', task: 't' }] },
+    }));
+    const route = await handleAgentsRoute(other('agent.agents.orchestrate.route', {
+      config: { routes: [{ condition: 'always', agentId: 'a' }] },
+      input: 1,
+      task: 't',
+    }));
+
+    expect(pipeline).toMatchObject({ ok: false, error: { message: 'Must register as an agent first' } });
+    expect(route).toMatchObject({ ok: false, error: { message: 'Must register as an agent first' } });
+    expect(invokeAgent).not.toHaveBeenCalled();
   });
 });
