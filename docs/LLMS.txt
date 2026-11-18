@@ -474,7 +474,7 @@ Users toggle these in Harbor's sidebar. Read them at runtime via `agent.capabili
 | Flag | Default | Surfaces |
 |------|---------|----------|
 | `textGeneration` | ON | `window.ai.*` |
-| `toolAccess` | ON | `agent.tools.*`, `agent.sessions.*` |
+| `toolAccess` | ON | `agent.tools.*`, a session's `callTool()` |
 | `toolCalling` | ON | `agent.run()` |
 | `browserInteraction` | OFF | `agent.browser.activeTab.*` |
 | `browserControl` | OFF | `agent.browser.navigate/fetch/tabs/tab` |
