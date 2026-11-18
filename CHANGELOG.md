@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `agent.requestPermissions()` asks for exactly the scopes the page names. A request for `model:prompt`, `mcp:tools.call` or `browser:tabs.create` no longer also asks for `agents:register` and `agents:invoke`. Pages that register or invoke agents must request those scopes themselves; if they don't, Harbor asks when they call the agent API.
 - A site that has been granted `agents:invoke` or `agents:message` is no longer asked again on every `agent.agents.invoke()` or message call. The grant now covers later calls. Calling another agent on this device changes nothing by itself, and that agent's own actions are still checked.
 - An "Allow once" grant now covers only the tab where it was given, in Harbor's policy checks as well as in the page API. Before, another tab on the same site could use it, for example to register an agent.
+- `agent.agents.orchestrate.pipeline()` and `orchestrate.route()` work from a page. Before, both always failed after the permission check, because Harbor expected a different payload than the page API sends. A pipeline now returns its last step's output as `result`, and a route returns the chosen agent's response (`success`, `result`, `error`) with `selectedAgentId` alongside.
 
 ### Removed
 
