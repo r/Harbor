@@ -71,6 +71,24 @@ describe('agent.run receiving boundary', () => {
     expect(mocks.harborRequest).not.toHaveBeenCalled();
   });
 
+  it('stops before the next model turn once model:prompt is revoked mid-run', async () => {
+    const toolCall = { id: 'call-clock', function: { name: 'clock_time', arguments: '{}' } };
+    let promptGranted = true;
+    mocks.hasPermission.mockImplementation(async (_origin, scope) => scope !== 'model:prompt' || promptGranted);
+    mocks.harborRequest.mockImplementation(async (method) => {
+      if (method === 'mcp.listTools') return { tools: [{ name: 'time', serverId: 'clock' }] };
+      if (method === 'mcp.callTool') { promptGranted = false; return { result: 'Noon' }; }
+      return { content: '', choices: [{ message: { role: 'assistant', content: '', tool_calls: [toolCall] } }] };
+    });
+    await run();
+    expect(mocks.harborRequest.mock.calls.filter(([m]) => m === 'llm.chat')).toHaveLength(1);
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      done: true, event: expect.objectContaining({ error: expect.objectContaining({
+        code: 'ERR_PERMISSION_DENIED', message: 'Permission model:prompt required',
+      }) }),
+    }));
+  });
+
   it('runs when enabled and explicitly permitted', async () => {
     await run();
     expect(mocks.harborRequest).toHaveBeenCalledWith('llm.chat', expect.anything());

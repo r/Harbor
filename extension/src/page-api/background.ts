@@ -65,7 +65,7 @@ async function handleSessionPromptStreaming(
 ): Promise<void> {
   const { sessionId, input } = ctx.payload as { sessionId: string; input: string };
 
-  const resolved = await resolveTextSession(sessionId, ctx.origin);
+  const resolved = await resolveTextSession(sessionId, ctx.origin, ctx.tabId);
   if (!('session' in resolved)) {
     sendEvent({ id: ctx.id, event: { type: 'error', error: { code: resolved.code, message: resolved.message } }, done: true });
     return;
@@ -199,9 +199,26 @@ async function handleAgentRun(
     messages.push({ role: 'system', content: systemPrompt || 'You are a helpful assistant that can use tools to help users.' });
     messages.push({ role: 'user', content: task });
 
+    // A run spans several model calls. Re-check model:prompt before each one
+    // after the first (checked above), so revoking the site, or a one-time
+    // grant expiring, ends the run instead of letting it keep prompting.
+    const promptRevoked = async (): Promise<boolean> => {
+      if (await hasPermission(ctx.origin, 'model:prompt', ctx.tabId)) return false;
+      sendEvent({
+        id: ctx.id,
+        event: { type: 'error', error: { code: 'ERR_PERMISSION_DENIED', message: 'Permission model:prompt required' } },
+        done: true,
+      });
+      return true;
+    };
+
     let toolCallCount = 0;
+    let firstTurn = true;
 
     while (toolCallCount < maxToolCalls) {
+      if (!firstTurn && await promptRevoked()) return;
+      firstTurn = false;
+
       type LLMResponse = {
         content: string;
         choices?: Array<{
@@ -313,6 +330,7 @@ async function handleAgentRun(
     }
 
     // Max tool calls reached
+    if (await promptRevoked()) return;
     messages.push({ role: 'user', content: 'Please provide your final answer based on the information gathered.' });
     const finalResult = await harborRequest<{ content: string }>('llm.chat', {
       origin: ctx.origin,
