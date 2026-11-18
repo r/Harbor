@@ -2,8 +2,8 @@
 
 **Status**: Draft Proposal  
 **Author**: Raffi Krikorian  
-**Last Updated**: January 2026  
-**Version**: 1.0
+**Last Updated**: November 2026  
+**Version**: 1.1
 
 ---
 
@@ -771,51 +771,6 @@ console.log(`Active model: ${active.model}`);
 
 ---
 
-#### `ai.runtime`
-
-The `ai.runtime` namespace provides direct access to specific AI backends (Chrome's built-in AI vs. Harbor's backend). This is useful when you want to explicitly choose which provider to use at runtime.
-
-**Properties:**
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `harbor` | `AIApi` | Direct access to Harbor's AI API |
-| `chrome` | `object \| null` | Chrome's built-in AI API (if available) |
-
-**Methods:**
-
-#### `ai.runtime.getBest()`
-
-Get the best available AI backend.
-
-**Signature:**
-```typescript
-ai.runtime.getBest(): Promise<'harbor' | 'chrome' | null>
-```
-
-**Returns:** The identifier of the best available provider, or `null` if none available.
-
-**Example:**
-```javascript
-// Check which backends are available
-const best = await window.ai.runtime.getBest();
-console.log('Best available backend:', best);
-
-// Use Harbor's API directly (bypasses Chrome AI)
-const harborSession = await window.ai.runtime.harbor.createTextSession({
-  systemPrompt: 'You are helpful.'
-});
-const response = await harborSession.prompt('Hello');
-
-// Use Chrome's API if available
-if (window.ai.runtime.chrome) {
-  const chromeSession = await window.ai.runtime.chrome.languageModel.create();
-  // Use Chrome's on-device AI
-}
-```
-
----
-
 ### window.agent
 
 The `window.agent` object provides access to MCP tools, browser APIs, and autonomous agent capabilities.
@@ -1420,18 +1375,11 @@ interface Providers {
   Promise<ActiveLLMConfig> getActive();
 };
 
-interface AIRuntime {
-  readonly attribute AI harbor;
-  readonly attribute object? chrome;
-  Promise<DOMString?> getBest();
-};
-
 interface AI {
   Promise<AICapabilityAvailability> canCreateTextSession();
   Promise<AITextSession> createTextSession(optional TextSessionOptions options = {});
   readonly attribute LanguageModel languageModel;
   readonly attribute Providers providers;
-  readonly attribute AIRuntime runtime;
 };
 
 interface Permissions {
@@ -1866,15 +1814,6 @@ for await (const event of window.agent.run({
   }
 }
 
-// Use Harbor vs Chrome runtime explicitly
-const best = await window.ai.runtime.getBest();
-if (best === 'harbor') {
-  // Use Harbor's backend (supports tools, multiple providers)
-  const harborSession = await window.ai.runtime.harbor.createTextSession();
-} else if (best === 'chrome') {
-  // Use Chrome's on-device AI (faster, private)
-  const chromeSession = await window.ai.runtime.chrome.languageModel.create();
-}
 ```
 
 ### Example: Tool-Specific Integration
@@ -2074,6 +2013,7 @@ const caps = await window.agent.capabilities();
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | November 2026 | Removed the proposed `ai.runtime` namespace, which was never implemented. |
 | 1.0 | January 2026 | Initial specification |
 
 ---
