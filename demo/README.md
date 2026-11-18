@@ -77,7 +77,7 @@ The "Bring Your Own Chatbot" (BYOC) demo shows how websites integrate with the u
 3. **Permission Flow**: Users explicitly grant permission for websites to register MCP servers
 4. **Graceful Degradation**: Works without the Web Agent API by falling back to a simulated mode
 
-`agent.mcp.register()`, `agent.mcp.unregister()`, `agent.mcp.discover()`, and `agent.chat.{canOpen, open, close}` are implemented in the Web Agents API extension. See [`web-agents/bring-your-chatbot/README.md`](web-agents/bring-your-chatbot/README.md) for the full demo and `docs/WEB_AGENTS_API.md` for the API reference.
+`agent.mcp.register()`, `agent.mcp.unregister()`, `agent.mcp.discover()`, and `agent.chat.{canOpen, open, close}` are implemented in Harbor. See [`web-agents/bring-your-chatbot/README.md`](web-agents/bring-your-chatbot/README.md) for the full demo and `docs/WEB_AGENTS_API.md` for the API reference.
 
 ## Email Chat Demo
 
@@ -106,7 +106,7 @@ console.log(response);
 
 ### Agent with Tools
 
-`agent.run()` requires the `toolCalling` feature flag in the Web Agents API sidebar. It yields **typed events** (not raw tokens):
+`agent.run()` requires the `toolCalling` feature flag in Harbor's sidebar. It yields **typed events** (not raw tokens):
 
 ```javascript
 for await (const event of window.agent.run({

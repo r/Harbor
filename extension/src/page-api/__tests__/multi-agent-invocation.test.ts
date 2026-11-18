@@ -11,7 +11,7 @@
  * the listener, not the router" pitfall, registration and invocation go
  * through a captured `onConnect`/`onMessage` listener in every test. The
  * timeout test additionally drives the invoke step through
- * `routeExternalMessage` directly — see the comment there for why.
+ * `routeAgentMessage` directly — see the comment there for why.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetMockBrowser } from '../../__tests__/test-setup';
@@ -249,9 +249,8 @@ describe('multi-agent invocation, delivered entirely in-process (no cross-extens
       await registerHandlerAgent(tab2, 'invoker');
 
       // Drive the invoke step one layer below the full page round trip:
-      // through `routeExternalMessage`, the same production entry point
-      // harbor-core.ts's in-process dispatch uses for `agents.*` types (and
-      // that a still-installed, separate extension would reach too). The
+      // through `routeAgentMessage`, the same production entry point
+      // harbor-core.ts's in-process dispatch uses for `agents.*` types. The
       // full round trip through tab 2's own port also works (test above),
       // but page-api/harbor-core.ts wraps every page call in its own
       // independent 30-second limit (see harbor-core-timeout.test.ts) that
@@ -259,9 +258,9 @@ describe('multi-agent invocation, delivered entirely in-process (no cross-extens
       // mechanism this test targets — the invocation's own ERR_TIMEOUT,
       // unchanged from before this unit. Calling the same function
       // directly isolates that mechanism.
-      const { routeExternalMessage } = await import('../../agents/background-router');
+      const { routeAgentMessage } = await import('../../agents/background-router');
       let settled: { ok: boolean; result?: unknown; error?: string } | undefined;
-      routeExternalMessage(
+      routeAgentMessage(
         {
           type: 'agents.invoke',
           payload: {
@@ -271,7 +270,6 @@ describe('multi-agent invocation, delivered entirely in-process (no cross-extens
             tabId: 2,
           },
         },
-        {} as chrome.runtime.MessageSender,
         (response) => { settled = response; },
       );
 

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Harbor",
   "version": "0.1.0",
-  "description": "Infrastructure extension for AI and MCP capabilities. Provides LLM access and tool execution for other extensions.",
+  "description": "Let websites use your agent.",
   "browser_specific_settings": {
     "safari": {
       "strict_min_version": "16.4"
@@ -23,17 +23,9 @@
     "http://127.0.0.1/*",
     "https://*/*"
   ],
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["dist/discovery.js"],
-      "run_at": "document_start"
-    }
-  ],
   "web_accessible_resources": [
     {
       "resources": [
-        "dist/discovery-injected.js",
         "dist/page-chat.js",
         "dist/design-tokens.css",
         "dist/demo-bootstrap.js",

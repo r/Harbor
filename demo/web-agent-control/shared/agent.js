@@ -11,7 +11,7 @@
 
 /**
  * Get the Web Agent API (lazy lookup).
- * Uses window.agent provided by the Web Agents API extension.
+ * Uses window.agent provided by Harbor.
  * @returns {object|undefined} The agent API or undefined if not available.
  */
 function getWebAgent() {
@@ -36,7 +36,7 @@ function waitForWebAgent(timeoutMs = 5000) {
     // Set up timeout
     const timeoutId = setTimeout(() => {
       cleanup();
-      reject(new Error('Web Agent API not detected. Make sure the Web Agents API extension is installed and enabled.'));
+      reject(new Error('Web Agent API not detected. Make sure Harbor is installed and enabled.'));
     }, timeoutMs);
 
     // Listen for ready events

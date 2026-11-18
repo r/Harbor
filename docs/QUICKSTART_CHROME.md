@@ -2,7 +2,7 @@
 
 This supplement covers Chrome-specific extension loading and native messaging. Start with **[the canonical Quickstart](../QUICKSTART.md#build-everything)**, using `npm run build:chrome`, then follow this page. Firefox remains the primary target.
 
-## Step 4: Load Both Extensions in Chrome
+## Step 4: Load Harbor in Chrome
 
 1. Open Chrome and navigate to `chrome://extensions`
 2. Enable **"Developer mode"** (toggle in the top right)
@@ -11,11 +11,7 @@ This supplement covers Chrome-specific extension loading and native messaging. S
    - Click **"Load unpacked"**
    - Select the `extension/dist-chrome/` folder
 
-4. **Load Web Agents API:**
-   - Click **"Load unpacked"** again
-   - Select the `web-agents-api/dist-chrome/` folder
-
-Both extensions should appear in your extensions list.
+Harbor should appear in your extensions list.
 
 ---
 

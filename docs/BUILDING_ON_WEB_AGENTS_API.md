@@ -1,8 +1,8 @@
-# Building on the Web Agents API
+# Building on the Web Agent API
 
-**Use this document in another project** when you want to build on the Web Agents API. Copy it into your repo (e.g. `docs/` or `.cursor/`) and point your AI assistant at it so it has clear examples, API surface, and capabilities.
+**Use this document in another project** when you want to build on the Web Agent API. Copy it into your repo (e.g. `docs/` or `.cursor/`) and point your AI assistant at it so it has clear examples, API surface, and capabilities.
 
-The Web Agents API is provided by the **Harbor** ecosystem: two browser extensions inject `window.ai`, `window.agent`, and `navigator.modelContext` into web pages. Your app runs in the browser and calls these APIs; you do **not** need to clone or build Harbor itself. For the full vision and proposal, see the [whitepaper (PDF)](../whitepaper.pdf).
+The Web Agent API is provided by **Harbor**: a single browser extension that injects `window.ai`, `window.agent`, and `navigator.modelContext` into web pages. Your app runs in the browser and calls these APIs; you do **not** need to clone or build Harbor itself. For the full vision and proposal, see the [whitepaper (PDF)](../whitepaper.pdf).
 
 **The core idea: you choose everything.** Choose the LLM (Ollama, llamafile, OpenAI, Anthropic — whatever the user has configured). Choose the MCP servers (Brave Search, GitHub, filesystem, or your own). Choose the integration style (manual tool calls, autonomous agents, or page-registered tools). The API gives you building blocks, not opinions.
 
@@ -12,10 +12,9 @@ The Web Agents API is provided by the **Harbor** ecosystem: two browser extensio
 
 ## Prerequisites (end users)
 
-- **Harbor Extension** — provides LLM backends, MCP servers, native bridge.
-- **Web Agents API Extension** — injects `window.ai` and `window.agent` into pages.
+- **Harbor Extension** — provides LLM backends, MCP servers, native bridge, and injects `window.ai` and `window.agent` into pages.
 
-Both must be installed (e.g. load unpacked from Harbor’s `extension/dist-firefox/` and `web-agents-api/dist-firefox/`). Your project is just a normal web app that assumes these globals exist.
+Must be installed (e.g. load unpacked from Harbor’s `extension/dist-firefox/`). Your project is just a normal web app that assumes these globals exist.
 
 ---
 
@@ -43,7 +42,7 @@ All of the above are gated by **permissions** (user must grant per origin) and s
 ```html
 <!DOCTYPE html>
 <html>
-<head><title>Web Agents API</title></head>
+<head><title>Web Agent API</title></head>
 <body>
   <button id="ask">Ask AI</button>
   <pre id="out"></pre>
@@ -51,7 +50,7 @@ All of the above are gated by **permissions** (user must grant per origin) and s
     document.getElementById('ask').onclick = async () => {
       const out = document.getElementById('out');
       if (!window.ai || !window.agent) {
-        out.textContent = 'Web Agents API not available. Install Harbor + Web Agents API extension.';
+        out.textContent = 'Web Agent API not available. Install the Harbor extension.';
         return;
       }
 
@@ -508,9 +507,9 @@ Sites can declare an MCP server and open a chat that uses the user’s model plu
 
 ## Testing your app
 
-To **test** your Web Agents API app (unit tests with mocks, E2E with real extensions):
+To **test** your Web Agent API app (unit tests with mocks, E2E with the real extension):
 
-- **[Testing your Harbor app](TESTING_YOUR_APP.md)** – step-by-step: generate the harness, run unit tests with the mock, run E2E with Playwright and Harbor extensions.
+- **[Testing your Harbor app](TESTING_YOUR_APP.md)** – step-by-step: generate the harness, run unit tests with the mock, run E2E with Playwright and the Harbor extension.
 - **Generate the harness** from the Harbor repo:  
   `node scripts/generate-test-harness.mjs /path/to/your/project`  
   This creates a `harbor-test/` folder with mock, Playwright config, example tests, and types.
@@ -522,11 +521,11 @@ To **test** your Web Agents API app (unit tests with mocks, E2E with real extens
 ## Where to get more
 
 - **This guide on the web:** If you're reading this on the published site, the same doc is at e.g. `https://r.github.io/Harbor/docs/BUILDING_ON_WEB_AGENTS_API.md` — share that link so others can build with AI tools.
-- **Full API reference and more examples:** [Harbor docs — Web Agents API](https://github.com/r/harbor/blob/main/docs/WEB_AGENTS_API.md) (or same repo path in your clone).
+- **Full API reference and more examples:** [Harbor docs — Web Agent API](https://github.com/r/harbor/blob/main/docs/WEB_AGENTS_API.md) (or same repo path in your clone).
 - **Spec and security:** [Web Agent API spec](https://github.com/r/harbor/tree/main/spec) in Harbor repo.
 - **Demos:** Harbor `demo/web-agents/` and `spec/examples/` (e.g. basic-chat, agent-with-tools, page-analyzer).
 - **AI-oriented short reference:** Harbor `docs/LLMS.txt` — compact reference for AI coding assistants.
 
 ---
 
-**Version:** Web Agents API (Harbor) v1.x. This guide is intended to be copied into projects that build on the API; for the canonical source see the Harbor repository.
+**Version:** Web Agent API (Harbor) v1.x. This guide is intended to be copied into projects that build on the API; for the canonical source see the Harbor repository.

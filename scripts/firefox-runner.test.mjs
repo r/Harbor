@@ -23,12 +23,12 @@ function fixture({ failure, run } = {}) {
   };
 }
 
-test('loads both Firefox builds in a new profile and closes only its runner', async () => {
+test('loads the Harbor build in a new profile and closes only its runner', async () => {
   const f = fixture();
   const session = await launchFirefox({ startUrl: 'http://localhost:3457' }, f.dependencies);
   assert.equal(f.config.target, 'firefox-desktop');
   assert.deepEqual(f.config.params.extensions.map(e => e.sourceDir.split('/').slice(-2).join('/')),
-    ['extension/dist-firefox', 'web-agents-api/dist-firefox']);
+    ['extension/dist-firefox']);
   assert.equal(f.config.params.profilePath, undefined);
   assert.equal(f.config.params.keepProfileChanges, false);
   assert.equal(f.config.params.preInstall, false);
@@ -36,14 +36,6 @@ test('loads both Firefox builds in a new profile and closes only its runner', as
   await session.close();
   await session.closed;
   assert.equal(f.exits, 1);
-});
-
-test('--harbor-only loads just the Harbor build', async () => {
-  const f = fixture();
-  const session = await launchFirefox({ extensionDirs: ['extension/dist-firefox'] }, f.dependencies);
-  assert.deepEqual(f.config.params.extensions.map(e => e.sourceDir.split('/').slice(-2).join('/')),
-    ['extension/dist-firefox']);
-  await session.close();
 });
 
 test('startup failure closes the owned runner and preserves the error', async () => {

@@ -2,12 +2,11 @@
 
 **AI as a browser capability.** A working sketch of what user-controlled AI on the open web could look like.
 
-> **Note:** Harbor + Web Agents is an invitation to explore what user-controlled AI on the web could look like. This is meant to start a conversation — not announce a product. Nothing here is a commitment that these ideas will appear in Firefox or any Mozilla product. But if we're going to shape how AI works on the web, it helps to have something concrete to talk about.
+> **Note:** Harbor is an invitation to explore what user-controlled AI on the web could look like. This is meant to start a conversation — not announce a product. Nothing here is a commitment that these ideas will appear in Firefox or any Mozilla product. But if we're going to shape how AI works on the web, it helps to have something concrete to talk about.
 
-This repository contains two browser extensions plus a small native bridge that, together, implement the **[Web Agent API](spec/)** specification:
+This repository contains a browser extension plus a small native bridge that implement the **[Web Agent API](spec/)** specification:
 
-- **Harbor** — Infrastructure extension that provides LLM connections (Ollama, OpenAI, Anthropic), hosts MCP servers, and manages the native bridge.
-- **Web Agents API** — Implements the **[Web Agent API](spec/)** specification, exposing `window.ai`, `window.agent`, and `navigator.modelContext` (W3C [WebMCP](https://webmachinelearning.github.io/webmcp/)) to web pages. Requires Harbor for LLM/MCP infrastructure.
+- **Harbor** — The extension. Provides LLM connections (Ollama, OpenAI, Anthropic), hosts MCP servers, manages the native bridge, and exposes `window.ai`, `window.agent`, and `navigator.modelContext` (W3C [WebMCP](https://webmachinelearning.github.io/webmcp/)) to web pages.
 
 ---
 
@@ -51,7 +50,7 @@ With the Web Agent API:
 
 **Get Harbor running in 10 minutes.**
 
-Follow **[QUICKSTART.md](QUICKSTART.md)** for the canonical setup: build both extensions and the bridge, load Firefox, and run the demos. On supported Macs, Apple Intelligence supplies a default as soon as the on-device model is ready. For another provider, add and test a model under **LLM Providers → Configured Models**.
+Follow **[QUICKSTART.md](QUICKSTART.md)** for the canonical setup: build the extension and the bridge, load Firefox, and run the demos. On supported Macs, Apple Intelligence supplies a default as soon as the on-device model is ready. For another provider, add and test a model under **LLM Providers → Configured Models**.
 
 The guide also covers the Getting Started demo's **Agentic Tool Use** setting and site permissions. A detected Ollama provider alone does not mean a model is configured.
 
@@ -104,15 +103,15 @@ The Web Agent API gives your web pages access to:
 | Document | Description |
 |----------|-------------|
 | **[API Quickstart](QUICKSTART.md)** | Get from zero to working code in 15 minutes |
-| **[Web Agents API Reference](docs/WEB_AGENTS_API.md)** | Complete API docs with examples |
-| **[Building on the Web Agents API](docs/BUILDING_ON_WEB_AGENTS_API.md)** | Portable guide for other projects — copy into your repo for examples, API, capabilities |
+| **[Web Agent API Reference](docs/WEB_AGENTS_API.md)** | Complete API docs with examples |
+| **[Building on the Web Agent API](docs/BUILDING_ON_WEB_AGENTS_API.md)** | Portable guide for other projects — copy into your repo for examples, API, capabilities |
 | **[Testing your app](docs/TESTING_YOUR_APP.md)** | Unit tests (mock) and E2E (Playwright + Harbor) — generate harness from `scripts/generate-test-harness.mjs` |
 | **[JS API Reference](docs/JS_AI_PROVIDER_API.md)** | Detailed `window.ai` and `window.agent` reference |
 | **[LLMS.txt](docs/LLMS.txt)** | AI-optimized reference for Claude, Cursor, Copilot |
 | **[Working Examples](spec/examples/)** | Copy-paste ready code |
 | **[Demo Source Code](demo/)** | Full demo implementations |
 
-> **Using an AI coding assistant?** Point it to **[docs/LLMS.txt](docs/LLMS.txt)** — it's designed for AI tools to quickly understand and build with the Web Agents API. **Building from another project?** Copy **[docs/BUILDING_ON_WEB_AGENTS_API.md](docs/BUILDING_ON_WEB_AGENTS_API.md)** into your repo (e.g. `docs/` or `.cursor/`) so the API, examples, and capabilities are in context.
+> **Using an AI coding assistant?** Point it to **[docs/LLMS.txt](docs/LLMS.txt)** — it's designed for AI tools to quickly understand and build with the Web Agent API. **Building from another project?** Copy **[docs/BUILDING_ON_WEB_AGENTS_API.md](docs/BUILDING_ON_WEB_AGENTS_API.md)** into your repo (e.g. `docs/` or `.cursor/`) so the API, examples, and capabilities are in context.
 
 ### Create Custom Tools (MCP Servers)
 
@@ -163,16 +162,11 @@ await window.agent.requestPermissions({
                                 │ postMessage
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│              WEB AGENTS API EXTENSION                            │
-│  • Implements Web Agent API spec  • Permission prompts          │
-│  • Injects window.ai/agent        • Delegates to Harbor         │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ Cross-extension messaging
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
 │                   HARBOR EXTENSION                               │
-│  • LLM provider selection      • In-browser WASM/JS MCP         │
-│  • MCP server management       • Chat sidebar UI                │
+│  • Implements Web Agent API spec  • LLM provider selection      │
+│  • Injects window.ai/agent        • In-browser WASM/JS MCP      │
+│  • Permission prompts             • MCP server management       │
+│                                    • Chat sidebar UI             │
 └───────────────────────────────┬─────────────────────────────────┘
                                 │ Native Messaging
                                 ▼
@@ -210,7 +204,7 @@ cd extension && npm test
 
 ## The Web Agent API Specification
 
-The Web Agents API extension implements the Web Agent API specification. The specification itself is browser-agnostic and could be implemented by browsers natively or by other extensions.
+Harbor implements the Web Agent API specification. The specification itself is browser-agnostic and could be implemented by browsers natively or by other extensions.
 
 | Document | Description |
 |----------|-------------|
@@ -227,8 +221,7 @@ The Web Agents API extension implements the Web Agent API specification. The spe
 harbor/
 ├── whitepaper/         # Public whitepaper (GitHub Pages)
 ├── spec/               # Web Agent API specification (browser-agnostic)
-├── extension/          # Harbor extension (LLM connections, MCP hosting, sidebar)
-├── web-agents-api/     # Web Agents API extension (implements window.ai/window.agent)
+├── extension/          # Harbor extension (LLM connections, MCP hosting, sidebar, page API)
 ├── bridge-rs/          # Rust native messaging bridge
 ├── demo/               # Working examples
 ├── docs/               # Implementation documentation

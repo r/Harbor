@@ -4,7 +4,7 @@ Try to refute a builder's acceptance claim at the exact assigned commit. Read `A
 
 Read-only on source: no repairs, commits, tracker updates or subagents. Run only authorized local checks and services. Builds write artifacts, so confirm the worktree, the ports and any shared-resource use (the bridge registration, `~/.harbor/`) first.
 
-Rerun the relevant boundary checks. Inspect visible results yourself, in Firefox with both extensions loaded. Check that assertions really observe the product, rather than a mock that agrees with itself. Scrutinize permission gating, trust-boundary validation, secrets handling, and the duplicated copies wherever they're affected.
+Rerun the relevant boundary checks. Inspect visible results yourself, in Firefox with Harbor loaded. Check that assertions really observe the product, rather than a mock that agrees with itself. Scrutinize permission gating, trust-boundary validation, secrets handling, and the duplicated copies wherever they're affected.
 
 For contested finder reports, test the exact premise and failure path before accepting or rejecting them. Report each one as:
 

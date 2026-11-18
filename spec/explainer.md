@@ -10,10 +10,10 @@
 ## Implementation Status (May 2026)
 
 This document is the **proposed** Web Agent API. The Harbor reference implementation
-(`web-agents-api/src/injected.ts`, API version `1.4.0`) ships a subset. Use the
+(`extension/src/page-api/injected.ts`, API version `1.4.0`) ships a subset. Use the
 synchronous `window.agent.capabilities()` call to feature-detect at runtime.
 
-**Shipped today** (gated by per-feature flags in the Web Agents API sidebar):
+**Shipped today** (gated by per-feature flags in Harbor's sidebar):
 
 - `window.ai` — `createTextSession`, `prompt`, `promptStreaming` (yields plain
   string chunks), `languageModel.capabilities()`, `providers.list/getActive/

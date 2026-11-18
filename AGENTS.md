@@ -12,17 +12,12 @@ This file provides guidance for AI coding assistants working on the Harbor codeb
 
 ## Extension Architecture
 
-Harbor uses a **two-extension architecture**:
+Harbor ships as **one extension** (`extension/dist-firefox/`):
 
-1. **Harbor Extension** (`extension/dist-firefox/`)
-   - Background service for LLM providers, MCP servers, native bridge
-   - Does NOT inject APIs into web pages directly
+- Background service for LLM providers, MCP servers, native bridge
+- Injects `window.ai`, `window.agent` and `navigator.modelContext` into web pages (`extension/src/page-api/`)
 
-2. **Web Agents API Extension** (`web-agents-api/dist-firefox/`)
-   - Injects `window.ai` and `window.agent` into web pages
-   - Requires Harbor extension to be installed for full functionality
-
-Both extensions must be loaded for demos and tests to work properly.
+That one extension must be loaded for demos and tests to work properly.
 
 ## Build Commands
 
@@ -52,8 +47,7 @@ cd tests/e2e && npm run test:browser:keep-open
 
 ## Key Directories
 
-- `extension/` - Harbor core extension
-- `web-agents-api/` - Web Agents API extension (page-facing)
+- `extension/` - Harbor extension, including the page-facing API (`extension/src/page-api/`)
 - `bridge-rs/` - Native messaging bridge (Rust)
 - `demo/` - Demo pages for testing
 - `tests/e2e/` - End-to-end browser tests (Harbor's own)
@@ -64,8 +58,7 @@ cd tests/e2e && npm run test:browser:keep-open
 ## Common Pitfalls
 
 1. **Don't use Chromium for testing** - Use Firefox
-2. **Don't forget both extensions** - Most features need both Harbor AND Web Agents API
-3. **Check native bridge connection** - Many features require the Rust bridge running
+2. **Check native bridge connection** - Many features require the Rust bridge running
 
 ## Agentic Workflow
 

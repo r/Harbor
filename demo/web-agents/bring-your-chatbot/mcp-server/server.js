@@ -13,7 +13,7 @@
  * - get_cart: View the current cart contents
  * 
  * Run with: node server.js
- * Or via Web Agents API: Install from the demo page
+ * Or via the Web Agent API: Install from the demo page
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';

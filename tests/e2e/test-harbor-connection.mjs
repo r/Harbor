@@ -104,54 +104,39 @@ function createTestServer() {
       }).catch(() => {});
     }
     
-    // Check for Harbor extension
+    // Check for Harbor's page API (window.agent/window.ai), which Harbor
+    // injects itself now — there is no separate discovery object to poll for.
     async function checkHarbor() {
-      // Harbor injects window.__harbor with { version, extensionId, installed: true }
-      // and fires 'harbor-discovered' event
-      
-      // First check if already set
-      if (window.__harbor && window.__harbor.installed) {
-        return window.__harbor;
+      if (typeof window.agent !== 'undefined' && typeof window.ai !== 'undefined') {
+        return { version: window.agent.capabilities().apiVersion, installed: true };
       }
-      
-      // Wait for harbor-discovered event
+
+      // Poll briefly in case the content script hasn't injected yet.
       return new Promise((resolve) => {
-        const timeout = setTimeout(() => resolve(null), 5000);
-        
-        const handler = (e) => {
-          clearTimeout(timeout);
-          window.removeEventListener('harbor-discovered', handler);
-          resolve(window.__harbor || e.detail);
-        };
-        
-        window.addEventListener('harbor-discovered', handler);
-        
-        // Also poll in case we missed the event
         const pollInterval = setInterval(() => {
-          if (window.__harbor && window.__harbor.installed) {
-            clearTimeout(timeout);
+          if (typeof window.agent !== 'undefined' && typeof window.ai !== 'undefined') {
             clearInterval(pollInterval);
-            window.removeEventListener('harbor-discovered', handler);
-            resolve(window.__harbor);
+            resolve({ version: window.agent.capabilities().apiVersion, installed: true });
           }
         }, 200);
-        
-        setTimeout(() => clearInterval(pollInterval), 5000);
+
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          resolve(null);
+        }, 5000);
       });
     }
-    
-    // Check bridge status - Harbor doesn't expose this directly to pages
-    // We can only verify the extension is installed, not the bridge connection
+
+    // Check bridge status via the ambient (no permission prompt)
+    // window.ai.canCreateTextSession(), which reflects Harbor's
+    // system.getCapabilities().bridgeReady.
     async function checkBridgeStatus() {
-      // Harbor doesn't expose bridge status to web pages for security
-      // The best we can do is verify Harbor loaded and assume bridge works
-      // if the native bridge tests passed
-      
-      // Return a placeholder - full bridge verification needs sidebar access
-      return { 
-        connected: 'unknown',
-        note: 'Bridge status not exposed to web pages. Run test:bridge to verify.'
-      };
+      try {
+        const status = await window.ai.canCreateTextSession();
+        return { connected: status === 'readily' ? 'connected' : 'disconnected' };
+      } catch (e) {
+        return { connected: 'unknown', note: 'canCreateTextSession failed: ' + e.message };
+      }
     }
     
     async function runTest() {

@@ -169,9 +169,8 @@ Some MCP servers require API keys (e.g., GitHub, Brave Search):
 ### Safari: "Extension not enabled"
 
 1. Open **Safari → Settings → Extensions**
-2. Make sure both are checked:
+2. Make sure it's checked:
    - ☑️ Harbor
-   - ☑️ Web Agents API
 3. For unsigned extensions, first enable: **Safari → Develop → Allow Unsigned Extensions**
    - If Develop menu is missing: **Safari → Settings → Advanced → Show Develop menu**
 

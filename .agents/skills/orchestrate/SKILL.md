@@ -12,7 +12,7 @@ Rules: [the workflow](../../../docs/agent-workflow.md). Worker briefs: [roles](.
 Read the routed docs and the actual code. Write the smallest complete path to acceptance, with a named consumer and no speculative foundation.
 
 - One coherent unit stays inline.
-- Split only at real boundaries (bridge, Harbor extension, Web Agents API extension, demos, docs). Record each unit's outcome, files, dependencies and owner.
+- Split only at real boundaries (bridge, Harbor extension, demos, docs). Record each unit's outcome, files, dependencies and owner.
 - Create child HBR issues only for units that are handed off independently.
 - Open product, API or permission-model questions go to the maintainer now.
 
@@ -50,9 +50,9 @@ Workers are leaves: no fan-out, product decisions, PRs, merges or tracker edits.
 
 ## Build
 
-1. **Red, recorded.** Write the failing test at the real boundary and commit it, or paste its failing output into the ledger. Use cargo tests for the bridge, vitest for either extension, and `tests/e2e` for page injection. Where no harness reaches the behavior, record a scripted reproduction. For docs-only work, use content and link checks.
+1. **Red, recorded.** Write the failing test at the real boundary and commit it, or paste its failing output into the ledger. Use cargo tests for the bridge, vitest for the extension, and `tests/e2e` for page injection. Where no harness reaches the behavior, record a scripted reproduction. For docs-only work, use content and link checks.
 2. **Implement** only the ledger. Mechanical workers escalate any undecided API, permission, messaging or UX choice. Keep both chat POC copies in step, or record why not.
-3. **Verify** against acceptance, preferably with an independent verifier that reruns the checks and reads the code. Inspect visible behavior in Firefox, with both extensions and the bridge loaded. Don't weaken assertions.
+3. **Verify** against acceptance, preferably with an independent verifier that reruns the checks and reads the code. Inspect visible behavior in Firefox, with Harbor and the bridge loaded. Don't weaken assertions.
 4. **Gate** each unit READY / BOUNCE / RE-APPROACH. Bugs go back to the builder. Out-of-scope improvements are reported, not added. Apply the workflow's size rule when a threshold is crossed.
 5. **Fold** READY units into the integration branch. Review every delegated diff, and reverify shared paths. Remove only clean, integrated worker worktrees.
 

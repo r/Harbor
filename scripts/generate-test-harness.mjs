@@ -10,7 +10,7 @@
  *
  * The target project can then:
  *   - Import the mock: import { installWebAgentsMock } from './harbor-test/mock.js';
- *   - Use the Playwright config and fixtures for E2E with Harbor extensions.
+ *   - Use the Playwright config and fixtures for E2E with the Harbor extension.
  */
 
 import fs from 'fs';
@@ -57,7 +57,7 @@ function main() {
   console.log('Next steps:');
   console.log('  1. Unit tests: import { installWebAgentsMock } from \'./harbor-test/mock.js\';');
   console.log('  2. E2E: copy harbor-test/playwright.harbor.config.example.ts to your Playwright config');
-  console.log('     and set HARBOR_EXTENSION_PATH and WEB_AGENTS_EXTENSION_PATH.');
+  console.log('     and set HARBOR_EXTENSION_PATH.');
   console.log('  3. See harbor-test/README.md for full instructions.');
 }
 

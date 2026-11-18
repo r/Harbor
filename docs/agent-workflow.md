@@ -68,7 +68,7 @@ This workflow sits under [AGENTS.md](../AGENTS.md), [ARCHITECTURE.md](../ARCHITE
 
 Every worker brief carries the invariants:
 
-- Firefox is the primary target. Behavior is verified with both extensions loaded.
+- Firefox is the primary target. Behavior is verified with Harbor loaded.
 - Every page-facing capability is gated by a permission scope. No change widens what a page can do outside the permission model.
 - Messages that cross a trust boundary (page ↔ extension, extension ↔ extension, extension ↔ bridge) are validated by the receiver.
 - User data goes only to the provider the user configured.
@@ -87,7 +87,7 @@ The repo is public, and Linear is internal. So:
 
 ## Evidence
 
-**Red first, and keep it.** New behavior starts with a failing test at the real boundary: a Rust unit test in `bridge-rs`, a vitest test in `extension` or `web-agents-api`, or an e2e browser test in `tests/e2e`. Commit the failing test, or paste its output into the ledger, before implementing. Finalize cites that red instead of reverting to reproduce it. Where no harness exists yet (for example, model behavior through the bridge), record a scripted reproduction and its output. Docs-only work uses link and content checks.
+**Red first, and keep it.** New behavior starts with a failing test at the real boundary: a Rust unit test in `bridge-rs`, a vitest test in `extension`, or an e2e browser test in `tests/e2e`. Commit the failing test, or paste its output into the ledger, before implementing. Finalize cites that red instead of reverting to reproduce it. Where no harness exists yet (for example, model behavior through the bridge), record a scripted reproduction and its output. Docs-only work uses link and content checks.
 
 **Review at the depth the change earns.** Blast radius sets the tier:
 
@@ -105,21 +105,19 @@ Permissions and policy, cross-extension or native messaging, the page-facing API
 ```sh
 cargo test --manifest-path bridge-rs/Cargo.toml   # bridge or submodule changes
 npm test --prefix extension
-npm test --prefix web-agents-api
-npm run build                                     # Firefox builds of both extensions
+npm run build                                     # Firefox build of the extension
 npx tsc --noEmit -p extension
-npx tsc --noEmit -p web-agents-api
 ```
 
-- `main` currently has type errors in both packages. The gate is **no new errors**: compare the error lists at base and head, and record both counts.
+- `main` currently has type errors in the extension package. The gate is **no new errors**: compare the error lists at base and head, and record both counts.
 - Run `npm run build:chrome` too when a change touches manifests or browser-specific code.
 - Run `cd tests/e2e && npm run test:browser` when a change touches page injection.
-- The root `npm run test:unit` runs both extension suites, then the Rust bridge tests. For isolated worktree checks, set a worktree-specific `CARGO_TARGET_DIR`.
+- The root `npm run test:unit` runs the extension's suite, then the Rust bridge tests. For isolated worktree checks, set a worktree-specific `CARGO_TARGET_DIR`.
 - Docs-only work runs link and content checks.
 - A skip or a timeout is not a pass.
 - GitHub Actions only deploys the Pages site, so local evidence is the merge gate.
 
-**Rendered checks.** For anything visible in the browser, run Firefox in a fresh temporary profile with both `dist-firefox` add-ons loaded (`extension/` and `web-agents-api/`), the bridge registered, and a local model. Use the demo server for page-level checks (`cd demo && npm start`, on port 8000). Check the sidebar for "Bridge: Connected", exercise the real interaction, and read the browser console. A Chrome or Safari bug needs that browser, or it's reported as unverified.
+**Rendered checks.** For anything visible in the browser, run Firefox in a fresh temporary profile with Harbor's `dist-firefox` build loaded, the bridge registered, and a local model. Use the demo server for page-level checks (`cd demo && npm start`, on port 8000). Check the sidebar for "Bridge: Connected", exercise the real interaction, and read the browser console. A Chrome or Safari bug needs that browser, or it's reported as unverified.
 
 **Size.** Estimate the unit before coding. At the first full review, record `git diff --shortstat <base>...HEAD` over owned paths. If owned changes pass twice the estimate, or 1.5× that first-review figure, pause and audit: check acceptance, group causes, then keep, defer or discard. Neither baseline moves.
 
@@ -142,9 +140,10 @@ Each of these has cost a real session time or produced a wrong result. They're r
 - **Give each worktree its own Cargo target directory.** If several worktrees share one `CARGO_TARGET_DIR`, Cargo can reuse another checkout's build without recompiling, and report that checkout's results as this one's. Use one directory per worktree, for example `CARGO_TARGET_DIR=../target-<worktree>`. Check that the test count matches the branch, especially when a change adds tests.
 - **zsh doesn't split variables on spaces.** In `for p in "6 abc123"; do set -- $p; ...`, the variable stays one word, so `$2` is empty. `git worktree add` then checks out the current HEAD into a directory with a space in its name. Pass separate arguments, or use arrays.
 - **Agent presets aren't always available right away.** A running session picks up new or changed `harbor-*` presets on its own schedule, and can lose them when the checkout switches to a branch without them. A restart loads them reliably. If a preset isn't available and you can't wait, run the built-in general-purpose agent at the preset's model, give it the role brief and the read-only instructions, and record the deviation in the ledger.
-- **A globally installed libvips breaks `npm ci` in a fresh worktree.** If Homebrew's `vips` is installed, sharp tries to build from source and fails with "Please add node-addon-api to your dependencies". Run `SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm ci` in `extension/` and `web-agents-api/` so sharp uses its bundled libvips.
-- **`tests/e2e` browser tests don't prove the two extensions can talk.** The provider, tools and session tests treat a permission denial as a pass. To show that a cross-extension change still works, check a call that needs Harbor's reply without a page permission, such as `window.ai.canCreateTextSession()` returning `"readily"`.
-- **Test a new cross-extension message through the listener, not the router.** Harbor's `onMessageExternal` listener in `extension/src/extension-api.ts` sends a message to `routeExtensionApiMessage` only if its type starts with a known prefix (`llm.`, `mcp.`, `session.`, `system.`, `permissions.`). Every other type goes to the agent router. A test that calls `routeExtensionApiMessage` directly skips that check, so a new message type can pass its unit tests and still never reach its handler in a real browser. Because the Web Agents API fails closed, the result looks like a permission denial, not an error. Drive the new type through the captured listener, as `extension/src/__tests__/external-sender.test.ts` does. Then check in Firefox that the page gets Harbor's real answer, not just a refusal.
+- **A globally installed libvips breaks `npm ci` in a fresh worktree.** If Homebrew's `vips` is installed, sharp tries to build from source and fails with "Please add node-addon-api to your dependencies". Run `SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm ci` in `extension/` so sharp uses its bundled libvips.
+- **`tests/e2e` browser tests can pass without showing Harbor actually answered.** The provider, tools and session tests treat a permission denial as a pass. To show that a change still reaches Harbor's real handler, check a call that needs an answer without a page permission, such as `window.ai.canCreateTextSession()` returning `"readily"`.
+- **Test a new page-call message type through `harbor-core.ts`'s dispatch, not the router directly.** `page-api/harbor-core.ts`'s `dispatch()` sends a message to `routeExtensionApiMessage` only if its type starts with a known prefix (`llm.`, `mcp.`, `session.`, `system.`, `permissions.`). Every other type goes to `routeAgentMessage`. A test that calls `routeExtensionApiMessage` or `routeAgentMessage` directly skips that split, so a new message type can pass its unit tests and still never reach its handler from a real page. Because the page API fails closed, the result looks like a permission denial, not an error. Drive the new type through `harborRequest()`/`harborStreamRequest()`, as `extension/src/page-api/__tests__/listener-origin-and-gate.test.ts` does; `harbor-core-timeout.test.ts` mocks the routers and won't catch this. Then check in Firefox that the page gets Harbor's real answer, not just a refusal.
+- **`tests/e2e/run-browser-tests.mjs` and the Firefox runner trap `SIGTERM` and wait for Firefox to close, so a plain `timeout` can't stop a stalled launch.** Wrap runs in `timeout -s KILL 300 ...`. After a killed run, check for a leftover test Firefox (a temporary profile under `$TMPDIR`) and stop only that process, not every Firefox on the machine.
 - **`git worktree remove` refuses a worktree with an initialized submodule**, even after `git submodule deinit`, because every worktree runs `git submodule update --init` for `bridge-rs/any-llm-rust`. Check that `git -C <worktree> status --porcelain` is empty and that its commits are merged or pushed, then use `git worktree remove --force <worktree>`. Never force-remove a worktree with uncommitted or unpushed work.
 - **Firefox may try to update itself when an agent launches it.** macOS then reports that the terminal app (for example "Rex Server") tried to modify an application, and blocks it. Leave the block in place; the test browser still runs.
 

@@ -261,56 +261,42 @@ function createTestServer(models) {
       }).catch(() => {});
     }
     
-    // Check for Harbor extension
+    // Check for Harbor's page API (window.agent/window.ai), which Harbor
+    // injects itself now — there is no separate discovery object to poll for.
     async function checkHarbor() {
-      log('Checking for Harbor extension...');
-      
-      // Harbor injects window.__harbor
-      if (window.__harbor && window.__harbor.installed) {
-        log('Harbor detected via window.__harbor');
+      log('Checking for Harbor\'s page API...');
+
+      if (typeof window.agent !== 'undefined' && typeof window.ai !== 'undefined') {
+        log('Harbor detected via window.agent/window.ai');
         return true;
       }
-      
-      // Wait for harbor-discovered event
+
+      // Poll briefly in case the content script hasn't injected yet.
       return new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          log('Harbor detection timeout');
-          resolve(false);
-        }, 5000);
-        
-        window.addEventListener('harbor-discovered', () => {
-          clearTimeout(timeout);
-          log('Harbor discovered via event');
-          resolve(true);
-        });
-        
-        // Poll as fallback
         const poll = setInterval(() => {
-          if (window.__harbor && window.__harbor.installed) {
-            clearTimeout(timeout);
+          if (typeof window.agent !== 'undefined' && typeof window.ai !== 'undefined') {
             clearInterval(poll);
             resolve(true);
           }
         }, 200);
-        setTimeout(() => clearInterval(poll), 5000);
+        setTimeout(() => {
+          clearInterval(poll);
+          log('Harbor detection timeout');
+          resolve(false);
+        }, 5000);
       });
     }
-    
-    // Check if window.ai API is available (injected by Web Agents API or Harbor)
+
+    // Check if window.ai API is available (injected by Harbor itself)
     async function checkAIAPI() {
-      // The demo uses window.ai which comes from the Web Agents API extension
-      // But Harbor also exposes functionality via its discovery mechanism
-      // For this test, we'll use a simpler approach - check if Harbor can list models
-      
       log('Checking for AI API...');
-      
-      // Try window.ai if available
+
       if (typeof window.ai !== 'undefined') {
         log('window.ai API available');
         return { type: 'window.ai', api: window.ai };
       }
-      
-      log('window.ai not available - this test requires the Web Agents API extension');
+
+      log('window.ai not available');
       return null;
     }
     
@@ -391,8 +377,7 @@ function createTestServer(models) {
       const aiApi = await checkAIAPI();
       if (!aiApi) {
         setStatus('harbor-status', 'Harbor detected but window.ai not available', 'fail');
-        log('Note: This test requires the Web Agents API extension for window.ai');
-        reportResult(false, 'window.ai API not available - need Web Agents API extension');
+        reportResult(false, 'window.ai API not available');
         return;
       }
       
@@ -552,39 +537,26 @@ async function main() {
     process.exit(0); // Not a failure - just nothing to test
   }
   
-  // Step 5: Test via Firefox with extensions
+  // Step 5: Test via Firefox with the extension
   console.log('\n[step 4] Testing model selection in browser...');
-  console.log('[note] This test requires BOTH Harbor AND Web Agents API extensions');
   console.log('[note] The test will use the first available model\n');
-  
-  // Check if extensions are built
+
+  // Check if the extension is built
   const harborManifest = path.join(config.harborExtPath, 'manifest.json');
-  const webAgentsManifest = path.resolve(__dirname, '../../web-agents-api/dist-firefox/manifest.json');
-  
+
   if (!fs.existsSync(harborManifest)) {
     console.error('❌ Harbor extension not built');
     console.error('   Run: cd extension && npm run build');
     process.exit(1);
   }
-  
-  if (!fs.existsSync(webAgentsManifest)) {
-    console.error('❌ Web Agents API extension not built');
-    console.error('   Run: cd web-agents-api && npm run build');
-    process.exit(1);
-  }
-  
+
   // Create test server with model list
   const { server, resultPromise } = await createTestServer(modelsForTest);
   const testUrl = `http://localhost:${config.testServerPort}/`;
   
   console.log(`[test] Test page: ${testUrl}`);
   
-  // Launch Firefox with BOTH extensions
-  // Note: web-ext only supports one extension, so we need to use a different approach
-  // For now, we'll just test with Harbor and note that window.ai requires Web Agents API
-  
   console.log('[firefox] Launching with Harbor extension...');
-  console.log('[note] Full window.ai testing requires manually loading Web Agents API extension');
   
   const webExtArgs = [
     'web-ext', 'run',

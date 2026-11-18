@@ -213,48 +213,41 @@ export function initializeRouter(): void {
   // Listen for permission prompt responses
   browserAPI.runtime.onMessage.addListener(handlePermissionPromptMessage);
 
-  // External messages from other extensions are handled by extension-api.ts
-  // which routes agent.* and agents.* messages to routeExternalMessage()
-  log('External message routing delegated to extension-api.ts');
-
+  // agent.* and agents.* page calls reach routeAgentMessage() in-process,
+  // called directly by page-api/harbor-core.ts.
   log('Router initialized');
 }
 
 /**
- * Handle messages from external extensions (cross-extension communication).
- * Callers must check the sender first: extension-api.ts only routes messages
- * from the Web Agents API here (see known-extensions.ts).
- * Exported for use by background.ts for Firefox compatibility.
+ * Handle an `agent.*`/`agents.*` message. page-api/harbor-core.ts calls this
+ * in-process for every page call of that shape, always passing the page's
+ * own origin (and tabId, when relevant) in `payload`, which
+ * page-api/background.ts sets from the connecting port's sender — never
+ * from a page-supplied field. A call with no `payload.origin` is rejected
+ * outright rather than attributed to anything else.
  */
-export function routeExternalMessage(
+export function routeAgentMessage(
   message: { type: string; payload?: unknown; requestId?: string },
-  sender: chrome.runtime.MessageSender,
   sendResponse: (response: { ok: boolean; result?: unknown; error?: string }) => void,
 ): void {
-  log('External message from', sender.id, ':', message.type);
+  log('Agent message:', message.type);
   log('Full message:', JSON.stringify(message));
-  log('Sender:', JSON.stringify({ id: sender.id, url: sender.url, tabId: sender.tab?.id }));
 
-  // Extract origin and tabId from payload if provided by the calling extension
-  // This allows Web Agents API to pass through the original page's origin
   const payload = message.payload as { origin?: string; tabId?: number } | undefined;
   const pageOrigin = payload?.origin;
-  const pageTabId = payload?.tabId;
-  
-  log('Extracted from payload - origin:', pageOrigin, 'tabId:', pageTabId);
 
-  // Create a context for the request
-  // Use the page origin from payload if available, otherwise fall back to sender info
+  if (!pageOrigin) {
+    sendResponse({ ok: false, error: 'Missing origin' });
+    return;
+  }
+
   const ctx: RequestContext = {
-    id: message.requestId || `ext-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    id: message.requestId || `req-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     type: message.type as MessageType,
     payload: message.payload,
-    origin: pageOrigin || sender.url || sender.id || 'external',
-    tabId: pageTabId ?? sender.tab?.id,
-    senderExtensionId: sender.id,  // Store the sender's extension ID for invocation forwarding
+    origin: pageOrigin,
+    tabId: payload?.tabId,
   };
-  
-  log('Final context - origin:', ctx.origin, 'tabId:', ctx.tabId, 'senderExtensionId:', ctx.senderExtensionId);
 
   // Create a sender wrapper that uses sendResponse
   const responseSender: ResponseSender = {
@@ -266,14 +259,14 @@ export function routeExternalMessage(
       });
     },
     sendStreamEvent: () => {
-      // Streaming not supported for external messages
-      log('Streaming not supported for external messages');
+      // Streaming not supported through this entry point.
+      log('Streaming not supported for agent router calls');
     },
   };
 
   // Route the message
   routeMessage(ctx, responseSender).catch((error) => {
-    log('Error routing external message:', error);
+    log('Error routing agent message:', error);
     sendResponse({
       ok: false,
       error: error instanceof Error ? error.message : 'Unknown error',

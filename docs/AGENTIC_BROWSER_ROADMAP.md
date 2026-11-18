@@ -14,7 +14,7 @@ If you're trying to build something on top of Harbor today, start with [`BUILDIN
 
 ## Where we are (May 2026)
 
-The Web Agent API ships as two browser extensions plus a Rust bridge. The page-facing surface is more capable than this document used to claim. Most of what early drafts marked "🔮 Planned" already exists — gated behind feature flags so the user can disable whole capability classes globally.
+The Web Agent API ships as one browser extension (Harbor) plus a Rust bridge. The page-facing surface is more capable than this document used to claim. Most of what early drafts marked "🔮 Planned" already exists — gated behind feature flags so the user can disable whole capability classes globally.
 
 ### What ships
 
@@ -48,28 +48,22 @@ The Web Agent API ships as two browser extensions plus a Rust bridge. The page-f
 │                          WEB PAGE                                │
 │  window.ai · window.agent · navigator.modelContext              │
 └──────────────────────────────┬──────────────────────────────────┘
-                               │ postMessage (CHANNEL: web_agents_api)
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              WEB AGENTS API EXTENSION                           │
-│  • Implements the page-facing API                              │
-│  • Permission prompts, scope storage                           │
-│  • Same-tab + spawned-tab automation                           │
-│  • Multi-agent registry (page-bound agents)                    │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │ chrome.runtime.sendMessage (cross-extension)
+                               │ postMessage (CHANNEL: harbor_page_api)
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    HARBOR EXTENSION                             │
+│  • Implements the page-facing API (extension/src/page-api/)    │
+│  • Permission prompts, scope storage                           │
+│  • Same-tab + spawned-tab automation                           │
+│  • Multi-agent registry (page-bound agents)                    │
 │  • LLM provider selection (Ollama, OpenAI, Anthropic, native)  │
 │  • MCP server hosting (WASM/JS in-browser, native via bridge)  │
 │  • Chat sidebar UI                                             │
-│  • Internal agents/ surface (window.harbor — extension-side)   │
 └──────────────────────────────┬──────────────────────────────────┘
                                │ Native Messaging (length-prefixed JSON)
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                       RUST BRIDGE                               │
+│                       RUST BRIDGE                                │
 │  • Provider connections (Ollama, OpenAI, Anthropic, …)         │
 │  • Native MCP servers (subprocess isolation)                   │
 │  • OAuth flows                                                 │

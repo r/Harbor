@@ -11,7 +11,7 @@ vi.mock('../../extension-api', () => ({
   streamLlmChat: vi.fn(),
 }));
 vi.mock('../../agents/background-router', () => ({
-  routeExternalMessage: vi.fn(),
+  routeAgentMessage: vi.fn(),
 }));
 
 import { harborRequest } from '../harbor-core';

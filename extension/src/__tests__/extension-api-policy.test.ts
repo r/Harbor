@@ -1,14 +1,13 @@
 /**
- * Page-facing llm / mcp / session calls forwarded by the Web Agents API go
+ * Page-facing llm / mcp / session calls from Harbor's own page API go
  * through the PolicyEngine: every call is audited, denies are
- * enforced, ask/preview proceed on the Web Agents API's consent without a
- * second Harbor prompt, and calls without an origin are rejected.
+ * enforced, ask/preview proceed on the page API's own origin-grant check
+ * without a second Harbor prompt, and calls without an origin are rejected.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bridgeRequest, bridgeStreamRequest } from '../llm/bridge-client';
 import { callTool } from '../mcp/host';
-import { initializeExtensionApi, routeExtensionApiMessage } from '../extension-api';
-import { browserAPI } from '../browser-compat';
+import { routeExtensionApiMessage, streamLlmChat } from '../extension-api';
 import { Audit } from '../policy/audit';
 import { setOriginGrantResolver, setWatchdogResolver } from '../policy/engine';
 import { Policy } from '../policy/store';
@@ -18,7 +17,6 @@ import { SessionRegistry } from '../sessions';
 
 vi.mock('../llm/bridge-client', () => ({ bridgeRequest: vi.fn(), bridgeStreamRequest: vi.fn() }));
 vi.mock('../mcp/host', () => ({ callTool: vi.fn(), listTools: vi.fn(), listServersWithStatus: vi.fn() }));
-vi.mock('../agents/background-router', () => ({ routeExternalMessage: vi.fn() }));
 vi.mock('../llm/native-bridge', () => ({}));
 vi.mock('../llm/provider-registry', () => ({}));
 vi.mock('../sessions', () => ({
@@ -105,7 +103,7 @@ describe('page-facing calls go through the PolicyEngine', () => {
     expect(showPermissionPrompt).not.toHaveBeenCalled();
     const [record] = Audit.query({ origin: ORIGIN });
     expect(record.effect).toBe('preview');
-    expect(record.consent).toBe('web-agents-api');
+    expect(record.consent).toBe('origin-grant');
   });
 
   it('records an agent.run-shaped sequence in order: prompt, tool, prompt', async () => {
@@ -152,7 +150,7 @@ describe('page-facing calls go through the PolicyEngine', () => {
   });
 });
 
-describe('safety asks the Web Agents API consent does not cover', () => {
+describe('safety asks the upstream origin-grant consent does not cover', () => {
   it('prompts when the watchdog has restricted the origin, and proceeds only if the user allows', async () => {
     setWatchdogResolver(() => ({ status: 'restricted', reason: 'tool-call burst' }));
     vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: true, grantType: 'granted-once' } as never);
@@ -199,7 +197,7 @@ describe('page-call gate coverage', () => {
     );
     expect(res.ok).toBe(true);
     expect(showPermissionPrompt).not.toHaveBeenCalled();
-    expect(Audit.query({ origin: ORIGIN })[0]).toMatchObject({ effect: 'ask', consent: 'web-agents-api' });
+    expect(Audit.query({ origin: ORIGIN })[0]).toMatchObject({ effect: 'ask', consent: 'origin-grant' });
   });
 
   it('enforces a deny on mcp.listTools', async () => {
@@ -235,57 +233,45 @@ describe('page-call gate coverage', () => {
 });
 
 describe('page-facing streaming chat goes through the PolicyEngine', () => {
+  /** Drives streamLlmChat exactly as page-api/harbor-core.ts does, in-process. */
   async function stream(payload: Record<string, unknown>) {
-    let connect: ((port: unknown) => void) | undefined;
-    const runtime = browserAPI.runtime as unknown as Record<string, unknown>;
-    runtime.onMessageExternal = { addListener: vi.fn() };
-    runtime.onConnectExternal = { addListener: (l: typeof connect) => { connect = l; } };
-    initializeExtensionApi();
-    let onMessage: ((message: unknown) => void) | undefined;
-    let complete!: () => void;
-    const done = new Promise<void>(resolve => { complete = resolve; });
-    const postMessage = vi.fn(() => complete());
-    connect!({
-      sender: { id: 'web-agents@krikorian.co' },
-      onMessage: { addListener: (l: typeof onMessage) => { onMessage = l; } },
-      onDisconnect: { addListener: vi.fn() },
-      postMessage,
-    });
     vi.mocked(bridgeStreamRequest).mockImplementation(async function* () {
       yield { id: 's1', type: 'done', finish_reason: 'stop' };
     });
-    onMessage!({ type: 'llm.chatStream', requestId: 'r1', payload: { messages, model: 'ollama:test', ...payload } });
-    await Promise.race([done, new Promise(resolve => setTimeout(resolve, 200))]);
-    return postMessage;
+    const events: unknown[] = [];
+    for await (const event of streamLlmChat({ messages, model: 'ollama:test', ...payload }, 'r1')) {
+      events.push(event);
+    }
+    return events;
   }
 
   it('rejects a stream without an origin', async () => {
-    const posted = await stream({});
+    const events = await stream({});
     expect(bridgeStreamRequest).not.toHaveBeenCalled();
-    expect(posted).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'r1', event: expect.objectContaining({ type: 'error' }) }));
+    expect(events).toEqual([expect.objectContaining({ type: 'error' })]);
   });
 
   it('enforces an origin deny on a stream', async () => {
     setOriginGrantResolver(() => ({ effect: 'deny' }));
-    const posted = await stream({ origin: ORIGIN });
+    const events = await stream({ origin: ORIGIN });
     expect(bridgeStreamRequest).not.toHaveBeenCalled();
-    expect(posted).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'r1', event: expect.objectContaining({ type: 'error' }) }));
+    expect(events).toEqual([expect.objectContaining({ type: 'error' })]);
     expect(Audit.query({ origin: ORIGIN })[0]).toMatchObject({ action: 'model.prompt.local', effect: 'deny' });
   });
 
-  it('answers the port with an error, not silence, when the gate itself fails', async () => {
+  it('yields an error event, not silence, when the gate itself fails', async () => {
     setOriginGrantResolver(() => { throw new Error('resolver boom'); });
-    const posted = await stream({ origin: ORIGIN });
+    const events = await stream({ origin: ORIGIN });
     expect(bridgeStreamRequest).not.toHaveBeenCalled();
-    expect(posted).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'r1', event: expect.objectContaining({ type: 'error' }) }));
+    expect(events).toEqual([expect.objectContaining({ type: 'error' })]);
   });
 
   it('audits a successful stream under the page origin', async () => {
-    const posted = await stream({ origin: ORIGIN });
+    const events = await stream({ origin: ORIGIN });
     expect(bridgeStreamRequest).toHaveBeenCalled();
-    expect(posted).toHaveBeenCalled();
+    expect(events.length).toBeGreaterThan(0);
     expect(Audit.query({ origin: ORIGIN })).toMatchObject([
-      { action: 'model.prompt.local', effect: 'ask', consent: 'web-agents-api', correlationId: 'r1' },
+      { action: 'model.prompt.local', effect: 'ask', consent: 'origin-grant', correlationId: 'r1' },
     ]);
   });
 });

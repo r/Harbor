@@ -18,8 +18,6 @@ export interface RequestContext {
   payload: unknown;
   origin: string;
   tabId?: number;
-  /** The extension ID of the sender (for cross-extension messaging) */
-  senderExtensionId?: string;
   /** Firefox container ID - used to open new tabs in the same container as the parent */
   cookieStoreId?: string;
 }

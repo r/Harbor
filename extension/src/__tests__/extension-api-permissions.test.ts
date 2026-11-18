@@ -10,7 +10,6 @@ import { resetMockBrowser } from './test-setup';
 
 vi.mock('../llm/bridge-client', () => ({ bridgeRequest: vi.fn(), bridgeStreamRequest: vi.fn() }));
 vi.mock('../mcp/host', () => ({ callTool: vi.fn(), listTools: vi.fn(), listServersWithStatus: vi.fn() }));
-vi.mock('../agents/background-router', () => ({ routeExternalMessage: vi.fn() }));
 vi.mock('../llm/native-bridge', () => ({}));
 vi.mock('../llm/provider-registry', () => ({}));
 vi.mock('../sessions', () => ({ SessionRegistry: { subscribe: vi.fn() } }));

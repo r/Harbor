@@ -362,9 +362,9 @@ Harbor injects the page API (`window.ai`, `window.agent`, `navigator.modelContex
 
 Harbor holds the only store of per-origin grants and the only consent prompt. The page API checks Harbor's store (`permissions.check`) before each page call, and `agent.requestPermissions()` goes to Harbor's prompt (`permissions.request`). So a site revoked in Harbor's sidebar is refused on its next call. Harbor's Safari build doesn't inject the page API yet.
 
-The older, separate Web Agents API extension no longer injects anything. Until it's removed, Harbor still accepts its forwarded calls, with the same checks.
+The older, separate Web Agents API extension no longer injects anything, and Harbor no longer accepts a message or connection from it, or from any other extension: there is no cross-extension entry point left to reach.
 
-For page calls, Harbor enforces `deny` (safety floor, policy rules, a denied origin grant, the watchdog). When the only thing left to settle is the origin grant (Tier 8 or the Tier 9 default), Harbor proceeds without prompting again, because the page API has just checked that grant in Harbor's store; the audit record carries `consent: "web-agents-api"`. A watchdog restriction (Tier 4) or a policy rule that asks, previews or attenuates (Tier 7) still shows Harbor's prompt.
+For page calls, Harbor enforces `deny` (safety floor, policy rules, a denied origin grant, the watchdog). When the only thing left to settle is the origin grant (Tier 8 or the Tier 9 default), Harbor proceeds without prompting again, because the page API has just checked that grant in Harbor's store; the audit record carries `consent: "origin-grant"`. A watchdog restriction (Tier 4) or a policy rule that asks, previews or attenuates (Tier 7) still shows Harbor's prompt.
 
 A site's tool allowlist is deny-by-default: a site with no allowlist may call no tools.
 

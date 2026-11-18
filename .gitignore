@@ -5,8 +5,6 @@ node_modules/
 extension/dist/
 extension/dist-*/
 extension/bundled/
-web-agents-api/dist/
-web-agents-api/dist-*/
 
 # Python
 __pycache__/

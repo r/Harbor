@@ -26,7 +26,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const config = {
   harborExtPath: path.resolve(__dirname, '../../extension/dist-firefox'),
-  webAgentsExtPath: path.resolve(__dirname, '../../web-agents-api/dist-firefox'),
   testServerPort: 3460,
   timeout: 45000,
   keepOpen: process.argv.includes('--keep-open'),
@@ -360,112 +359,103 @@ function createTestServer() {
       }).catch(() => {});
     }
     
-    // Test 1: Check for Harbor extension
+    // Test 1: Check for Harbor's page API (window.agent/window.ai), which
+    // Harbor injects itself now — there is no separate discovery object.
     async function checkHarbor() {
-      log('harbor', 'Checking for Harbor extension...');
-      
-      if (window.__harbor && window.__harbor.installed) {
-        log('harbor', 'Found: ' + JSON.stringify(window.__harbor));
+      log('harbor', 'Checking for Harbor\'s page API...');
+
+      if (typeof window.agent !== 'undefined' && typeof window.ai !== 'undefined') {
+        log('harbor', 'Found window.agent and window.ai');
         setTestStatus('harbor', 'pass');
         return true;
       }
-      
-      // Wait for event
+
+      // Poll briefly in case the content script hasn't injected yet.
       return new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          log('harbor', 'Timeout waiting for Harbor');
-          setTestStatus('harbor', 'fail');
-          resolve(false);
-        }, 5000);
-        
-        window.addEventListener('harbor-discovered', (e) => {
-          clearTimeout(timeout);
-          log('harbor', 'Discovered: ' + JSON.stringify(e.detail || window.__harbor));
-          setTestStatus('harbor', 'pass');
-          resolve(true);
-        });
-        
-        // Also poll
         const poll = setInterval(() => {
-          if (window.__harbor && window.__harbor.installed) {
-            clearTimeout(timeout);
+          if (typeof window.agent !== 'undefined' && typeof window.ai !== 'undefined') {
             clearInterval(poll);
-            log('harbor', 'Found via polling: ' + JSON.stringify(window.__harbor));
+            log('harbor', 'Found via polling');
             setTestStatus('harbor', 'pass');
             resolve(true);
           }
         }, 200);
-        setTimeout(() => clearInterval(poll), 5000);
+        setTimeout(() => {
+          clearInterval(poll);
+          log('harbor', 'Timeout waiting for Harbor');
+          setTestStatus('harbor', 'fail');
+          resolve(false);
+        }, 5000);
       });
     }
-    
-    // Test 2: Check native bridge connection
+
+    // Test 2: Check native bridge connection. window.ai.canCreateTextSession()
+    // is ambient (no permission prompt) and reflects Harbor's
+    // system.getCapabilities().bridgeReady.
     async function checkBridge() {
       log('bridge', 'Checking native bridge status...');
-      
-      if (window.__harbor && window.__harbor.bridge === 'connected') {
-        log('bridge', 'Native bridge is connected!');
-        setTestStatus('bridge', 'pass');
-        return true;
-      }
-      
-      // Poll for a bit - bridge may still be connecting
+
       return new Promise((resolve) => {
         let attempts = 0;
         const maxAttempts = 10;
-        
-        const poll = setInterval(() => {
+
+        const poll = setInterval(async () => {
           attempts++;
-          
-          if (window.__harbor && window.__harbor.bridge === 'connected') {
+          let status;
+          try {
+            status = await window.ai.canCreateTextSession();
+          } catch (e) {
+            status = 'no';
+          }
+
+          if (status === 'readily') {
             clearInterval(poll);
             log('bridge', 'Native bridge connected (after ' + attempts + ' attempts)');
             setTestStatus('bridge', 'pass');
             resolve(true);
             return;
           }
-          
+
           if (attempts >= maxAttempts) {
             clearInterval(poll);
-            const status = window.__harbor?.bridge || 'unknown';
-            log('bridge', 'Bridge status: ' + status);
-            if (status === 'disconnected' || status === 'unknown') {
-              log('bridge', 'Bridge not connected (optional in test environment)');
-              log('bridge', 'Native messaging requires separate installation');
-            }
+            log('bridge', 'canCreateTextSession: ' + status);
+            log('bridge', 'Bridge not connected (optional in test environment)');
+            log('bridge', 'Native messaging requires separate installation');
             setTestStatus('bridge', 'skip');
             resolve(false);
           }
         }, 500);
       });
     }
-    
+
     // Test 3: Check for MCP servers
     async function checkServers() {
       log('servers', 'Checking for MCP servers...');
-      
-      // Harbor exposes the __harbor object with info about installed servers
-      if (window.__harbor) {
-        log('servers', 'Harbor info: ' + JSON.stringify(window.__harbor));
-        
+
+      if (typeof window.agent !== 'undefined') {
         // If bridge is connected, servers sync their tools there
-        if (window.__harbor.bridge === 'connected') {
+        let bridgeReady;
+        try {
+          bridgeReady = (await window.ai.canCreateTextSession()) === 'readily';
+        } catch (e) {
+          bridgeReady = false;
+        }
+
+        if (bridgeReady) {
           log('servers', 'Bridge connected - built-in servers (time-wasm, echo-js) auto-start');
           log('servers', 'Tools are synced to native bridge for Web Agents access');
           setTestStatus('servers', 'pass');
           return true;
         }
-        
+
         // Even without bridge, extension manages servers
-        if (window.__harbor.installed) {
-          log('servers', 'Harbor manages built-in MCP servers:');
-          log('servers', '  - time-wasm (WASM): Provides time.now tool');
-          log('servers', '  - echo-js (JS): Provides echo and reverse tools');
-          setTestStatus('servers', 'pass');
-          return true;
-        }
+        log('servers', 'Harbor manages built-in MCP servers:');
+        log('servers', '  - time-wasm (WASM): Provides time.now tool');
+        log('servers', '  - echo-js (JS): Provides echo and reverse tools');
+        setTestStatus('servers', 'pass');
+        return true;
       }
-      
+
       log('servers', 'Harbor not fully initialized');
       setTestStatus('servers', 'fail');
       return false;
@@ -812,7 +802,7 @@ async function main() {
     const testUrl = `http://localhost:${config.testServerPort}/`;
     
     console.log(`  Test page: ${testUrl}`);
-    console.log('  Note: Full tool testing requires both Harbor AND Web Agents API extensions\n');
+    console.log('  Note: Full tool testing needs the page API, which Harbor serves itself\n');
     
     // Launch Firefox with Harbor extension
     console.log('  Launching Firefox with Harbor...');

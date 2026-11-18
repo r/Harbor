@@ -63,12 +63,12 @@ export interface AuditRecord {
   /** Optional correlation id from the request. */
   correlationId?: string;
   /**
-   * Set when an `ask`/`preview` verdict proceeded on consent another
-   * component already obtained, rather than on a Harbor prompt. Today this
-   * is only the Web Agents API, whose own grant store gates page calls
-   * before forwarding them (until the stores are merged).
+   * Set when an `ask`/`preview` verdict proceeded on consent already
+   * obtained upstream, rather than on a Harbor prompt. Today this is a page
+   * call: the page API checks the origin's grant in Harbor's own store
+   * (`permissions.check`) before this typed-action check runs.
    */
-  consent?: 'web-agents-api';
+  consent?: 'origin-grant';
 }
 
 export interface AuditExtra {

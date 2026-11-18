@@ -63,7 +63,7 @@ The checked-in Chrome manifest key pins Harbor's ID to `ljnciidcajlichemnbohopnl
 "allowed_origins": ["chrome-extension://ljnciidcajlichemnbohopnlaonhkpgm/"]
 ```
 
-No manual ID edits are needed for repository builds. The native host is `harbor_bridge`, and its manifest points to this checkout's `target/release/harbor-bridge-native` wrapper, which passes `--native-messaging` to the binary. Keep the checkout in place or rerun the installer after moving it. See the [Chrome setup guide](../docs/QUICKSTART_CHROME.md) for loading both extensions and verifying the connection.
+No manual ID edits are needed for repository builds. The native host is `harbor_bridge`, and its manifest points to this checkout's `target/release/harbor-bridge-native` wrapper, which passes `--native-messaging` to the binary. Keep the checkout in place or rerun the installer after moving it. See the [Chrome setup guide](../docs/QUICKSTART_CHROME.md) for loading the extension and verifying the connection.
 
 The installer registers Firefox and Google Chrome on macOS and Linux. Other Chromium browsers require separate registration:
 

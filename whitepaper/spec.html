@@ -100,8 +100,8 @@ const reply = await session.prompt(`Summarize this article: ${article}`);</pre>
   reason: "Research assistant needs search.",
 });
 
-// Note: agent.run is gated behind the toolCalling feature flag in the
-// Web Agents API sidebar. It yields typed events.
+// Note: agent.run is gated behind the toolCalling feature flag in
+// Harbor's sidebar. It yields typed events.
 for await (const ev of window.agent.run({
   task: "find recent press on quantum chips",
 })) {

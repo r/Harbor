@@ -50,18 +50,18 @@ export interface RequireActionOptions {
   /** Optional human-readable reason surfaced in the prompt. */
   reason?: string;
   /**
-   * The caller already obtained the user's consent upstream. When the
+   * The caller already checked the origin's grant upstream. When the
    * verdict is an ask/preview that a per-origin grant would settle (Tier 8
    * or the Tier 9 default), proceed without a Harbor prompt and record the
    * upstream consent in the audit log. `deny` is still enforced, and so are
    * the asks that consent can't stand in for: a watchdog restriction and a
    * policy rule that says ask, preview or attenuate. Those prompt as usual.
    *
-   * Used for page calls forwarded by the Web Agents API, which gates them
-   * with its own grant store first. Remove once there is one store and one
-   * prompt.
+   * Used for page calls, which the page API gates against Harbor's own
+   * origin-grant store (`permissions.check`) before this second,
+   * typed-action check runs.
    */
-  upstreamConsent?: 'web-agents-api';
+  upstreamConsent?: 'origin-grant';
 }
 
 /**

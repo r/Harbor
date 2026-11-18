@@ -33,10 +33,9 @@ async function loadWebExt(signal) {
   };
 }
 
-const BOTH_EXTENSIONS = ['extension/dist-firefox', 'web-agents-api/dist-firefox'];
 const HARBOR_ONLY = ['extension/dist-firefox'];
 
-export async function launchFirefox({ startUrl, firefoxBinary = process.env.FIREFOX, signal, extensionDirs = BOTH_EXTENSIONS } = {}, dependencies) {
+export async function launchFirefox({ startUrl, firefoxBinary = process.env.FIREFOX, signal, extensionDirs = HARBOR_ONLY } = {}, dependencies) {
   const { createRunner, firefoxApp, firefoxClient, getManifest } = dependencies ?? await loadWebExt(signal);
   signal?.throwIfAborted();
   const extensions = [];
@@ -114,10 +113,6 @@ export async function launchFirefox({ startUrl, firefoxBinary = process.env.FIRE
   } finally {
     signal?.removeEventListener('abort', onAbort);
   }
-  console.log(extensionDirs.length > 1
-    ? '[firefox] Loaded Harbor and Web Agents API in a temporary profile'
-    : '[firefox] Loaded Harbor only in a temporary profile');
+  console.log('[firefox] Loaded Harbor in a temporary profile');
   return { closed, close };
 }
-
-export { BOTH_EXTENSIONS, HARBOR_ONLY };

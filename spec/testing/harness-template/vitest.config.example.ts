@@ -1,5 +1,5 @@
 /**
- * Example Vitest config for unit tests that use the Web Agents API mock.
+ * Example Vitest config for unit tests that use the Web Agent API mock.
  * Copy to vitest.config.ts (or merge into your existing config).
  *
  * npm i -D vitest

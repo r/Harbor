@@ -1,5 +1,5 @@
 -- Harbor Setup Assistant
--- A friendly GUI to help users finish setting up Harbor with unpacked Chrome extensions
+-- A friendly GUI to help users finish setting up Harbor with an unpacked Chrome extension
 
 use AppleScript version "2.4"
 use scripting additions
@@ -7,7 +7,6 @@ use scripting additions
 -- Global variables
 property harborDir : "/Library/Application Support/Harbor"
 property chromeExtensionDir : "/Library/Application Support/Harbor/chrome-extension"
-property webAgentsExtensionDir : "/Library/Application Support/Harbor/web-agents-chrome"
 
 -- Main entry point
 on run
@@ -18,10 +17,10 @@ end run
 on showWelcome()
 	set welcomeResult to display dialog "Welcome to Harbor! 🚀
 
-Harbor has been installed on your Mac. To finish setup, you need to load the Chrome extensions in Developer Mode.
+Harbor has been installed on your Mac. To finish setup, you need to load the Chrome extension in Developer Mode.
 
 This assistant will guide you through the process." buttons {"Quit", "Let's Go!"} default button "Let's Go!" cancel button "Quit" with title "Harbor Setup Assistant" with icon note
-	
+
 	if button returned of welcomeResult is "Let's Go!" then
 		showStep1()
 	end if
@@ -29,17 +28,13 @@ end showWelcome
 
 -- Step 1: Open Chrome Extensions page
 on showStep1()
-	set step1Result to display dialog "Step 1 of 5: Open Chrome Extensions
+	set step1Result to display dialog "Step 1 of 3: Open Chrome Extensions
 
 Click 'Open Extensions Page' to open Chrome's extension management page.
 
-You'll be loading TWO extensions:
-  • Harbor (core functionality)
-  • Web Agents (window.ai API for web pages)
-
 Once Chrome opens:
   • Enable 'Developer mode' (toggle in the top right)" buttons {"Back", "Open Extensions Page"} default button "Open Extensions Page" cancel button "Back" with title "Harbor Setup - Step 1" with icon note
-	
+
 	if button returned of step1Result is "Open Extensions Page" then
 		-- Open Chrome extensions page
 		try
@@ -58,7 +53,7 @@ end showStep1
 
 -- Step 2: Load Harbor Extension
 on showStep2()
-	set step2Result to display dialog "Step 2 of 5: Load Harbor Extension
+	set step2Result to display dialog "Step 2 of 3: Load Harbor Extension
 
 In Chrome:
   1. Make sure 'Developer mode' is ON (top right)
@@ -67,53 +62,30 @@ In Chrome:
      " & chromeExtensionDir & "
 
 Click 'I Loaded It' when done, or 'Show in Finder' to open the folder." buttons {"Show in Finder", "I Loaded It"} default button "I Loaded It" with title "Harbor Setup - Step 2" with icon note
-	
+
 	if button returned of step2Result is "Show in Finder" then
 		do shell script "open '" & chromeExtensionDir & "'"
 		-- Show this step again
 		showStep2()
 	else
-		showStep2b()
+		showStep3()
 	end if
 end showStep2
 
--- Step 2b: Load Web Agents Extension (REQUIRED)
-on showStep2b()
-	set step2bResult to display dialog "Step 3 of 5: Load Web Agents Extension
-
-Now load the Web Agents API extension the same way:
-
-  1. Click 'Load unpacked' again
-  2. Navigate to and select:
-     " & webAgentsExtensionDir & "
-
-This extension provides the window.ai and window.agent APIs to web pages.
-
-Click 'I Loaded It' when done, or 'Show in Finder' to open the folder." buttons {"Show in Finder", "I Loaded It"} default button "I Loaded It" with title "Harbor Setup - Step 3" with icon note
-	
-	if button returned of step2bResult is "Show in Finder" then
-		do shell script "open '" & webAgentsExtensionDir & "'"
-		-- Show this step again
-		showStep2b()
-	else
-		showStep3()
-	end if
-end showStep2b
-
--- Step 3: Get Extension IDs
+-- Step 3: Get Extension ID
 on showStep3()
-	set step3Result to display dialog "Step 4 of 5: Copy Harbor Extension ID
+	set step3Result to display dialog "Step 3 of 3: Copy Harbor Extension ID
 
 In Chrome (chrome://extensions):
   1. Find 'Harbor' in the list
   2. Copy the 32-character ID shown below the name
      (looks like: abcdefghijklmnopabcdefghijklmnop)
 
-Paste the Harbor extension ID below:" default answer "" buttons {"Back", "Next"} default button "Next" cancel button "Back" with title "Harbor Setup - Step 4" with icon note
-	
-	if button returned of step3Result is "Next" then
+Paste the Harbor extension ID below:" default answer "" buttons {"Back", "Configure"} default button "Configure" cancel button "Back" with title "Harbor Setup - Step 3" with icon note
+
+	if button returned of step3Result is "Configure" then
 		set harborExtId to text returned of step3Result
-		
+
 		-- Validate ID format
 		if length of harborExtId is not 32 then
 			display dialog "That doesn't look like a valid extension ID.
@@ -124,54 +96,19 @@ Example: abcdefghijklmnopabcdefghijklmnop" buttons {"Try Again"} default button 
 			showStep3()
 			return
 		end if
-		
-		-- Ask for Web Agents extension ID (REQUIRED)
-		showStep3b(harborExtId)
+
+		-- Configure the extension ID
+		configureExtensionIds(harborExtId)
 	else
-		showStep2b()
+		showStep2()
 	end if
 end showStep3
 
--- Step 3b: Get Web Agents Extension ID (REQUIRED)
-on showStep3b(harborExtId)
-	set step3bResult to display dialog "Step 5 of 5: Copy Web Agents Extension ID
-
-Now copy the Web Agents extension ID:
-  1. Find 'Web Agents' in chrome://extensions
-  2. Copy the 32-character ID shown below the name
-
-Paste the Web Agents extension ID below:" default answer "" buttons {"Back", "Configure"} default button "Configure" cancel button "Back" with title "Harbor Setup - Step 5" with icon note
-	
-	if button returned of step3bResult is "Configure" then
-		set webAgentsExtId to text returned of step3bResult
-		
-		-- Validate ID format
-		if length of webAgentsExtId is not 32 then
-			display dialog "That doesn't look like a valid extension ID.
-
-Extension IDs are exactly 32 characters long and contain only lowercase letters a-p.
-
-Example: abcdefghijklmnopabcdefghijklmnop" buttons {"Try Again"} default button "Try Again" with title "Invalid Extension ID" with icon caution
-			showStep3b(harborExtId)
-			return
-		end if
-		
-		-- Configure the extension IDs
-		configureExtensionIds(harborExtId, webAgentsExtId)
-	else
-		showStep3()
-	end if
-end showStep3b
-
--- Configure extension IDs in native messaging manifests
-on configureExtensionIds(harborId, webAgentsId)
+-- Configure extension ID in native messaging manifests
+on configureExtensionIds(harborId)
 	-- Build the allowed_origins JSON array
-	set originsJson to "[\"chrome-extension://" & harborId & "/\""
-	if webAgentsId is not "" and length of webAgentsId is 32 then
-		set originsJson to originsJson & ", \"chrome-extension://" & webAgentsId & "/\""
-	end if
-	set originsJson to originsJson & "]"
-	
+	set originsJson to "[\"chrome-extension://" & harborId & "/\"]"
+
 	-- List of manifest locations to update
 	set manifestLocations to {¬
 		"/Library/Application Support/Google/Chrome/NativeMessagingHosts/harbor_bridge.json", ¬
@@ -208,14 +145,11 @@ on configureExtensionIds(harborId, webAgentsId)
 		end try
 	end if
 	
-	-- Save extension IDs for future reference
+	-- Save extension ID for future reference
 	try
 		set configDir to userHome & "/.harbor"
 		do shell script "mkdir -p '" & configDir & "'"
 		set configContent to "CHROME_EXTENSION_ID=\"" & harborId & "\"" & return
-		if webAgentsId is not "" then
-			set configContent to configContent & "CHROME_WEB_AGENTS_EXTENSION_ID=\"" & webAgentsId & "\"" & return
-		end if
 		do shell script "echo " & quoted form of configContent & " > '" & configDir & "/extension-ids.env'"
 	end try
 	
@@ -248,15 +182,14 @@ end updateManifestFile
 on showStep4(updatedCount, extId)
 	set successMsg to "Setup Complete! ✅
 
-Harbor and Web Agents are now configured.
+Harbor is now configured.
 
 Updated " & updatedCount & " native messaging manifest(s).
 
 Next steps:
   • Restart Chrome for changes to take effect
   • Click the Harbor icon (⚓) in Chrome's toolbar
-  • Open the side panel to start using Harbor!
-  • Visit demo pages to test the Web Agents API"
+  • Open the side panel to start using Harbor!"
 	
 	set doneResult to display dialog successMsg buttons {"Restart Chrome", "Done"} default button "Done" with title "Harbor Setup Complete" with icon note
 	

@@ -2,7 +2,7 @@
  * Web Agent API Chat Demo - Example Code
  * 
  * This demonstrates using the Web Agent API (window.ai and window.agent)
- * that Web Agents API implementations provide to web pages.
+ * that Harbor provides to web pages.
  * 
  * WEB AGENT API REFERENCE:
  * 
@@ -459,7 +459,7 @@ async function sendMessage() {
   
   // Check if Web Agent API is available
   if (!window.ai || !window.agent) {
-    addMessageUI('system', 'Web Agent API not detected. Please install a Web Agents API implementation and reload.');
+    addMessageUI('system', 'Web Agent API not detected. Please install Harbor and reload.');
     return;
   }
   

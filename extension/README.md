@@ -10,5 +10,5 @@ This is the new extension skeleton for the WASM-based MCP architecture.
 
 ## Next Steps
 - Add build tooling (Vite or esbuild).
-- Implement Web Agents API content script injection.
+- Implement the Web Agent API's content script injection.
 - Implement WASM MCP runtime and server registry.

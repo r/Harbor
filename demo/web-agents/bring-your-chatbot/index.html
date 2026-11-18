@@ -12,7 +12,7 @@
     offers MCP servers for the user's chatbot. The browser can show
     an indicator (like the RSS icon) that the user can click to connect.
     
-    Web Agents API implementations expose this via agent.mcp.discover().
+    The Web Agent API exposes this via agent.mcp.discover().
   -->
   <!-- 
     Real MCP Server Discovery
@@ -827,9 +827,9 @@
     <div class="no-api-banner hidden" id="no-api-banner">
       <div class="no-api-icon">⚠️</div>
       <div class="no-api-content">
-        <h3>Web Agents API Required</h3>
+        <h3>Web Agent API Required</h3>
         <p>
-          This demo requires a Web Agents API implementation for the full BYOC experience. 
+          This demo requires the Web Agent API for the full BYOC experience. 
           Install one to try the "Bring Your Own Chatbot" feature!
         </p>
       </div>
@@ -1162,10 +1162,10 @@
     // =============================================================================
     
     async function checkApiAvailability() {
-      console.log('[BYOC Demo] Checking Web Agents API availability...');
+      console.log('[BYOC Demo] Checking Web Agent API availability...');
       
       try {
-        // Check for Web Agents API (window.ai for text generation, window.agent for permissions)
+        // Check for the Web Agent API (window.ai for text generation, window.agent for permissions)
         const hasAi = typeof window.ai !== 'undefined';
         const hasAgent = typeof window.agent !== 'undefined';
         
@@ -1175,14 +1175,14 @@
         if (hasAi && hasAgent) {
           apiAvailable = true;
           chatFab.classList.remove('hidden');
-          console.log('[BYOC Demo] Web Agents API detected - ready!');
+          console.log('[BYOC Demo] Web Agent API detected - ready!');
           return true;
         }
         
         // API not available - show warning, hide chat button
         noApiBanner.classList.remove('hidden');
         chatFab.classList.add('hidden');
-        console.log('[BYOC Demo] Web Agents API not available - install the extension');
+        console.log('[BYOC Demo] Web Agent API not available - install Harbor');
         return false;
         
       } catch (err) {
@@ -1324,7 +1324,7 @@
     }
 
     // =============================================================================
-    // Message Handling (Web Agents API only - uses window.ai)
+    // Message Handling (Web Agent API only - uses window.ai)
     // =============================================================================
     
     async function sendMessage() {
@@ -1332,9 +1332,9 @@
       console.log('[BYOC Debug] sendMessage called', { text, isProcessing, apiAvailable, hasSession: !!chatSession });
       if (!text || isProcessing) return;
       
-      // Require Web Agents API
+      // Require the Web Agent API
       if (!apiAvailable) {
-        addAssistantMessage("Web Agents API is not available. Please install the extension.");
+        addAssistantMessage("Web Agent API is not available. Please install Harbor.");
         return;
       }
       
@@ -1412,9 +1412,9 @@
         
         // Handle specific errors
         if (err.code === 'ERR_PERMISSION_DENIED') {
-          addAssistantMessage("Permission denied. Please allow text generation in the Web Agents API sidebar.");
+          addAssistantMessage("Permission denied. Please allow text generation in Harbor's sidebar.");
         } else if (err.code === 'ERR_FEATURE_DISABLED') {
-          addAssistantMessage("Text generation is disabled. Please enable it in the Web Agents API sidebar.");
+          addAssistantMessage("Text generation is disabled. Please enable it in Harbor's sidebar.");
         } else if (err.code === 'ERR_SESSION_NOT_FOUND') {
           console.log('[BYOC Debug] Session not found, resetting chatSession');
           chatSession = null;
@@ -1434,7 +1434,7 @@
     }
 
     // =============================================================================
-    // BYOC: Web Agents API Integration (uses ONLY window.ai / window.agent)
+    // BYOC: Web Agent API Integration (uses ONLY window.ai / window.agent)
     // =============================================================================
     
     // Session for the embedded chat
@@ -1506,7 +1506,7 @@ Keep responses concise and helpful.`;
       if (!chatSession) {
         const success = await initChatSession();
         if (!success) {
-          addAssistantMessage("Unable to start AI assistant. Please check that the Web Agents API extension is installed and has permissions enabled.");
+          addAssistantMessage("Unable to start AI assistant. Please check that Harbor is installed and has permissions enabled.");
           return;
         }
       }
@@ -1519,7 +1519,7 @@ Keep responses concise and helpful.`;
     // Event Listeners
     // =============================================================================
     
-    // Chat FAB click - opens embedded chatbot powered by Web Agents API
+    // Chat FAB click - opens embedded chatbot powered by the Web Agent API
     chatFab.addEventListener('click', async () => {
       if (!apiAvailable) {
         console.log('[BYOC Demo] API not available, cannot open chat');
@@ -1559,19 +1559,19 @@ Keep responses concise and helpful.`;
       await checkApiAvailability();
       
       console.log('[BYOC Demo] Initialized');
-      console.log('  Web Agents API Available:', apiAvailable);
+      console.log('  Web Agent API Available:', apiAvailable);
       if (apiAvailable) {
         console.log('  Features: window.ai (text generation), window.agent (permissions)');
         console.log('');
-        console.log('This demo uses ONLY the Web Agents API:');
+        console.log('This demo uses ONLY the Web Agent API:');
         console.log('  - window.ai.createTextSession() for chat');
         console.log('  - window.agent.requestPermissions() for permissions');
         console.log('');
         console.log('Click the chat button to start chatting with the AI assistant.');
       } else {
         console.log('');
-        console.log('Web Agents API not available.');
-        console.log('Install the Web Agents API extension to try this demo.');
+        console.log('Web Agent API not available.');
+        console.log('Install Harbor to try this demo.');
       }
     }
 

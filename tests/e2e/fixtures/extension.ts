@@ -15,17 +15,15 @@ import { spawn, type ChildProcess, execSync } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Paths relative to the test fixtures directory
+// Path relative to the test fixtures directory
 const EXTENSION_PATH = path.resolve(__dirname, '../../../extension/dist');
-const WEB_AGENTS_PATH = path.resolve(__dirname, '../../../web-agents-api/dist');
 
 export type ExtensionFixtures = {
   /** Basic browser context without extensions - for simple page tests */
   browserContext: BrowserContext;
-  /** Browser context with extensions loaded via web-ext */
+  /** Browser context with the extension loaded via web-ext */
   extensionContext: BrowserContext;
   extensionId: string;
-  webAgentsId: string;
   sidebarPage: Page;
 };
 
@@ -111,13 +109,6 @@ export const test = base.extend<ExtensionFixtures>({
   extensionId: async ({}, use) => {
     // Extension UUID is assigned dynamically by Firefox
     // For tests that need this, they should load via about:debugging
-    await use('extension-not-loaded');
-  },
-
-  /**
-   * Web Agents API extension UUID - placeholder for now
-   */
-  webAgentsId: async ({}, use) => {
     await use('extension-not-loaded');
   },
 

@@ -140,7 +140,7 @@ await window.agent.requestPermissions({
 });
 
 // Run an autonomous agent — yields typed events.
-// (Requires the `toolCalling` feature flag in the Web Agents API sidebar.)
+// (Requires the `toolCalling` feature flag in Harbor's sidebar.)
 for await (const event of window.agent.run({
   task: 'Find recent news about AI safety'
 })) {

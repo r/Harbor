@@ -1,14 +1,14 @@
 # Harbor Architecture
 
-This document describes the architecture of Harbor and the Web Agents API extension.
+This document describes the architecture of Harbor, a single browser extension.
 
-This repository contains two browser extensions that work together to bring AI and MCP (Model Context Protocol) capabilities to web applications:
+Harbor brings AI and MCP (Model Context Protocol) capabilities to web applications:
 
-- **Harbor** — Infrastructure extension providing LLM connections, MCP server hosting, and the native bridge
-- **Web Agents API** — Implements the **[Web Agent API](spec/)** specification, exposing `window.ai` and `window.agent` to web pages
+- **Infrastructure** — LLM connections, MCP server hosting, and the native bridge
+- **Page API** (`extension/src/page-api/`) — Implements the **[Web Agent API](spec/)** specification, exposing `window.ai`, `window.agent` and `navigator.modelContext` to web pages
 
 > **Related Documentation:**
-> - [Web Agent API Spec](spec/) — The API specification that Web Agents API implements
+> - [Web Agent API Spec](spec/) — The API specification Harbor's page API implements
 > - [User Guide](docs/USER_GUIDE.md) — Installation and usage
 > - [Developer Guide](docs/DEVELOPER_GUIDE.md) — Building apps with the Web Agent API
 > - [Contributing](CONTRIBUTING.md) — Development setup
@@ -18,34 +18,33 @@ This repository contains two browser extensions that work together to bring AI a
 
 ## Overview
 
-The two extensions together provide:
+Harbor provides:
 
 | Capability | Provided By | Description |
 |------------|-------------|-------------|
-| **Web Agent API** | Web Agents API | `window.ai` and `window.agent` APIs for web pages |
+| **Web Agent API** | Page API | `window.ai`, `window.agent` and `navigator.modelContext` for web pages |
 | **Permission System** | Harbor | Per-origin capability grants with user consent; Harbor's page API checks them before every page call |
 | **MCP Server Management** | Harbor | Install, run, and connect to MCP servers |
 | **In-Browser MCP Execution** | Harbor | Run MCP servers as WASM or JavaScript directly in the browser |
 | **LLM Integration** | Harbor | Local model support (Ollama, llamafile) + cloud providers |
 | **Chat Sidebar** | Harbor | Built-in chat UI with tool calling |
 | **Address Bar Integration** | Harbor | Omnibox suggestions and tool shortcuts |
-| **Bring Your Own Chatbot** | Both | Websites can integrate with the user's AI via `agent.mcp.*` and `agent.chat.*` |
+| **Bring Your Own Chatbot** | Harbor | Websites can integrate with the user's AI via `agent.mcp.*` and `agent.chat.*` |
 
 ---
 
 ## How It Works
 
-The system exposes AI capabilities to web pages through a layered architecture involving five key components:
+The system exposes AI capabilities to web pages through a layered architecture involving four key components:
 
-1. **Web Agents API Extension** — Being retired. Harbor now injects the JavaScript APIs into web pages itself (`extension/src/page-api/`); this extension no longer injects anything
+1. **Page API** (`extension/src/page-api/`) — Injects the JavaScript APIs into web pages and routes their calls to the rest of Harbor
 2. **Harbor Extension** — Manages LLM provider selection, MCP servers, and provides the chat sidebar
 3. **Native Bridge (Rust)** — Handles LLM inference and native MCP server communication
-4. **WASM Runtime** — Runs MCP servers compiled to WebAssembly in the browser
-5. **JavaScript Runtime** — Runs JS MCP servers in sandboxed Web Workers
+4. **WASM and JavaScript Runtimes** — Run MCP servers compiled to WebAssembly, or written in JavaScript, directly in the browser
 
 ### The Web Agent API
 
-When a web page loads with both extensions installed, the Web Agents API extension injects a script that exposes two global JavaScript objects:
+When a web page loads, Harbor's content script injects a script that exposes two global JavaScript objects:
 
 ```javascript
 // window.ai — Text generation (Chrome Prompt API compatible)
@@ -68,22 +67,20 @@ for await (const event of window.agent.run({ task: 'Search for news' })) {
 
 These APIs are **permission-gated** — web pages must request explicit user consent before accessing AI capabilities.
 
-### Message Flow: Web Page → Web Agents API → Harbor → Bridge
+### Message Flow: Web Page → Harbor → Bridge
 
 ```
-Web Page           Web Agents API            Harbor Extension           Bridge
-   │                    │                         │                        │
-   │ window.ai.prompt() │                         │                        │
-   ├───────────────────►│                         │                        │
-   │    postMessage     │ Cross-ext messaging     │                        │
-   │                    ├────────────────────────►│                        │
-   │                    │                         │ Native Messaging       │
-   │                    │                         ├───────────────────────►│
-   │                    │                         │                        │ LLM call
-   │                    │                         │◄───────────────────────┤
-   │                    │◄────────────────────────┤                        │
-   │◄───────────────────┤                         │                        │
-   │ "Hello! How can.." │                         │                        │
+Web Page                              Harbor Extension           Bridge
+   │                                       │                        │
+   │ window.ai.prompt()                    │                        │
+   ├──────────────────────────────────────►│                        │
+   │    postMessage to page-api/           │                        │
+   │    content-script.ts, which forwards  │ Native Messaging       │
+   │    over a port to background.ts       ├───────────────────────►│
+   │                                       │                        │ LLM call
+   │                                       │◄───────────────────────┤
+   │◄──────────────────────────────────────┤                        │
+   │ "Hello! How can.."                    │                        │
 ```
 
 ### Execution Paths
@@ -130,7 +127,7 @@ For LLM inference and native MCP servers, Harbor uses a Rust native messaging br
 │                                      ├── chat.open/close() [BYOC]           │
 │                                      └── agents.* [Multi-Agent]             │
 └───────────────────────────────────────┬─────────────────────────────────────┘
-                                        │ postMessage (harbor_web_agent channel)
+                                        │ postMessage (harbor_page_api channel)
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                       BROWSER EXTENSION (Chrome/Firefox)                     │
@@ -205,15 +202,9 @@ For LLM inference and native MCP servers, Harbor uses a Rust native messaging br
 
 ---
 
-## Web Agents API Extension
+## Page API
 
-The **web-agents-api** (`web-agents-api/`) is a companion extension that provides a streamlined way to access Harbor's capabilities. It can operate in two modes:
-
-### Standalone Mode
-When Harbor is not installed, the Web Agents API extension provides a simplified API surface with configurable feature flags.
-
-### Bridge Mode
-When Harbor is installed, the Web Agents API connects to Harbor via `chrome.runtime.sendMessage` to access the full Harbor backend:
+The **page API** (`extension/src/page-api/`) is the part of Harbor that talks to web pages. It has its own content script and background wiring, but runs in Harbor's own background process — there is no separate extension and no cross-extension messaging:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -223,35 +214,38 @@ When Harbor is installed, the Web Agents API connects to Harbor via `chrome.runt
                                         │ postMessage
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                     WEB AGENTS API EXTENSION                                 │
+│                     HARBOR EXTENSION — PAGE API                              │
 │                                                                              │
 │  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────────┐   │
-│  │  Content Script   │  │   Background      │  │   Harbor Client       │   │
-│  │  (injected.ts)    │  │   (background.ts) │  │   (harbor-client.ts)  │   │
+│  │  Content Script   │  │   Background      │  │   harbor-core.ts      │   │
+│  │  (injected.ts)    │  │   (background.ts) │  │                       │   │
 │  │                   │  │                   │  │                       │   │
-│  │  • Inject APIs    │  │  • Feature flags  │  │  • Discover Harbor    │   │
-│  │  • Route messages │  │  • Local handling │  │  • Forward requests   │   │
-│  │  • Feature gates  │  │  • Harbor proxy   │  │  • Stream responses   │   │
+│  │  • Inject APIs    │  │  • Feature flags  │  │  • In-process call    │   │
+│  │  • Route messages │  │  • Origin from    │  │    into Harbor's      │   │
+│  │  • Feature gates  │  │    port.sender     │  │    extension-api and │   │
+│  │                   │  │                   │  │    agent router       │   │
 │  └───────────────────┘  └─────────┬─────────┘  └───────────┬───────────┘   │
 │                                   │                        │                │
 │                                   └────────────────────────┘                │
-└───────────────────────────────────────────────────────────────────────────────┘
-                                    │ chrome.runtime.sendMessage
+└───────────────────────────────────┬─────────────────────────────────────────┘
+                                    │ in-process function call
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        HARBOR EXTENSION                                      │
-│                   (Full implementation as above)                             │
+│                  HARBOR EXTENSION — THE REST OF HARBOR                       │
+│          (extension-api.ts, agents/background-router.ts, and below)          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+`harbor-core.ts` is the seam: it's the only file under `page-api/` allowed to import from outside `page-api/`, so the rest of the page API stays swappable if the agent side changes shape later. The page's origin always comes from the connecting port's `sender` (its URL in Firefox, its `origin` in Chrome) — never from the message itself, which a page or a compromised content script could otherwise forge.
+
 ### Feature Flags
 
-The Web Agents API extension uses feature flags to control which capabilities are exposed:
+Harbor's page API uses feature flags to control which capabilities are exposed to pages. They're managed from the sidebar's "Browser Agent Capabilities" panel:
 
 | Flag | Description | Default |
 |------|-------------|---------|
 | `textGeneration` | Enable `window.ai` for text generation | `true` |
-| `toolCalling` | Enable `agent.run()` for autonomous tasks | `false` |
+| `toolCalling` | Enable `agent.run()` for autonomous tasks | `true` |
 | `toolAccess` | Enable `agent.tools.list()` and `call()` | `true` |
 | `browserInteraction` | Enable click/fill/scroll on pages | `false` |
 | `browserControl` | Enable navigation and tab management | `false` |
@@ -474,7 +468,7 @@ Note: In-browser tools execute entirely within the extension — no native bridg
 
 ## Injected API Architecture
 
-The `injected.ts` script is the heart of the Web Agent API. It's injected into every web page and creates the `window.ai` and `window.agent` objects.
+The `injected.ts` script (`extension/src/page-api/injected.ts`) is the heart of the Web Agent API. It's injected into every web page and creates the `window.ai` and `window.agent` objects.
 
 ### How Injection Works
 
@@ -483,7 +477,7 @@ The `injected.ts` script is the heart of the Web Agent API. It's injected into e
 │                         CONTENT SCRIPT                           │
 │                                                                  │
 │  1. Create <script> element with injected.ts code               │
-│  2. Inject feature flags via <script id="harbor-feature-flags"> │
+│  2. Inject feature flags via <script id="harbor-page-api-flags">│
 │  3. Insert script at document_start (before page scripts)       │
 │  4. Set up postMessage listener for bidirectional communication │
 └───────────────────────────────────────────────────────────────────┘
@@ -514,8 +508,6 @@ The `injected.ts` script is the heart of the Web Agent API. It's injected into e
 │    addressBar: { ... },                 // Omnibox integration   │
 │    agents: { ... }                      // Multi-agent           │
 │  }                                                               │
-│                                                                  │
-│  window.harbor = { ai, agent, version, chromeAiDetected }        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -526,7 +518,7 @@ Communication between the injected script and content script uses `postMessage` 
 ```javascript
 // Injected script → Content script (request)
 window.postMessage({
-  channel: 'harbor_web_agent',
+  channel: 'harbor_page_api',
   request: {
     id: 'uuid-here',
     type: 'ai.createTextSession',
@@ -536,7 +528,7 @@ window.postMessage({
 
 // Content script → Injected script (response)
 window.postMessage({
-  channel: 'harbor_web_agent',
+  channel: 'harbor_page_api',
   response: {
     id: 'uuid-here',
     ok: true,
@@ -546,7 +538,7 @@ window.postMessage({
 
 // Streaming events (for promptStreaming, agent.run)
 window.postMessage({
-  channel: 'harbor_web_agent',
+  channel: 'harbor_page_api',
   streamEvent: {
     id: 'uuid-here',
     event: { type: 'token', token: 'Hello' },
@@ -604,26 +596,18 @@ function createStreamIterable(type, payload) {
 
 ## Components
 
-### Shared Protocol (`shared/`)
-
-The shared protocol defines type-safe communication between Harbor and Web Agents API extensions:
-
-| File | Purpose |
-|------|---------|
-| `protocol.ts` | Message types, error codes, and response helpers |
-
-**Key Types:**
-- `HarborRequest<T>` / `HarborResponse<T>` — Request/response envelope
-- `MessageType` — All supported message types (`llm.*`, `mcp.*`, `session.*`, etc.)
-- `ErrorCodes` — Standardized error codes (`ERR_PERMISSION_DENIED`, `ERR_TIMEOUT`, etc.)
-- `HarborError` — Custom error class with serialization support
-- `ApiError` — Structured error object for responses
-
 ### Harbor Extension (`extension/src/`)
 
 | Directory/File | Purpose |
 |----------------|---------|
-| **`handlers/`** | **Modular message handler architecture** |
+| **`page-api/`** | **The Web Agent API: injects and serves `window.ai`, `window.agent` and `navigator.modelContext`** |
+| `page-api/injected.ts` | `window.ai` / `window.agent` / `navigator.modelContext` creation, in the page |
+| `page-api/content-script.ts` | Content script bridge between the injected script and `background.ts` |
+| `page-api/background.ts` | Port listener; derives the page's origin from `port.sender`, wires streaming (`session.promptStreaming`, `agent.run`) |
+| `page-api/harbor-core.ts` | The seam: in-process call into `extension-api.ts` and `agents/background-router.ts` — the only file under `page-api/` allowed to import from outside it |
+| `page-api/handlers/` | Map-based handler registry (`index.ts`'s `routeMessage()`) for `ai.*`, `agent.*`, `session.*` and tab/browser handlers |
+| `page-api/policy/feature-flags.ts` | The feature flags shown in the sidebar's "Browser Agent Capabilities" panel |
+| **`handlers/`** | **Modular message handler architecture for Harbor's own background** |
 | `handlers/index.ts` | Handler registry initialization |
 | `handlers/types.ts` | Shared handler types and utilities |
 | `handlers/server-handlers.ts` | MCP server management handlers |
@@ -634,11 +618,8 @@ The shared protocol defines type-safe communication between Harbor and Web Agent
 | `handlers/session-handlers.ts` | Session management handlers |
 | `handlers/remote-server-handlers.ts` | Remote MCP server handlers |
 | `handlers/page-chat-handlers.ts` | Page chat feature handlers |
-| `agents/` | Web Agent API implementation |
-| `agents/injected.ts` | `window.ai` and `window.agent` API injection |
-| `agents/transport.ts` | Message passing between page and background |
-| `agents/orchestrator.ts` | Agent run loop with tool calling |
-| `agents/addressbar.ts` | Omnibox/address bar integration |
+| `agents/background-router.ts` | Routes `agent.chat.*`, `agent.mcp.*` and `agents.*` calls to their handlers |
+| `agents/handlers/` | Chat, MCP-website and multi-agent handler implementations |
 | `agents/types.ts` | TypeScript type definitions |
 | `js-runtime/` | JavaScript MCP server sandbox |
 | `js-runtime/sandbox.ts` | Web Worker-based JS execution |
@@ -654,34 +635,10 @@ The shared protocol defines type-safe communication between Harbor and Web Agent
 | `policy/` | Permission system |
 | `policy/permissions.ts` | Permission checking and prompts |
 | `storage/` | Extension storage utilities |
-| `background.ts` | Service worker entry point (initializes handlers) |
-| `extension-api.ts` | External extension API router; accepts messages only from the Web Agents API |
-| `known-extensions.ts` | Web Agents API extension IDs that Harbor accepts messages from |
-| `sidebar.ts` | Sidebar UI for server management |
+| `background.ts` | Service worker entry point (initializes handlers and the page API) |
+| `extension-api.ts` | Harbor's typed internal API for LLM, MCP, session, permissions and system operations; called in-process by `page-api/harbor-core.ts` |
+| `sidebar.ts` | Sidebar UI for server management and feature flags |
 | `directory.ts` | MCP server directory/catalog UI |
-
-### Web Agents API Extension (`web-agents-api/src/`)
-
-| Directory/File | Purpose |
-|----------------|---------|
-| **`handlers/`** | **Modular message handler architecture** |
-| `handlers/index.ts` | Handler registry with `routeMessage()` dispatcher |
-| `handlers/types.ts` | Shared handler types (`RequestContext`, `HandlerResponse`) |
-| `handlers/ai-handlers.ts` | AI/LLM operation handlers |
-| `handlers/permission-handlers.ts` | Permission request handlers |
-| `handlers/tool-handlers.ts` | Tool listing and calling handlers |
-| `handlers/session-handlers.ts` | Session management handlers |
-| `handlers/mcp-handlers.ts` | MCP server registration handlers |
-| `handlers/chat-handlers.ts` | Chat UI handlers |
-| `handlers/browser-handlers.ts` | Browser control handlers |
-| `handlers/tab-handlers.ts` | Tab management handlers |
-| `handlers/agent-handlers.ts` | Multi-agent handlers |
-| `background.ts` | Service worker entry point |
-| `harbor-client.ts` | Client for Harbor extension communication |
-| `known-extensions.ts` | Harbor extension IDs used for discovery and accepted as senders |
-| `injected.ts` | `window.ai` and `window.agent` injection |
-| `content-script.ts` | Content script bridge |
-| `types.ts` | Type definitions |
 
 ### Rust Bridge (`bridge-rs/src/`)
 
@@ -705,14 +662,14 @@ The shared protocol defines type-safe communication between Harbor and Web Agent
 
 ## Handler Architecture
 
-Both extensions and the Rust bridge use a **handler registry pattern** for message routing. This provides:
+Harbor's extension and the Rust bridge use a **handler registry pattern** for message routing. This provides:
 
 - **Modularity** — Each domain (LLM, MCP, permissions, etc.) has its own handler module
 - **Testability** — Handlers can be unit tested in isolation
 - **Extensibility** — New message types can be added without modifying core routing logic
 - **Type Safety** — Shared types ensure consistent request/response formats
 
-### TypeScript Handler Pattern (Extensions)
+### TypeScript Handler Pattern (Extension)
 
 ```typescript
 // handlers/types.ts - Shared handler infrastructure
@@ -780,8 +737,8 @@ pub async fn handle(request: RpcRequest) -> RpcResponse {
 
 | Layer | Pattern | Registration |
 |-------|---------|--------------|
-| **Web Agents API** | Map-based registry | `handlers.set(type, fn)` |
-| **Harbor Extension** | `registerHandler()` utility | `registerAsyncHandler(type, fn)` |
+| **Page API** (`page-api/handlers/`) | Map-based registry | `handlers.set(type, fn)` |
+| **Harbor Extension** (`handlers/`) | `registerHandler()` utility | `registerAsyncHandler(type, fn)` |
 | **Rust Bridge** | HashMap with lazy init | `handlers.insert(method, fn)` |
 
 ---

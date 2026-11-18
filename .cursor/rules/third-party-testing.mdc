@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Third-Party Testing: Generate & Import
 
-When a **third-party developer** (or the user) wants to **test their app** that uses the Web Agents API (`window.ai` / `window.agent`) and is building on Harbor, help them get the **test harness** from this repo so they can accelerate testing.
+When a **third-party developer** (or the user) wants to **test their app** that uses the Web Agent API (`window.ai` / `window.agent`) and is building on Harbor, help them get the **test harness** from this repo so they can accelerate testing.
 
 ## How they get the harness
 
@@ -17,7 +17,7 @@ When a **third-party developer** (or the user) wants to **test their app** that 
    ```
    This creates `their-project/harbor-test/` with:
    - `mock.js` – installable mock for `window.ai` and `window.agent` (unit tests, no browser)
-   - `playwright.harbor.config.example.ts` – Playwright config for E2E with extensions
+   - `playwright.harbor.config.example.ts` – Playwright config for E2E with the Harbor extension
    - `fixtures/harbor.ts` – optional Playwright fixture
    - `web-agents-api.d.ts` – TypeScript declarations
    - `README.md` – how to use each piece
@@ -33,13 +33,13 @@ When a **third-party developer** (or the user) wants to **test their app** that 
 ## What to tell them
 
 - **Unit / integration tests:** Use `installWebAgentsMock(globalThis)` (or `window` in a browser env), then e.g. `mock.permissions.grantAll()`, `mock.ai.textSessionResponse = '...'`. Their code that calls `window.ai` / `window.agent` then runs against the mock.
-- **E2E tests:** They need Playwright and the two extension paths (Harbor + Web Agents API). The generated `playwright.harbor.config.example.ts` shows how to load both extensions; they set `HARBOR_EXTENSION_PATH` and `WEB_AGENTS_EXTENSION_PATH` to their Harbor build output (e.g. `extension/dist-chrome`, `web-agents-api/dist-chrome`).
+- **E2E tests:** They need Playwright and the Harbor extension path. The generated `playwright.harbor.config.example.ts` shows how to load it; they set `HARBOR_EXTENSION_PATH` to their Harbor build output (e.g. `extension/dist-chrome`).
 - **Entry points in Harbor:** `spec/testing/README.md`, `docs/THIRD_PARTY_TESTING_PLAN.md`, and this rule.
 
 ## When this applies
 
-- User asks how to test their app that uses Harbor or the Web Agents API.
-- User wants a “test harness,” “mocks for window.ai,” or “E2E with Harbor extensions.”
+- User asks how to test their app that uses Harbor or the Web Agent API.
+- User wants a “test harness,” “mocks for window.ai,” or “E2E with the Harbor extension.”
 - User has referenced Harbor (or is in Harbor) and wants to give another team or project a way to test Harbor-based code.
 
 Do **not** use this rule for Harbor’s own internal tests (those live under `tests/` and use `tests/e2e/fixtures/`); this rule is for **external** developers building on top of Harbor.

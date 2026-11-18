@@ -74,7 +74,7 @@ session.destroy();
 
 ### Run an Agent Task
 
-`agent.run()` yields **typed events**, and requires the `toolCalling` feature flag in the Web Agents API sidebar.
+`agent.run()` yields **typed events**, and requires the `toolCalling` feature flag in Harbor's sidebar.
 
 ```javascript
 for await (const event of window.agent.run({

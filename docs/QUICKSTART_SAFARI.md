@@ -2,7 +2,9 @@
 
 Safari support is experimental and requires macOS and Xcode. Firefox is the primary target.
 
-Start with **[the canonical Quickstart](../QUICKSTART.md#build-everything)**: clone, build both extensions with `npm run build:safari`, and build the native bridge. Apple Intelligence can supply the default model on a supported Mac. Safari bundles the bridge in its macOS app, so skip the Firefox native messaging installer.
+Start with **[the canonical Quickstart](../QUICKSTART.md#build-everything)**: clone, build the extension with `npm run build:safari`, and build the native bridge. Apple Intelligence can supply the default model on a supported Mac. Safari bundles the bridge in its macOS app, so skip the Firefox native messaging installer.
+
+Harbor's Safari build doesn't inject the page API (`window.ai`, `window.agent`, `navigator.modelContext`) into web pages yet, unlike the Firefox and Chrome builds. The sidebar, models, MCP servers and bridge work the same way.
 
 ## Step 4: Open the Xcode Project
 
@@ -32,7 +34,7 @@ In Xcode:
 This will:
 - Build the macOS app
 - Launch `Harbor.app`
-- Register the extensions with Safari
+- Register the extension with Safari
 
 ---
 
@@ -42,7 +44,6 @@ This will:
 2. Go to **Safari → Settings** (⌘,)
 3. Click the **Extensions** tab
 4. Enable **Harbor**
-5. Enable **Web Agents API**
 
 ### For Unsigned/Development Builds
 

@@ -12,7 +12,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BRIDGE_DIR="$PROJECT_ROOT/bridge-rs"
 EXTENSION_DIR="$PROJECT_ROOT/extension"
-WEB_AGENTS_DIR="$PROJECT_ROOT/web-agents-api"
 INSTALLER_DIR="$SCRIPT_DIR"
 CREDENTIALS_FILE="$PROJECT_ROOT/installer/credentials.env"
 
@@ -83,10 +82,6 @@ load_credentials() {
             echo_warn "CHROME_EXTENSION_ID not set (using dev mode)"
             echo "       Extension will need to be loaded manually in developer mode"
         fi
-        
-        if [ -n "$CHROME_WEB_AGENTS_EXTENSION_ID" ]; then
-            echo "  Chrome Web Agents Extension ID: $CHROME_WEB_AGENTS_EXTENSION_ID"
-        fi
     else
         echo_warn "No credentials file found at $CREDENTIALS_FILE"
         echo "       Create it from credentials.env.example"
@@ -114,13 +109,7 @@ clean_all() {
     rm -rf "$EXTENSION_DIR/dist-firefox"
     rm -rf "$EXTENSION_DIR/dist-chrome"
     rm -rf "$EXTENSION_DIR/node_modules"
-    
-    # Clean web-agents-api
-    rm -rf "$WEB_AGENTS_DIR/dist"
-    rm -rf "$WEB_AGENTS_DIR/dist-firefox"
-    rm -rf "$WEB_AGENTS_DIR/dist-chrome"
-    rm -rf "$WEB_AGENTS_DIR/node_modules"
-    
+
     echo_success "Deep clean complete"
 }
 
@@ -175,48 +164,6 @@ build_chrome_extension() {
     else
         echo "  - Extension ID: Will be assigned by Chrome on first load"
     fi
-}
-
-# =============================================================================
-# Build Chrome Web Agents Extension
-# =============================================================================
-
-build_chrome_web_agents_extension() {
-    echo_step "Building Chrome Web Agents extension..."
-    
-    cd "$WEB_AGENTS_DIR"
-    
-    # Install dependencies if needed
-    if [ ! -d "node_modules" ]; then
-        echo "  Installing Web Agents dependencies..."
-        npm install
-    fi
-    
-    # Update manifest.chrome.json with current version
-    echo "  Setting version to $VERSION..."
-    if [ -f "manifest.chrome.json" ]; then
-        sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" manifest.chrome.json
-    fi
-    
-    # Build for Chrome (uses --chrome flag)
-    npm run build:chrome
-    
-    # Create Chrome Web Agents extension folder
-    mkdir -p "$BUILD_DIR/web-agents-chrome"
-    
-    # Copy from dist-chrome
-    if [ -d "dist-chrome" ]; then
-        cp -r dist-chrome/* "$BUILD_DIR/web-agents-chrome/"
-    else
-        echo_warn "dist-chrome not found, Web Agents extension may not work correctly"
-    fi
-    
-    # Create zip for Web Store
-    cd "$BUILD_DIR/web-agents-chrome"
-    zip -r "$BUILD_DIR/web-agents-chrome.zip" . -x "*.map" "**/*.map"
-    cd "$WEB_AGENTS_DIR"
-    
-    echo_success "Chrome Web Agents extension built"
 }
 
 # =============================================================================
@@ -293,14 +240,8 @@ copy_extension() {
         cp -r "$BUILD_DIR/chrome-extension" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
         echo "  ✓ Harbor Chrome extension (chrome-extension/)"
     fi
-    
-    # Copy Chrome Web Agents extension
-    if [ -d "$BUILD_DIR/web-agents-chrome" ]; then
-        cp -r "$BUILD_DIR/web-agents-chrome" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
-        echo "  ✓ Web Agents Chrome extension (web-agents-chrome/)"
-    fi
-    
-    echo_success "Extensions copied"
+
+    echo_success "Extension copied"
 }
 
 # =============================================================================
@@ -642,10 +583,9 @@ main() {
     # Run build steps
     cleanup
     
-    # Build Chrome extensions
+    # Build Chrome extension
     build_chrome_extension
-    build_chrome_web_agents_extension
-    
+
     if [ "$BUILD_UNIVERSAL" = true ]; then
         build_universal
     else
@@ -704,8 +644,7 @@ main() {
     echo "  Chrome Extension (Unpacked/Developer Mode):"
     echo "    • Setup Assistant will launch after install to guide users"
     echo "    • Extensions at: /Library/Application Support/Harbor/"
-    echo "      - chrome-extension/ (main Harbor extension)"
-    echo "      - web-agents-chrome/ (Web Agents API extension)"
+    echo "      - chrome-extension/ (Harbor extension)"
     echo ""
     
     echo "To install locally:"

@@ -27,7 +27,7 @@ const CONFIG = {
 
 /**
  * Get the Web Agent API.
- * Uses window.agent provided by the Web Agents API extension.
+ * Uses window.agent provided by Harbor.
  */
 function getWebAgent() {
   return window.agent;
@@ -307,7 +307,7 @@ async function checkApiAvailability() {
       <div style="text-align: center;">
         <p style="margin-bottom: var(--demo-space-3);">❌ Web Agent API not detected</p>
         <p style="font-size: var(--demo-text-xs); color: var(--demo-text-muted);">
-          Make sure the Web Agents API extension is installed and enabled.
+          Make sure Harbor is installed and enabled.
         </p>
       </div>
     `;
@@ -361,7 +361,7 @@ async function checkApiAvailability() {
       <div style="text-align: center;">
         <p style="margin-bottom: var(--demo-space-3);">❌ Required features not enabled</p>
         <p style="font-size: var(--demo-text-xs); color: var(--demo-text-muted);">
-          Enable ${featureList} in the Web Agents API sidebar, then reload this page.
+          Enable ${featureList} in Harbor's sidebar, then reload this page.
         </p>
       </div>
     `;
@@ -1153,11 +1153,11 @@ async function runPipeline(topic) {
     
     // Verify required features are available
     if (!state.browserControlAvailable) {
-      throw new Error('Browser Control is not available. Enable it in the Web Agents API sidebar and reload this page.');
+      throw new Error("Browser Control is not available. Enable it in Harbor's sidebar and reload this page.");
     }
     
     if (!state.multiAgentAvailable) {
-      throw new Error('Multi-Agent is not available. Enable it in the Web Agents API sidebar and reload this page.');
+      throw new Error("Multi-Agent is not available. Enable it in Harbor's sidebar and reload this page.");
     }
     
     // Request permissions
@@ -1230,7 +1230,7 @@ function getMissingFeaturesMessage() {
   const missing = [];
   if (!state.browserControlAvailable) missing.push('Browser Control');
   if (!state.multiAgentAvailable) missing.push('Multi-Agent');
-  return `Required features not enabled.\n\nEnable ${missing.join(' and ')} in the Web Agents API sidebar, then reload this page.`;
+  return `Required features not enabled.\n\nEnable ${missing.join(' and ')} in Harbor's sidebar, then reload this page.`;
 }
 
 elements.startBtn.addEventListener('click', () => {

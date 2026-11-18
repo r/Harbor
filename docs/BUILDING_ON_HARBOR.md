@@ -97,7 +97,7 @@ const { result } = await window.agent.agents.invoke(hermes.id, {
 
 - **The Hermes tab must stay open.** Close it, the agent disappears.
 - **No system-level wake-on-event.** Hermes can't react to scheduled time, tab navigation, or external triggers.
-- **Cross-origin invocation requires the `multiAgent` flag** in the Web Agents API sidebar.
+- **Cross-origin invocation requires the `multiAgent` flag** in Harbor's sidebar.
 - **No persistent memory.** The MCP `memory/` server is per-server; Hermes itself has no Harbor-managed long-term store today.
 
 ### To build the real Hermes, we need (Phase C of the roadmap):

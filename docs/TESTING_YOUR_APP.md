@@ -1,6 +1,6 @@
-# Testing Your Harbor / Web Agents API App
+# Testing Your Harbor / Web Agent API App
 
-This guide is for **developers building on the Web Agents API** (`window.ai` and `window.agent`). It describes how to test your app with minimal setup: unit tests with a mock, and E2E tests with real Harbor extensions.
+This guide is for **developers building on the Web Agent API** (`window.ai` and `window.agent`). It describes how to test your app with minimal setup: unit tests with a mock, and E2E tests with the real Harbor extension.
 
 ---
 
@@ -15,7 +15,7 @@ node scripts/generate-test-harness.mjs /path/to/your/project
 This creates `your-project/harbor-test/` with:
 
 - **mock.js** – drop-in mock for `window.ai` and `window.agent` (unit tests, no browser)
-- **Playwright** – example config and fixture that load Harbor + Web Agents API in Chromium
+- **Playwright** – example config and fixture that load the Harbor extension in Chromium
 - **Example tests** – one unit test (Vitest) and one E2E spec (Playwright)
 - **Types** – `web-agents-api.d.ts` for TypeScript
 
@@ -29,12 +29,11 @@ npm i -D vitest
 cp harbor-test/vitest.config.example.ts vitest.config.ts
 npx vitest run harbor-test/example.test.mjs
 
-# E2E tests (optional; needs Harbor built and env vars set)
+# E2E tests (optional; needs Harbor built and the env var set)
 npm i -D @playwright/test
 npx playwright install chromium
 cp harbor-test/playwright.harbor.config.example.ts playwright.config.ts
 export HARBOR_EXTENSION_PATH=/path/to/harbor/extension/dist-chrome
-export WEB_AGENTS_EXTENSION_PATH=/path/to/harbor/web-agents-api/dist-chrome
 npx playwright test
 ```
 
@@ -42,7 +41,7 @@ npx playwright test
 
 ## Using Harbor as a submodule
 
-If you want to **track Harbor in your repo** and periodically refresh the test harness (or point E2E at Harbor’s built extensions), add Harbor as a git submodule and run the generator from it.
+If you want to **track Harbor in your repo** and periodically refresh the test harness (or point E2E at Harbor’s built extension), add Harbor as a git submodule and run the generator from it.
 
 ### 1. Add the submodule
 
@@ -63,14 +62,13 @@ node harbor/scripts/generate-test-harness.mjs .
 
 Commit both the submodule and the generated `harbor-test/` folder. Your unit and E2E setup then use `harbor-test/` as in the rest of this guide.
 
-### 3. E2E: point at the submodule’s built extensions
+### 3. E2E: point at the submodule’s built extension
 
-If you build Harbor from the submodule, set the extension paths to the submodule:
+If you build Harbor from the submodule, set the extension path to the submodule:
 
 ```bash
 cd harbor && npm run build && cd ..
 export HARBOR_EXTENSION_PATH=$(pwd)/harbor/extension/dist-chrome
-export WEB_AGENTS_EXTENSION_PATH=$(pwd)/harbor/web-agents-api/dist-chrome
 npx playwright test
 ```
 
@@ -105,7 +103,7 @@ To have Cursor set up Option 2 in your other project for you, give it the instru
 
 ## Unit / integration tests (mock)
 
-Use the mock so your code that calls `window.ai` / `window.agent` runs in Node or jsdom without a browser or extensions.
+Use the mock so your code that calls `window.ai` / `window.agent` runs in Node or jsdom without a browser or the extension.
 
 ### Setup
 
@@ -151,16 +149,15 @@ npx vitest run harbor-test/example.test.mjs
 
 ---
 
-## E2E tests (Playwright + Harbor extensions)
+## E2E tests (Playwright + the Harbor extension)
 
-To run E2E tests in a browser where the Harbor and Web Agents API extensions are loaded (so `window.ai` and `window.agent` are real):
+To run E2E tests in a browser where the Harbor extension is loaded (so `window.ai` and `window.agent` are real):
 
 ### Prerequisites
 
 - **Harbor built** (or use a pre-built artifact):
   - Harbor extension: `extension/dist-chrome` (or `dist-firefox`)
-  - Web Agents API extension: `web-agents-api/dist-chrome` (or `dist-firefox`)
-- **Playwright** and **Chromium** (extensions are loaded in Chromium via the fixture).
+- **Playwright** and **Chromium** (the extension is loaded in Chromium via the fixture).
 
 ### Setup
 
@@ -168,16 +165,15 @@ To run E2E tests in a browser where the Harbor and Web Agents API extensions are
    ```bash
    cp harbor-test/playwright.harbor.config.example.ts playwright.config.ts
    ```
-2. Set extension paths (e.g. in your shell or `.env`):
+2. Set the extension path (e.g. in your shell or `.env`):
    ```bash
    export HARBOR_EXTENSION_PATH=/path/to/harbor/extension/dist-chrome
-   export WEB_AGENTS_EXTENSION_PATH=/path/to/harbor/web-agents-api/dist-chrome
    ```
-3. In your E2E specs, **import from the harbor fixture** so the browser is launched with extensions:
+3. In your E2E specs, **import from the harbor fixture** so the browser is launched with the extension:
    ```ts
    import { test, expect } from '../harbor-test/fixtures/harbor.js';
    ```
-   (Adjust the path if your spec lives elsewhere; the fixture provides the same `page` / `context` but with extensions loaded.)
+   (Adjust the path if your spec lives elsewhere; the fixture provides the same `page` / `context` but with the extension loaded.)
 
 4. The example config uses `testDir: './harbor-test/e2e'`. You can change that to your own E2E directory and keep the same fixture import.
 
@@ -187,18 +183,18 @@ To run E2E tests in a browser where the Harbor and Web Agents API extensions are
 npx playwright test
 ```
 
-If the env vars are not set, the fixture still launches Chromium but without extensions; tests that assert on `window.ai` / `window.agent` will see them as undefined.
+If the env var is not set, the fixture still launches Chromium but without the extension; tests that assert on `window.ai` / `window.agent` will see them as undefined.
 
 ### Example spec
 
-See `harbor-test/e2e/example.spec.ts` for a minimal spec that checks the page and (when extensions are loaded) the presence of the API.
+See `harbor-test/e2e/example.spec.ts` for a minimal spec that checks the page and (when the extension is loaded) the presence of the API.
 
 ---
 
 ## CI
 
 - **Unit tests:** Run your test runner (e.g. `npx vitest run`) as usual; no browser or Harbor build needed.
-- **E2E tests:** In CI, build Harbor (or download artifacts), set `HARBOR_EXTENSION_PATH` and `WEB_AGENTS_EXTENSION_PATH`, then run `npx playwright test`. The fixture uses `headless: true` when `CI` is set.
+- **E2E tests:** In CI, build Harbor (or download artifacts), set `HARBOR_EXTENSION_PATH`, then run `npx playwright test`. The fixture uses `headless: true` when `CI` is set.
 
 ---
 
@@ -227,4 +223,4 @@ Or in a `.d.ts` file: `/// <reference path="./harbor-test/web-agents-api.d.ts" /
 - **Submodule:** See [Using Harbor as a submodule](#using-harbor-as-a-submodule) to add Harbor as a submodule and generate or refresh the harness from it.
 - **Plan:** [THIRD_PARTY_TESTING_PLAN.md](./THIRD_PARTY_TESTING_PLAN.md).
 
-If you use **Cursor** and add Harbor as a reference, you can ask the AI to set up testing for your Web Agents API app; the rule in Harbor tells it to use this harness (generator or template).
+If you use **Cursor** and add Harbor as a reference, you can ask the AI to set up testing for your Web Agent API app; the rule in Harbor tells it to use this harness (generator or template).

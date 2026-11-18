@@ -1,13 +1,13 @@
-# Web Agents API Developer Documentation
+# Web Agent API Developer Documentation
 
 **JavaScript APIs injected into web pages for AI agent capabilities.**
 
-The Web Agents API extension injects two global objects into every web page:
+The Harbor extension injects two global objects into every web page:
 
 - **`window.ai`** — Text generation (Chrome Prompt API compatible)
 - **`window.agent`** — Tools, browser access, sessions, and multi-agent communication
 
-These APIs are gated by feature flags configured in the extension's sidebar.
+These APIs are gated by feature flags configured in Harbor's sidebar.
 
 > **Building with an AI coding assistant?** See **[LLMS.txt](./LLMS.txt)** — a compact, token-efficient reference designed specifically for Claude, Cursor, Copilot, and other AI tools. It contains everything an AI assistant needs to write working code quickly.
 

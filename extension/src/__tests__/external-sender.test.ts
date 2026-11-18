@@ -1,112 +1,51 @@
+/**
+ * Harbor no longer accepts any message or connection from another
+ * extension: it registers no `onMessageExternal` or `onConnectExternal`
+ * listener at all. A still-installed, separate extension (such as the old
+ * Web Agents API) that tries to reach Harbor this way gets nothing —
+ * `browser.runtime.sendMessage(HARBOR_ID, ...)` simply has no listener to
+ * answer it.
+ */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { bridgeRequest } from '../llm/bridge-client';
-import { routeExternalMessage } from '../agents/background-router';
 import { initializeExtensionApi } from '../extension-api';
 import { browserAPI } from '../browser-compat';
 
 vi.mock('../llm/bridge-client', () => ({ bridgeRequest: vi.fn(), bridgeStreamRequest: vi.fn() }));
 vi.mock('../mcp/host', () => ({}));
-vi.mock('../agents/background-router', () => ({ routeExternalMessage: vi.fn() }));
 vi.mock('../llm/native-bridge', () => ({}));
 vi.mock('../llm/provider-registry', () => ({}));
 vi.mock('../sessions', () => ({ SessionRegistry: { subscribe: vi.fn() } }));
 
-type Listener = (message: unknown, sender: unknown, sendResponse: (r: unknown) => void) => unknown;
-type ConnectListener = (port: unknown) => void;
-
-const WEB_AGENTS_FIREFOX = 'web-agents@krikorian.co';
-const WEB_AGENTS_CHROME = 'ogmmelahbpdfnmgemkcbpoaekdnfdapn';
-
-let onMessageExternal: Listener;
-let onConnectExternal: ConnectListener;
-
 beforeEach(() => {
   vi.clearAllMocks();
   const runtime = browserAPI.runtime as unknown as Record<string, unknown>;
-  runtime.onMessageExternal = { addListener: (l: Listener) => { onMessageExternal = l; } };
-  runtime.onConnectExternal = { addListener: (l: ConnectListener) => { onConnectExternal = l; } };
-  initializeExtensionApi();
+  // Reset to a state where we can detect whether initializeExtensionApi()
+  // ever calls addListener on either external surface.
+  runtime.onMessageExternal = { addListener: vi.fn() };
+  runtime.onConnectExternal = { addListener: vi.fn() };
 });
 
-function send(message: unknown, sender: unknown) {
-  const sendResponse = vi.fn();
-  onMessageExternal(message, sender, sendResponse);
-  return sendResponse;
-}
-
-function connect(sender: unknown) {
-  const port = {
-    name: 'harbor-stream', sender,
-    onMessage: { addListener: vi.fn() }, onDisconnect: { addListener: vi.fn() },
-    postMessage: vi.fn(), disconnect: vi.fn(),
-  };
-  onConnectExternal(port);
-  return port;
-}
-
-describe('Harbor accepts cross-extension messages only from the Web Agents API', () => {
-  it.each([
-    ['an unknown extension', { id: 'someone-else@example.com' }],
-    ['a sender with no id', { url: 'https://example.com/' }],
-    ['a sender that was retired', { id: 'raffi.krikorian.harbor@gmail.com' }],
-  ])('rejects llm.* from %s without reaching the bridge', async (_label, sender) => {
-    const sendResponse = send({ type: 'llm.chat', payload: { messages: [{ role: 'user', content: 'Hi' }], model: 'ollama:test' } }, sender);
-    await Promise.resolve();
-    expect(bridgeRequest).not.toHaveBeenCalled();
-    expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+describe('Harbor registers no cross-extension listener', () => {
+  it('does not call onMessageExternal.addListener', () => {
+    initializeExtensionApi();
+    const runtime = browserAPI.runtime as unknown as {
+      onMessageExternal: { addListener: ReturnType<typeof vi.fn> };
+    };
+    expect(runtime.onMessageExternal.addListener).not.toHaveBeenCalled();
   });
 
-  it('rejects agent.* from an unknown extension before reading its claimed origin', () => {
-    const sendResponse = send(
-      { type: 'agent.run', payload: { origin: 'https://bank.example', task: 'x' } },
-      { id: 'someone-else@example.com' },
-    );
-    expect(routeExternalMessage).not.toHaveBeenCalled();
-    expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+  it('does not call onConnectExternal.addListener', () => {
+    initializeExtensionApi();
+    const runtime = browserAPI.runtime as unknown as {
+      onConnectExternal: { addListener: ReturnType<typeof vi.fn> };
+    };
+    expect(runtime.onConnectExternal.addListener).not.toHaveBeenCalled();
   });
 
-  it.each([WEB_AGENTS_FIREFOX, WEB_AGENTS_CHROME])('routes agent.* from %s', (id) => {
-    send({ type: 'agent.run', payload: { task: 'x' } }, { id });
-    expect(routeExternalMessage).toHaveBeenCalledOnce();
-  });
-
-  it.each([WEB_AGENTS_FIREFOX, WEB_AGENTS_CHROME])('answers permissions.check from %s from its own store', async (id) => {
-    const sendResponse = send({ type: 'permissions.check', payload: { origin: 'https://page.example' } }, { id });
-    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledOnce());
-    expect(routeExternalMessage).not.toHaveBeenCalled();
-    expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({
-      ok: true,
-      result: expect.objectContaining({ scopes: expect.objectContaining({ 'model:prompt': 'not-granted' }) }),
-    }));
-  });
-
-  it('rejects permissions.* from an unknown extension', async () => {
-    const sendResponse = send({ type: 'permissions.check', payload: { origin: 'https://page.example' } }, { id: 'someone-else@example.com' });
-    await Promise.resolve();
-    expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
-  });
-
-  it.each([WEB_AGENTS_FIREFOX, WEB_AGENTS_CHROME])('routes llm.* from %s to the bridge', async (id) => {
-    vi.mocked(bridgeRequest).mockResolvedValue({ choices: [] });
-    send({ type: 'llm.chat', payload: { origin: 'https://page.example', messages: [{ role: 'user', content: 'Hi' }], model: 'ollama:test' } }, { id });
-    await vi.waitFor(() => expect(bridgeRequest).toHaveBeenCalledOnce());
-  });
-
-  it('disconnects a port from an unknown extension without listening to it', () => {
-    const port = connect({ id: 'someone-else@example.com' });
-    expect(port.disconnect).toHaveBeenCalled();
-    expect(port.onMessage.addListener).not.toHaveBeenCalled();
-  });
-
-  it('disconnects a port with no sender id', () => {
-    const port = connect(undefined);
-    expect(port.disconnect).toHaveBeenCalled();
-    expect(port.onMessage.addListener).not.toHaveBeenCalled();
-  });
-
-  it.each([WEB_AGENTS_FIREFOX, WEB_AGENTS_CHROME])('accepts a port from %s', (id) => {
-    const port = connect({ id });
-    expect(port.disconnect).not.toHaveBeenCalled();
-    expect(port.onMessage.addListener).toHaveBeenCalledOnce();
+  it('initializes cleanly even when the browser has no external-messaging surface at all', () => {
+    const runtime = browserAPI.runtime as unknown as Record<string, unknown>;
+    delete runtime.onMessageExternal;
+    delete runtime.onConnectExternal;
+    expect(() => initializeExtensionApi()).not.toThrow();
   });
 });

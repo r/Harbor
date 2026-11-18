@@ -6,7 +6,6 @@ import { routeExtensionApiMessage } from '../extension-api';
 
 vi.mock('../llm/bridge-client', () => ({ bridgeRequest: vi.fn(), bridgeStreamRequest: vi.fn() }));
 vi.mock('../mcp/host', () => ({}));
-vi.mock('../agents/background-router', () => ({ routeExternalMessage: vi.fn() }));
 vi.mock('../llm/native-bridge', () => ({}));
 vi.mock('../llm/provider-registry', () => ({}));
 
