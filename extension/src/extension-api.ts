@@ -994,6 +994,60 @@ async function handleWatchdogResetOrigin(payload: unknown): Promise<ExtensionApi
 // Streaming Handler (for llm.chatStream)
 // =============================================================================
 
+/** Looser than `StreamChunk['event']`: callers here only ever read `.message`. */
+export type ChatStreamEvent = {
+  type: 'token' | 'done' | 'error';
+  token?: string;
+  finish_reason?: string;
+  model?: string;
+  error?: { code?: number; message: string };
+};
+
+/**
+ * The gated `llm.chatStream` generator, shared by every caller that needs a
+ * live stream of chat events: the cross-extension port handler below (while
+ * the Web Agents API extension may still be installed) and page-api's
+ * `harbor-core.ts`, which calls this in-process. Runs `gatePageCall` exactly
+ * as a forwarded call does, so the policy gate and audit log see the same
+ * decision either way.
+ */
+export async function* streamLlmChat(payload: unknown, requestId?: string): AsyncGenerator<ChatStreamEvent> {
+  const { messages, model, max_tokens, temperature, system, tools } = (payload || {}) as {
+    messages?: Array<{ role: string; content: string }>;
+    model?: string;
+    max_tokens?: number;
+    temperature?: number;
+    system?: string;
+    tools?: BridgeChatRequest['tools'];
+  };
+
+  if (!messages || messages.length === 0) {
+    yield { type: 'error', error: { message: 'Missing messages' } };
+    return;
+  }
+
+  // Fail closed, so a gate error can't leave the page's stream waiting forever.
+  const gateFailure = await gatePageCall('llm.chatStream', payload, requestId).catch((e: unknown) => failure(e));
+  if (gateFailure) {
+    yield { type: 'error', error: { message: gateFailure.error ?? 'Permission denied' } };
+    return;
+  }
+
+  try {
+    let tokenCount = 0;
+    for await (const event of bridgeStreamRequest('llm.chat_stream', { messages, model, max_tokens, temperature, system_prompt: system, tools })) {
+      if (event.type === 'token') tokenCount++;
+      yield event;
+      if (event.type === 'done' || event.type === 'error') {
+        log('streamLlmChat: stream ended', { eventType: event.type, tokenCount, error: (event as { error?: { message: string } }).error });
+        break;
+      }
+    }
+  } catch (e) {
+    yield { type: 'error', error: { message: e instanceof Error ? e.message : String(e) } };
+  }
+}
+
 async function handleStreamingChat(
   message: ExtensionApiRequest,
   sender: { id?: string; url?: string; tab?: { id?: number } },
@@ -1004,30 +1058,8 @@ async function handleStreamingChat(
     requestId: message.requestId,
     payloadKeys: message.payload ? Object.keys(message.payload as Record<string, unknown>) : [],
   });
-  
+
   const { payload, requestId } = message;
-  const { messages, model, max_tokens, temperature, system, tools } = (payload || {}) as {
-    messages?: Array<{ role: string; content: string }>;
-    model?: string;
-    max_tokens?: number;
-    temperature?: number;
-    system?: string;
-    tools?: BridgeChatRequest['tools'];
-  };
-
-  log('handleStreamingChat payload:', {
-    messageCount: messages?.length,
-    model,
-    max_tokens,
-    temperature,
-    hasSystem: !!system,
-  });
-
-  if (!messages || messages.length === 0) {
-    log('handleStreamingChat: No messages provided');
-    port.postMessage({ type: 'stream', requestId, event: { type: 'error', error: { message: 'Missing messages' } } });
-    return;
-  }
 
   if (!requestId) {
     log('handleStreamingChat: No requestId provided');
@@ -1035,38 +1067,9 @@ async function handleStreamingChat(
     return;
   }
 
-  // Fail closed and answer the port either way, so a gate error can't
-  // leave the page's stream waiting forever.
-  const gateFailure = await gatePageCall('llm.chatStream', payload, requestId).catch(
-    (e: unknown) => failure(e),
-  );
-  if (gateFailure) {
-    port.postMessage({ type: 'stream', requestId, event: { type: 'error', error: { message: gateFailure.error } } });
-    return;
-  }
-
-  try {
-    log('handleStreamingChat: Starting bridgeStreamRequest with llm.chat_stream');
-    let tokenCount = 0;
-    
-    for await (const event of bridgeStreamRequest('llm.chat_stream', { messages, model, max_tokens, temperature, system_prompt: system, tools })) {
-      if (event.type === 'token') {
-        tokenCount++;
-      }
-      port.postMessage({ type: 'stream', requestId, event } as StreamChunk);
-      if (event.type === 'done' || event.type === 'error') {
-        log('handleStreamingChat: Stream ended', { eventType: event.type, tokenCount, error: (event as { error?: { message: string } }).error });
-        break;
-      }
-    }
-    log('handleStreamingChat: Stream complete', { tokenCount });
-  } catch (e) {
-    log('handleStreamingChat: Exception', e);
-    port.postMessage({
-      type: 'stream',
-      requestId,
-      event: { type: 'error', error: { message: e instanceof Error ? e.message : String(e) } },
-    } as StreamChunk);
+  for await (const event of streamLlmChat(payload, requestId)) {
+    port.postMessage({ type: 'stream', requestId, event } as StreamChunk);
+    if (event.type === 'done' || event.type === 'error') break;
   }
 }
 

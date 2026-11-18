@@ -4,7 +4,7 @@
  * Handles text sessions, prompts, and provider management.
  */
 
-import { harborRequest, discoverHarbor, getHarborState } from '../harbor-client';
+import { harborRequest } from '../harbor-core';
 import type { RequestContext, HandlerResponse, TextSessionState } from './types';
 import type { SessionSummary } from '../types';
 import { errorResponse, successResponse } from './types';
@@ -27,11 +27,6 @@ function generateSessionId(): string {
 
 export async function handleAiCanCreateTextSession(ctx: RequestContext): HandlerResponse {
   try {
-    const harborState = getHarborState();
-    if (!harborState.connected) {
-      await discoverHarbor();
-    }
-    
     const capabilities = await harborRequest<{ bridgeReady: boolean }>('system.getCapabilities');
     return successResponse(ctx.id, capabilities.bridgeReady ? 'readily' : 'no');
   } catch {
@@ -214,11 +209,6 @@ export async function handleSessionDestroy(ctx: RequestContext): HandlerResponse
 
 export async function handleLanguageModelCapabilities(ctx: RequestContext): HandlerResponse {
   try {
-    const harborState = getHarborState();
-    if (!harborState.connected) {
-      await discoverHarbor();
-    }
-    
     const capabilities = await harborRequest<{ bridgeReady: boolean }>('system.getCapabilities');
     return successResponse(ctx.id, {
       available: capabilities.bridgeReady ? 'readily' : 'no',

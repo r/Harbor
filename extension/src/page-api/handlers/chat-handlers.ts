@@ -4,7 +4,7 @@
  * Handles chat opening/closing for BYOC (Bring Your Own Chatbot).
  */
 
-import { harborRequest } from '../harbor-client';
+import { harborRequest } from '../harbor-core';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 

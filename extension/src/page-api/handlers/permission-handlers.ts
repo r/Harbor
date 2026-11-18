@@ -10,13 +10,10 @@
  * the bridge and Harbor isn't in the path), nothing is granted.
  */
 
-import { harborRequest } from '../harbor-client';
+import { harborRequest } from '../harbor-core';
 import type { PermissionScope, PermissionGrantType } from '../types';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
-
-/** Key prefix of the retired local store, kept only to delete old entries. */
-const LEGACY_PERMISSION_KEY_PREFIX = 'permissions:';
 
 /** A permission prompt waits on the user, so give it far longer than a normal call. */
 const PERMISSION_PROMPT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -64,22 +61,6 @@ export async function getPermissions(origin: string, tabId?: number): Promise<Or
 export async function hasPermission(origin: string, scope: PermissionScope, tabId?: number): Promise<boolean> {
   const permissions = await getPermissions(origin, tabId);
   return isGranted(permissions.scopes[scope]);
-}
-
-// =============================================================================
-// Retired local store
-// =============================================================================
-
-/**
- * Delete grants left in this extension's old store. They are not migrated:
- * sites ask again, through Harbor's prompt.
- */
-export async function deleteLegacyPermissionStore(): Promise<void> {
-  const all = await chrome.storage.local.get(null);
-  const keys = Object.keys(all).filter((key) => key.startsWith(LEGACY_PERMISSION_KEY_PREFIX));
-  if (keys.length > 0) {
-    await chrome.storage.local.remove(keys);
-  }
 }
 
 // =============================================================================

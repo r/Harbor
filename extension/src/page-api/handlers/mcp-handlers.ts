@@ -4,7 +4,7 @@
  * Handles MCP server discovery, registration, and unregistration.
  */
 
-import { harborRequest } from '../harbor-client';
+import { harborRequest } from '../harbor-core';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 

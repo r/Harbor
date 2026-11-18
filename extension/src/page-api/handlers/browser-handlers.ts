@@ -7,7 +7,7 @@
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission } from './permission-handlers';
-import { executeScriptInTab } from './browser-compat';
+import { executeScriptInTab } from '../../browser-compat';
 import { isBlockedUrl } from './net-guard';
 
 const LOCAL_NETWORK_MESSAGE = 'Fetch blocked: the address is on this device or a private network';

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ harborRequest: vi.fn() }));
-vi.mock('../harbor-client', () => ({ harborRequest: mocks.harborRequest }));
+vi.mock('../harbor-core', () => ({ harborRequest: mocks.harborRequest }));
 vi.mock('../handlers/permission-handlers', () => ({
   hasPermission: async () => true,
   getPermissions: async () => ({ scopes: {}, allowedTools: ['now'] }),

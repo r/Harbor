@@ -1,9 +1,14 @@
 /**
- * Web Agents API - Content Script
+ * Harbor Page API - Content Script
  *
  * Bridges messages between:
  * - Injected script (web page context)
  * - Background script (extension context)
+ *
+ * Runs in-process with the background now (both are Harbor), but the
+ * transport is unchanged: everything still goes through postMessage to the
+ * page and a runtime.Port to the background, so the page-facing contract
+ * doesn't move.
  */
 
 import type {
@@ -12,7 +17,7 @@ import type {
   TransportStreamEvent,
 } from './types';
 
-const CHANNEL = 'web_agents_api';
+const CHANNEL = 'harbor_page_api';
 
 type RuntimePort = chrome.runtime.Port;
 
@@ -35,7 +40,7 @@ let agentEventForwardingSetup = false;
  */
 function getBackgroundPort(): RuntimePort {
   if (!backgroundPort || !backgroundPort.name) {
-    backgroundPort = chrome.runtime.connect({ name: 'web-agent-transport' });
+    backgroundPort = chrome.runtime.connect({ name: 'harbor-page-api' });
 
     // Handle messages from background
     backgroundPort.onMessage.addListener((message: TransportResponse | TransportStreamEvent) => {
@@ -142,13 +147,15 @@ function appendInjectedScripts(flags: FeatureFlags): boolean {
   // First, inject the feature flags as a JSON element
   const flagsScript = document.createElement('script');
   flagsScript.type = 'application/json';
-  flagsScript.id = 'web-agents-api-flags';
+  flagsScript.id = 'harbor-page-api-flags';
   flagsScript.textContent = JSON.stringify(flags);
   root.appendChild(flagsScript);
 
   // Then inject the main script
   const script = document.createElement('script');
-  script.src = chrome.runtime.getURL('injected.js');
+  // Harbor's build keeps page-api/ as a subdirectory under dist/, unlike
+  // the old extension's flat dist/injected.js.
+  script.src = chrome.runtime.getURL('page-api/injected.js');
   script.async = false;
   script.onload = () => {
     script.remove();
@@ -166,7 +173,7 @@ function appendInjectedScripts(flags: FeatureFlags): boolean {
  */
 async function injectAgentsAPI(): Promise<void> {
   // Mark content script presence for debugging.
-  document.documentElement?.setAttribute('data-web-agents-content-script', 'true');
+  document.documentElement?.setAttribute('data-harbor-page-api-content-script', 'true');
 
   // Wait for Harbor discovery to be available
   const checkHarbor = () => {
@@ -203,7 +210,7 @@ async function injectAgentsAPI(): Promise<void> {
 /** Update the flags JSON element in the page so the injected script sees new flags without refresh. */
 async function updatePageFlags(): Promise<void> {
   const flags = await getFeatureFlags();
-  const el = document.getElementById('web-agents-api-flags');
+  const el = document.getElementById('harbor-page-api-flags');
   if (el) {
     el.textContent = JSON.stringify(flags);
   }
@@ -212,7 +219,7 @@ async function updatePageFlags(): Promise<void> {
 // When user toggles flags in the sidebar, update the page so the injected API sees them without refresh.
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return;
-  if (changes['web-agents-api-flags']) {
+  if (changes['harbor-page-api-flags']) {
     updatePageFlags();
   }
 });

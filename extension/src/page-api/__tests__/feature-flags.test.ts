@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
-const key = 'web-agents-api-flags';
+const key = 'harbor-page-api-flags';
 let stored: Record<string, unknown>;
 let changed: (changes: Record<string, unknown>, area: string) => void;
 

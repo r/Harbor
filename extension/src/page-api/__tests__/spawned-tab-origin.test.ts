@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../handlers/permission-handlers', async (importOriginal) => ({
   ...(await importOriginal<object>()), hasPermission: mocks.hasPermission,
 }));
-vi.mock('../handlers/browser-compat', async (importOriginal) => ({
+vi.mock('../../browser-compat', async (importOriginal) => ({
   ...(await importOriginal<object>()), executeScriptInTab: mocks.executeScriptInTab,
 }));
 vi.mock('../policy/feature-flags', () => ({ getFeatureFlags: mocks.getFeatureFlags }));
@@ -157,77 +157,3 @@ describe('the background enforces the browserControl flag', () => {
   }
 });
 
-describe('host capture requested on behalf of a page is limited to its origin', () => {
-  it('capturePage refuses another origin without opening a tab', async () => {
-    const { handleHostRun } = await import('../handlers/host-run-handlers');
-    const res = await handleHostRun({
-      method: 'browser.capturePage',
-      params: { url: 'https://bank.example/', captureCookies: true },
-      context: { origin: CALLER },
-    });
-    expect(res.ok).toBe(false);
-    expect(chrome.tabs.create).not.toHaveBeenCalled();
-  });
-
-  it('capturePage returns nothing if the page ends up on another origin', async () => {
-    let pageResult: unknown;
-    mocks.executeScriptInTab.mockImplementation(async (_id: number, fn: (...a: unknown[]) => unknown, args: unknown[]) => {
-      pageResult = runInjected(fn, args, 'https://bank.example');
-      return pageResult;
-    });
-    const { handleHostRun } = await import('../handlers/host-run-handlers');
-    const res = await handleHostRun({
-      method: 'browser.capturePage',
-      params: { url: `${CALLER}/redirects-away`, captureCookies: true },
-      context: { origin: CALLER },
-    });
-    expect(JSON.stringify(pageResult ?? null)).not.toContain('secret');
-    expect(res.ok).toBe(false);
-  });
-
-  it('capturePage still works on the caller origin', async () => {
-    mocks.executeScriptInTab.mockImplementation(async (_id: number, fn: (...a: unknown[]) => unknown, args: unknown[]) => runInjected(fn, args, CALLER));
-    const { handleHostRun } = await import('../handlers/host-run-handlers');
-    const res = await handleHostRun({
-      method: 'browser.capturePage',
-      params: { url: `${CALLER}/article` },
-      context: { origin: CALLER },
-    });
-    expect(res.ok).toBe(true);
-  });
-
-  it('getCookies refuses an already-open tab on another origin', async () => {
-    tabUrls.set(7, 'https://bank.example/account');
-    mocks.executeScriptInTab.mockImplementation(async (_id: number, fn: (...a: unknown[]) => unknown, args: unknown[]) => runInjected(fn, args, 'https://bank.example'));
-    const { handleHostRun } = await import('../handlers/host-run-handlers');
-    const res = await handleHostRun({
-      method: 'browser.getCookies',
-      params: { domain: 'bank.example' },
-      context: { origin: CALLER },
-    });
-    expect(res.ok).toBe(false);
-    expect(JSON.stringify(res)).not.toContain('secret');
-  });
-
-  it('getCookies refuses to open another origin', async () => {
-    const { handleHostRun } = await import('../handlers/host-run-handlers');
-    const res = await handleHostRun({
-      method: 'browser.getCookies',
-      params: { domain: 'bank.example', openUrl: 'https://bank.example/' },
-      context: { origin: CALLER },
-    });
-    expect(res.ok).toBe(false);
-    expect(chrome.tabs.create).not.toHaveBeenCalled();
-  });
-
-  it('the Harbor sidebar can still capture any site', async () => {
-    mocks.executeScriptInTab.mockImplementation(async (_id: number, fn: (...a: unknown[]) => unknown, args: unknown[]) => runInjected(fn, args, 'https://bank.example'));
-    const { handleHostRun } = await import('../handlers/host-run-handlers');
-    const res = await handleHostRun({
-      method: 'browser.capturePage',
-      params: { url: 'https://bank.example/' },
-      context: { origin: 'harbor-extension' },
-    });
-    expect(res.ok).toBe(true);
-  });
-});

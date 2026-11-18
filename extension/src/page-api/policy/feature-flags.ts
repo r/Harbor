@@ -27,7 +27,7 @@
  * - agent.agents.* - Agent-to-agent communication
  */
 
-export const STORAGE_KEY = 'web-agents-api-flags';
+export const STORAGE_KEY = 'harbor-page-api-flags';
 
 export interface FeatureFlags {
   /**

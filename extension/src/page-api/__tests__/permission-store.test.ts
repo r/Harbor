@@ -1,35 +1,16 @@
 /**
- * The Web Agents API keeps no permission store of its own. Every check and
+ * The page API keeps no permission store of its own. Every check and
  * request goes to Harbor, which holds the only store and the only prompt,
  * so a grant revoked in Harbor stops the next page call here.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ harborRequest: vi.fn() }));
-vi.mock('../harbor-client', () => ({ harborRequest: mocks.harborRequest }));
+vi.mock('../harbor-core', () => ({ harborRequest: mocks.harborRequest }));
 
-// A stale grant left in the old Web Agents API store must not count.
-const storage: Record<string, unknown> = {
-  'permissions:https://page.example': {
-    scopes: {
-      'model:prompt': { type: 'granted-always', grantedAt: 1 },
-      'mcp:tools.call': { type: 'granted-always', grantedAt: 1 },
-    },
-  },
-};
 const windowsCreate = vi.fn();
 vi.stubGlobal('chrome', {
-  runtime: { getURL: (p: string) => `moz-extension://waa/${p}`, lastError: undefined },
-  storage: {
-    local: {
-      get: vi.fn(async (key: string | null) =>
-        key === null ? { ...storage } : key in storage ? { [key]: storage[key] } : {}),
-      set: vi.fn(async (kv: Record<string, unknown>) => Object.assign(storage, kv)),
-      remove: vi.fn(async (key: string | string[]) => {
-        for (const k of Array.isArray(key) ? key : [key]) delete storage[k];
-      }),
-    },
-  },
+  runtime: { getURL: (p: string) => `moz-extension://harbor/${p}`, lastError: undefined },
   windows: { create: windowsCreate, get: vi.fn(), remove: vi.fn() },
   tabs: { update: vi.fn() },
 });

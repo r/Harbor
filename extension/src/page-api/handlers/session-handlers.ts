@@ -4,7 +4,7 @@
  * Handles explicit sessions via Harbor.
  */
 
-import { harborRequest } from '../harbor-client';
+import { harborRequest } from '../harbor-core';
 import type { PermissionScope, CreateSessionOptions, SessionSummary } from '../types';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';

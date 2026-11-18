@@ -6,9 +6,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(), harborStreamRequest: vi.fn(), hasPermission: vi.fn(), getPermissions: vi.fn(),
 }));
-vi.mock('../harbor-client', () => ({
+vi.mock('../harbor-core', () => ({
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
-  discoverHarbor: async () => null, setHarborExtensionId: vi.fn(), getHarborState: () => ({ connected: true }),
 }));
 vi.mock('../policy/feature-flags', () => ({ getFeatureFlags: async () => ({ toolCalling: true }) }));
 vi.mock('../handlers/permission-handlers', () => ({ hasPermission: mocks.hasPermission, getPermissions: mocks.getPermissions }));
@@ -17,7 +16,7 @@ vi.mock('../handlers', async () => {
   return {
     routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: mocks.hasPermission,
     getPermissions: mocks.getPermissions,
-    deleteLegacyPermissionStore: vi.fn(async () => {}), resolveTextSession: ai.resolveTextSession,
+    resolveTextSession: ai.resolveTextSession,
     recordExplicitPrompt: ai.recordExplicitPrompt,
     restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
     isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
@@ -32,6 +31,25 @@ let receive: (m: unknown) => Promise<void>;
 let postMessage: ReturnType<typeof vi.fn>;
 let sessions: typeof import('../handlers/session-handlers');
 let ai: typeof import('../handlers/ai-handlers');
+let onConnectListener: (port: unknown) => void;
+
+/**
+ * Open a new port scoped to `origin` — the origin now comes from the
+ * connecting port's sender, fixed for its lifetime, never from a per-message
+ * field. A page on a different origin connects its own port, exactly as a
+ * real content script would.
+ */
+function connectPort(origin: string): { receive: (m: unknown) => Promise<void>; postMessage: ReturnType<typeof vi.fn> } {
+  let receiveFn: (m: unknown) => Promise<void> = async () => {};
+  const postMessageFn = vi.fn();
+  onConnectListener({
+    name: 'harbor-page-api',
+    sender: { url: `${origin}/page`, tab: { id: 1 } },
+    postMessage: postMessageFn,
+    onMessage: { addListener: (l: typeof receiveFn) => { receiveFn = l; } },
+  });
+  return { receive: (m: unknown) => receiveFn(m), postMessage: postMessageFn };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -65,13 +83,13 @@ beforeAll(async () => {
   const onConnect = event();
   vi.stubGlobal('chrome', { tabs: { onRemoved: event() }, windows: { onRemoved: event() },
     runtime: { onConnect, onMessage: event(), onMessageExternal: event() } });
-  await import('../background');
+  const { initializePageApi } = await import('../background');
+  initializePageApi();
   // Same module instances as background's resolveTextSession (after resetModules)
   sessions = await import('../handlers/session-handlers');
   ai = await import('../handlers/ai-handlers');
-  postMessage = vi.fn();
-  onConnect.addListener.mock.calls[0][0]({ name: 'web-agent-transport', sender: { tab: { id: 1 } }, postMessage,
-    onMessage: { addListener: (l: typeof receive) => { receive = l; } } });
+  onConnectListener = onConnect.addListener.mock.calls[0][0] as (port: unknown) => void;
+  ({ receive, postMessage } = connectPort(ORIGIN));
 });
 afterAll(() => vi.unstubAllGlobals());
 
@@ -81,8 +99,11 @@ async function create(capabilities: Record<string, unknown> = { llm: { model: 'm
   return r.result.sessionId as string;
 }
 async function stream(sessionId: string, origin = ORIGIN) {
-  await receive({ id: 'st', type: 'session.promptStreaming', origin, payload: { sessionId, input: 'Hi' } });
-  return postMessage.mock.calls.map((c) => c[0]);
+  // A different origin connects its own port (the origin now comes from
+  // the port's sender, fixed at connect time, never a per-message field).
+  const port = origin === ORIGIN ? { receive, postMessage } : connectPort(origin);
+  await port.receive({ id: 'st', type: 'session.promptStreaming', payload: { sessionId, input: 'Hi' } });
+  return port.postMessage.mock.calls.map((c) => c[0]);
 }
 const errCode = (evs: any[]) => evs.at(-1)?.event?.error?.code;
 
@@ -92,7 +113,7 @@ describe('promptStreaming on explicit sessions', () => {
     const evs = await stream(id);
     expect(evs.map((e: any) => e.event.type)).toEqual(['token', 'token', 'done']);
     expect(mocks.harborStreamRequest).toHaveBeenCalledWith('llm.chatStream', expect.objectContaining({
-      messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Hi' }], model: 'm' }));
+      messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Hi' }], model: 'm' }), 'st');
   });
   it('refuses another origin without reaching the model', async () => {
     const id = await create();

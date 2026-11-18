@@ -28,7 +28,6 @@ import {
   handlePermissionsList,
   hasPermission,
   getPermissions,
-  deleteLegacyPermissionStore,
 } from './permission-handlers';
 
 import {
@@ -104,7 +103,7 @@ import {
   agentInvocationTabs,
 } from './agent-handlers';
 
-import { executeScriptInTab, browserAPI } from './browser-compat';
+import { executeScriptInTab, browserAPI } from '../../browser-compat';
 import { getFeatureFlags } from '../policy/feature-flags';
 
 // =============================================================================
@@ -257,7 +256,6 @@ export function isStreamingMessage(type: string): boolean {
 export {
   hasPermission,
   getPermissions,
-  deleteLegacyPermissionStore,
 };
 
 // AI utilities

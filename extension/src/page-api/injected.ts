@@ -64,7 +64,7 @@ function getFeatureFlags(): FeatureFlags {
   };
 
   try {
-    const flagsElement = document.getElementById('web-agents-api-flags');
+    const flagsElement = document.getElementById('harbor-page-api-flags');
     if (flagsElement?.textContent) {
       const parsed = JSON.parse(flagsElement.textContent) as Partial<FeatureFlags>;
       return { ...defaults, ...parsed };
@@ -235,7 +235,7 @@ interface CreateSessionResult {
 // Transport Layer
 // =============================================================================
 
-const CHANNEL = 'web_agents_api';
+const CHANNEL = 'harbor_page_api';
 
 interface TransportResponse {
   id: string;
@@ -1187,7 +1187,7 @@ function setupAgentEventListener() {
       };
     };
     
-    if (data?.channel !== 'web_agents_api' || !data.agentEvent) return;
+    if (data?.channel !== 'harbor_page_api' || !data.agentEvent) return;
     
     const { type, message, invocation, broadcast } = data.agentEvent;
     
@@ -1231,7 +1231,7 @@ function setupAgentEventListener() {
       
       // Send response back
       window.postMessage({
-        channel: 'web_agents_api',
+        channel: 'harbor_page_api',
         agentInvocationResponse: {
           invocationId: invocation.invocationId,
           success: !error,

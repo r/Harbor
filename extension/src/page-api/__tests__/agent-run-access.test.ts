@@ -4,15 +4,14 @@ const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(), hasPermission: vi.fn(), getFeatureFlags: vi.fn(),
   harborStreamRequest: vi.fn(), resolveTextSession: vi.fn(),
 }));
-vi.mock('../harbor-client', () => ({
+vi.mock('../harbor-core', () => ({
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
-  discoverHarbor: async () => null, setHarborExtensionId: vi.fn(), getHarborState: vi.fn(),
 }));
 vi.mock('../policy/feature-flags', () => ({ getFeatureFlags: mocks.getFeatureFlags }));
 vi.mock('../handlers', () => ({
   routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: mocks.hasPermission,
   getPermissions: async () => ({ scopes: {}, allowedTools: [] }),
-  deleteLegacyPermissionStore: vi.fn(async () => {}), resolveTextSession: mocks.resolveTextSession, recordExplicitPrompt: vi.fn(),
+  resolveTextSession: mocks.resolveTextSession, recordExplicitPrompt: vi.fn(),
   restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
   isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
   cleanupAgentsForTab: vi.fn(), agentInvocationTabs: new Map(),
@@ -33,10 +32,11 @@ beforeEach(async () => {
     tabs: { onRemoved: event() }, windows: { onRemoved: event() },
     runtime: { onConnect, onMessage: event(), onMessageExternal: event() },
   });
-  await import('../background');
+  const { initializePageApi } = await import('../background');
+  initializePageApi();
   postMessage = vi.fn();
   onConnect.addListener.mock.calls[0][0]({
-    name: 'web-agent-transport', sender: { tab: { id: 1 } }, postMessage,
+    name: 'harbor-page-api', sender: { url: 'https://example.test/page', tab: { id: 1 } }, postMessage,
     onMessage: { addListener: (listener: typeof receive) => { receive = listener; } },
   });
 });
@@ -157,6 +157,6 @@ describe('window.ai session promptStreaming()', () => {
     await receive({ id: 'stream-1', type: 'session.promptStreaming', origin: 'https://example.test',
       payload: { sessionId: 's1', input: 'Hi' } });
     expect(mocks.harborStreamRequest).toHaveBeenCalledWith('llm.chatStream',
-      expect.objectContaining({ origin: 'https://example.test', tabId: 1 }));
+      expect.objectContaining({ origin: 'https://example.test', tabId: 1 }), 'stream-1');
   });
 });

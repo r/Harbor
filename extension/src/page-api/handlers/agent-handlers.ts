@@ -4,7 +4,7 @@
  * Handles agent registration, discovery, invocation, and orchestration.
  */
 
-import { harborRequest, discoverHarbor, getHarborState } from '../harbor-client';
+import { harborRequest } from '../harbor-core';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 
@@ -41,16 +41,7 @@ async function registerProxyInvocationHandler(agentId: string, origin: string, t
   if (tabId > 0) {
     agentInvocationTabs.set(agentId, tabId);
   }
-  
-  const harborState = getHarborState();
-  if (!harborState.connected) {
-    const id = await discoverHarbor();
-    if (!id) {
-      console.error('[Web Agents API] Cannot register invocation handler - Harbor not found');
-      return;
-    }
-  }
-  
+
   try {
     await harborRequest('agents.registerInvocationHandler', { agentId, origin, tabId });
   } catch (e) {

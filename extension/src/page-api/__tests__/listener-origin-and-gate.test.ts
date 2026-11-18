@@ -12,8 +12,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetMockBrowser } from '../../__tests__/test-setup';
-import { grantPermissions } from '../../policy/permissions';
-import { Audit } from '../../policy/audit';
+import type { grantPermissions as GrantPermissions } from '../../policy/permissions';
+import type { Audit as AuditType } from '../../policy/audit';
 
 vi.mock('../../llm/chat', () => ({ bridgeChat: vi.fn() }));
 vi.mock('../../llm/bridge-client', () => ({
@@ -54,12 +54,13 @@ vi.mock('../../sessions', () => ({
 type Listener = (port: unknown) => void;
 
 let onConnect: Listener;
+let grantPermissions: typeof GrantPermissions;
+let Audit: typeof AuditType;
 
 beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
   resetMockBrowser();
-  Audit.clear();
 
   const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> };
   chromeGlobal.chrome.runtime = {
@@ -72,16 +73,16 @@ beforeEach(async () => {
     onRemoved: { addListener: vi.fn() },
     get: vi.fn(async () => { throw new Error('no tab'); }),
   };
-  chromeGlobal.chrome.storage = {
-    ...(chromeGlobal.chrome.storage as Record<string, unknown>),
-    local: {
-      ...((chromeGlobal.chrome.storage as Record<string, { local?: unknown }> | undefined)?.local as Record<string, unknown> | undefined),
-      get: vi.fn(async () => ({})),
-      set: vi.fn(async () => undefined),
-    },
-  };
 
+  // Import everything (background.ts and the policy modules it transitively
+  // reaches) from the SAME fresh module graph after resetModules(), so the
+  // Audit singleton this test reads is the one requireAction() just wrote
+  // to, not a stale one captured at file-load time.
   const { initializePageApi } = await import('../background');
+  ({ grantPermissions } = await import('../../policy/permissions'));
+  ({ Audit } = await import('../../policy/audit'));
+  Audit.clear();
+
   initializePageApi();
 });
 

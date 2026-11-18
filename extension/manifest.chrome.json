@@ -31,6 +31,12 @@
       "matches": ["http://*/*", "https://*/*", "file://*/*"],
       "js": ["dist/discovery.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*", "file://*/*"],
+      "js": ["dist/page-api/content-script.js"],
+      "run_at": "document_start",
+      "all_frames": false
     }
   ],
   "web_accessible_resources": [
@@ -41,6 +47,7 @@
         "dist/design-tokens.css",
         "dist/demo-bootstrap.js",
         "dist/js-runtime/builtin-echo-worker.js",
+        "dist/page-api/injected.js",
         "demo/*",
         "assets/*",
         "bundled/*"

@@ -36,6 +36,8 @@ const entryPoints = [
   'src/sidebar.ts',
   'src/demo-bootstrap.ts',
   'src/js-runtime/worker-loader.ts',
+  'src/page-api/content-script.ts',
+  'src/page-api/injected.ts',
 ];
 
 // Generate PNG icons from SVG for Chrome (Chrome prefers PNG)

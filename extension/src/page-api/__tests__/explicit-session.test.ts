@@ -7,11 +7,9 @@ const mocks = vi.hoisted(() => ({
   hasPermission: vi.fn(),
   getPermissions: vi.fn(),
 }));
-vi.mock('../harbor-client', () => ({
+vi.mock('../harbor-core', () => ({
   harborRequest: mocks.harborRequest,
   harborStreamRequest: vi.fn(),
-  discoverHarbor: async () => null,
-  getHarborState: () => ({ connected: true }),
 }));
 vi.mock('../handlers/permission-handlers', () => ({
   hasPermission: mocks.hasPermission,

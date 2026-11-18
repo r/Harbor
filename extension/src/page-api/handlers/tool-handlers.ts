@@ -4,7 +4,7 @@
  * Handles tool listing and execution.
  */
 
-import { harborRequest } from '../harbor-client';
+import { harborRequest } from '../harbor-core';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission, getPermissions } from './permission-handlers';

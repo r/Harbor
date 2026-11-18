@@ -1,33 +1,27 @@
 /**
- * Web Agents API - Background Script
+ * Harbor Page API - Background wiring
  *
- * Routes messages from content scripts to Harbor extension.
- * Handles permissions and session management.
- * 
- * This is the simplified entry point that uses the modular handler system.
+ * Serves window.ai / window.agent / navigator.modelContext requests from the
+ * page-api content script, in-process: llm.*, mcp.*, session.*,
+ * permissions.* and system.* calls go through harbor-core.ts to Harbor's own
+ * extension-api router, so gatePageCall/requireAction run exactly as they do
+ * for a call forwarded from the (now retired) Web Agents API extension.
+ *
+ * The page's origin always comes from the connecting port's `sender` (its
+ * URL in Firefox, its `origin` in Chrome) — never from the message, which a
+ * page or a compromised content script could otherwise forge.
  */
-
-import {
-  harborRequest,
-  harborStreamRequest,
-  discoverHarbor,
-  setHarborExtensionId,
-  getHarborState,
-} from './harbor-client';
+import { harborRequest, harborStreamRequest } from './harbor-core';
 import { getFeatureFlags } from './policy/feature-flags';
-import { isHarborSender } from './known-extensions';
 import { toolResultText } from './tool-messages';
-import type { TransportResponse, TransportStreamEvent } from './types';
+import type { TransportStreamEvent } from './types';
 
-// Import handler registry and utilities
 import {
   routeMessage,
-  isStreamingMessage,
   type RequestContext,
   // Permission utilities
   hasPermission,
   getPermissions,
-  deleteLegacyPermissionStore,
   // AI utilities
   resolveTextSession,
   recordExplicitPrompt,
@@ -35,53 +29,33 @@ import {
   restoreSpawnedTabs,
   handleTabRemoved,
   getAllSpawnedTabs,
-  isSpawnedTab,
   // Agent utilities
-  handleIncomingInvocation,
-  resolveInvocationResponse,
   cleanupAgentsForTab,
-  agentInvocationTabs,
 } from './handlers';
+import { browserAPI } from '../browser-compat';
 
-// =============================================================================
-// Initialization
-// =============================================================================
+const PORT_NAME = 'harbor-page-api';
 
-const STARTUP_TIME = Date.now();
-const STARTUP_ID = Math.random().toString(36).slice(2, 8);
-console.log('[Web Agents API] Extension starting...', { startupId: STARTUP_ID, time: new Date().toISOString() });
+function log(...args: unknown[]): void {
+  console.log('[Harbor PageAPI]', ...args);
+}
 
-// Initialize: restore tabs from storage
-restoreSpawnedTabs();
-
-// Grants live only in Harbor now. Delete any left in this extension's old store.
-deleteLegacyPermissionStore().catch((e) =>
-  console.warn('[Web Agents API] Failed to delete the old permission store:', e));
-
-// =============================================================================
-// Tab Event Handlers
-// =============================================================================
-
-// Clean up spawned tabs when they are closed
-chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
-  const wasTracked = Object.values(getAllSpawnedTabs()).some(tabs => tabs.includes(tabId));
-  
-  if (wasTracked) {
-    try {
-      await chrome.tabs.get(tabId);
-      // Tab still exists - spurious event
-      return;
-    } catch {
-      // Tab is truly gone
-    }
+/**
+ * The page's origin, derived from the connecting port's sender — never from
+ * the message a page sent, which could claim to be any origin.
+ */
+function originFromSender(sender: chrome.runtime.Port['sender']): string {
+  const raw = sender?.url ?? (sender as unknown as { origin?: string } | undefined)?.origin;
+  if (!raw) return '';
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return '';
   }
-  
-  handleTabRemoved(tabId);
-  cleanupAgentsForTab(tabId);
-});
+}
 
 // =============================================================================
-// Streaming Handlers (kept in background.ts for port access)
+// Streaming Handlers (kept here for port access)
 // =============================================================================
 
 async function handleSessionPromptStreaming(
@@ -89,13 +63,7 @@ async function handleSessionPromptStreaming(
   sendEvent: (event: TransportStreamEvent) => void,
 ): Promise<void> {
   const { sessionId, input } = ctx.payload as { sessionId: string; input: string };
-  
-  console.log('[Web Agents API] handleSessionPromptStreaming called', {
-    sessionId,
-    inputLength: input?.length || 0,
-    origin: ctx.origin,
-  });
-  
+
   const resolved = await resolveTextSession(sessionId, ctx.origin);
   if (!('session' in resolved)) {
     sendEvent({ id: ctx.id, event: { type: 'error', error: { code: resolved.code, message: resolved.message } }, done: true });
@@ -104,27 +72,24 @@ async function handleSessionPromptStreaming(
   const { session } = resolved;
 
   try {
-    // Add user message to history
     session.history.push({ role: 'user', content: input });
-    
-    // Build messages array
+
     const messages: Array<{ role: string; content: string }> = [];
     if (session.options.systemPrompt) {
       messages.push({ role: 'system', content: session.options.systemPrompt as string });
     }
     messages.push(...session.history);
-    
-    // Stream from Harbor
+
     const { stream } = harborStreamRequest('llm.chatStream', {
       origin: ctx.origin,
       tabId: ctx.tabId,
       messages,
       model: session.options.model,
       temperature: session.options.temperature,
-    });
+    }, ctx.id);
 
     let fullContent = '';
-    
+
     for await (const event of stream) {
       if (event.type === 'token' && event.token) {
         fullContent += event.token;
@@ -135,10 +100,10 @@ async function handleSessionPromptStreaming(
         sendEvent({ id: ctx.id, event: { type: 'done' }, done: true });
         break;
       } else if (event.type === 'error') {
-        sendEvent({ 
-          id: ctx.id, 
-          event: { type: 'error', error: { code: 'ERR_MODEL_FAILED', message: event.error?.message || 'Stream error' } }, 
-          done: true 
+        sendEvent({
+          id: ctx.id,
+          event: { type: 'error', error: { code: 'ERR_MODEL_FAILED', message: event.error?.message || 'Stream error' } },
+          done: true,
         });
         break;
       }
@@ -162,7 +127,7 @@ async function handleAgentRun(
     systemPrompt?: string;
   };
 
-  console.log('[Web Agents API] agent.run starting:', { task, maxToolCalls, origin: ctx.origin });
+  log('agent.run starting:', { task, maxToolCalls, origin: ctx.origin });
 
   // Enforce the setting at the receiver: a page can send transport messages
   // directly, without going through the injected API's disabled wrapper.
@@ -189,14 +154,14 @@ async function handleAgentRun(
   try {
     // Get available tools
     let tools: Array<{ serverId: string; name: string; description?: string; inputSchema?: unknown }> = [];
-    
+
     if (await hasPermission(ctx.origin, 'mcp:tools.list', ctx.tabId)) {
       const toolsResult = await harborRequest<{ tools: typeof tools }>('mcp.listTools', {
         origin: ctx.origin,
         tabId: ctx.tabId,
       });
       tools = toolsResult.tools || [];
-      
+
       // Offer only the tools the site was granted. No allowlist means no tools.
       const permissions = await getPermissions(ctx.origin, ctx.tabId);
       tools = tools.filter(t =>
@@ -217,9 +182,9 @@ async function handleAgentRun(
     // Send thinking event
     sendEvent({
       id: ctx.id,
-      event: { type: 'token', token: JSON.stringify({ 
-        type: 'thinking', 
-        content: llmTools.length > 0 
+      event: { type: 'token', token: JSON.stringify({
+        type: 'thinking',
+        content: llmTools.length > 0
           ? `Available tools: ${tools.map(t => `${t.serverId}/${t.name}`).join(', ')}`
           : 'No tools available (check mcp:tools.list permission)'
       }) },
@@ -250,7 +215,7 @@ async function handleAgentRun(
           finish_reason?: string;
         }>;
       };
-      
+
       let result: LLMResponse;
       try {
         result = await harborRequest<LLMResponse>('llm.chat', {
@@ -357,7 +322,7 @@ async function handleAgentRun(
       messages,
     });
     const finalContent = finalResult.content;
-    
+
     sendEvent({
       id: ctx.id,
       event: { type: 'token', token: JSON.stringify({ type: 'final', output: finalContent }) },
@@ -374,186 +339,97 @@ async function handleAgentRun(
 }
 
 // =============================================================================
-// Port Connection Handler
-// =============================================================================
-
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'web-agent-transport') return;
-  
-  console.log('[Web Agents API] Port connected');
-
-  port.onMessage.addListener(async (message: RequestContext & { type: string }) => {
-    const tabId = port.sender?.tab?.id;
-    const cookieStoreId = (port.sender?.tab as chrome.tabs.Tab & { cookieStoreId?: string })?.cookieStoreId;
-    
-    const ctx: RequestContext = {
-      id: message.id,
-      type: message.type,
-      payload: message.payload,
-      origin: message.origin || '',
-      tabId,
-      cookieStoreId,
-    };
-
-    // Handle streaming requests
-    if (ctx.type === 'session.promptStreaming') {
-      const sendEvent = (event: TransportStreamEvent) => {
-        try { port.postMessage(event); } catch { /* Port disconnected */ }
-      };
-      await handleSessionPromptStreaming(ctx, sendEvent);
-      return;
-    }
-
-    if (ctx.type === 'agent.run') {
-      const sendEvent = (event: TransportStreamEvent) => {
-        try { port.postMessage(event); } catch { /* Port disconnected */ }
-      };
-      await handleAgentRun(ctx, sendEvent);
-      return;
-    }
-
-    // Handle regular requests via router
-    const response = await routeMessage(ctx);
-    try {
-      port.postMessage(response);
-    } catch {
-      /* Port disconnected */
-    }
-  });
-});
-
-// =============================================================================
-// Harbor Discovery Handler
-// =============================================================================
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === 'harbor_discovered' && message.extensionId) {
-    setHarborExtensionId(message.extensionId);
-    sendResponse({ ok: true });
-  }
-  return false;
-});
-
-// =============================================================================
-// Agent Invocation Response Handler
-// =============================================================================
-
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== 'agentInvocationResponse') {
-    return false;
-  }
-  
-  const success = resolveInvocationResponse(message.response);
-  sendResponse({ ok: success });
-  return true;
-});
-
-// =============================================================================
-// Harbor Forwarded Invocation Handler
-// =============================================================================
-
-const processedForwardedInvocations = new Set<string>();
-
-function handleForwardedInvocation(
-  message: { agentId: string; request: { from: string; task: string; input?: unknown; timeout?: number }; handlerInfo: { origin: string; tabId?: number }; traceId?: string },
-  sendResponse: (response: unknown) => void,
-  source: string
-): boolean {
-  const { agentId, request, handlerInfo, traceId } = message;
-  const trace = traceId || 'no-trace';
-  
-  const invocationKey = `${agentId}-${request.from}-${request.task}-${JSON.stringify(request.input || {}).slice(0, 100)}`;
-  
-  if (processedForwardedInvocations.has(invocationKey)) {
-    return false;
-  }
-  processedForwardedInvocations.add(invocationKey);
-  setTimeout(() => processedForwardedInvocations.delete(invocationKey), 30000);
-  
-  const tabId = handlerInfo.tabId || agentInvocationTabs.get(agentId);
-  
-  if (!tabId) {
-    sendResponse({ success: false, error: { code: 'ERR_NO_TAB', message: 'Agent tab not found' } });
-    return true;
-  }
-  
-  handleIncomingInvocation(agentId, request, trace)
-    .then(response => sendResponse(response))
-    .catch(error => sendResponse({ success: false, error: { code: 'ERR_FAILED', message: error.message } }));
-  
-  return true;
-}
-
-chrome.runtime.onMessageExternal?.addListener((message, sender, sendResponse) => {
-  if (!isHarborSender(sender)) return false;
-  if (message?.type === 'agent.host.run') {
-    const { payload } = message as { payload?: { method: string; params: Record<string, unknown>; context: { origin?: string; tabId?: number } } };
-    if (!payload) {
-      sendResponse({ ok: false, error: 'Missing payload' });
-      return true;
-    }
-    import('./handlers/host-run-handlers').then(({ handleHostRun }) => {
-      handleHostRun(payload)
-        .then((out) => sendResponse(out))
-        .catch((err) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
-    });
-    return true;
-  }
-  if (message?.type !== 'harbor.forwardInvocation') {
-    return false;
-  }
-  return handleForwardedInvocation(message, sendResponse, 'onMessageExternal');
-});
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== 'harbor.forwardInvocation') {
-    return false;
-  }
-  
-  if (sender.id === chrome.runtime.id || !isHarborSender(sender)) {
-    return false;
-  }
-  
-  return handleForwardedInvocation(message, sendResponse, 'onMessage');
-});
-
-// =============================================================================
-// Sidebar Message Handlers
-// =============================================================================
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === 'checkHarborConnection') {
-    (async () => {
-      const state = getHarborState();
-      if (!state.connected) {
-        const id = await discoverHarbor();
-        sendResponse({ connected: !!id, extensionId: id });
-      } else {
-        sendResponse({ connected: true, extensionId: state.extensionId });
-      }
-    })();
-    return true;
-  }
-
-  if (message?.type === 'getFeatureFlags') {
-    getFeatureFlags().then(flags => sendResponse(flags));
-    return true;
-  }
-
-  return false;
-});
-
-// =============================================================================
 // Initialization
 // =============================================================================
 
-// Try to discover Harbor on startup
-discoverHarbor().then((id) => {
-  if (id) {
-    console.log('[Web Agents API] Harbor found:', id);
-  } else {
-    console.log('[Web Agents API] Harbor not found - will retry on first request');
-  }
-});
+let initialized = false;
 
-console.log('[Web Agents API] Extension initialized.');
+/**
+ * Wire up the page API's background listeners. Called once from Harbor's
+ * main background.ts entry point, alongside initializeExtensionApi() and
+ * initializeRouter().
+ */
+export function initializePageApi(): void {
+  if (initialized) return;
+  initialized = true;
+
+  log('Initializing...');
+
+  // Restore tracked spawned tabs from storage.
+  restoreSpawnedTabs();
+
+  // Clean up spawned tabs when they are closed.
+  browserAPI.tabs.onRemoved.addListener(async (tabId: number) => {
+    const wasTracked = Object.values(getAllSpawnedTabs()).some(tabs => tabs.includes(tabId));
+
+    if (wasTracked) {
+      try {
+        await browserAPI.tabs.get(tabId);
+        // Tab still exists - spurious event
+        return;
+      } catch {
+        // Tab is truly gone
+      }
+    }
+
+    handleTabRemoved(tabId);
+    cleanupAgentsForTab(tabId);
+  });
+
+  // Port connection handler: the page-facing transport.
+  browserAPI.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
+    if (port.name !== PORT_NAME) return;
+
+    const origin = originFromSender(port.sender);
+    const tabId = port.sender?.tab?.id;
+    const cookieStoreId = (port.sender?.tab as (chrome.tabs.Tab & { cookieStoreId?: string }) | undefined)?.cookieStoreId;
+
+    port.onMessage.addListener(async (message: { id: string; type: string; payload: unknown }) => {
+      const ctx: RequestContext = {
+        id: message.id,
+        type: message.type,
+        payload: message.payload,
+        // The origin always comes from the port's sender, established once
+        // when the port connected — never from a per-message field, which a
+        // page (or a compromised content script) could otherwise forge.
+        origin,
+        tabId,
+        cookieStoreId,
+      };
+
+      if (ctx.type === 'session.promptStreaming') {
+        const sendEvent = (event: TransportStreamEvent) => {
+          try { port.postMessage(event); } catch { /* Port disconnected */ }
+        };
+        await handleSessionPromptStreaming(ctx, sendEvent);
+        return;
+      }
+
+      if (ctx.type === 'agent.run') {
+        const sendEvent = (event: TransportStreamEvent) => {
+          try { port.postMessage(event); } catch { /* Port disconnected */ }
+        };
+        await handleAgentRun(ctx, sendEvent);
+        return;
+      }
+
+      const response = await routeMessage(ctx);
+      try {
+        port.postMessage(response);
+      } catch {
+        /* Port disconnected */
+      }
+    });
+  });
+
+  // The content script asks for feature flags before injecting the page API.
+  browserAPI.runtime.onMessage.addListener((message: { type?: string }, _sender, sendResponse) => {
+    if (message?.type === 'getFeatureFlags') {
+      getFeatureFlags().then(flags => sendResponse(flags));
+      return true;
+    }
+    return false;
+  });
+
+  log('Initialized.');
+}
