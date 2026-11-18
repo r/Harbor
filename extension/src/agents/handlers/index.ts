@@ -8,65 +8,6 @@ export type { RequestContext, ResponseSender, RequestHandler } from './router-ty
 // Helpers
 export { log, requireAction } from './helpers';
 
-// Permission handlers
-export {
-  handleRequestPermissions,
-  handleListPermissions,
-} from './permissions';
-
-// Tools handlers
-export {
-  handleToolsList,
-  handleToolsCall,
-} from './tools';
-
-// AI session handlers
-export {
-  handleCanCreateTextSession,
-  handleCreateTextSession,
-  handleSessionPrompt,
-  handleSessionDestroy,
-  handleLanguageModelCapabilities,
-  handleProvidersList,
-  handleRuntimeGetCapabilities,
-} from './ai-sessions';
-
-// Capabilities handler
-export { handleAgentCapabilities } from './capabilities';
-
-// Browser active-tab handlers
-export {
-  handleActiveTabReadability,
-  handleActiveTabClick,
-  handleActiveTabFill,
-  handleActiveTabSelect,
-  handleActiveTabScroll,
-  handleActiveTabGetElement,
-  handleActiveTabWaitForSelector,
-  handleActiveTabScreenshot,
-} from './browser-active-tab';
-
-// Browser tabs handlers
-export {
-  handleBrowserNavigate,
-  handleBrowserWaitForNavigation,
-  handleTabsList,
-  handleTabsGet,
-  handleTabsCreate,
-  handleTabsClose,
-  handleSpawnedTabReadability,
-  handleSpawnedTabGetHtml,
-  handleSpawnedTabClick,
-  handleSpawnedTabFill,
-  handleSpawnedTabScroll,
-  handleSpawnedTabScreenshot,
-  handleSpawnedTabNavigate,
-  handleSpawnedTabWaitForNavigation,
-} from './browser-tabs';
-
-// Web fetch handler
-export { handleAgentFetch } from './web-fetch';
-
 // Chat handlers
 export {
   handleChatCanOpen,
@@ -106,6 +47,3 @@ export {
   handleRemotePing,
   handleRemoteDiscover,
 } from './multi-agent';
-
-// Agent run handler
-export { handleAgentRun } from './agent-run';
