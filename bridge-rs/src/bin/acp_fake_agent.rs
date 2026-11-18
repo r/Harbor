@@ -12,7 +12,13 @@
 //!   string, to exercise the bridge's oversized-line handling.
 //! - `"stderrbad"`: writes one invalid-UTF-8 line to stderr.
 //! - `"stderrflood"`: writes 2000 1KB-ish lines to stderr, then a `"done"`
-//!   marker object to stdout, to exercise stderr draining under load.
+//!   marker object to stdout, to exercise stderr draining under load. Exits
+//!   non-zero on the first failed stderr write (e.g. EPIPE from a bridge
+//!   that stopped draining it) instead of ignoring it, so a test can tell
+//!   stderr draining actually kept working from the agent surviving.
+//! - `"stopreading"`: acks on stdout, then stops reading stdin forever (but
+//!   keeps the process alive), modeling an agent that wedges and lets its
+//!   stdin pipe - and the bridge's send queue behind it - fill up.
 //! - `"spawn_grandchild"`: spawns a second copy of this binary (argv[1] =
 //!   `__sleep_forever`) that inherits this process's stdout/stderr and
 //!   never exits on its own, modeling a real agent launched through a
@@ -84,14 +90,28 @@ fn main() {
                     let mut stderr = io::stderr();
                     let line = vec![b'x'; 1023];
                     for _ in 0..2000 {
-                        let _ = stderr.write_all(&line);
-                        let _ = stderr.write_all(b"\n");
+                        // Strict on purpose: if the bridge ever stops
+                        // draining stderr, this write fails (EPIPE) and we
+                        // exit instead of limping on - a test driving a
+                        // lenient agent that ignores such errors can't
+                        // distinguish "draining kept working" from "it
+                        // didn't, but nothing noticed".
+                        if stderr.write_all(&line).is_err() || stderr.write_all(b"\n").is_err() {
+                            std::process::exit(42);
+                        }
                     }
                     let _ = stderr.flush();
                     let payload = serde_json::json!({ "flood": "done" });
                     let _ = writeln!(stdout, "{}", serde_json::to_string(&payload).unwrap());
                     let _ = stdout.flush();
                     continue;
+                }
+                "stopreading" => {
+                    let _ = stdout.write_all(b"{\"stopped\":true}\n");
+                    let _ = stdout.flush();
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(3600));
+                    }
                 }
                 "spawn_grandchild" => {
                     let exe = std::env::current_exe().expect("current_exe");

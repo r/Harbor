@@ -572,3 +572,75 @@ fn send_validation_errors() {
     bridge.close(&channel);
     bridge.shutdown();
 }
+
+/// Regression test for HBR-80 bounce 2 item 1: `acp.send` used to enqueue
+/// onto the channel's stdin queue with an *awaited* `send`, inline in the
+/// single native-messaging read loop. An agent that stops draining its
+/// stdin fills that queue and never frees a slot, so that await never
+/// resolves - stalling the entire loop: pings, other channels, and the very
+/// acp.close that could kill the stuck agent all go unanswered, forever.
+#[test]
+fn acp_send_rejects_when_queue_is_full_without_blocking_the_bridge() {
+    let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
+    let ch1 = bridge.open("fake", "O1");
+    let ch2 = bridge.open("fake", "O2");
+
+    let stop_resp = bridge.rpc("STOP", "acp.send", json!({ "channel": ch1, "message": { "__test_cmd": "stopreading" } }));
+    assert_eq!(stop_resp["result"]["ok"], true);
+    let stopped = bridge
+        .wait_for(|m| is_stream_event(m, "O1", "message"), Duration::from_secs(5))
+        .expect("stopped ack");
+    assert_eq!(stopped["event"]["message"], json!({ "stopped": true }));
+
+    // Each message is well under the per-message size limit, so only the
+    // queue being full - never any other validation - can explain a
+    // rejection here.
+    let pad = "y".repeat(20_000);
+    let mut rejected = None;
+    for i in 0..400u32 {
+        let resp = bridge.rpc(
+            &format!("F{}", i),
+            "acp.send",
+            json!({ "channel": ch1, "message": { "i": i, "pad": pad } }),
+        );
+        if let Some(error) = resp.get("error") {
+            assert_eq!(error["code"], -32602);
+            assert!(error["message"].as_str().unwrap().contains("queue full"));
+            rejected = Some(i);
+            break;
+        }
+    }
+    assert!(
+        rejected.is_some(),
+        "flooding a channel whose agent never reads stdin must eventually be rejected"
+    );
+
+    // The actual regression: the bridge (and every other channel) must
+    // stay responsive while that one channel is backed up.
+    bridge.send(json!({ "type": "ping" }));
+    assert!(
+        bridge.wait_for(|m| m["status"] == "pong", Duration::from_secs(5)).is_some(),
+        "ping must still answer while one channel's queue is full"
+    );
+
+    let other_send = bridge.rpc("S2", "acp.send", json!({ "channel": ch2, "message": { "other": "channel" } }));
+    assert_eq!(other_send["result"]["ok"], true);
+    assert!(
+        bridge
+            .wait_for(|m| is_stream_event(m, "O2", "message"), Duration::from_secs(5))
+            .is_some(),
+        "other channels must still relay while one channel's queue is full"
+    );
+
+    let close_resp = bridge.close(&ch1);
+    assert_eq!(close_resp["result"]["ok"], true, "acp.close on the stuck channel must still answer");
+    assert!(
+        bridge
+            .wait_for(|m| is_stream_event(m, "O1", "exit"), Duration::from_secs(5))
+            .is_some(),
+        "the stuck agent must actually be killed, not left running"
+    );
+
+    bridge.close(&ch2);
+    bridge.shutdown();
+}
