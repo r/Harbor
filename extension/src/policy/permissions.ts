@@ -152,7 +152,9 @@ export async function checkPermissions(
     console.log('[Permissions] Scope', scope, '=', grant);
     if (grant === 'denied') {
       deniedScopes.push(scope);
-    } else if (grant === 'not-granted') {
+    } else if (grant !== 'granted-once' && grant !== 'granted-always') {
+      // Fail closed: a scope with no grant, including one the status map
+      // doesn't know, is missing rather than granted.
       missingScopes.push(scope);
     }
   }
