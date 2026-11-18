@@ -366,7 +366,7 @@ The older, separate Web Agents API extension no longer injects anything, and Har
 
 For page calls, Harbor enforces `deny` (safety floor, policy rules, a denied origin grant, the watchdog). When the only thing left to settle is the origin grant (Tier 8 or the Tier 9 default), Harbor proceeds without prompting again, because the page API has just checked that grant in Harbor's store; the audit record carries `consent: "origin-grant"`. A watchdog restriction (Tier 4) or a policy rule that asks, previews or attenuates (Tier 7) still shows Harbor's prompt.
 
-A write that can't be undone (`tool.call`, `browser.write.interact`) is previewed on every call, even when the origin holds a grant. Calling or messaging another agent on this device (`agent.invoke`, `agent.message`) is not: the call itself changes nothing, and the other agent's own actions are checked separately. So once a site holds `agents:invoke` or `agents:message`, later calls go through without another prompt.
+A write that can't be undone (`tool.call`, `browser.write.interact`) is previewed on every call, even when the origin holds a grant. Calling or messaging another agent on this device (`agent.invoke`, `agent.message`) is not: the call itself changes nothing, and the other agent's own actions are checked separately. So once a site holds `agents:invoke` or `agents:message`, later calls go through without another prompt. An "Allow once" grant covers only the tab that granted it, for ten minutes; another tab on the same site is asked again.
 
 A site's tool allowlist is deny-by-default: a site with no allowlist may call no tools.
 

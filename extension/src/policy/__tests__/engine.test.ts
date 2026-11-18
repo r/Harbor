@@ -299,6 +299,16 @@ describe('Tier 8: per-origin grants', () => {
     },
   );
 
+  it('passes the calling tab to the grant resolver', async () => {
+    const seen: Array<number | undefined> = [];
+    setOriginGrantResolver((_origin, _action, _resource, tabId) => {
+      seen.push(tabId);
+      return null;
+    });
+    await evaluate({ origin: 'https://example.com', action: 'agent.invoke', tabId: 9 });
+    expect(seen).toEqual([9]);
+  });
+
   it.each(['agent.invoke', 'agent.message'] as const)(
     'without a grant, %s still asks first',
     async (action) => {

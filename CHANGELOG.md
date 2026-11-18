@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Harbor no longer writes what a page sends to the browser console: prompts, system prompts, `agent.run` tasks, tasks passed between agents, URLs a page opens or registers, a page's reason for a permission request, and model replies. Logs keep the request type, IDs, origin and sizes. The debug listener that logged every message reaching Harbor's background is gone.
 - `agent.requestPermissions()` asks for exactly the scopes the page names. A request for `model:prompt`, `mcp:tools.call` or `browser:tabs.create` no longer also asks for `agents:register` and `agents:invoke`. Pages that register or invoke agents must request those scopes themselves; if they don't, Harbor asks when they call the agent API.
 - A site that has been granted `agents:invoke` or `agents:message` is no longer asked again on every `agent.agents.invoke()` or message call. The grant now covers later calls. Calling another agent on this device changes nothing by itself, and that agent's own actions are still checked.
+- An "Allow once" grant now covers only the tab where it was given, in Harbor's policy checks as well as in the page API. Before, another tab on the same site could use it, for example to register an agent.
 
 ### Removed
 
