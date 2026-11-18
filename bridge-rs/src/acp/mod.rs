@@ -30,7 +30,7 @@ pub mod config;
 use std::collections::HashMap;
 use std::io;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use serde_json::{json, Value};
@@ -70,14 +70,38 @@ const LOG_TRUNCATE_BYTES: usize = 2000;
 
 /// Depth of each channel's stdin write queue. `acp.send` calls are enqueued
 /// here in arrival order and drained by a single writer task per channel,
-/// which is what makes relay order match send order (see module docs).
-const WRITE_QUEUE_CAPACITY: usize = 256;
+/// which is what makes relay order match send order (see module docs). Kept
+/// small deliberately: an agent that stops reading its stdin (or dies
+/// without us noticing yet) must not let the bridge accumulate unbounded
+/// queued writes, and `enqueue_send` rejects (never blocks) once this is
+/// full. See also `MAX_QUEUED_BYTES_PER_CHANNEL`, which bounds memory for
+/// the case of fewer, larger messages that wouldn't fill this slot count.
+const WRITE_QUEUE_CAPACITY: usize = 64;
+
+/// Total bytes `enqueue_send` will let sit in one channel's write queue at
+/// once, on top of `WRITE_QUEUE_CAPACITY`'s slot limit. Without this,
+/// `WRITE_QUEUE_CAPACITY` slots of `MAX_SEND_BYTES` each could queue up to
+/// 256 MiB behind one stuck agent.
+const MAX_QUEUED_BYTES_PER_CHANNEL: usize = 16 * 1024 * 1024;
 
 struct ChannelHandle {
     /// FIFO queue to this channel's single stdin-writer task. Dropping the
     /// last `Arc<ChannelHandle>` (i.e. removing it from `CHANNELS`) drops
     /// this sender, which ends that task once its queue drains.
     write_tx: mpsc::Sender<Vec<u8>>,
+    /// Bytes currently sitting in `write_tx`'s queue, maintained by
+    /// `enqueue_send` (adds on accepting a message) and the writer task
+    /// (subtracts on dequeuing one), so `enqueue_send` can reject once the
+    /// agent is far enough behind without ever awaiting queue capacity. A
+    /// separate `Arc` (not folded into the `ChannelHandle` one) so the
+    /// writer task can share it without keeping the whole handle - and so
+    /// its "drop the channel ends the writer" lifecycle - alive itself.
+    queued_bytes: Arc<AtomicUsize>,
+    /// Clone of this channel's stream sender, used only to emit a
+    /// non-terminal `error` event when `enqueue_send` has to drop a message
+    /// for being queue-full. Never awaited on (`try_send`): a full stream
+    /// channel must not be able to block `enqueue_send` either.
+    event_tx: mpsc::Sender<Value>,
     child: Mutex<Child>,
 }
 
@@ -198,8 +222,16 @@ fn list_agents_for(config: &AcpConfig) -> Result<Value, RpcError> {
 /// `tokio::spawn`) exactly once per incoming `acp.send` frame, in arrival
 /// order, which is what keeps writes to the agent's stdin in that same
 /// order: see the per-channel writer task spawned in `open_stream_with_config`.
-/// A write that fails after this returns is reported as an `error` stream
-/// event, not through this call's response.
+///
+/// Enqueuing uses `try_send`, never an awaited `send`: this function runs
+/// inline in the native-messaging read loop (see its doc comment above), so
+/// awaiting a full queue here would stall that loop - and with it pings,
+/// other RPCs, other channels, and the very `acp.close` that could kill the
+/// stuck agent - until the agent's own stdin drains, which may be never.
+/// A full queue (by slot count or by `MAX_QUEUED_BYTES_PER_CHANNEL`) is
+/// rejected immediately instead. A write that fails *after* this returns
+/// `Ok` is reported as an `error` stream event, not through this call's
+/// response.
 pub async fn enqueue_send(params: Value) -> Result<Value, RpcError> {
     let channel = params
         .get("channel")
@@ -226,6 +258,7 @@ pub async fn enqueue_send(params: Value) -> Result<Value, RpcError> {
         )));
     }
     serialized.push('\n');
+    let len = serialized.len();
 
     let handle = {
         let map = channels();
@@ -234,13 +267,34 @@ pub async fn enqueue_send(params: Value) -> Result<Value, RpcError> {
     }
     .ok_or_else(|| RpcError::invalid_params(format!("unknown channel: {}", channel)))?;
 
-    handle
-        .write_tx
-        .send(serialized.into_bytes())
-        .await
-        .map_err(|_| RpcError::internal("agent is no longer accepting input".to_string()))?;
+    let queued_now = handle.queued_bytes.fetch_add(len, Ordering::AcqRel) + len;
+    if queued_now > MAX_QUEUED_BYTES_PER_CHANNEL {
+        handle.queued_bytes.fetch_sub(len, Ordering::AcqRel);
+        return Err(queue_full_error(&handle));
+    }
 
-    Ok(json!({ "ok": true }))
+    match handle.write_tx.try_send(serialized.into_bytes()) {
+        Ok(()) => Ok(json!({ "ok": true })),
+        Err(mpsc::error::TrySendError::Full(_)) => {
+            handle.queued_bytes.fetch_sub(len, Ordering::AcqRel);
+            Err(queue_full_error(&handle))
+        }
+        Err(mpsc::error::TrySendError::Closed(_)) => {
+            handle.queued_bytes.fetch_sub(len, Ordering::AcqRel);
+            Err(RpcError::internal("agent is no longer accepting input".to_string()))
+        }
+    }
+}
+
+/// Builds the rejection for a full send queue, and best-effort notifies the
+/// stream too (`try_send`, never awaited, for the same reason `enqueue_send`
+/// itself never awaits the write queue).
+fn queue_full_error(handle: &ChannelHandle) -> RpcError {
+    let _ = handle.event_tx.try_send(json!({
+        "type": "error",
+        "message": "agent input queue full; message dropped",
+    }));
+    RpcError::invalid_params("agent input queue full")
 }
 
 /// `acp.close {channel}` -> kills the agent process (and its whole process
@@ -284,16 +338,21 @@ async fn kill(handle: &ChannelHandle) {
 
 /// Best-effort: ask the system `kill` utility to signal the whole process
 /// group (the negative pid), never a shell, and never with anything
-/// extension- or agent-controlled in the command. If `kill` is missing or
-/// the group is already gone, this just does nothing; `child.kill()` in the
-/// caller still covers the direct child.
+/// extension- or agent-controlled in the command. Neither `std`/`tokio` nor
+/// any crate already in this workspace exposes `killpg`/`kill(2)` directly
+/// (the `libc` crate does, but isn't a dependency, and isn't worth adding
+/// just for this); `/bin/kill` is used by its absolute path rather than
+/// resolved through PATH. `child.kill()` in the caller still covers the
+/// direct child if this doesn't land (group already gone, `/bin/kill`
+/// missing on a non-macOS/Linux unix, etc.) - that failure is logged, not
+/// silently swallowed, since it means only the direct child gets killed.
 #[cfg(unix)]
 async fn kill_process_group(pid: u32) {
     // `Command` inherits the bridge's own stdio by default; without these,
     // a stray message from `kill` (e.g. "No such process" on stderr when
     // the group is already gone) would land on the bridge's real stdout -
     // the native messaging pipe to the extension - or its stderr/log.
-    let _ = Command::new("kill")
+    let outcome = Command::new("/bin/kill")
         .arg("-KILL")
         .arg(format!("-{}", pid))
         .stdin(Stdio::null())
@@ -302,6 +361,19 @@ async fn kill_process_group(pid: u32) {
         .kill_on_drop(true)
         .status()
         .await;
+    match outcome {
+        Ok(status) if status.success() => {}
+        Ok(status) => tracing::error!(
+            "acp: /bin/kill -KILL -{} exited with {}; only the direct child will be killed",
+            pid,
+            status
+        ),
+        Err(e) => tracing::error!(
+            "acp: failed to run /bin/kill -KILL -{}: {}; only the direct child will be killed",
+            pid,
+            e
+        ),
+    }
 }
 
 /// Kill every agent process the bridge started. Called on extension
@@ -399,8 +471,11 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
 
     let channel = new_channel_id();
     let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(WRITE_QUEUE_CAPACITY);
+    let queued_bytes = Arc::new(AtomicUsize::new(0));
     let handle = Arc::new(ChannelHandle {
         write_tx,
+        queued_bytes: queued_bytes.clone(),
+        event_tx: event_tx.clone(),
         child: Mutex::new(child),
     });
 
@@ -445,6 +520,9 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
         let mut stdin: ChildStdin = stdin;
         let mut write_rx = write_rx;
         while let Some(bytes) = write_rx.recv().await {
+            // No longer queued, whether or not the write below succeeds:
+            // `enqueue_send`'s budget is about what's waiting, not in flight.
+            queued_bytes.fetch_sub(bytes.len(), Ordering::AcqRel);
             if let Err(e) = stdin.write_all(&bytes).await {
                 tracing::error!(
                     "acp channel '{}' failed to write to agent stdin: {}",
