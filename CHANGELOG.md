@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `README.md` — "Why This Exists" rewritten to reference the May 2026 landscape (Atlas, Comet, Gemini in Chrome, Brave Leo, Firefox AI Window, WebMCP, Chrome Prompt API) and to clarify Harbor's lane.
 - `spec/README.md` — "The Problem" extended with a fourth bad option ("just use the user's AI browser") and a paragraph framing the gap left by WebMCP and the Chrome Prompt API.
+- Contributors and agents now fix small flaws they notice in the same PR, rather than leaving them for a separate one. Each fix is listed under an **Also fixed** heading in the PR description and, if users would notice it, gets its own changelog entry. Larger changes still get their own issue. See `CONTRIBUTING.md` and `docs/agent-workflow.md`.
 - `AGENTS.md` — `whitepaper/` description updated to reflect the static-HTML structure and `docs/POSITIONING.md` flagged as the messaging source-of-truth.
 
 ### Fixed

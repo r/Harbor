@@ -2,7 +2,7 @@
 
 Implement one fully decided unit in the assigned, initialized worktree. Use absolute paths, and read its `AGENTS.md`, the routed docs and the supplied acceptance. No replanning, child workers, tracker changes, independent publication or merges.
 
-This role suits a known-pattern edit, a bounded rename, test boilerplate, config wiring or documentation alignment. It doesn't suit undecided behavior. Stop and escalate if an API, permission scope, message format, trust-boundary rule or UX judgment is missing. Don't improvise because a rename looks easy.
+This role suits a known-pattern edit, a bounded rename, test boilerplate, config wiring or documentation alignment. It doesn't suit undecided behavior. Stop and escalate if an API, permission scope, message format, trust-boundary rule or UX judgment is missing. Don't improvise because a rename looks easy. Report any other flaw you notice to the coordinator with a path, line and evidence; the coordinator decides whether to fold it in.
 
 Run the assigned checks, and show completeness searches for missed references. To show red against the pre-fix code, copy the old file out with `git show <rev>:<path>` or use a detached worktree. Never `git stash`: the stash stack is shared by every worktree. Remember that Harbor has near-duplicate copies (for example, the two chat POCs, and the Firefox, Chrome and Safari variants). Review every changed occurrence: historical receipts and quoted content must not be rewritten into false history. Check visible changes in Firefox where applicable. Mechanical is a cost tier, not an exemption from proof.
 

@@ -284,6 +284,7 @@ A PR should make sense to someone who can't see any ticket, chat thread, or meet
 - **The problem.** What was broken or missing, and how it showed up. Include the error message or the steps that reproduce it.
 - **The change.** What you changed and why you chose that approach. If the change touches several areas, group the explanation by file or component.
 - **The testing.** What you actually ran and what happened, for example "`cargo test` passes" or "tried it in Firefox with llama3.2: 1 tool call instead of 5". Also say what you didn't test.
+- **Also fixed.** Any small flaw you fixed along the way, each with what was wrong and what changed. Skip this heading if there are none.
 - **What's left.** Known limits and follow-ups that this PR doesn't fix.
 
 If you mention another internal ticket, describe it in a few words, for example "(the Ollama provider drops `tool_calls`, HBR-10)", so the reference still means something to readers who can't open it.
@@ -292,7 +293,7 @@ If you mention another internal ticket, describe it in a few words, for example 
 
 - Base each PR on `main` and keep it to one change, so PRs can be reviewed and merged in any order.
 - If a PR has to build on another one, say so at the top of the description and target that PR's branch.
-- Don't mix unrelated cleanups into a fix. Open a separate PR for them.
+- Leave the code better than you found it. If you notice a small flaw while you work (a bug, a stale doc, dead code, a missing test), fix it in the same PR, list it under **Also fixed**, and give it its own `CHANGELOG.md` entry if users would notice it. Larger or riskier changes, such as new subsystems or changes to the permission model, get their own issue or PR.
 
 ### AI-Assisted Contributions
 
