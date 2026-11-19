@@ -70,8 +70,24 @@ beforeEach(async () => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+function eventsFor(id: string) {
+  return postMessage.mock.calls.map(([m]) => m).filter((m) => m.id === id);
+}
+
 function terminalEventsFor(id: string) {
-  return postMessage.mock.calls.map(([m]) => m).filter((m) => m.id === id && m.done);
+  return eventsFor(id).filter((m) => m.done);
+}
+
+/** The built-in backend's `final` token, which arrives before the terminal `done` event. */
+function finalOutputFor(id: string): string | undefined {
+  for (const m of eventsFor(id)) {
+    if (typeof m.event?.token !== 'string') continue;
+    try {
+      const parsed = JSON.parse(m.event.token);
+      if (parsed.type === 'final') return parsed.output;
+    } catch { /* not JSON */ }
+  }
+  return undefined;
 }
 
 function stubListTools() {
@@ -103,7 +119,8 @@ describe('agent.run backend selection', () => {
 
     const terminal = terminalEventsFor('run-1');
     expect(terminal).toHaveLength(1);
-    expect(terminal[0].event.token).toContain('built-in answer');
+    expect(terminal[0].event).toEqual({ type: 'done' });
+    expect(finalOutputFor('run-1')).toBe('built-in answer');
   });
 
   it('falls back to the built-in backend when the stored setting has the wrong shape', async () => {
@@ -116,8 +133,8 @@ describe('agent.run backend selection', () => {
 
     await receive({ id: 'run-2', type: 'agent.run', origin: 'https://example.test', payload: { task: 't' } });
 
-    const terminal = terminalEventsFor('run-2');
-    expect(terminal[0].event.token).toContain('fallback answer');
+    expect(terminalEventsFor('run-2')[0].event).toEqual({ type: 'done' });
+    expect(finalOutputFor('run-2')).toBe('fallback answer');
   });
 
   it('uses the configured ACP agent when the setting names one', async () => {

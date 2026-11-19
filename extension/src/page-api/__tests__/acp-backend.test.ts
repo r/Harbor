@@ -212,9 +212,11 @@ describe('AcpAgentBackend', () => {
     it('falls back to kind when a tool_call has no title, and to {} when it has no rawInput', async () => {
       registerFakeAgent({
         onPrompt: async (ctx) => {
+          // `title` is a required field on the wire, so an agent that has
+          // nothing to say sends it empty rather than omitting it.
           await ctx.client.notify(CLIENT_METHODS.session_update, {
             sessionId: ctx.params.sessionId,
-            update: { sessionUpdate: 'tool_call', toolCallId: 'tc-1', kind: 'execute' },
+            update: { sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: '', kind: 'execute' },
           });
           return { stopReason: 'end_turn' };
         },

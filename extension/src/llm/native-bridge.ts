@@ -146,7 +146,7 @@ export type HostRequestMessage = {
 type IncomingMessage =
   | { type: 'status'; status: string; message: string }
   | { type: 'rpc_response'; id: string; result?: unknown; error?: { code: number; message: string } }
-  | { type: 'stream'; id: string; event: StreamEvent }
+  | { type: 'stream'; id: string; event: AnyBridgeStreamEvent }
   | { type: 'console'; server_id: string; level: string; message: string }
   | HostRequestMessage;
 
@@ -157,6 +157,30 @@ type StreamEvent = {
   finish_reason?: string;
   model?: string;
   error?: { code: number; message: string };
+};
+
+/**
+ * The 'event' field of a 'stream' message, before a particular RPC
+ * method's caller narrows it to its own convention. `rpcStreamRequest`
+ * callers (llm.chat_stream) see `StreamEvent` (token/done/error); an
+ * `acp.open` caller (page-api/harbor-core.ts's `AcpBridgeEvent`) sees
+ * open/message/exit, and an 'error' with a top-level `message` and,
+ * only for a failure that never produced a channel, `fatal: true` — see
+ * bridge-rs/README.md "ACP agents". `handleMessage` only needs this
+ * wider shape to decide when a stream has ended (below); it hands the
+ * event to each caller's own callback unchanged.
+ */
+type AnyBridgeStreamEvent = {
+  type: 'token' | 'done' | 'error' | 'open' | 'message' | 'exit';
+  token?: string;
+  finish_reason?: string;
+  model?: string;
+  error?: { code: number; message: string };
+  fatal?: boolean;
+  message?: unknown;
+  channel?: string;
+  cwd?: string;
+  code?: number | null;
 };
 
 // Pending RPC requests
@@ -293,12 +317,26 @@ function handleMessage(message: IncomingMessage): void {
       });
       const stream = pendingStreams.get(message.id);
       if (stream) {
-        stream.onEvent(message.event);
-        if (message.event.type === 'done' || message.event.type === 'error') {
+        // Each RPC method's own caller (llm.chat_stream's StreamEvent, or
+        // acp.open's wider AcpBridgeEvent in page-api/harbor-core.ts) knows
+        // which convention it's reading; this handler only needs the
+        // common fields below to decide when the stream has ended.
+        stream.onEvent(message.event as unknown as StreamEvent);
+        // 'done' and 'exit' always end the stream. An 'error' only ends it
+        // when the bridge marks it `fatal` — an acp stream's recoverable
+        // per-line errors (a dropped oversized line, a broken stdin write)
+        // omit `fatal`, and the channel keeps running (more `message`
+        // events, then `exit`, can still follow).
+        const terminal =
+          message.event.type === 'done' ||
+          message.event.type === 'exit' ||
+          (message.event.type === 'error' && message.event.fatal === true);
+        if (terminal) {
           console.log('[Harbor:NativeBridge] Stream completed:', message.id, message.event.type);
           pendingStreams.delete(message.id);
-          if (message.event.type === 'error' && message.event.error) {
-            stream.onError(new Error(message.event.error.message));
+          if (message.event.type === 'error') {
+            const errorMessage = message.event.error?.message ?? (typeof message.event.message === 'string' ? message.event.message : 'Stream error');
+            stream.onError(new Error(errorMessage));
           } else {
             stream.onComplete();
           }

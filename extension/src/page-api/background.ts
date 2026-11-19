@@ -13,7 +13,8 @@
  */
 import { harborRequest, harborStreamRequest } from './harbor-core';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
-import { builtinAgentBackend, type AgentBackend } from './agent-backend';
+import { type AgentBackend } from './agent-backend';
+import { selectAgentBackend } from './agent-backend-selection';
 import type { TransportStreamEvent } from './types';
 
 import {
@@ -122,7 +123,7 @@ async function handleAgentRun(
   ctx: RequestContext,
   sendEvent: (event: TransportStreamEvent) => void,
   signal: AbortSignal,
-  backend: AgentBackend = builtinAgentBackend,
+  backendOverride?: AgentBackend,
 ): Promise<void> {
   const { task, maxToolCalls = 5, systemPrompt } = ctx.payload as {
     task: string;
@@ -173,6 +174,7 @@ async function handleAgentRun(
       );
     }
 
+    const backend = backendOverride ?? await selectAgentBackend();
     await backend.run(
       { origin: ctx.origin, tabId: ctx.tabId, task, systemPrompt, maxToolCalls, tools },
       (event) => sendEvent({ id: ctx.id, event, done: event.type === 'done' || event.type === 'error' }),
