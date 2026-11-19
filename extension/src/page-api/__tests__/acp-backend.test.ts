@@ -163,6 +163,23 @@ describe('AcpAgentBackend', () => {
     expect(texts.some((t) => t.includes('Instructions from https://site.example:') && t.includes('Always answer in French.'))).toBe(true);
   });
 
+  it('sends provenance _meta on session/prompt, for an agent that reads it instead of the labelled text', async () => {
+    let promptMeta: unknown;
+    registerFakeAgent({
+      onPrompt: async (ctx) => {
+        promptMeta = (ctx.params as { _meta?: unknown })._meta;
+        return { stopReason: 'end_turn' };
+      },
+    });
+
+    const backend = new AcpAgentBackend(AGENT_ID);
+    await collect(backend, baseRequest({ origin: 'https://site.example', task: 't' }));
+
+    expect(promptMeta).toEqual({
+      'harbor/provenance': { source: 'website', origin: 'https://site.example' },
+    });
+  });
+
   it('omits the instructions block when the page sends no systemPrompt', async () => {
     let promptBlocks: Array<{ type: string; text: string }> = [];
     registerFakeAgent({
@@ -498,57 +515,27 @@ describe('AcpAgentBackend', () => {
       expect(tokenEvents(events).some((e) => e.type === 'tool_result')).toBe(false);
     });
 
-    it('cancels and reports ERR_BUDGET_EXCEEDED once tool_call_update count reaches maxToolCalls', async () => {
-      let resolvePrompt: ((r: { stopReason: StopReason }) => void) | null = null;
+    it('ignores maxToolCalls entirely: many distinct tool calls never trip a budget error', async () => {
+      // Harbor gates whether a site may use the agent at all; it doesn't
+      // constrain how the agent works once it's running. The page's
+      // maxToolCalls is a builtinAgentBackend concept and does nothing here.
       registerFakeAgent({
-        onSessionCancel: () => resolvePrompt?.({ stopReason: 'cancelled' }),
         onPrompt: async (ctx) => {
-          for (let i = 0; i < 3; i++) {
+          for (let i = 0; i < 10; i++) {
             await ctx.client.notify(CLIENT_METHODS.session_update, {
               sessionId: ctx.params.sessionId,
               update: { sessionUpdate: 'tool_call_update', toolCallId: `tc-${i}`, status: 'completed', rawOutput: i },
             });
           }
-          return new Promise((resolve) => { resolvePrompt = resolve; });
-        },
-      });
-
-      const backend = new AcpAgentBackend(AGENT_ID);
-      const events = await collect(backend, baseRequest({ maxToolCalls: 2 }));
-
-      expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_BUDGET_EXCEEDED' } });
-      // Only the first two updates (within budget) may have reached the page.
-      expect(tokenEvents(events).filter((e) => e.type === 'tool_result')).toHaveLength(2);
-    });
-
-    it('counts a tool call once across its progress updates, but trips the budget on a second distinct call', async () => {
-      let resolvePrompt: ((r: { stopReason: StopReason }) => void) | null = null;
-      registerFakeAgent({
-        onSessionCancel: () => resolvePrompt?.({ stopReason: 'cancelled' }),
-        onPrompt: async (ctx) => {
-          // Three progress updates then completion, all for the same id —
-          // none of this should spend more than one unit of budget.
-          for (const status of ['in_progress', 'in_progress', 'in_progress', 'completed'] as const) {
-            await ctx.client.notify(CLIENT_METHODS.session_update, {
-              sessionId: ctx.params.sessionId,
-              update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', status },
-            });
-          }
-          // A second, distinct call must trip a budget of 1.
-          await ctx.client.notify(CLIENT_METHODS.session_update, {
-            sessionId: ctx.params.sessionId,
-            update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc-2', status: 'completed' },
-          });
-          return new Promise((resolve) => { resolvePrompt = resolve; });
+          return { stopReason: 'end_turn' };
         },
       });
 
       const backend = new AcpAgentBackend(AGENT_ID);
       const events = await collect(backend, baseRequest({ maxToolCalls: 1 }));
 
-      // tc-1's own completion reached the page; tc-2's never could.
-      expect(tokenEvents(events).filter((e) => e.type === 'tool_result')).toHaveLength(1);
-      expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_BUDGET_EXCEEDED' } });
+      expect(tokenEvents(events).filter((e) => e.type === 'tool_result')).toHaveLength(10);
+      expect(events.at(-1)).toEqual({ type: 'done' });
     });
 
     it('re-checks model:prompt on a tool_call with no update yet, and cancels with ERR_PERMISSION_DENIED', async () => {
