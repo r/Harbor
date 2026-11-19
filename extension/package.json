@@ -20,9 +20,11 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "2.8.0",
     "@wasmer/wasi": "latest",
     "@wasmer/wasmfs": "latest",
-    "buffer": "latest"
+    "buffer": "latest",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.35",

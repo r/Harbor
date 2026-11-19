@@ -1092,6 +1092,9 @@ try {
 | `ERR_TIMEOUT` | Request timed out |
 | `ERR_ABORTED` | The page aborted an `agent.run`, or its tab closed |
 | `ERR_INTERNAL` | Internal error |
+| `ERR_AGENT_FAILED` | The agent loop running `agent.run` failed — a model call, or (on the ACP backend) a transport failure, an agent exit before it answered, or a JSON-RPC error |
+| `ERR_AGENT_REFUSED` | An ACP agent's turn ended with `stopReason: "refusal"` |
+| `ERR_AGENT_LIMIT` | An ACP agent's turn ended with `stopReason: "max_tokens"` or `"max_turn_requests"` |
 
 ---
 
