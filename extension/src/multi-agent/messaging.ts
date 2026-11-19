@@ -171,11 +171,14 @@ export async function sendMessage(
 
 /**
  * Invoke another agent with a task.
+ *
+ * This does not check permission. Every caller checks the target first:
+ * `handleAgentsInvoke` for a direct invoke, and the orchestration step gate
+ * for pipeline, parallel, route and supervisor steps.
  */
 export async function invokeAgent(
   request: AgentInvocationRequest,
   fromAgentId: AgentId,
-  fromOrigin: string,
   traceId?: string,
 ): Promise<AgentInvocationResponse> {
   const trace = traceId || 'no-trace';
@@ -208,18 +211,6 @@ export async function invokeAgent(
       error: { code: 'ERR_NOT_ACCEPTED', message: 'Target agent does not accept invocations' },
       executionTime: Date.now() - startTime,
     };
-  }
-
-  // Check cross-origin permission
-  if (fromAgent.origin !== toAgent.origin) {
-    const check = await checkPermissions(fromOrigin, ['agents:crossOrigin']);
-    if (!check.granted) {
-      return {
-        success: false,
-        error: { code: 'ERR_PERMISSION_DENIED', message: 'Cross-origin invocation requires agents:crossOrigin permission' },
-        executionTime: Date.now() - startTime,
-      };
-    }
   }
 
   const handler = invocationHandlers.get(request.agentId);

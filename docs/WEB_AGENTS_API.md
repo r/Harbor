@@ -980,6 +980,8 @@ await window.agent.agents.unsubscribe('research-complete');
 
 #### Orchestration Patterns
 
+An orchestration call needs `agents:invoke`. Harbor then checks each step's agent just before that step runs, the same way it checks a direct `invoke`. An agent on another origin needs `agents:crossOrigin`, so the user may be asked partway through a pipeline. A route checks only the agent it picks. If the user refuses a step, a pipeline stops there. In a parallel run, only that task fails.
+
 ```javascript
 // Pipeline: Execute agents sequentially
 const pipelineResult = await window.agent.agents.orchestrate.pipeline({
