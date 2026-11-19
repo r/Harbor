@@ -31,6 +31,14 @@ const activeChats = new Map<string, {
 // Chat ID counter
 let chatIdCounter = 0;
 
+/**
+ * The tab, origin and config of a chat opened with agent.chat.open, or
+ * undefined if no such chat is open.
+ */
+export function getActiveChat(chatId: string) {
+  return activeChats.get(chatId);
+}
+
 // =============================================================================
 // Chat Handlers
 // =============================================================================
