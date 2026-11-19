@@ -1510,7 +1510,7 @@ declare global {
         
         summaryDiv.textContent = `Title: ${content.title}\n\nSummary: `;
         
-        for await (const token of session.promptStreaming(content.textContent)) {
+        for await (const token of session.promptStreaming(content.text)) {
           summaryDiv.textContent += token;
         }
         
