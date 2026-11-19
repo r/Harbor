@@ -490,6 +490,59 @@ describe('AcpAgentBackend', () => {
       expect(tokenEvents(events).filter((e) => e.type === 'tool_result')).toHaveLength(2);
     });
 
+    it('counts a tool call once across its progress updates, but trips the budget on a second distinct call', async () => {
+      let resolvePrompt: ((r: { stopReason: StopReason }) => void) | null = null;
+      registerFakeAgent({
+        onSessionCancel: () => resolvePrompt?.({ stopReason: 'cancelled' }),
+        onPrompt: async (ctx) => {
+          // Three progress updates then completion, all for the same id —
+          // none of this should spend more than one unit of budget.
+          for (const status of ['in_progress', 'in_progress', 'in_progress', 'completed'] as const) {
+            await ctx.client.notify(CLIENT_METHODS.session_update, {
+              sessionId: ctx.params.sessionId,
+              update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', status },
+            });
+          }
+          // A second, distinct call must trip a budget of 1.
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId: ctx.params.sessionId,
+            update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc-2', status: 'completed' },
+          });
+          return new Promise((resolve) => { resolvePrompt = resolve; });
+        },
+      });
+
+      const backend = new AcpAgentBackend(AGENT_ID);
+      const events = await collect(backend, baseRequest({ maxToolCalls: 1 }));
+
+      // tc-1's own completion reached the page; tc-2's never could.
+      expect(tokenEvents(events).filter((e) => e.type === 'tool_result')).toHaveLength(1);
+      expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_BUDGET_EXCEEDED' } });
+    });
+
+    it('re-checks model:prompt on a tool_call with no update yet, and cancels with ERR_PERMISSION_DENIED', async () => {
+      let resolvePrompt: ((r: { stopReason: StopReason }) => void) | null = null;
+      registerFakeAgent({
+        onSessionCancel: () => resolvePrompt?.({ stopReason: 'cancelled' }),
+        onPrompt: async (ctx) => {
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId: ctx.params.sessionId,
+            update: { sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'Read file' },
+          });
+          return new Promise((resolve) => { resolvePrompt = resolve; });
+        },
+      });
+      mocks.hasPermission.mockResolvedValueOnce(true); // the pre-prompt check
+      mocks.hasPermission.mockResolvedValueOnce(false); // the tool_call check
+
+      const backend = new AcpAgentBackend(AGENT_ID);
+      const events = await collect(backend, baseRequest());
+
+      expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_PERMISSION_DENIED' } });
+      // The denied call must never reach the page.
+      expect(tokenEvents(events).some((e) => e.type === 'tool_call')).toBe(false);
+    });
+
     it('cancels and reports ERR_TIMEOUT once the overall run timeout elapses', async () => {
       vi.useFakeTimers();
       let cancelled = false;
