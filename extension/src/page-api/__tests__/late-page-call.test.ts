@@ -247,3 +247,28 @@ describe("a streaming prompt whose caller's signal aborted", () => {
     expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
   });
 });
+
+describe('a streaming prompt the page stops reading mid-response', () => {
+  it("aborts the model stream's signal when the page aborts", async () => {
+    let modelSignal: AbortSignal | undefined;
+    let released!: () => void;
+    const ended = new Promise<void>((resolve) => { released = resolve; });
+    bridgeStreamRequest.mockImplementation(async function* (_method: string, _params: unknown, signal?: AbortSignal) {
+      modelSignal = signal;
+      yield { type: 'token', token: 'Hel' };
+      // The model would keep generating; wait until Harbor stops it.
+      await new Promise<void>((resolve) => signal?.addEventListener('abort', () => resolve()));
+      released();
+    });
+    const page = connectPort(`${ORIGIN}/page`);
+    const created = await page.request('ai.createTextSession', { model: 'ollama:test' });
+    const sessionId = created.result as string;
+
+    const id = page.send('session.promptStreaming', { sessionId, input: 'hi' });
+    await vi.waitFor(() => expect(modelSignal).toBeDefined());
+    page.abort(id);
+
+    await ended;
+    expect(modelSignal!.aborted).toBe(true);
+  });
+});
