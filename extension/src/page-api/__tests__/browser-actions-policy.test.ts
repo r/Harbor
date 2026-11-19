@@ -310,6 +310,7 @@ describe('a call the page gave up on is not performed late', () => {
       signal: controller.signal,
     } as RequestContext);
     expect(res.ok).toBe(false);
+    expect((res as { error?: { code?: string } }).error?.code).toBe('ERR_ABORTED');
     expect(scriptRan()).toBe(false);
   });
 
@@ -322,5 +323,44 @@ describe('a call the page gave up on is not performed late', () => {
     } as RequestContext);
     expect(res.ok).toBe(true);
     expect(scriptRan()).toBe(true);
+  });
+});
+
+describe('a fetch that is redirected is checked again at its final URL', () => {
+  const redirectTo = (finalUrl: string) =>
+    fetchMock.mockImplementationOnce(async () => ({
+      ok: true, status: 200, statusText: 'OK', url: finalUrl, redirected: true,
+      headers: new Headers(), text: async () => 'tracker body',
+      body: { cancel: async () => {} },
+    }));
+
+  it('a deny rule on the final host refuses the response', async () => {
+    loadRules([{ id: 'no-tracker', effect: 'deny', principal: { origin: '*' }, action: 'network.egress.cross_origin', resource: { host: 'tracker.example' } }]);
+    redirectTo('https://tracker.example/pixel');
+    const res = await browserHandlers.handleBrowserFetch(ctx('agent.browser.fetch', { url: 'https://api.other.example/r' }));
+    expect(res.ok).toBe(false);
+    expect(JSON.stringify(res)).not.toContain('tracker body');
+    const hosts = Audit.query({ origin: ORIGIN }).map((r) => [r.action, r.resource?.host, r.effect]);
+    expect(hosts).toEqual([
+      ['network.egress.cross_origin', 'api.other.example', expect.not.stringMatching('deny')],
+      ['network.egress.cross_origin', 'tracker.example', 'deny'],
+    ]);
+  });
+
+  it('a same-origin fetch redirected off-site is checked as cross-origin', async () => {
+    redirectTo('https://elsewhere.example/x');
+    const res = await browserHandlers.handleBrowserFetch(ctx('agent.browser.fetch', { url: `${ORIGIN}/go` }));
+    expect(res.ok).toBe(true);
+    expect(Audit.query({ origin: ORIGIN }).map((r) => [r.action, r.resource?.host])).toEqual([
+      ['network.egress.same_origin', HOST],
+      ['network.egress.cross_origin', 'elsewhere.example'],
+    ]);
+  });
+
+  it('a redirect within the same host is not checked twice', async () => {
+    redirectTo('https://api.other.example/final');
+    const res = await browserHandlers.handleBrowserFetch(ctx('agent.browser.fetch', { url: 'https://api.other.example/start' }));
+    expect(res.ok).toBe(true);
+    expect(Audit.query({ origin: ORIGIN })).toHaveLength(1);
   });
 });
