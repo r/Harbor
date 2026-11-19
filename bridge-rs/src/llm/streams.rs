@@ -58,30 +58,55 @@ mod tests {
     use std::time::Duration;
     use tokio::sync::mpsc;
 
+    /// A stand-in for chat_stream: holds its sender until it's stopped.
+    fn endless(tx: mpsc::Sender<()>) -> impl std::future::Future<Output = ()> + Send + 'static {
+        async move {
+            let _tx = tx;
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+        }
+    }
+
+    async fn closed(rx: &mut mpsc::Receiver<()>) -> bool {
+        matches!(
+            tokio::time::timeout(Duration::from_secs(1), rx.recv()).await,
+            Ok(None)
+        )
+    }
+
     #[tokio::test]
     async fn cancel_stream_aborts_a_running_stream_task() {
         let (tx, mut rx) = mpsc::channel::<()>(1);
-        let task = tokio::spawn(async move {
-            // Holds the sender until aborted, as chat_stream holds event_tx.
-            let _tx = tx;
-            tokio::time::sleep(Duration::from_secs(3600)).await;
-        });
-        register("stream-1", task.abort_handle());
+        reserve("stream-1");
+        assert!(spawn("stream-1", endless(tx)));
 
         let result = cancel_stream(serde_json::json!({ "id": "stream-1" }))
             .await
             .unwrap();
         assert_eq!(result, serde_json::json!({ "cancelled": true }));
+        assert!(closed(&mut rx).await, "the stream task kept running");
+    }
 
-        // The task's sender is dropped once it's aborted.
-        let closed = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await;
-        assert!(matches!(closed, Ok(None)), "the stream task kept running");
+    #[tokio::test]
+    async fn a_cancel_that_arrives_before_the_task_starts_still_stops_it() {
+        // The bridge reserves the id in order as the request arrives; the
+        // cancel can then be handled before the stream's own task spawns.
+        let (tx, mut rx) = mpsc::channel::<()>(1);
+        reserve("stream-early");
+        let result = cancel_stream(serde_json::json!({ "id": "stream-early" }))
+            .await
+            .unwrap();
+        assert_eq!(result, serde_json::json!({ "cancelled": true }));
+
+        assert!(!spawn("stream-early", endless(tx)), "a cancelled stream was started");
+        assert!(closed(&mut rx).await);
+        finish("stream-early");
     }
 
     #[tokio::test]
     async fn cancel_stream_reports_an_unknown_or_finished_stream() {
-        let task = tokio::spawn(async {});
-        register("stream-2", task.abort_handle());
+        let (tx, _rx) = mpsc::channel::<()>(1);
+        reserve("stream-2");
+        assert!(spawn("stream-2", endless(tx)));
         finish("stream-2");
         let result = cancel_stream(serde_json::json!({ "id": "stream-2" }))
             .await
@@ -91,6 +116,17 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(unknown, serde_json::json!({ "cancelled": false }));
+    }
+
+    #[tokio::test]
+    async fn cancel_stream_accepts_a_numeric_id() {
+        let (tx, mut rx) = mpsc::channel::<()>(1);
+        let key = stream_key(&serde_json::json!(42));
+        reserve(&key);
+        assert!(spawn(&key, endless(tx)));
+        let result = cancel_stream(serde_json::json!({ "id": 42 })).await.unwrap();
+        assert_eq!(result, serde_json::json!({ "cancelled": true }));
+        assert!(closed(&mut rx).await);
     }
 
     #[tokio::test]

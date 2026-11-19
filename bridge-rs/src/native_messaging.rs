@@ -457,3 +457,61 @@ async fn handle_streaming_rpc(
         }
     }
 }
+
+#[cfg(test)]
+mod stream_cancel_tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn chat_stream_message(id: &str) -> IncomingMessage {
+        IncomingMessage {
+            msg_type: "rpc".to_string(),
+            id: Some(serde_json::json!(id)),
+            method: Some("llm.chat_stream".to_string()),
+            params: serde_json::json!({
+                "model": "ollama:never-called",
+                "messages": [{ "role": "user", "content": "hi" }],
+            }),
+            result: None,
+            error: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_cancel_handled_before_the_stream_task_starts_stops_the_stream() {
+        // The read loop notes the stream in arrival order; the cancel that
+        // follows it can then run before the stream's handler does.
+        let msg = chat_stream_message("early-cancel");
+        note_incoming_stream(&msg);
+        let cancelled = llm::cancel_stream(serde_json::json!({ "id": "early-cancel" }))
+            .await
+            .unwrap();
+        assert_eq!(cancelled, serde_json::json!({ "cancelled": true }));
+
+        let (writer, mut out) = MessageWriter::new();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            handle_streaming_rpc(msg.id.clone().unwrap(), "llm.chat_stream".to_string(), msg.params, Arc::new(writer)),
+        )
+        .await
+        .expect("the cancelled stream kept running");
+        assert!(out.try_recv().is_err(), "a cancelled stream still sent events");
+
+        // Nothing is left behind for that id.
+        let again = llm::cancel_stream(serde_json::json!({ "id": "early-cancel" }))
+            .await
+            .unwrap();
+        assert_eq!(again, serde_json::json!({ "cancelled": false }));
+    }
+
+    #[test]
+    fn only_chat_stream_requests_are_noted() {
+        let mut other = chat_stream_message("not-a-stream");
+        other.method = Some("llm.chat".to_string());
+        note_incoming_stream(&other);
+        assert!(!llm::is_stream_known("not-a-stream"));
+        note_incoming_stream(&chat_stream_message("a-stream"));
+        assert!(llm::is_stream_known("a-stream"));
+        llm::finish_stream("a-stream");
+    }
+}
