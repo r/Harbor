@@ -77,7 +77,7 @@ function agentFailedEvent(message: string): StreamToken {
  * the instant `send()` emits one, so this doesn't depend on how soon the
  * SDK notices the connection is done).
  *
- * Prefers the platform's `AbortSignal.any` (Firefox 136+, Chrome 116+);
+ * Prefers the platform's `AbortSignal.any` (Firefox 124+, Chrome 116+; missing in Safari before 17.4);
  * falls back to a manual combinator for any target without it. A signal
  * that's already aborted when this runs still needs to produce an
  * already-aborted result — `addEventListener('abort', ...)` alone would
