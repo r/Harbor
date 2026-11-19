@@ -16,6 +16,7 @@
  * agent-question.ts's sender check).
  */
 import { browserAPI } from './browser-compat';
+import { optionLabel } from './agent-question-label';
 
 // =============================================================================
 // Theme (kept in sync with the sidebar, same as permission-prompt.ts, but
@@ -157,7 +158,7 @@ function renderOptions(options: AgentQuestionOption[]): void {
   for (const option of options) {
     const btn = document.createElement('button');
     btn.className = `btn ${buttonClass(option.kind)}`;
-    btn.textContent = option.name;
+    btn.textContent = optionLabel(option);
     btn.addEventListener('click', async () => {
       for (const b of container.querySelectorAll('button')) (b as HTMLButtonElement).disabled = true;
       let response: { ok?: boolean } | undefined;
