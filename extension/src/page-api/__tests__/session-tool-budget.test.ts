@@ -32,6 +32,10 @@ vi.mock('../../llm/provider-registry', () => ({
   listAllProviders: vi.fn(async () => []),
   getRuntimeCapabilities: vi.fn(async () => ({})),
 }));
+vi.mock('../../policy/permissions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../policy/permissions')>()),
+  showPermissionPrompt: vi.fn(),
+}));
 
 type Listener = (port: unknown) => void;
 type Reply = { id?: string; ok: boolean; result?: unknown; error?: { code?: string; message: string } };
@@ -64,9 +68,23 @@ beforeEach(async () => {
   initializePageApi();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  const { Policy } = await import('../../policy/store');
+  Policy.__reset();
   vi.resetModules();
 });
+
+/** Load policy rules into the same module instance the background uses. */
+async function loadRules(rules: Array<Record<string, unknown>>) {
+  const { Policy } = await import('../../policy/store');
+  const { compileRule } = await import('../../policy/rules');
+  Policy.__setForTesting(rules.map(r => compileRule({ source: 'user', ...r } as never)));
+}
+
+async function clearRules() {
+  const { Policy } = await import('../../policy/store');
+  Policy.__reset();
+}
 
 function connectPort(senderUrl: string) {
   const listeners: Array<(m: unknown) => void> = [];
@@ -164,5 +182,75 @@ describe('a session tool budget', () => {
     expect(reply.ok).toBe(false);
     expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
     expect(host.callTool).not.toHaveBeenCalled();
+  });
+
+  it('does not spend the budget on a call a policy deny rule refuses', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+
+    await loadRules([{ id: 'no-tools', effect: 'deny', principal: { origin: '*' }, action: 'tool.call' }]);
+    const refused = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(refused.ok).toBe(false);
+    expect(host.callTool).not.toHaveBeenCalled();
+
+    await clearRules();
+    const allowed = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(allowed.ok, allowed.error?.message).toBe(true);
+    expect(host.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not spend the budget on a call whose prompt the person declines', async () => {
+    const { showPermissionPrompt } = await import('../../policy/permissions');
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+
+    await loadRules([{ id: 'ask-tools', effect: 'ask', principal: { origin: '*' }, action: 'tool.call' }]);
+    vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: false } as never);
+    const refused = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(refused.ok).toBe(false);
+    expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
+    expect(host.callTool).not.toHaveBeenCalled();
+
+    await clearRules();
+    const allowed = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(allowed.ok, allowed.error?.message).toBe(true);
+    expect(host.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not prompt for a call the spent budget already refuses', async () => {
+    const { showPermissionPrompt } = await import('../../policy/permissions');
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 0);
+
+    await loadRules([{ id: 'ask-tools', effect: 'ask', principal: { origin: '*' }, action: 'tool.call' }]);
+    const reply = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(reply.error?.code).toBe('ERR_BUDGET_EXCEEDED');
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+    expect(host.callTool).not.toHaveBeenCalled();
+  });
+
+  it('counts a call whose tool runs and fails', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+
+    host.callTool.mockResolvedValueOnce({ ok: false, error: 'clock broke' });
+    const failed = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(failed.error?.code).toBe('ERR_TOOL_FAILED');
+
+    const next = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(next.error?.code).toBe('ERR_BUDGET_EXCEEDED');
+    expect(host.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs no more than the budget when calls arrive in parallel', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 2);
+
+    const replies = await Promise.all(
+      Array.from({ length: 5 }, () => request('agent.tools.call', { tool: TOOL, args: {}, sessionId })),
+    );
+    expect(replies.filter(r => r.ok)).toHaveLength(2);
+    expect(replies.filter(r => r.error?.code === 'ERR_BUDGET_EXCEEDED')).toHaveLength(3);
+    expect(host.callTool).toHaveBeenCalledTimes(2);
   });
 });
