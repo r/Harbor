@@ -66,7 +66,7 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
     const toolsResult = await harborRequest<{ tools: Array<{ serverId: string; name: string }> }>('mcp.listTools', {
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
     const found = toolsResult.tools.find(t => t.name === tool);
     if (!found) {
       return errorResponse(ctx.id, 'ERR_TOOL_NOT_FOUND', `Tool ${tool} not found`);

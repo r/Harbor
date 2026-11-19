@@ -171,17 +171,28 @@ export function harborStreamRequest(
   // Aborts on cancel() or the caller's signal, so a prompt the page stopped
   // waiting for during Harbor's policy check never reaches the model.
   const controller = new AbortController();
+  const onCallerAbort = () => controller.abort();
   if (signal?.aborted) controller.abort();
-  else signal?.addEventListener('abort', () => controller.abort(), { once: true });
+  else signal?.addEventListener('abort', onCallerAbort, { once: true });
+  const release = () => signal?.removeEventListener('abort', onCallerAbort);
 
-  const generator = streamLlmChat(payload, requestId, controller.signal);
+  const inner = streamLlmChat(payload, requestId, controller.signal);
+  async function* tracked(): AsyncGenerator<StreamEvent> {
+    try {
+      yield* inner as AsyncGenerator<StreamEvent>;
+    } finally {
+      release();
+    }
+  }
+  const generator = tracked();
   const stream: AsyncIterable<StreamEvent> = {
     [Symbol.asyncIterator]() {
-      return generator as unknown as AsyncIterator<StreamEvent>;
+      return generator;
     },
   };
   const cancel = () => {
     controller.abort();
+    release();
     void generator.return(undefined);
   };
   return { stream, cancel };
