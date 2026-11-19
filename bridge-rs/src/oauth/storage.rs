@@ -46,15 +46,14 @@ impl TokenStore {
     
     /// Get the path to the token file.
     fn get_token_path() -> Result<PathBuf, String> {
-        let home = dirs::home_dir().ok_or("Could not find home directory")?;
-        let harbor_dir = home.join(".harbor");
-        
+        let harbor_dir = crate::paths::harbor_dir();
+
         // Create directory if it doesn't exist
         if !harbor_dir.exists() {
             fs::create_dir_all(&harbor_dir)
                 .map_err(|e| format!("Failed to create .harbor directory: {}", e))?;
         }
-        
+
         Ok(harbor_dir.join(TOKEN_FILE_NAME))
     }
     

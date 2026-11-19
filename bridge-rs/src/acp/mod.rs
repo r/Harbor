@@ -31,11 +31,13 @@ pub mod config;
 
 use std::collections::HashMap;
 use std::io;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -45,6 +47,16 @@ use config::AcpConfig;
 
 /// Maximum number of agent processes the bridge will run at once.
 const MAX_LIVE_AGENTS: usize = 8;
+
+/// Maximum byte length of `acp.open`'s `workspace` string (a site origin).
+/// Generous for any real origin; just a sanity bound against a page sending
+/// something absurd before it ever reaches a filesystem call.
+const MAX_WORKSPACE_BYTES: usize = 2048;
+
+/// `<harbor data dir>/acp/workspaces/<hex>` is each site's agent working
+/// directory. Kept under `acp/` so it doesn't share a namespace with any
+/// other per-agent state the bridge might keep in the data dir later.
+const WORKSPACES_SUBDIRS: [&str; 2] = ["acp", "workspaces"];
 
 /// Maximum serialized size of a single `acp.send` message written to an
 /// agent's stdin. Chosen as a generous but bounded limit for ACP payloads
@@ -180,6 +192,67 @@ fn truncate(s: &str, max: usize) -> String {
     } else {
         format!("{}... [truncated, {} bytes total]", &s[..max], s.len())
     }
+}
+
+// =============================================================================
+// Per-site workspace directories
+// =============================================================================
+
+/// Validates `acp.open`'s `workspace` param: required, a non-empty string of
+/// at most `MAX_WORKSPACE_BYTES` bytes. Returns the owned string on success,
+/// or a human-readable message (used as a fatal stream error, the same as a
+/// missing/unknown `agentId`) on failure. This is the only place `workspace`
+/// is read as a string; after this it is only ever hashed (see
+/// `workspace_dir`), never used as a path component.
+fn validate_workspace(params: &Value) -> Result<String, String> {
+    match params.get("workspace").and_then(|v| v.as_str()) {
+        None => Err("workspace is required".to_string()),
+        Some(s) if s.is_empty() => Err("workspace must not be empty".to_string()),
+        Some(s) if s.len() > MAX_WORKSPACE_BYTES => Err(format!(
+            "workspace exceeds the {} byte limit",
+            MAX_WORKSPACE_BYTES
+        )),
+        Some(s) => Ok(s.to_string()),
+    }
+}
+
+/// Lowercase hex SHA-256 of `workspace`. The only thing derived from the raw
+/// string that ever reaches the filesystem: `../`, path separators, NUL
+/// bytes etc. in `workspace` end up inside this digest, never as literal
+/// path components, so they can't escape `workspaces/`.
+fn workspace_hash(workspace: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(workspace.as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
+}
+
+/// Derives, creates (recursively, mode 0700 on unix) and canonicalizes the
+/// working directory for `workspace`: `<harbor_dir>/acp/workspaces/<hash>`.
+/// Left alone if it already exists - the same site gets the same directory,
+/// and whatever its agent wrote there, across runs and bridge restarts.
+fn workspace_dir_under(harbor_dir: &Path, workspace: &str) -> io::Result<PathBuf> {
+    let mut dir = harbor_dir.to_path_buf();
+    for part in WORKSPACES_SUBDIRS {
+        dir.push(part);
+    }
+    dir.push(workspace_hash(workspace));
+
+    std::fs::create_dir_all(&dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    dir.canonicalize()
+}
+
+/// `workspace_dir_under`, rooted at the real Harbor data directory.
+fn workspace_dir(workspace: &str) -> io::Result<PathBuf> {
+    workspace_dir_under(&crate::paths::harbor_dir(), workspace)
 }
 
 // =============================================================================
@@ -442,18 +515,20 @@ pub async fn shutdown_all() {
 // Streaming RPC: acp.open
 // =============================================================================
 
-/// `acp.open {agentId}`. Streaming method: never sends an `rpc_response`,
-/// only `stream` events on the calling request's id. The first event is
-/// `{"type":"open","channel":<id>}` carrying the opaque channel used by
-/// subsequent `acp.send` / `acp.close` calls. Each agent stdout line becomes
-/// `{"type":"message","message":<parsed JSON>}`. A non-JSON or non-UTF-8
-/// line is dropped (logged, not forwarded) and reading continues. An
-/// oversized line is dropped with `{"type":"error",...}` instead of a
-/// `message` event, and reading continues. The stream ends with
-/// `{"type":"exit","code":<code or null>}` when the process (and its whole
-/// process group) exits, or an `{"type":"error","fatal":true,...}` for
-/// failures that never produced a channel (unknown agent, process cap,
-/// spawn failure).
+/// `acp.open {agentId, workspace}`. Streaming method: never sends an
+/// `rpc_response`, only `stream` events on the calling request's id. The
+/// first event is `{"type":"open","channel":<id>,"cwd":<path>}` carrying the
+/// opaque channel used by subsequent `acp.send` / `acp.close` calls, and the
+/// canonical path of the site's working directory (see `workspace_dir`).
+/// Each agent stdout line becomes `{"type":"message","message":<parsed
+/// JSON>}`. A non-JSON or non-UTF-8 line is dropped (logged, not forwarded)
+/// and reading continues. An oversized line is dropped with
+/// `{"type":"error",...}` instead of a `message` event, and reading
+/// continues. The stream ends with `{"type":"exit","code":<code or null>}`
+/// when the process (and its whole process group) exits, or an
+/// `{"type":"error","fatal":true,...}` for failures that never produced a
+/// channel (missing/invalid `workspace`, unknown agent, process cap, a
+/// failure preparing the workspace directory, spawn failure).
 pub async fn open_stream(params: Value, event_tx: mpsc::Sender<Value>) {
     open_stream_with_config(params, event_tx, AcpConfig::load()).await
 }
@@ -463,6 +538,14 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
         Some(s) => s.to_string(),
         None => {
             send_fatal(&event_tx, "agentId is required").await;
+            return;
+        }
+    };
+
+    let workspace = match validate_workspace(&params) {
+        Ok(w) => w,
+        Err(message) => {
+            send_fatal(&event_tx, &message).await;
             return;
         }
     };
@@ -485,11 +568,24 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
         }
     }
 
+    let cwd = match workspace_dir(&workspace) {
+        Ok(dir) => dir,
+        Err(e) => {
+            send_fatal(
+                &event_tx,
+                &format!("failed to prepare workspace directory: {}", e),
+            )
+            .await;
+            return;
+        }
+    };
+
     let mut command = Command::new(&agent.command);
     command
         .args(&agent.args)
         .env_clear()
         .envs(agent_env(std::env::vars_os(), &agent.env))
+        .current_dir(&cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -547,7 +643,11 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
     }
 
     if event_tx
-        .send(json!({ "type": "open", "channel": channel }))
+        .send(json!({
+            "type": "open",
+            "channel": channel,
+            "cwd": cwd.to_string_lossy(),
+        }))
         .await
         .is_err()
     {

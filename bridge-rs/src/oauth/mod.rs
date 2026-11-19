@@ -109,8 +109,7 @@ lazy_static::lazy_static! {
 
 /// Get the path to the credentials file.
 fn credentials_file_path() -> std::path::PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    home.join(".harbor").join("oauth_credentials.json")
+    crate::paths::harbor_dir().join("oauth_credentials.json")
 }
 
 /// Load credentials from the credentials file.
