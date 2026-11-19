@@ -452,9 +452,12 @@ function readPermissionOrigin(p: Record<string, unknown>): string | null {
   return typeof p.origin === 'string' && p.origin ? p.origin : null;
 }
 
-/** A bare site origin (scheme, host, port), as agents are registered under. */
+/**
+ * A bare site origin (scheme, host, port), as agents are registered under.
+ * No commas: the prompt carries the sites as a comma-separated list.
+ */
 function isSiteOrigin(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
+  if (typeof value !== 'string' || value.includes(',')) return false;
   try {
     return new URL(value).origin === value;
   } catch {

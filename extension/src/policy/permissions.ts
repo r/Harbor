@@ -789,7 +789,8 @@ export async function requestPermissions(
     );
     // Granted only if every site asked for is now reachable.
     const now = new Set(result.agentOrigins ?? []);
-    return { ...result, granted: agentOrigins.every((site) => now.has(site)) };
+    const sitesAskedFor = wantsAgentOrigins ? agentOrigins : [];
+    return { ...result, granted: sitesAskedFor.every((site) => now.has(site)) };
   } else if (promptResult.explicitDeny) {
     // Only store denial if user explicitly clicked deny (not just dismissed or window failed)
     return denyPermissions(origin, askScopes, missingTargets);

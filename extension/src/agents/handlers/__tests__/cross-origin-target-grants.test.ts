@@ -12,6 +12,9 @@ import type { TransportResponse } from '../../types';
 type PromptCall = { origin: string; scopes: string[]; agentOrigins?: string[] };
 const prompts: PromptCall[] = [];
 let promptAnswer: (call: PromptCall) => boolean = () => true;
+// Which sites the prompt answers for. The real prompt page echoes the sites
+// it showed; a merged prompt can show a different list.
+let promptSites: (call: PromptCall) => string[] | undefined = (call) => call.agentOrigins;
 vi.mock('../../../policy/permissions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../policy/permissions')>()),
   showPermissionPrompt: vi.fn(
@@ -26,7 +29,7 @@ vi.mock('../../../policy/permissions', async (importOriginal) => ({
       const call = { origin, scopes, agentOrigins };
       prompts.push(call);
       return promptAnswer(call)
-        ? { granted: true, grantType: 'granted-always' as const, agentOrigins }
+        ? { granted: true, grantType: 'granted-always' as const, agentOrigins: promptSites(call) }
         : { granted: false, explicitDeny: true };
     },
   ),
@@ -96,6 +99,7 @@ beforeEach(async () => {
   prompts.length = 0;
   delivered.length = 0;
   promptAnswer = () => true;
+  promptSites = (call) => call.agentOrigins;
   // Close any real prompt a previous test left open, so requests don't merge into it.
   handlePermissionPromptResponse({ granted: false });
 
@@ -137,6 +141,26 @@ describe('invoke: a grant covers only the site it was asked about', () => {
 
     expect(prompts).toHaveLength(1);
     expect(delivered).toEqual([onB, onB]);
+  });
+
+  it('refuses the call when the prompt\'s answer does not cover its site', async () => {
+    // A merged prompt answered for another site only.
+    promptSites = () => [C];
+    const response = await call(handleAgentsInvoke, 'agents.invoke', { agentId: onB, task: 't' });
+
+    expect(response.ok).toBe(false);
+    expect(delivered).toEqual([]);
+  });
+
+  it('asks about an agent on a well-known site like any other, without blocking it', async () => {
+    // The target's site is not classified as a sensitive destination: on
+    // allow, the call runs.
+    const onBank = target('https://chase.com', 'bank-agent');
+    const response = await call(handleAgentsInvoke, 'agents.invoke', { agentId: onBank, task: 't' });
+
+    expect(prompts.map((p) => p.agentOrigins)).toEqual([['https://chase.com']]);
+    expect(invokeResult(response)?.success).toBe(true);
+    expect(delivered).toEqual([onBank]);
   });
 
   it('ignores an old site-wide agents:crossOrigin grant', async () => {
@@ -226,6 +250,21 @@ describe('requestPermissions names the target sites', () => {
     expect(create).not.toHaveBeenCalled();
     create.mockRestore();
   });
+
+  it.each(['https://b.example/', 'HTTPS://B.EXAMPLE', 'https://a,b.example', 'b.example', 'null'])(
+    'rejects %s as a site without prompting',
+    async (site) => {
+      const create = vi.spyOn(chrome.windows, 'create');
+      const response = await routeExtensionApiMessage(
+        { type: 'permissions.request', payload: { origin: A, scopes: ['agents:crossOrigin'], agentOrigins: [site] } },
+        { id: 'harbor-test' },
+      );
+
+      expect(response.ok).toBe(false);
+      expect(create).not.toHaveBeenCalled();
+      create.mockRestore();
+    },
+  );
 
   it('shows and grants exactly the named sites', async () => {
     const create = vi.spyOn(chrome.windows, 'create');

@@ -265,7 +265,7 @@ export async function handleAgentsInvoke(
   const promptScope = isCrossOrigin ? 'agents:crossOrigin' : 'agents:invoke';
   if (!(await requireAction(ctx, sender, action, {
     promptAsScope: promptScope,
-    resource: targetAgent ? { server: targetAgent.id, host: targetAgent.origin } : undefined,
+    resource: targetAgent ? { server: targetAgent.id, agentOrigin: targetAgent.origin } : undefined,
     reason: `Invoke agent ${payload.agentId}: ${payload.task}`,
   }))) {
     return;
@@ -329,7 +329,7 @@ export async function handleAgentsSend(
   if (recipient && recipient.origin !== ctx.origin) {
     if (!(await requireAction(ctx, sender, 'agent.delegate.crossOrigin', {
       promptAsScope: 'agents:crossOrigin',
-      resource: { server: recipient.id, host: recipient.origin },
+      resource: { server: recipient.id, agentOrigin: recipient.origin },
       reason: `Send a message to agent ${recipient.id}`,
     }))) {
       return;
@@ -542,7 +542,7 @@ function orchestrationStepGate(ctx: RequestContext, label: string): StepGate {
       const isCrossOrigin = targetAgent !== undefined && targetAgent.origin !== ctx.origin;
       return checkAction(ctx, isCrossOrigin ? 'agent.delegate.crossOrigin' : 'agent.invoke', {
         promptAsScope: isCrossOrigin ? 'agents:crossOrigin' : 'agents:invoke',
-        resource: targetAgent ? { server: targetAgent.id, host: targetAgent.origin } : undefined,
+        resource: targetAgent ? { server: targetAgent.id, agentOrigin: targetAgent.origin } : undefined,
         reason: `${label}: invoke agent ${targetAgentId}`,
       });
     });

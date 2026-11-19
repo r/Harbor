@@ -143,7 +143,7 @@ export async function checkAction(
   // agents:crossOrigin is granted per target site, so the prompt names the
   // site and a grant must cover it. With no target site there is nothing the
   // person could allow.
-  const targetSite = scopeForPrompt === 'agents:crossOrigin' ? options.resource?.host : undefined;
+  const targetSite = scopeForPrompt === 'agents:crossOrigin' ? options.resource?.agentOrigin : undefined;
   if (scopeForPrompt === 'agents:crossOrigin' && !targetSite) {
     return denialFor(decision);
   }

@@ -4,7 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetMockBrowser } from '../../__tests__/test-setup';
+import { getMockStorage, resetMockBrowser } from '../../__tests__/test-setup';
 
 type PermissionsModule = typeof import('../permissions');
 type OriginGrantsModule = typeof import('../origin-grants');
@@ -16,7 +16,7 @@ const B = 'https://b.example';
 const C = 'https://c.example';
 
 async function allowed(target: string, tabId = 3): Promise<boolean> {
-  const outcome = await lookupOriginGrant(A, 'agent.delegate.crossOrigin', { host: target }, tabId);
+  const outcome = await lookupOriginGrant(A, 'agent.delegate.crossOrigin', { agentOrigin: target }, tabId);
   return outcome?.effect === 'allow';
 }
 
@@ -38,6 +38,20 @@ describe('per-site grants', () => {
 
     expect(await allowed(B)).toBe(true);
     expect(await allowed(C)).toBe(false);
+  });
+
+  it('ignores an old site-wide agents:crossOrigin grant', async () => {
+    // The shape older Harbor builds stored: one grant for every other site.
+    getMockStorage().local.data['harbor_origin_permissions'] = {
+      [A]: {
+        origin: A,
+        scopes: { 'agents:crossOrigin': { grant: 'granted-always', grantedAt: 1 } },
+        allowedTools: [],
+      },
+    };
+
+    expect(await allowed(B)).toBe(false);
+    expect((await permissions.getPermissionStatus(A, 3)).scopes['agents:crossOrigin']).toBe('not-granted');
   });
 
   it('allows nothing without a target site', async () => {
@@ -111,5 +125,18 @@ describe('the prompt grants only the sites it showed', () => {
 
     permissions.handlePermissionPromptResponse({ granted: true, grantType: 'granted-once' });
     expect((await result).agentOrigins ?? []).toEqual([]);
+  });
+});
+
+describe('requestPermissions', () => {
+  it('reports granted when sites come without agents:crossOrigin and the scopes are allowed', async () => {
+    const create = vi.spyOn(chrome.windows, 'create');
+    const pending = permissions.requestPermissions(A, { scopes: ['model:prompt'], agentOrigins: [B] }, 3);
+    await vi.waitFor(() => expect(create).toHaveBeenCalled());
+    permissions.handlePermissionPromptResponse({ granted: true, grantType: 'granted-once' });
+
+    const result = await pending;
+    expect(result.granted).toBe(true);
+    expect(result.agentOrigins).toEqual([]);
   });
 });

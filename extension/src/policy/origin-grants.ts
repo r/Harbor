@@ -129,7 +129,7 @@ function isStoredGrantLive(stored: StoredPermission, now: number, tabId?: number
  * For `tool.call`, this also requires the specific tool to be in the
  * origin's `allowedTools` list — the legacy semantics carries through.
  * For `agent.delegate.crossOrigin`, only the grant for the target site
- * (`resource.host`) counts.
+ * (`resource.agentOrigin`) counts.
  */
 export async function lookupOriginGrant(
   origin: string,
@@ -146,10 +146,10 @@ export async function lookupOriginGrant(
   const now = Date.now();
 
   // Reaching another site's agents is granted per target site
-  // (`resource.host`). An old site-wide `agents:crossOrigin` entry in
+  // (`resource.agentOrigin`). An old site-wide `agents:crossOrigin` entry in
   // `scopes` grants nothing, and a request with no target site gets no grant.
   if (action === 'agent.delegate.crossOrigin') {
-    const target = resource?.host;
+    const target = resource?.agentOrigin;
     const entry = target ? stored.agentOrigins?.[target] : undefined;
     if (!entry) return null;
     if (entry.grant === 'denied') return { effect: 'deny' };
