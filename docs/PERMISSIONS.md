@@ -552,6 +552,16 @@ try {
 
 Treat `ERR_BLOCKED_BY_POLICY`, `ERR_LABEL_FLOW_BLOCKED`, and `ERR_QUARANTINED` as terminal: the user has already been told, and retrying just generates noise in their activity feed.
 
+These are the policy engine's codes, and Harbor reports them as is wherever its policy check refuses a page's call:
+
+- `agent.tools.call()` and a session's `callTool()` throw them.
+- A `window.ai` text session's `prompt()` throws them, and `promptStreaming()` ends with them.
+- `agent.run()` ends with them as its `error` event, when a model call or the tool list is refused.
+
+A declined Harbor prompt is `ERR_PERMISSION_DENIED`. Any other failure keeps the call's own code (`ERR_TOOL_FAILED`, `ERR_MODEL_FAILED`, `ERR_AGENT_FAILED`), even when a tool or model returns text that looks like one of these codes.
+
+`ERR_LABEL_FLOW_BLOCKED` can't occur on a page's call yet: Harbor doesn't attach data labels to page tool calls or prompts. Handle it anyway; it's reserved for when it does.
+
 ### 6. Make pre-action reviews readable
 
 When a write-tier action triggers a preview, the user sees an `ActionPreview` rendered by Harbor. You can help that render well:
@@ -925,7 +935,7 @@ The internal change is large, but the user-facing API is similar in shape. The b
 - `agent.requestPermissions({ scopes: [...] })` is replaced by `agent.requestCapabilities({ require: [...], optional: [...] })` with typed actions.
 - `model:prompt` becomes `model.prompt.local` or `model.prompt.remote.thirdParty` — pick the right one for your use case.
 - `web:fetch` becomes `network.egress.same_origin` or `network.egress.cross_origin`, with destination-aware policy.
-- New error codes (`ERR_BLOCKED_BY_POLICY`, `ERR_LABEL_FLOW_BLOCKED`) need to be handled in your error path.
+- New error codes (`ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`, `ERR_LABEL_FLOW_BLOCKED`) need to be handled in your error path.
 
 The sample apps and the demo site demonstrate the new shape.
 

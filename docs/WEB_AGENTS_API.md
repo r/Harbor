@@ -697,7 +697,7 @@ for await (const event of window.agent.run({
 | `final` | `output` | Final response |
 | `error` | `error` (`{ code, message }`) | The run failed and is over |
 
-`agent.run()` doesn't throw when a run fails. Every failure arrives as one `error` event, after which the run ends: a refusal before it starts (for example, `ERR_PERMISSION_DENIED` without `model:prompt`), the site's permission being revoked partway through, or a model call failing (`ERR_MODEL_FAILED`).
+`agent.run()` doesn't throw when a run fails. Every failure arrives as one `error` event, after which the run ends: a refusal before it starts (for example, `ERR_PERMISSION_DENIED` without `model:prompt`), the site's permission being revoked partway through, Harbor's policy engine refusing a model call or the tool list (`ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`), or a model call failing (`ERR_MODEL_FAILED`).
 
 ---
 
@@ -1060,7 +1060,10 @@ try {
 | Code | Description |
 |------|-------------|
 | `ERR_FEATURE_DISABLED` | Feature flag is off |
-| `ERR_PERMISSION_DENIED` | User denied permission |
+| `ERR_PERMISSION_DENIED` | User denied permission, or declined Harbor's prompt for this call |
+| `ERR_BLOCKED_BY_POLICY` | A policy rule denied the call (see [PERMISSIONS.md](PERMISSIONS.md)) |
+| `ERR_QUARANTINED` | Harbor has quarantined this site; every call is refused until the user resets it |
+| `ERR_LABEL_FLOW_BLOCKED` | Reserved: the call's data labels may not flow to its destination. Not produced on page calls yet |
 | `ERR_SCOPE_REQUIRED` | Missing required scope |
 | `ERR_TOOL_NOT_FOUND` | Tool does not exist |
 | `ERR_TOOL_NOT_ALLOWED` | Tool not in allowlist |

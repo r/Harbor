@@ -972,7 +972,10 @@ All APIs use consistent error codes:
 | Code | Description |
 |------|-------------|
 | `ERR_NOT_INSTALLED` | Extension not installed |
-| `ERR_PERMISSION_DENIED` | User denied permission |
+| `ERR_PERMISSION_DENIED` | User denied permission, or declined Harbor's prompt for this call |
+| `ERR_BLOCKED_BY_POLICY` | A policy rule denied the call |
+| `ERR_QUARANTINED` | Harbor has quarantined the site |
+| `ERR_LABEL_FLOW_BLOCKED` | Reserved for data-label flow checks; not produced on page calls yet |
 | `ERR_USER_GESTURE_REQUIRED` | Needs user interaction (click) |
 | `ERR_SCOPE_REQUIRED` | Missing required permission scope |
 | `ERR_TOOL_NOT_ALLOWED` | Tool not in allowlist |

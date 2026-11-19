@@ -1498,6 +1498,9 @@ Other implementations may expose their own namespaces as needed.
 enum ApiErrorCode {
   "ERR_NOT_INSTALLED",
   "ERR_PERMISSION_DENIED",
+  "ERR_BLOCKED_BY_POLICY",
+  "ERR_QUARANTINED",
+  "ERR_LABEL_FLOW_BLOCKED",
   "ERR_USER_GESTURE_REQUIRED",
   "ERR_SCOPE_REQUIRED",
   "ERR_TOOL_NOT_ALLOWED",
@@ -2548,6 +2551,9 @@ console.log(caps.permissions.llm.prompt); // 'granted-always'
 |------|-------------|-------------|
 | `ERR_NOT_INSTALLED` | Extension not installed | Any API call without extension |
 | `ERR_PERMISSION_DENIED` | User denied permission | Permission prompt rejected |
+| `ERR_BLOCKED_BY_POLICY` | A policy rule denied the call | Tool call, prompt or `agent.run` refused by a user or organization rule |
+| `ERR_QUARANTINED` | The site is quarantined | Any gated call after Harbor's watchdog quarantined the site |
+| `ERR_LABEL_FLOW_BLOCKED` | Data labels can't flow to the destination | Reserved; not produced on page calls yet |
 | `ERR_USER_GESTURE_REQUIRED` | Needs user interaction | `activeTab.read` without gesture |
 | `ERR_SCOPE_REQUIRED` | Missing required permission | API call without required scope |
 | `ERR_TOOL_NOT_ALLOWED` | Tool not in allowlist | `tools.call` with blocked tool |
