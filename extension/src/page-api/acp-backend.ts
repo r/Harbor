@@ -19,7 +19,11 @@
  * a `ClientContext`.
  *
  * Tools: the first release offers the agent none of Harbor's or the page's
- * tools, so `AgentRunRequest.tools` is ignored here.
+ * tools, so `AgentRunRequest.tools` is ignored here. `AgentRunRequest.
+ * maxToolCalls` is ignored too: Harbor gates whether a site may use the
+ * user's agent at all, not how the agent works once it's running — there's
+ * no tool-call budget on this backend (a maintainer decision; see
+ * docs/ACP_BACKEND_DESIGN.md).
  */
 import {
   client,
@@ -45,7 +49,7 @@ import type { AgentBackend, AgentRunRequest } from './agent-backend';
 export const ACP_RUN_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** Why this backend sent `session/cancel` — decides the error a `cancelled` stopReason (or a request this backend gave up waiting on) maps to. */
-type CancelReason = 'aborted' | 'permission-denied' | 'tool-limit' | 'timeout';
+type CancelReason = 'aborted' | 'permission-denied' | 'timeout';
 
 function cancelReasonEvent(reason: CancelReason): StreamToken {
   switch (reason) {
@@ -53,8 +57,6 @@ function cancelReasonEvent(reason: CancelReason): StreamToken {
       return { type: 'error', error: { code: ErrorCodes.ABORTED, message: 'Run aborted' } };
     case 'permission-denied':
       return { type: 'error', error: { code: ErrorCodes.PERMISSION_DENIED, message: 'Permission model:prompt required' } };
-    case 'tool-limit':
-      return { type: 'error', error: { code: ErrorCodes.BUDGET_EXCEEDED, message: 'Tool call budget exceeded' } };
     case 'timeout':
       return { type: 'error', error: { code: ErrorCodes.TIMEOUT, message: 'Agent run timed out' } };
   }
@@ -270,7 +272,7 @@ export class AcpAgentBackend implements AgentBackend {
     emit: (event: StreamToken) => void,
     signal: AbortSignal,
   ): Promise<void> {
-    const { origin, tabId, task, systemPrompt, maxToolCalls } = req;
+    const { origin, tabId, task, systemPrompt } = req;
 
     const scrub = buildPathScrubber(cwd);
 
@@ -294,18 +296,6 @@ export class AcpAgentBackend implements AgentBackend {
     let cancelReason: CancelReason | null = null;
     let sessionId: string | null = null;
     let accumulatedText = '';
-    // The budget counts distinct tool calls, not every notification about
-    // one: a call is counted once, the first time its id appears, whether
-    // that's its `tool_call` or (for an id that never got one) its first
-    // `tool_call_update`. Later progress updates for the same id are free.
-    let toolCallCount = 0;
-    const countedToolCallIds = new Set<string>();
-    function countToolCall(toolCallId: string): 'ok' | 'over-budget' {
-      if (countedToolCallIds.has(toolCallId)) return 'ok';
-      countedToolCallIds.add(toolCallId);
-      toolCallCount++;
-      return toolCallCount > maxToolCalls ? 'over-budget' : 'ok';
-    }
     const toolNames = new Map<string, string>();
     const requestAbort = new AbortController();
 
@@ -377,11 +367,6 @@ export class AcpAgentBackend implements AgentBackend {
 
           if (!await hasPermission(origin, 'model:prompt', tabId)) {
             triggerCancel('permission-denied', ctx.agent);
-            return;
-          }
-          if (countToolCall(update.toolCallId) === 'over-budget') {
-            triggerCancel('tool-limit', ctx.agent);
-            return;
           }
           return;
         }
@@ -390,10 +375,6 @@ export class AcpAgentBackend implements AgentBackend {
 
           if (!await hasPermission(origin, 'model:prompt', tabId)) {
             triggerCancel('permission-denied', ctx.agent);
-            return;
-          }
-          if (countToolCall(update.toolCallId) === 'over-budget') {
-            triggerCancel('tool-limit', ctx.agent);
             return;
           }
 
@@ -456,7 +437,14 @@ export class AcpAgentBackend implements AgentBackend {
 
         const result = await ctx.request(
           AGENT_METHODS.session_prompt,
-          { sessionId: newSession.sessionId, prompt },
+          {
+            sessionId: newSession.sessionId,
+            prompt,
+            // A Harbor-aware agent can read this instead of (or alongside)
+            // the labelled text block above, which stays for agents that
+            // don't look at `_meta`.
+            _meta: { 'harbor/provenance': { source: 'website', origin } },
+          },
           { cancellationSignal: requestAbort.signal, stopWaitingOnCancel: true },
         );
         emitStopReason(result.stopReason);
