@@ -39,7 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A site that has been granted `agents:invoke` or `agents:message` is no longer asked again on every `agent.agents.invoke()` or message call. The grant now covers later calls. Calling another agent on this device changes nothing by itself, and that agent's own actions are still checked.
 - An "Allow once" grant now covers only the tab where it was given, in Harbor's policy checks as well as in the page API. Before, another tab on the same site could use it, for example to register an agent.
 - `agent.agents.orchestrate.pipeline()` and `orchestrate.route()` work from a page. Before, both always failed after the permission check, because Harbor expected a different payload than the page API sends. A pipeline now returns its last step's output as `result`, and a route returns the chosen agent's response (`success`, `result`, `error`) with `selectedAgentId` alongside.
-
 - When Harbor refuses a page's `agent.chat.open()`, the page now gets the policy engine's code (`ERR_BLOCKED_BY_POLICY`, `ERR_PERMISSION_DENIED`, `ERR_QUARANTINED`) instead of `ERR_CHAT_OPEN`, so it can tell a refusal from a failure. `agent.mcp.register()` and `unregister()` report their refusal of another origin's server as `ERR_PERMISSION_DENIED` instead of `ERR_MCP_REGISTER` / `ERR_MCP_UNREGISTER`. Other failures keep their codes.
 
 ### Removed
