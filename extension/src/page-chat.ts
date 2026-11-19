@@ -50,6 +50,7 @@ function initPageChat() {
   // Create the sidebar container
   const sidebar = document.createElement('div');
   sidebar.id = 'harbor-page-chat';
+  sidebar.className = 'hpc-open'; // the panel starts open
   sidebar.innerHTML = getSidebarHTML(isByocMode);
   document.body.appendChild(sidebar);
 
@@ -110,6 +111,7 @@ function initPageChat() {
   toggleBtn.addEventListener('click', () => {
     isOpen = !isOpen;
     panel.classList.toggle('hpc-hidden', !isOpen);
+    container.classList.toggle('hpc-open', isOpen);
     toggleBtn.title = isOpen ? 'Hide chat' : 'Show chat';
   });
 
@@ -491,6 +493,17 @@ function getSidebarCSS(): string {
     #harbor-page-chat.hpc-position-left .hpc-toggle {
       right: auto;
       left: 16px;
+    }
+
+    /* While the panel is open, keep the toggle beside it, not on top of
+       the panel's input and send button. */
+    #harbor-page-chat.hpc-open .hpc-toggle {
+      right: 400px;
+    }
+
+    #harbor-page-chat.hpc-position-left.hpc-open .hpc-toggle {
+      right: auto;
+      left: 400px;
     }
     
     .hpc-toggle {
