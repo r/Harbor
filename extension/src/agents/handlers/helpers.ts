@@ -57,6 +57,10 @@ export interface RequireActionOptions {
    * typed-action check runs.
    */
   upstreamConsent?: 'origin-grant';
+  /** Record and match `resource.host` without classifying it (see PolicyRequest.classifyHost). */
+  classifyHost?: boolean;
+  /** Mark the audit record as a page's own fetch (see AuditRecord.pageFetch). */
+  pageFetch?: boolean;
 }
 
 /**
@@ -82,6 +86,7 @@ export async function requireAction(
     reason: options.reason,
     correlationId: ctx.id,
     tabId: ctx.tabId,
+    classifyHost: options.classifyHost,
   };
   const decision = await evaluate(request);
   const proceedsOnUpstreamConsent =
@@ -94,7 +99,10 @@ export async function requireAction(
   Audit.record(
     request,
     decision,
-    proceedsOnUpstreamConsent ? { consent: options.upstreamConsent } : {},
+    {
+      ...(proceedsOnUpstreamConsent ? { consent: options.upstreamConsent } : {}),
+      ...(options.pageFetch ? { pageFetch: true as const } : {}),
+    },
   );
 
   log('requireAction decision', decision);

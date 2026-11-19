@@ -14,7 +14,8 @@
  * swappable if the agent side (extension-api.ts, background-router.ts, ...)
  * changes shape later.
  */
-import { routeExtensionApiMessage, streamLlmChat } from '../extension-api';
+import { gatePageAction, routeExtensionApiMessage, streamLlmChat } from '../extension-api';
+import type { TypedAction } from '../policy/actions';
 import { routeAgentMessage } from '../agents/background-router';
 import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
@@ -59,6 +60,32 @@ function createError(message: string, code?: string): Error & { code?: string } 
   const error = new Error(message) as Error & { code?: string };
   error.code = code ?? ErrorCodes.INTERNAL;
   return error;
+}
+
+// =============================================================================
+// Policy gate for calls the page API serves itself
+// =============================================================================
+
+/** The typed actions a page browser or tab call is checked as. */
+export type PageBrowserAction = Extract<
+  TypedAction,
+  `browser.${string}` | `network.egress.${string}`
+>;
+
+/**
+ * Check a browser or tab call with Harbor's PolicyEngine after the page API
+ * has checked the site's grant. The call is audited under the calling
+ * origin; a deny, a watchdog restriction or a rule that asks refuses it (a
+ * restriction or ask rule prompts first). Returns the refusal, or `null`
+ * when the call may proceed.
+ */
+export function checkPageAction(
+  call: { id: string; type: string; origin: string; tabId?: number },
+  action: PageBrowserAction,
+  resource?: { host?: string },
+  options: { pageFetch?: boolean } = {},
+): Promise<{ code: string; message: string } | null> {
+  return gatePageAction(call, action, resource, options);
 }
 
 // =============================================================================
