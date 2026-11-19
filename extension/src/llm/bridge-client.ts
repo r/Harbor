@@ -77,7 +77,11 @@ export async function bridgeRequest<T>(method: string, params?: unknown): Promis
 export async function* bridgeStreamRequest(
   method: string,
   params?: unknown,
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
+  // A caller that has already stopped listening never starts the stream.
+  if (signal?.aborted) return;
+
   console.log('[Harbor:BridgeClient] bridgeStreamRequest called', {
     method,
     paramsKeys: params ? Object.keys(params as Record<string, unknown>) : [],
@@ -117,6 +121,18 @@ export async function* bridgeStreamRequest(
     },
   );
 
+  // The caller stopped listening: stop the stream in the bridge and end the
+  // read now, even if it's waiting for the model's next event.
+  const onAbort = () => {
+    done = true;
+    cancel();
+    if (resolveWaiting) {
+      resolveWaiting(null);
+      resolveWaiting = null;
+    }
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
+
   // Handle completion
   streamDone
     .then(() => {
@@ -139,6 +155,7 @@ export async function* bridgeStreamRequest(
 
   try {
     while (true) {
+      if (signal?.aborted) break;
       // Check for queued events first
       if (eventQueue.length > 0) {
         const event = eventQueue.shift()!;
@@ -182,6 +199,7 @@ export async function* bridgeStreamRequest(
     }
   } finally {
     console.log('[Harbor:BridgeClient] bridgeStreamRequest cleanup', { tokenCount });
+    signal?.removeEventListener('abort', onAbort);
     cancel();
   }
 }

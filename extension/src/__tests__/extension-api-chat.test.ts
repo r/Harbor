@@ -27,7 +27,7 @@ describe('page chat request adapter', () => {
     for await (const event of streamLlmChat({ origin: 'https://page.example', messages, system: 'Be terse', tools, model: 'ollama:test', max_tokens: 20, temperature: 0.2 }, 'r1')) {
       events.push(event);
     }
-    expect(bridgeStreamRequest).toHaveBeenCalledWith('llm.chat_stream', { messages, system_prompt: 'Be terse', tools, model: 'ollama:test', max_tokens: 20, temperature: 0.2 });
+    expect(bridgeStreamRequest).toHaveBeenCalledWith('llm.chat_stream', { messages, system_prompt: 'Be terse', tools, model: 'ollama:test', max_tokens: 20, temperature: 0.2 }, undefined);
     expect(events).toEqual([{ id: 'stream1', type: 'done', finish_reason: 'stop' }]);
   });
 });

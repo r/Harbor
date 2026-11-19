@@ -35,6 +35,6 @@ Adapters hold only the description, model, tools and the pointer to the brief. P
 - the evidence destination;
 - escalation conditions.
 
-All workers read `AGENTS.md`, and the relevant parts of `docs/agent-workflow.md`, in their assigned checkout. Workers are leaves: no further delegation, tracker edits, merges, publishing, or scope expansion.
+All workers read `AGENTS.md`, and the relevant parts of `docs/agent-workflow.md`, in their assigned checkout. Workers are leaves: no further delegation, tracker edits, merges, publishing, or scope expansion. Flaws they notice outside their unit are reported with evidence, so the coordinator can fold them in under the workflow's [leave-it-better rule](../../docs/agent-workflow.md#leave-it-better-than-you-found-it). Builders may fix small ones inside their own files and report each one.
 
 Return the outcome first, then the exact SHA and dirty state, changed files, check receipts, limitations, and any owned resources still running. Missing evidence is reported, not inferred. The coordinator reviews every diff, and owns Linear, integration, publication and the handoff to the maintainer's merge decision.

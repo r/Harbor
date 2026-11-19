@@ -24,7 +24,7 @@ export async function handleToolsList(ctx: RequestContext): HandlerResponse {
     const result = await harborRequest<{ tools: unknown[] }>('mcp.listTools', {
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
     return successResponse(ctx.id, result.tools);
   } catch (e) {
     return errorResponse(
@@ -66,7 +66,7 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
     const toolsResult = await harborRequest<{ tools: Array<{ serverId: string; name: string }> }>('mcp.listTools', {
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
     const found = toolsResult.tools.find(t => t.name === tool);
     if (!found) {
       return errorResponse(ctx.id, 'ERR_TOOL_NOT_FOUND', `Tool ${tool} not found`);
@@ -87,7 +87,7 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
       toolName,
       args: args || {},
       ...(sessionId !== undefined ? { sessionId } : {}),
-    });
+    }, { signal: ctx.signal });
     return successResponse(ctx.id, result.result);
   } catch (e) {
     // Harbor's own refusals (the policy gate, the session's budget) carry

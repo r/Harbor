@@ -22,7 +22,7 @@ export async function handleMcpDiscover(ctx: RequestContext): HandlerResponse {
         tools?: string[];
         transport?: string;
       }>;
-    }>('agent.mcp.discover', { origin: ctx.origin });
+    }>('agent.mcp.discover', { origin: ctx.origin }, { signal: ctx.signal });
     return successResponse(ctx.id, result.servers || []);
   } catch (e) {
     return errorResponse(
@@ -58,7 +58,7 @@ export async function handleMcpRegister(ctx: RequestContext): HandlerResponse {
       description,
       tools,
       transport,
-    });
+    }, { signal: ctx.signal });
     return successResponse(ctx.id, result);
   } catch (e) {
     return errorResponse(
@@ -80,7 +80,7 @@ export async function handleMcpUnregister(ctx: RequestContext): HandlerResponse 
     const result = await harborRequest<{ success: boolean }>('agent.mcp.unregister', {
       origin: ctx.origin,
       serverId,
-    });
+    }, { signal: ctx.signal });
     return successResponse(ctx.id, result);
   } catch (e) {
     return errorResponse(

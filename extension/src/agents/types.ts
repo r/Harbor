@@ -20,6 +20,8 @@ export type ApiErrorCode =
   | 'ERR_NOT_IMPLEMENTED'
   | 'ERR_SESSION_NOT_FOUND'
   | 'ERR_TIMEOUT'
+  // The caller stopped waiting while Harbor's policy check ran.
+  | 'ERR_ABORTED'
   | 'ERR_INTERNAL'
   // Typed-permission decisions surface these.
   | 'ERR_BLOCKED_BY_POLICY'
