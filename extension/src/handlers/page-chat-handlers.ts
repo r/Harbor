@@ -11,11 +11,10 @@
  */
 
 import { bridgeChat } from '../llm/chat';
-import { modelForPrompt } from '../llm/prompt-model';
+import { promptActionForPrompt } from '../llm/prompt-model';
 import { getActiveChat } from '../agents/handlers/chat';
 import { requireAction } from '../agents/handlers/helpers';
 import type { RequestContext, ResponseSender } from '../agents/handlers/router-types';
-import { promptActionForModel } from '../policy/actions';
 import { registerHandler } from './types';
 
 type ChatReply = (response: Record<string, unknown> & { ok: boolean }) => void;
@@ -85,7 +84,7 @@ export function registerPageChatHandlers(): void {
           sendStreamEvent: () => {},
         };
         // The chat names no model, so it runs on the bridge's default.
-        const action = promptActionForModel(await modelForPrompt(undefined));
+        const action = await promptActionForPrompt(undefined);
         if (!(await requireAction(ctx, policySender, action, {
           reason: 'Send a message from this page\'s chat to your model',
         }))) {

@@ -14,7 +14,8 @@ const bridge = vi.hoisted(() => ({ chat: vi.fn(), stream: vi.fn() }));
 
 vi.mock('../../llm/chat', () => ({ bridgeChat: bridge.chat }));
 vi.mock('../../llm/bridge-client', () => ({
-  bridgeRequest: vi.fn(async () => ({ default_model: 'ollama:test' })),
+  bridgeRequest: vi.fn(async (method: string, params?: unknown) =>
+    method === 'llm.model_locality' ? { is_local: (params as { model?: string } | undefined)?.model?.startsWith('ollama:') === true } : { default_model: 'ollama:test' }),
   bridgeStreamRequest: bridge.stream,
   getBridgeConnectionState: vi.fn(() => ({ connected: true, bridgeReady: true, error: undefined })),
   checkBridgeHealth: vi.fn(async () => true),

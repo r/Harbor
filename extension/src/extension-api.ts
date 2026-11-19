@@ -9,7 +9,7 @@
  */
 
 import { bridgeChat, type BridgeChatRequest } from './llm/chat';
-import { modelForPrompt } from './llm/prompt-model';
+import { promptActionForPrompt } from './llm/prompt-model';
 import { browserAPI } from './browser-compat';
 import { bridgeRequest, bridgeStreamRequest } from './llm/bridge-client';
 import { listServersWithStatus, callTool, listTools } from './mcp/host';
@@ -22,7 +22,7 @@ import { simulate, replay } from './policy/simulator';
 import { Watchdog } from './policy/watchdog';
 import { requireAction } from './agents/handlers/helpers';
 import type { RequestContext, ResponseSender } from './agents/handlers/router-types';
-import { promptActionForModel, type TypedAction } from './policy/actions';
+import { type TypedAction } from './policy/actions';
 import type { PolicyResource } from './policy/engine';
 import { getPermissionStatus, requestPermissions, SCOPE_DESCRIPTIONS } from './policy/permissions';
 import type { PermissionScope } from './agents/types';
@@ -634,7 +634,7 @@ const BROWSER_CAPABILITY_ACTIONS: Record<'read' | 'interact' | 'screenshot', Typ
 };
 
 async function promptCheck(model: unknown): Promise<PageCheck> {
-  return { action: promptActionForModel(await modelForPrompt(model)) };
+  return { action: await promptActionForPrompt(model) };
 }
 
 const PAGE_GATES: Partial<

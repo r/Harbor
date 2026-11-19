@@ -18,7 +18,8 @@ vi.mock('../../llm/chat', () => ({ bridgeChat: (...args: unknown[]) => bridgeCha
 let defaultModel: string | null = 'openai:gpt-test';
 let bridgeConfigUnavailable = false;
 vi.mock('../../llm/bridge-client', () => ({
-  bridgeRequest: vi.fn(async (method: string) => {
+  bridgeRequest: vi.fn(async (method: string, params?: unknown) => {
+    if (method === 'llm.model_locality') return { is_local: (params as { model?: string } | undefined)?.model?.startsWith('ollama:') === true };
     if (method === 'llm.get_config') {
       if (bridgeConfigUnavailable) throw new Error('bridge not connected');
       return { default_model: defaultModel };

@@ -39,7 +39,12 @@ beforeEach(() => {
   setOriginGrantResolver(() => null);
   setWatchdogResolver(() => ({ status: 'normal' }));
   Policy.__reset();
-  vi.mocked(bridgeRequest).mockResolvedValue({ choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], model: 'ollama:test' });
+  // The bridge reports Ollama models as local, as llm.model_locality does.
+  vi.mocked(bridgeRequest).mockImplementation(async (method: string, params?: unknown) =>
+    method === 'llm.model_locality'
+      ? { is_local: (params as { model?: string } | undefined)?.model?.startsWith('ollama:') === true }
+      : { choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], model: 'ollama:test' },
+  );
   vi.mocked(callTool).mockResolvedValue({ ok: true, result: 'tick' } as never);
 });
 afterEach(() => {
@@ -297,7 +302,8 @@ describe('a prompt that names no model is classified by the model the bridge wil
   const chatReply = { choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], model: 'x' };
   /** The bridge answers llm.get_config with its resolved default, as `get_configuration` does. */
   const bridgeDefault = (defaultModel: string | null | Error) =>
-    vi.mocked(bridgeRequest).mockImplementation(async (method: string) => {
+    vi.mocked(bridgeRequest).mockImplementation(async (method: string, params?: unknown) => {
+      if (method === 'llm.model_locality') return { is_local: (params as { model?: string } | undefined)?.model?.startsWith('ollama:') === true } as never;
       if (method !== 'llm.get_config') return chatReply as never;
       if (defaultModel instanceof Error) throw defaultModel;
       return { default_model: defaultModel, providers: {} } as never;
@@ -334,7 +340,7 @@ describe('a prompt that names no model is classified by the model the bridge wil
     expect(actions()).toEqual(['model.prompt.remote.firstParty', 'model.prompt.remote.firstParty']);
   });
 
-  it('does not ask the bridge when the prompt names a model', async () => {
+  it("doesn't ask the bridge for its default model when the prompt names one", async () => {
     bridgeDefault('openai:gpt-x');
     await chat({ model: 'ollama:test' });
     expect(actions()).toEqual(['model.prompt.local']);
