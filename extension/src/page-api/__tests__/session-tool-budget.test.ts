@@ -312,4 +312,11 @@ describe('a session tool budget', () => {
     expectPolicyRefusal(refused, 'ERR_QUARANTINED');
     expect(host.callTool).not.toHaveBeenCalled();
   });
+
+  it('reports a tool failure that carries its own code as ERR_TOOL_FAILED', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    host.callTool.mockRejectedValueOnce(Object.assign(new Error('transport broke'), { code: 'ERR_QUARANTINED' }));
+    const reply = await request('agent.tools.call', { tool: TOOL, args: {} });
+    expect(reply.error).toEqual({ code: 'ERR_TOOL_FAILED', message: 'transport broke' });
+  });
 });

@@ -90,12 +90,25 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
     return successResponse(ctx.id, result.result);
   } catch (e) {
     // Harbor's own refusals (the policy gate, the session's budget) carry
-    // their page-facing code. Anything else, whatever its message, is the
-    // tool failing.
+    // their page-facing code. Anything else, whatever its message or code, is
+    // the tool failing.
     const code = (e as { code?: unknown }).code;
-    if (typeof code === 'string' && code !== ErrorCodes.INTERNAL) {
+    if (typeof code === 'string' && HARBOR_REFUSAL_CODES.has(code)) {
       return errorResponse(ctx.id, code, (e as Error).message);
     }
     return errorResponse(ctx.id, 'ERR_TOOL_FAILED', e instanceof Error ? e.message : 'Tool call failed');
   }
 }
+
+/**
+ * The refusals Harbor reports on a page's tool call, as docs/PERMISSIONS.md
+ * lists them: the policy engine's, and the session's.
+ */
+const HARBOR_REFUSAL_CODES: ReadonlySet<string> = new Set([
+  ErrorCodes.PERMISSION_DENIED,
+  'ERR_BLOCKED_BY_POLICY',
+  'ERR_QUARANTINED',
+  'ERR_LABEL_FLOW_BLOCKED',
+  ErrorCodes.SESSION_NOT_FOUND,
+  ErrorCodes.BUDGET_EXCEEDED,
+]);
