@@ -38,7 +38,7 @@ The system is **provider-agnostic**: permissions are expressed in terms of *effe
 
 Every API call from a website goes through a single chokepoint: the **PolicyEngine**. The engine answers one question per call:
 
-> Given this **principal** (origin + session), this typed **action** (`model.prompt.remote`, `tool.call`, `network.egress.cross_origin`, …), this **resource** (a tool, a URL, an element, a data label set), and this **context** (watchdog state, time, user gesture) — should this action be allowed, denied, previewed, or asked about?
+> Given this **principal** (origin, and whether the caller is a subagent), this typed **action** (`model.prompt.remote`, `tool.call`, `network.egress.cross_origin`, …), this **resource** (a tool, a URL, an element, a data label set), and this **context** (watchdog state, time, user gesture) — should this action be allowed, denied, previewed, or asked about?
 
 It answers by walking a **tier ladder**, top to bottom, returning the first decisive answer.
 
@@ -256,15 +256,15 @@ Sensitivity gates cannot be turned off site-by-site through ordinary "Allow alwa
 A **session** is origin-bound state for a task: the capabilities it requested, its limits (`maxToolCalls`, TTL), its history, and its usage so far. Each session is bound to:
 
 - An origin (the requesting site)
-- The set of typed actions it was granted when it was created
+- The capabilities it asked for: model access, a list of tools, browser access
 
-A session never holds more authority than its origin was granted. Authority comes from the origin's grants — the permission prompt, `agent.requestPermissions`, per-tool allowlists — checked against the policy engine's tiers on every call. The session's own list of granted actions is enforced by Harbor's page script, not the background, so a page can always use what its origin was granted. Treat the origin's grants as the boundary.
+Authority comes from the origin's grants — the permission prompt, `agent.requestPermissions`, per-tool allowlists — checked against the policy engine's tiers on every call. The engine sees the origin and the action, not the session. Harbor's background also refuses a prompt on a session that didn't ask for model access. The session's tool list and browser access are kept only by Harbor's page script, so a page can always use what its origin was granted. Treat the origin's grants as the boundary.
 
-Session tool budgets are enforced in the background: `SessionRegistry.recordToolCall` counts each `callTool()` against the session's `maxToolCalls`, and calls past the budget fail with `ERR_BUDGET_EXCEEDED` without running the tool. Calls refused for permission or allowlist reasons don't count against the budget.
+Session tool budgets are enforced in the background: `SessionRegistry.recordToolCall` counts each `callTool()` against the session's `maxToolCalls`, and calls past the budget fail with `ERR_BUDGET_EXCEEDED` without running the tool. A call refused by the page-side permission or allowlist check doesn't count against the budget; a call that reaches the policy engine and is refused there does.
 
 ### Getting more authority later
 
-A session only ever holds the actions it was granted. There's no in-place upgrade: when a site needs more than its current session allows — say, write access it didn't ask for up front — it calls `agent.requestCapabilities()` again for a new session scoped to exactly the additional actions, with its own `reason`. The user sees a fresh, narrowly scoped prompt; the original session keeps working with what it already had. Terminate a session when you're done with it so its authority goes away.
+There's no in-place upgrade: when a site needs more than its current session asked for — say, write access — it gets the origin grant it needs (`agent.requestPermissions()` shows the prompt) and calls `agent.requestCapabilities()` again for a new session. `requestCapabilities()` itself never prompts; without the grant it fails. The original session keeps working with what it already had. Terminate a session when you're done with it.
 
 ## The Watchdog
 
@@ -306,7 +306,6 @@ Every PolicyEngine decision — whether it prompted, auto-allowed, denied, or do
 {
   ts: 1699999999000,
   origin: "https://example.com",
-  sessionId: "sess_abc",
   action: "tool.call",
   resource: { tool_server: "github", tool_name: "create_issue" },
   inputLabels: ["confidential"],
@@ -394,7 +393,7 @@ const session = await agent.requestCapabilities({
   reason: 'Read this page, draft a fix, and optionally apply it if you approve.',
 });
 
-// session.granted lists what was granted (may be a subset of `require + optional`).
+// session.capabilities lists what the session got (may be a subset of `require + optional`).
 // The session object only exposes those; the engine checks the origin's grants.
 ```
 
@@ -455,7 +454,7 @@ Some scope combinations are common enough that the prompt batches them as a sing
 
 Create your session with only the actions you need right away, and request a new, additionally-scoped session when the user explicitly takes an action that needs more — for example, clicking "Apply." This is the same shape Cursor and Claude Code use, and it gives the user a natural moment to grant write authority.
 
-A session's granted actions don't widen in place: call `agent.requestCapabilities()` again for a new session scoped to the new actions. The user gets a new prompt that names the additional authority — that's the "natural moment" for a re-grant, and it keeps the audit log honest about which session was acting when.
+A session doesn't widen in place. Ask for the new grant with `agent.requestPermissions()` — the user gets a prompt that names the additional authority, at a natural moment — then call `agent.requestCapabilities()` again for a new session.
 
 ```ts
 const readSession = await agent.requestCapabilities({
@@ -467,9 +466,10 @@ const readSession = await agent.requestCapabilities({
   ],
 });
 
-// Later, when the user clicks "Apply suggested edit", request a new
-// session with write authority. The user sees a fresh prompt scoped
-// to exactly the new actions.
+// Later, when the user clicks "Apply suggested edit", ask for write
+// authority (the user sees a prompt for just this), then request a
+// new session.
+await agent.requestPermissions({ scopes: ['browser:activeTab.interact'] });
 const writeSession = await agent.requestCapabilities({
   name: 'Apply suggested edit',
   require: [

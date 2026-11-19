@@ -124,7 +124,7 @@ for await (const ev of window.agent.run({
     <h2 id="permissions">Permission model</h2>
     <p>
       Every API call goes through a single chokepoint — the <strong>PolicyEngine</strong>
-      — which evaluates the call against a 9-tier ladder of checks. The full
+      — which evaluates the call against a tiered ladder of checks. The full
       design lives in <a class="link" href="https://github.com/r/harbor/blob/main/docs/PERMISSIONS.md" target="_blank" rel="noopener">docs/PERMISSIONS.md</a>;
       the short version is below.
     </p>
@@ -155,14 +155,13 @@ for await (const ev of window.agent.run({
     <h3>Sessions</h3>
     <p>
       An agent operates inside a <strong>session</strong>: origin-bound state
-      for a task, carrying the <code>allowedActions</code> set it was granted,
-      explicit limits (tool calls, TTL), its history, and its usage. A
-      session never holds more than its origin was granted, and the engine
-      checks the origin's grants on every gated call.
+      for a task, carrying the capabilities it asked for, explicit limits
+      (tool calls, TTL), its history, and its usage. The engine checks the
+      origin's grants on every gated call; those grants are the boundary.
     </p>
     <p>
       Authority can't be widened after the fact: a site that needs more asks
-      for a new session, scoped to exactly the additional actions.
+      for the grant it needs and then a new session.
     </p>
 
     <h3>Information-flow labels</h3>

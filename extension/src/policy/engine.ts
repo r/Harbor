@@ -2,7 +2,7 @@
  * PolicyEngine
  *
  * The chokepoint. Every gated API call goes through `evaluate(request)`,
- * which walks the 9-tier ladder described in `docs/PERMISSIONS.md` and
+ * which walks the tier ladder described in `docs/PERMISSIONS.md` and
  * returns a `PolicyDecision`.
  *
  * The ladder, in order:

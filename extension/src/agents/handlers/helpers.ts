@@ -3,7 +3,7 @@
  *
  * The single entry point handlers use is `requireAction(ctx, sender,
  * action, options)`, which routes through the PolicyEngine. The engine
- * walks the 9-tier ladder and returns a decision; on `ask` or `preview`
+ * walks the tier ladder and returns a decision; on `ask` or `preview`
  * we surface the existing prompt UI; on `allow` the handler proceeds; on
  * `deny` the handler emits a structured error response.
  */

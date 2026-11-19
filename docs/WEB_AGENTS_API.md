@@ -256,8 +256,7 @@ All agent capabilities require user permission. The permission system is **per-o
 Behind the scenes, every call from your page now flows through the
 **PolicyEngine**, which evaluates the call against typed actions
 (`model.prompt.local`, `tool.call`, `browser.read.activeTab`,
-`network.egress.cross_origin`, etc.) and the session's granted
-actions. Origin grants from `requestPermissions` are honored
+`network.egress.cross_origin`, etc.). Origin grants from `requestPermissions` are honored
 at Tier 8 of the engine ladder; explicit `deny` rules in the user's
 policy still win, and Tier 1–4 safety floors (managed denies,
 sensitivity gates, information-flow checks, watchdog containment)
@@ -358,8 +357,9 @@ If tools are specified, the permission prompt displays each tool with a checkbox
 
 #### agent.requestCapabilities(options)
 
-The recommended replacement for `requestPermissions`. Mints a session
-with the typed actions you asked for that your origin has been granted. Returns
+The recommended replacement for `requestPermissions`. Creates a session
+for the capabilities you ask for. Model and tool access need the matching
+origin grant first; the call fails without one rather than prompting. Returns
 the session object you can pass to `agent.tools.call`,
 `agent.browser.*`, etc.
 
@@ -387,11 +387,11 @@ engine grants the intersection of what the user has granted, what
 your `require` list asks for, and what your origin policy allows.
 
 To get more authority later — e.g. write access after the user
-clicks "Apply" — call `agent.requestCapabilities()` again with the
-additional actions and a `reason`. The user gets a fresh prompt
-scoped to exactly the new authority, and the new session is
-independent; the original session continues with its narrower
-scope. Terminate a session when you're done with it.
+clicks "Apply" — ask for the grant with `agent.requestPermissions()`, which shows
+the user a prompt, then call `agent.requestCapabilities()` again for
+a new session. `requestCapabilities()` never prompts by itself. The
+new session is independent; the original session continues with its
+narrower scope. Terminate a session when you're done with it.
 
 For the full design, see
 [`docs/PERMISSIONS.md`](./PERMISSIONS.md).

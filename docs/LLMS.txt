@@ -73,7 +73,7 @@ All APIs require permission. There are two paths — pick one per session:
 
 ### Recommended — `agent.requestCapabilities()` (typed actions)
 
-Mints a session with the typed actions you asked for that the origin has been granted.
+Creates a session for the actions you ask for. Model and tool access need the origin grant first (requestPermissions); it fails without one.
 Plays nicely with budgets and the activity feed.
 
 ```javascript
@@ -88,8 +88,8 @@ const session = await window.agent.requestCapabilities({
   budget: { maxToolCalls: 30, ttlMinutes: 15 },
 });
 
-// Need more later? Call requestCapabilities() again for a new
-// session scoped to the additional actions.
+// Need more later? Ask with requestPermissions() (that shows the
+// prompt), then call requestCapabilities() again for a new session.
 ```
 
 ### Legacy — `agent.requestPermissions()` (origin-level scopes)

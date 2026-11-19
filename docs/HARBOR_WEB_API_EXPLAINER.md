@@ -180,13 +180,13 @@ The model has three properties page authors should know:
 3. **Auditable.** Every decision, including silent allows, is recorded
    and surfaced in the sidebar's Activity feed with a "Why?" trace.
 
-A session never holds more than its origin was granted. When a page
-calls `agent.requestCapabilities()` (the recommended entry point), the
-session that comes back lists the capabilities it was given, and
-Harbor's page script keeps the session object to that list. What
-Harbor's background enforces is the origin's grants, checked against
-the policy engine on every call, so the origin's grants are the real
-boundary.
+When a page calls `agent.requestCapabilities()` (the recommended
+entry point), the session that comes back lists the capabilities it
+was given. Harbor's background checks the origin's grants against the
+policy engine on every call, and refuses prompts on a session that
+didn't ask for model access. The session's tool list and browser
+access are kept only by Harbor's page script, so the origin's grants
+are the real boundary.
 
 The legacy `agent.requestPermissions()` and `PermissionScope` surface
 documented further below remains a working path for simple
@@ -207,8 +207,12 @@ const session = await agent.requestCapabilities({
   budget: { maxToolCalls: 30, ttlMinutes: 15 },
 });
 
-// Later, when the user takes an action that needs more, request a
-// new session scoped to exactly the additional actions:
+// Later, when the user takes an action that needs more, ask for the
+// grant (this shows the prompt), then request a new session:
+await agent.requestPermissions({
+  scopes: ['browser:activeTab.interact'],
+  reason: 'Apply the change you approved.',
+});
 const writeSession = await agent.requestCapabilities({
   name: 'Apply edit',
   reason: 'Apply the change you approved.',

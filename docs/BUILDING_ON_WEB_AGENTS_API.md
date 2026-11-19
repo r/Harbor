@@ -108,8 +108,8 @@ one that fits your codebase.
 
 ### Recommended: `agent.requestCapabilities()` (typed actions)
 
-`requestCapabilities` mints a session with the typed actions you asked
-for that your origin has been granted, in the same vocabulary the policy engine uses
+`requestCapabilities` creates a session for the typed actions you ask
+for, in the same vocabulary the policy engine uses
 internally, with a per-session budget. See
 [`docs/PERMISSIONS.md`](./PERMISSIONS.md) for the full design.
 
@@ -128,9 +128,10 @@ const session = await window.agent.requestCapabilities({
 await session.tools.call('time-wasm', 'time.now', {});
 ```
 
-Need more later — e.g. write access once the user clicks "Run"? Call
-`agent.requestCapabilities()` again for a new session scoped to the
-additional actions.
+Need more later — e.g. write access once the user clicks "Run"? Ask
+for it with `agent.requestPermissions()`, which shows the prompt, then
+call `agent.requestCapabilities()` again for a new session.
+`requestCapabilities()` doesn't prompt by itself.
 
 ### Legacy: `agent.requestPermissions()` (origin-level scopes)
 

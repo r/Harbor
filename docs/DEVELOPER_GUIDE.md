@@ -513,10 +513,10 @@ extension code.
    Default-for-Effect. Tiers 1–4 are a safety floor that user policy
    cannot override.
 4. **Sessions.** Every active agent session is origin-bound state:
-   the typed actions it was granted, its limits (`maxToolCalls`,
-   TTL), its history, and its usage. A session never holds more than
-   its origin was granted; `SessionRegistry.recordToolCall` enforces
-   its tool budget in the background.
+   the capabilities it asked for, its limits (`maxToolCalls`, TTL),
+   its history, and its usage. The engine checks origin grants, not
+   sessions; `SessionRegistry.recordToolCall` enforces a session's tool
+   budget in the background.
 5. **Audit + simulator.** Every decision lands in
    `extension/src/policy/audit.ts` and shows up in the sidebar's
    Activity panel, with a "Why?" trace. The decision simulator
