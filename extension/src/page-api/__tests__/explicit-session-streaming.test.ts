@@ -119,7 +119,7 @@ describe('promptStreaming on explicit sessions', () => {
     const evs = await stream(id);
     expect(evs.map((e: any) => e.event.type)).toEqual(['token', 'token', 'done']);
     expect(mocks.harborStreamRequest).toHaveBeenCalledWith('llm.chatStream', expect.objectContaining({
-      messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Hi' }], model: 'm' }), 'st');
+      messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Hi' }], model: 'm' }), 'st', expect.any(AbortSignal));
   });
   it('refuses another origin without reaching the model', async () => {
     const id = await create();
@@ -147,7 +147,7 @@ describe('promptStreaming on explicit sessions', () => {
     const r = await ai.handleAiCreateTextSession(ctx('ai.createTextSession', { systemPrompt: 'X' })) as any;
     const evs = await stream(r.result);
     expect(evs.at(-1).event.type).toBe('done');
-    expect(mocks.harborRequest).not.toHaveBeenCalledWith('session.get', expect.anything());
+    expect(mocks.harborRequest.mock.calls.map(([method]) => method)).not.toContain('session.get');
     // other origin still refused for implicit
     postMessage.mockClear();
     expect(errCode(await stream(r.result, 'https://evil.test'))).toBe('ERR_PERMISSION_DENIED');

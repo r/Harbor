@@ -187,6 +187,33 @@ describe('pipeline checks each step target', () => {
   });
 });
 
+describe('a page that stopped waiting', () => {
+  it('runs no further step, even after the person allows it', async () => {
+    const controller = new AbortController();
+    promptAnswer = () => {
+      // The page gave up while the prompt was open.
+      controller.abort();
+      return true;
+    };
+    const responses: TransportResponse[] = [];
+    await handleOrchestratePipeline(
+      {
+        id: 'o2',
+        type: 'agents.orchestrate.pipeline',
+        origin: ORCHESTRATOR,
+        tabId: 3,
+        signal: controller.signal,
+        payload: { config: { steps: [{ agentId: crossOriginAgent, task: 'one' }] }, initialInput: 'x' },
+      } as RequestContext,
+      { sendResponse: (r: TransportResponse) => responses.push(r), sendStreamEvent: () => {} },
+    );
+
+    expect(delivered).toEqual([]);
+    const result = (responses[0] as { result?: { success: boolean } }).result;
+    expect(result?.success).not.toBe(true);
+  });
+});
+
 describe('route checks only the target it selected', () => {
   it('checks the selected cross-origin agent and not the others', async () => {
     const responses = await call(handleOrchestrateRoute, 'agents.orchestrate.route', {

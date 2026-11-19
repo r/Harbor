@@ -53,7 +53,7 @@ Workers are leaves: no fan-out, product decisions, PRs, merges or tracker edits.
 1. **Red, recorded.** Write the failing test at the real boundary and commit it, or paste its failing output into the ledger. Use cargo tests for the bridge, vitest for the extension, and `tests/e2e` for page injection. Where no harness reaches the behavior, record a scripted reproduction. For docs-only work, use content and link checks.
 2. **Implement** only the ledger. Mechanical workers escalate any undecided API, permission, messaging or UX choice. Keep both chat POC copies in step, or record why not.
 3. **Verify** against acceptance, preferably with an independent verifier that reruns the checks and reads the code. Inspect visible behavior in Firefox, with Harbor and the bridge loaded. Don't weaken assertions.
-4. **Gate** each unit READY / BOUNCE / RE-APPROACH. Bugs go back to the builder. Out-of-scope improvements are reported, not added. Apply the workflow's size rule when a threshold is crossed.
+4. **Gate** each unit READY / BOUNCE / RE-APPROACH. Bugs go back to the builder. Flaws workers report outside their unit are folded in under the workflow's [leave-it-better rule](../../../docs/agent-workflow.md#leave-it-better-than-you-found-it), or ticketed when that rule says so. Apply the workflow's size rule when a threshold is crossed.
 5. **Fold** READY units into the integration branch. Review every delegated diff, and reverify shared paths. Remove only clean, integrated worker worktrees.
 
 Keep the ledger current: unit → SHA → evidence → disposition. Continue into **finalize** over the whole change without re-asking. Never invoke merge.

@@ -5,6 +5,7 @@
  */
 
 import { browserAPI, executeScriptInTab, executeScriptInTabAllFrames } from '../browser-compat';
+import { extractReadablePage, isOriginMismatch, type OriginMismatch, type ReadablePage } from '../page-api/readable-page';
 
 const HARBOR_EXTENSION_ORIGIN = 'harbor-extension';
 
@@ -470,32 +471,11 @@ export async function runLoginThenCapture(params: Record<string, unknown>): Prom
       await waitForTabLoadAndInjectable(tab.id, timeout);
     }
 
-    const result = await executeScriptInTab<{
-      title: string;
-      url: string;
-      content: string;
-      text: string;
-      cookies?: string;
-      links?: string[];
-      linksWithText?: LinkWithText[];
-    }>(
+    const { page, found } = await readThenScan<{ links: string[]; linksWithText: LinkWithText[] }>(
       tab.id,
-      () => {
-        const title = document.title;
-        const url = window.location.href;
-        const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.article'];
-        let root: Element | null = null;
-        for (const selector of mainSelectors) {
-          const el = document.querySelector(selector);
-          if (el) {
-            root = el;
-            break;
-          }
-        }
-        if (!root) root = document.body;
-        const raw = (root as HTMLElement).innerText?.trim() || (root as HTMLElement).textContent?.trim() || '';
-        const lines = raw.split(/\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
-        const content = lines.join('\n').slice(0, 50000);
+      (expectedUrl: unknown) => {
+        // A hash change alone (scrollspy, media time) is still the same page.
+        if (window.location.href.split('#')[0] !== String(expectedUrl).split('#')[0]) return { navigated: true as const };
         const links: string[] = [];
         const linksWithText: { text: string; url: string }[] = [];
         const base = window.location.origin;
@@ -509,23 +489,52 @@ export async function runLoginThenCapture(params: Record<string, unknown>): Prom
           const text = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 500);
           if (text) linksWithText.push({ text, url: absolute });
         });
-        return { title, url, content, text: content, links, linksWithText };
+        return { links, linksWithText };
       },
-      []
+      [],
+      'Failed to extract page content after login'
     );
 
-    if (!result) throw new Error('Failed to extract page content after login');
     return {
-      content: result.content,
-      title: result.title,
-      url: result.url,
-      ...(result.cookies !== undefined && { cookies: result.cookies }),
-      links: result.links ?? [],
-      linksWithText: result.linksWithText ?? [],
+      content: page.text,
+      title: page.title,
+      url: page.url,
+      links: found.links,
+      linksWithText: found.linksWithText,
     };
   } finally {
     await browserAPI.tabs.remove(tab.id).catch(() => {});
   }
+}
+
+/** A capture script's answer when the tab is no longer on the page whose text was read. */
+type Navigated = { navigated: true };
+function isNavigated(value: unknown): value is Navigated {
+  return typeof value === 'object' && value !== null && (value as Navigated).navigated === true;
+}
+
+/**
+ * Read a capture tab's text with the shared extractor, then run `scan` in the
+ * same tab for whatever else the capture needs (links, cookies, ...). `scan`
+ * gets the URL and text that were read as its first two arguments, and must
+ * return `{ navigated: true }` when the tab's URL (ignoring the hash) differs, so every
+ * field of a capture describes one page. If the tab moved between the two
+ * calls, read it once more; if it moves again, fail.
+ */
+async function readThenScan<T>(
+  tabId: number,
+  scan: (expectedUrl: unknown, text: unknown, ...rest: unknown[]) => T | Navigated,
+  args: unknown[],
+  failure: string
+): Promise<{ page: ReadablePage; found: T }> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const page = await executeScriptInTab<ReadablePage | OriginMismatch>(tabId, extractReadablePage);
+    if (!page || isOriginMismatch(page)) break;
+    const found = await executeScriptInTab<T | Navigated>(tabId, scan as (...a: unknown[]) => T | Navigated, [page.url, page.text, ...args]);
+    if (found === undefined) break;
+    if (!isNavigated(found)) return { page, found };
+  }
+  throw new Error(failure);
 }
 
 /** True if URL looks like an Atlantic article (not search/login/section index). Used to scroll-to-end before capture. */
@@ -610,11 +619,7 @@ export async function runCapturePage(params: Record<string, unknown>): Promise<C
       await scrollTabToEnd(tab.id);
     }
 
-    const result = await executeScriptInTab<{
-      title: string;
-      url: string;
-      content: string;
-      text: string;
+    const { page, found: result } = await readThenScan<{
       cookies?: string;
       links?: string[];
       linksWithText?: LinkWithText[];
@@ -622,22 +627,20 @@ export async function runCapturePage(params: Record<string, unknown>): Promise<C
       articleDetail?: ArticleDetail;
     }>(
       tab.id,
-      (doCaptureCookies: boolean) => {
-        const title = document.title;
+      (expectedUrl: unknown, content: unknown, doCaptureCookies: unknown) => {
         const url = window.location.href;
+        // A hash change alone (scrollspy, media time) is still the same page.
+        if (url.split('#')[0] !== String(expectedUrl).split('#')[0]) return { navigated: true as const };
+        const pageText = typeof content === 'string' ? content : '';
+        const lines = pageText.split('\n');
+        // Site-specific results below look inside the main content area.
         const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.article'];
         let root: Element | null = null;
         for (const selector of mainSelectors) {
-          const el = document.querySelector(selector);
-          if (el) {
-            root = el;
-            break;
-          }
+          root = document.querySelector(selector);
+          if (root) break;
         }
         if (!root) root = document.body;
-        const raw = (root as HTMLElement).innerText?.trim() || (root as HTMLElement).textContent?.trim() || '';
-        const lines = raw.split(/\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
-        const content = lines.join('\n').slice(0, 50000);
         const cookies = doCaptureCookies ? document.cookie : undefined;
         const links: string[] = [];
         const linksWithText: { text: string; url: string }[] = [];
@@ -788,26 +791,23 @@ export async function runCapturePage(params: Record<string, unknown>): Promise<C
           };
           walkForImgs(root);
           articleDetail = {
-            text: content.slice(0, 300000),
+            text: pageText,
             ...(author && { author }),
             ...(date && { date }),
             ...(imageUrls.length > 0 && { imageUrls }),
           };
         }
 
-        return { title, url, content, text: content, cookies, links, linksWithText, searchResults, articleDetail };
+        return { cookies, links, linksWithText, searchResults, articleDetail };
       },
-      [captureCookies]
+      [captureCookies],
+      'Failed to extract page content'
     );
 
-    if (!result) {
-      throw new Error('Failed to extract page content');
-    }
-
     return {
-      content: result.content,
-      title: result.title,
-      url: result.url,
+      content: page.text,
+      title: page.title,
+      url: page.url,
       ...(result.cookies !== undefined && { cookies: result.cookies }),
       links: result.links ?? [],
       linksWithText: result.linksWithText ?? [],

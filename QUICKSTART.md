@@ -189,7 +189,7 @@ Open http://localhost:8000 in your browser.
 | Demo | URL | What It Shows |
 |------|-----|---------------|
 | **Getting Started** | http://localhost:8000/web-agents/getting-started/ | Step-by-step API tutorial |
-| **Chat Demo** | http://localhost:8000/web-agents/chat-poc/ | Full chat with tool calling |
+| **Bring Your Own Chatbot** | http://localhost:8000/web-agents/bring-your-chatbot/ | A page opening your agent's chat with `agent.chat.open()` |
 | **Page Summarizer** | http://localhost:8000/web-agents/summarizer/ | AI-powered page summaries |
 
 ---

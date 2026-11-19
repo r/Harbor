@@ -184,7 +184,7 @@ export async function handleAgentsRegister(ctx: RequestContext): HandlerResponse
       ...options,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
 
     const tabId = ctx.tabId;
     
@@ -214,7 +214,7 @@ export async function handleAgentsUnregister(ctx: RequestContext): HandlerRespon
   }
 
   try {
-    await harborRequest('agents.unregister', { agentId, origin: ctx.origin, tabId: ctx.tabId });
+    await harborRequest('agents.unregister', { agentId, origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
     registeredAgents.delete(agentId);
     return successResponse(ctx.id, null);
   } catch (e) {
@@ -230,7 +230,7 @@ export async function handleAgentsGetInfo(ctx: RequestContext): HandlerResponse 
   }
 
   try {
-    const result = await harborRequest('agents.getInfo', { agentId, origin: ctx.origin, tabId: ctx.tabId });
+    const result = await harborRequest('agents.getInfo', { agentId, origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
     return successResponse(ctx.id, result);
   } catch (e) {
     return errorResponse(ctx.id, 'ERR_AGENT_NOT_FOUND', e instanceof Error ? e.message : 'Agent not found');
@@ -251,7 +251,7 @@ export async function handleAgentsDiscover(ctx: RequestContext): HandlerResponse
       ...query,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
     return successResponse(ctx.id, result);
   } catch (e) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Discovery failed');
@@ -260,7 +260,7 @@ export async function handleAgentsDiscover(ctx: RequestContext): HandlerResponse
 
 export async function handleAgentsList(ctx: RequestContext): HandlerResponse {
   try {
-    const result = await harborRequest<{ agents: unknown[] }>('agents.list', { origin: ctx.origin, tabId: ctx.tabId });
+    const result = await harborRequest<{ agents: unknown[] }>('agents.list', { origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
     return successResponse(ctx.id, result);
   } catch (e) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'List failed');
@@ -293,7 +293,7 @@ export async function handleAgentsInvoke(ctx: RequestContext): HandlerResponse {
       origin: ctx.origin,
       tabId: ctx.tabId,
       traceId,
-    });
+    }, { signal: ctx.signal });
 
     return successResponse(ctx.id, result);
   } catch (e) {
@@ -314,7 +314,7 @@ export async function handleAgentsSend(ctx: RequestContext): HandlerResponse {
       payload,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
 
     return successResponse(ctx.id, result);
   } catch (e) {
@@ -334,7 +334,7 @@ export async function handleAgentsSubscribe(ctx: RequestContext): HandlerRespons
       eventType,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
 
     return successResponse(ctx.id, null);
   } catch (e) {
@@ -354,7 +354,7 @@ export async function handleAgentsUnsubscribe(ctx: RequestContext): HandlerRespo
       eventType,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
 
     return successResponse(ctx.id, null);
   } catch (e) {
@@ -375,7 +375,7 @@ export async function handleAgentsBroadcast(ctx: RequestContext): HandlerRespons
       data,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
 
     return successResponse(ctx.id, result);
   } catch (e) {
@@ -407,7 +407,7 @@ export async function handleAgentsPipeline(ctx: RequestContext): HandlerResponse
       initialInput,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
 
     return successResponse(ctx.id, result);
   } catch (e) {
@@ -436,7 +436,7 @@ export async function handleAgentsParallel(ctx: RequestContext): HandlerResponse
       config,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
 
     return successResponse(ctx.id, result);
   } catch (e) {
@@ -469,7 +469,7 @@ export async function handleAgentsRoute(ctx: RequestContext): HandlerResponse {
       task,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    });
+    }, { signal: ctx.signal });
 
     return successResponse(ctx.id, result);
   } catch (e) {

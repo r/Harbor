@@ -57,21 +57,26 @@ export interface RequireActionOptions {
    * typed-action check runs.
    */
   upstreamConsent?: 'origin-grant';
+  /** Record and match `resource.host` without classifying it (see PolicyRequest.classifyHost). */
+  classifyHost?: boolean;
+  /** Mark the audit record as a page's own fetch (see AuditRecord.pageFetch). */
+  pageFetch?: boolean;
 }
 
 /** A permission refusal, in the shape a handler sends as its error. */
 export interface ActionDenial {
   code: ApiErrorCode;
   message: string;
-  details: Record<string, unknown>;
+  details?: Record<string, unknown>;
 }
 
 /**
  * The single chokepoint the rest of the codebase calls. Returns `true` if
  * the action is allowed (either by the engine or after a successful
  * prompt). Returns `false` and sends an error response when the action is
- * denied. Either way, after `requireAction` returns the handler's
- * obligation regarding permissioning is complete.
+ * denied, or when the caller stopped waiting before it could proceed.
+ * Either way, after `requireAction` returns the handler's obligation
+ * regarding permissioning is complete.
  */
 export async function requireAction(
   ctx: RequestContext,
@@ -106,6 +111,7 @@ export async function checkAction(
     reason: options.reason,
     correlationId: ctx.id,
     tabId: ctx.tabId,
+    classifyHost: options.classifyHost,
   };
   const decision = await evaluate(request);
   const proceedsOnUpstreamConsent =
@@ -118,18 +124,26 @@ export async function checkAction(
   Audit.record(
     request,
     decision,
-    proceedsOnUpstreamConsent ? { consent: options.upstreamConsent } : {},
+    {
+      ...(proceedsOnUpstreamConsent ? { consent: options.upstreamConsent } : {}),
+      ...(options.pageFetch ? { pageFetch: true as const } : {}),
+    },
   );
 
   log('requireAction decision', decision);
 
-  if (decision.effect === 'allow') return null;
+  // The caller may have stopped waiting while the check ran (a prompt can
+  // stay open longer than a page's request timeout). Such a call isn't
+  // performed, even if the person then allowed it.
+  const proceed = (): ActionDenial | null => (ctx.signal?.aborted ? ABANDONED : null);
+
+  if (decision.effect === 'allow') return proceed();
 
   if (decision.effect === 'deny') {
     return denialFor(decision);
   }
 
-  if (proceedsOnUpstreamConsent) return null;
+  if (proceedsOnUpstreamConsent) return proceed();
 
   // ask | preview — surface the prompt via the existing flow.
   // We use the typed action's primary legacy scope unless the caller
@@ -155,7 +169,7 @@ export async function checkAction(
       ctx.tabId,
       promptResult.allowedTools,
     );
-    return null;
+    return proceed();
   }
 
   // User dismissed or denied.
@@ -173,6 +187,8 @@ export async function checkAction(
   };
 }
 
+const ABANDONED: ActionDenial = { code: 'ERR_ABORTED', message: 'The page stopped waiting for this call' };
+
 /**
  * Whether consent obtained upstream can stand in for this verdict. It can
  * for a grant-level ask (no grant yet, or the default for the action's
@@ -189,6 +205,7 @@ function upstreamConsentCovers(decision: PolicyDecision): boolean {
   }
   return true;
 }
+
 
 function denialFor(decision: PolicyDecision): ActionDenial {
   return {

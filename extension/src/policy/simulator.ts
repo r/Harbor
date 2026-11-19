@@ -114,6 +114,7 @@ export async function replay(
       ? new LabelSet(modifications.inputLabels)
       : new LabelSet(record.labelsIn as DataLabel[]),
     isSubagent: modifications.isSubagent ?? record.isSubagent,
+    classifyHost: record.classifyHost,
     correlationId: 'simulator-replay',
   };
 

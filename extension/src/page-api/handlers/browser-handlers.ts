@@ -6,9 +6,10 @@
 
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
-import { hasPermission } from './permission-handlers';
+import { hasPermission, policyRefusal } from './permission-handlers';
 import { executeScriptInTab } from '../../browser-compat';
 import { isBlockedUrl } from './net-guard';
+import { extractReadablePage, isOriginMismatch, type OriginMismatch, type ReadablePage } from '../readable-page';
 
 const LOCAL_NETWORK_MESSAGE = 'Fetch blocked: the address is on this device or a private network';
 
@@ -29,6 +30,9 @@ export async function handleBrowserClick(ctx: RequestContext): HandlerResponse {
   if (!ctx.tabId) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
+
+  const refused = await policyRefusal(ctx, 'browser.write.interact');
+  if (refused) return refused;
 
   try {
     const result = await executeScriptInTab<{ success: boolean; error?: string }>(
@@ -82,6 +86,9 @@ export async function handleBrowserFill(ctx: RequestContext): HandlerResponse {
   if (!ctx.tabId) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
+
+  const refused = await policyRefusal(ctx, 'browser.write.interact');
+  if (refused) return refused;
 
   try {
     const result = await executeScriptInTab<{ success: boolean; error?: string }>(
@@ -137,6 +144,9 @@ export async function handleBrowserSelect(ctx: RequestContext): HandlerResponse 
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
 
+  const refused = await policyRefusal(ctx, 'browser.write.interact');
+  if (refused) return refused;
+
   try {
     const result = await executeScriptInTab<{ success: boolean; error?: string }>(
       ctx.tabId,
@@ -185,6 +195,9 @@ export async function handleBrowserScroll(ctx: RequestContext): HandlerResponse 
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
 
+  const refused = await policyRefusal(ctx, 'browser.write.interact');
+  if (refused) return refused;
+
   try {
     const result = await executeScriptInTab<{ success: boolean }>(
       ctx.tabId,
@@ -222,6 +235,9 @@ export async function handleBrowserScreenshot(ctx: RequestContext): HandlerRespo
   if (!ctx.tabId) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
+
+  const refused = await policyRefusal(ctx, 'browser.read.screenshot');
+  if (refused) return refused;
 
   const tabId = ctx.tabId;
   const tabsApi = (typeof browser !== 'undefined' ? browser.tabs : chrome.tabs);
@@ -278,6 +294,9 @@ export async function handleBrowserGetElements(ctx: RequestContext): HandlerResp
   if (!ctx.tabId) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
+
+  const refused = await policyRefusal(ctx, 'browser.read.element');
+  if (refused) return refused;
 
   try {
     const result = await executeScriptInTab<ElementInfo[]>(
@@ -369,13 +388,6 @@ export async function handleBrowserGetElements(ctx: RequestContext): HandlerResp
 // Readability Handler
 // =============================================================================
 
-type ReadabilityResult = {
-  title: string;
-  url: string;
-  content: string;
-  length: number;
-};
-
 export async function handleBrowserReadability(ctx: RequestContext): HandlerResponse {
   if (!await hasPermission(ctx.origin, 'browser:activeTab.read', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:activeTab.read required');
@@ -385,41 +397,13 @@ export async function handleBrowserReadability(ctx: RequestContext): HandlerResp
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
 
-  try {
-    const result = await executeScriptInTab<ReadabilityResult>(
-      ctx.tabId,
-      () => {
-        const title = document.title;
-        const url = window.location.href;
-        
-        const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.article'];
-        let content = '';
-        
-        for (const selector of mainSelectors) {
-          const el = document.querySelector(selector);
-          if (el) {
-            content = el.textContent?.trim() || '';
-            break;
-          }
-        }
-        
-        if (!content) {
-          content = document.body.textContent?.trim() || '';
-        }
-        
-        content = content.replace(/\s+/g, ' ').trim();
-        
-        return {
-          title,
-          url,
-          content: content.slice(0, 50000),
-          length: content.length,
-        };
-      },
-      []
-    );
+  const refused = await policyRefusal(ctx, 'browser.read.activeTab');
+  if (refused) return refused;
 
-    if (!result) {
+  try {
+    const result = await executeScriptInTab<ReadablePage | OriginMismatch>(ctx.tabId, extractReadablePage);
+
+    if (!result || isOriginMismatch(result)) {
       return errorResponse(ctx.id, 'ERR_INTERNAL', 'Script execution failed');
     }
     return successResponse(ctx.id, result);
@@ -462,6 +446,9 @@ export async function handleBrowserNavigate(ctx: RequestContext): HandlerRespons
   if (!ctx.tabId) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
+
+  const refused = await policyRefusal(ctx, 'browser.write.navigate', target.host);
+  if (refused) return refused;
 
   try {
     await chrome.tabs.update(ctx.tabId, { url: target.toString() });
@@ -516,6 +503,14 @@ export async function handleBrowserFetch(ctx: RequestContext): HandlerResponse {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', LOCAL_NETWORK_MESSAGE);
   }
 
+  const refused = await policyRefusal(
+    ctx,
+    target.origin === ctx.origin ? 'network.egress.same_origin' : 'network.egress.cross_origin',
+    target.host,
+    { pageFetch: true },
+  );
+  if (refused) return refused;
+
   try {
     const init: RequestInit = {
       method: options?.method ?? 'GET',
@@ -532,6 +527,23 @@ export async function handleBrowserFetch(ctx: RequestContext): HandlerResponse {
     if (response.url ? await isBlockedUrl(new URL(response.url)) : response.redirected) {
       void response.body?.cancel().catch(() => {});
       return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', LOCAL_NETWORK_MESSAGE);
+    }
+    // A redirect to another origin is checked again where it ended up, so a
+    // rule about that host applies and the audit shows where the data came
+    // from. The request has already gone out by then; the page just never
+    // sees the response.
+    const final = response.url ? new URL(response.url) : target;
+    if (final.origin !== target.origin) {
+      const refusedAfterRedirect = await policyRefusal(
+        ctx,
+        final.origin === ctx.origin ? 'network.egress.same_origin' : 'network.egress.cross_origin',
+        final.host,
+        { pageFetch: true },
+      );
+      if (refusedAfterRedirect) {
+        void response.body?.cancel().catch(() => {});
+        return refusedAfterRedirect;
+      }
     }
     const headers: Record<string, string> = {};
     response.headers.forEach((value, key) => { headers[key] = value; });

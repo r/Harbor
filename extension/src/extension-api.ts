@@ -9,6 +9,7 @@
  */
 
 import { bridgeChat, type BridgeChatRequest } from './llm/chat';
+import { modelForPrompt } from './llm/prompt-model';
 import { browserAPI } from './browser-compat';
 import { bridgeRequest, bridgeStreamRequest, getBridgeConnectionState, checkBridgeHealth } from './llm/bridge-client';
 import { listServersWithStatus, callTool, startServer, stopServer, listTools } from './mcp/host';
@@ -742,21 +743,6 @@ const BROWSER_CAPABILITY_ACTIONS: Record<'read' | 'interact' | 'screenshot', Typ
   screenshot: 'browser.read.screenshot',
 };
 
-/**
- * The model a prompt will run on. A prompt that names no model (or names
- * "default") runs on the bridge's default, which `llm.get_config` reports
- * as the bridge resolves it for chat. Returns undefined when that's unknown.
- */
-async function modelForPrompt(model: unknown): Promise<string | undefined> {
-  if (typeof model === 'string' && model && model !== 'default') return model;
-  try {
-    const config = await bridgeRequest<{ default_model?: string | null }>('llm.get_config');
-    return config.default_model ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 async function promptCheck(model: unknown): Promise<PageCheck> {
   return { action: promptActionForModel(await modelForPrompt(model)) };
 }
@@ -805,13 +791,60 @@ async function gatePageCall(
     return failure(`${type} requires the calling page's origin`);
   }
 
-  const ctx: RequestContext = {
-    id: requestId ?? crypto.randomUUID(),
-    type: type as RequestContext['type'],
-    payload,
-    origin: p.origin,
-    tabId: typeof p.tabId === 'number' ? p.tabId : undefined,
+  return runPageChecks(
+    {
+      id: requestId ?? crypto.randomUUID(),
+      type: type as RequestContext['type'],
+      payload,
+      origin: p.origin,
+      tabId: typeof p.tabId === 'number' ? p.tabId : undefined,
+    },
+    await checksFor(p),
+  );
+}
+
+/**
+ * The same gate for a page call the page API serves itself (browser and tab
+ * actions), which never passes through this router. The page API has
+ * already checked the site's grant, so this audits the call and enforces
+ * deny, a watchdog restriction and a rule that asks, without a second
+ * prompt in normal use. Returns `null` when the call may proceed.
+ */
+export async function gatePageAction(
+  call: { id: string; type: string; origin: string; tabId?: number },
+  action: TypedAction,
+  resource?: PolicyResource,
+  options: { pageFetch?: boolean } = {},
+): Promise<{ code: string; message: string } | null> {
+  if (!call.origin) {
+    return { code: ErrorCodes.PERMISSION_DENIED, message: `${call.type} requires the calling page's origin` };
+  }
+  const refusal = await runPageChecks(
+    {
+      id: call.id,
+      type: call.type as RequestContext['type'],
+      payload: undefined,
+      origin: call.origin,
+      tabId: call.tabId,
+    },
+    [{ action, resource }],
+    // A page opening, navigating to or fetching a sensitive domain isn't
+    // moving data there it didn't already have, so the host is recorded and
+    // matched by rules but not classified.
+    { classifyHost: false, pageFetch: options.pageFetch },
+  );
+  if (!refusal) return null;
+  return {
+    code: refusal.code ?? ErrorCodes.PERMISSION_DENIED,
+    message: refusal.error ?? 'Permission denied',
   };
+}
+
+async function runPageChecks(
+  ctx: RequestContext,
+  checks: PageCheck[],
+  options: { classifyHost?: boolean; pageFetch?: boolean } = {},
+): Promise<ExtensionApiResponse | null> {
   let denied: ExtensionApiResponse | null = null;
   const sender: ResponseSender = {
     // Keep the policy engine's code (ERR_QUARANTINED, ERR_BLOCKED_BY_POLICY,
@@ -826,14 +859,25 @@ async function gatePageCall(
     sendStreamEvent: () => {},
   };
 
-  for (const check of await checksFor(p)) {
+  for (const check of checks) {
     const allowed = await requireAction(ctx, sender, check.action, {
+      ...options,
       resource: check.resource,
       upstreamConsent: 'origin-grant',
     });
     if (!allowed) return denied ?? failure('Permission denied');
   }
   return null;
+}
+
+/**
+ * The caller stopped waiting while the policy check ran (a prompt can stay
+ * open longer than the page's request timeout). The call isn't performed,
+ * even if the person then allowed it, so the page never sees an error for
+ * a call that went on to happen.
+ */
+function abandoned(): ExtensionApiResponse {
+  return { ...failure('The page stopped waiting for this call'), code: ErrorCodes.ABORTED };
 }
 
 // =============================================================================
@@ -847,6 +891,7 @@ async function gatePageCall(
 export async function routeExtensionApiMessage(
   message: ExtensionApiRequest,
   sender: { id?: string; url?: string; tab?: { id?: number } },
+  options: { signal?: AbortSignal } = {},
 ): Promise<ExtensionApiResponse> {
   const { type, payload } = message;
   
@@ -862,6 +907,7 @@ export async function routeExtensionApiMessage(
     try {
       const gateFailure = await gatePageCall(type, payload);
       if (gateFailure) return gateFailure;
+      if (options.signal?.aborted) return abandoned();
       return await handleMcpCallTool(payload, held.slot);
     } finally {
       held.slot?.release();
@@ -870,6 +916,7 @@ export async function routeExtensionApiMessage(
 
   const gateFailure = await gatePageCall(type as MessageType, payload);
   if (gateFailure) return gateFailure;
+  if (options.signal?.aborted) return abandoned();
 
   switch (type as MessageType) {
     // LLM Operations
@@ -1081,7 +1128,11 @@ export type ChatStreamEvent = {
  * `gatePageCall` exactly as a non-streaming call does, so the policy gate
  * and audit log see the same decision either way.
  */
-export async function* streamLlmChat(payload: unknown, requestId?: string): AsyncGenerator<ChatStreamEvent> {
+export async function* streamLlmChat(
+  payload: unknown,
+  requestId?: string,
+  signal?: AbortSignal,
+): AsyncGenerator<ChatStreamEvent> {
   const { messages, model, max_tokens, temperature, system, tools } = (payload || {}) as {
     messages?: Array<{ role: string; content: string }>;
     model?: string;
@@ -1102,10 +1153,18 @@ export async function* streamLlmChat(payload: unknown, requestId?: string): Asyn
     yield { type: 'error', error: { code: gateFailure.code, message: gateFailure.error ?? 'Permission denied' } };
     return;
   }
+  if (signal?.aborted) {
+    const { code, error } = abandoned();
+    yield { type: 'error', error: { code, message: error ?? '' } };
+    return;
+  }
 
   try {
     let tokenCount = 0;
-    for await (const event of bridgeStreamRequest('llm.chat_stream', { messages, model, max_tokens, temperature, system_prompt: system, tools })) {
+    // The signal also stops the model mid-response when the page stops
+    // reading (see bridgeStreamRequest).
+    for await (const event of bridgeStreamRequest('llm.chat_stream', { messages, model, max_tokens, temperature, system_prompt: system, tools }, signal)) {
+      if (signal?.aborted) break;
       if (event.type === 'token') tokenCount++;
       yield event;
       if (event.type === 'done' || event.type === 'error') {

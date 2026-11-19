@@ -538,9 +538,9 @@ if (availability === 'readily') {
 
 ### agent.chat.open(options?)
 
-Open the browser's chat UI with optional configuration.
+Open the browser's chat UI with optional configuration. A site that doesn't want to build its own chat hands the conversation to the implementer's chat surface. In Harbor that's a chat panel on the page; another implementer, such as a native app hosting the page, can use its own chat.
 
-**Requires:** `chat:open` permission
+**Requires:** `chat:open` permission to open the chat. Messages sent from the chat are the page's prompts: each one is checked and audited under the page's origin, like `ai.createTextSession()` prompts, so the site also needs `model:prompt`. Harbor asks for it on the first message if the site doesn't have it yet.
 
 **Signature:**
 ```typescript
