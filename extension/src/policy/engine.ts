@@ -17,9 +17,9 @@
  *   Tier 8  Per-origin grant        (Allow always / once / deny)
  *   Tier 9  Default for action's effect
  *
- * Tier 5 was the capability-token check; tokens were removed (nothing ever
- * minted one that reached this check), so the ladder skips straight from
- * Tier 4 to Tier 6 and the tier numbers are not renumbered.
+ * Tier 5 was the capability-token check. No caller ever passed a token to
+ * it, so tokens were removed; the ladder goes from Tier 4 to Tier 6 and the
+ * other tier numbers are unchanged.
  *
  * Tiers 1–4 are the safety floor: they always run, and a higher-tier
  * `allow` cannot defeat a lower-tier `deny` from this band. That is the
