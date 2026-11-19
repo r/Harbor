@@ -8,6 +8,20 @@ import { harborRequest } from '../harbor-core';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 
+/**
+ * A failed Harbor call, reported with Harbor's own code (ERR_PERMISSION_DENIED,
+ * ERR_NOT_REGISTERED, ...) so the page can tell why. ERR_INTERNAL only when
+ * Harbor gave no code.
+ */
+function harborFailure(id: string, e: unknown, fallback: string) {
+  const code = (e as { code?: unknown } | null)?.code;
+  return errorResponse(
+    id,
+    typeof code === 'string' && code ? code : 'ERR_INTERNAL',
+    e instanceof Error ? e.message : fallback,
+  );
+}
+
 // =============================================================================
 // Agent State
 // =============================================================================
@@ -199,10 +213,19 @@ export async function handleAgentsRegister(ctx: RequestContext): HandlerResponse
     if (result.acceptsInvocations) {
       await registerProxyInvocationHandler(result.id, ctx.origin, tabId || 0);
     }
+    if (result.acceptsMessages) {
+      // Messages and broadcasts for this agent go to this tab. The agent is
+      // registered either way, so a failure here doesn't fail registration.
+      try {
+        await harborRequest('agents.registerMessageHandler', { agentId: result.id, origin: ctx.origin, tabId: tabId || 0 });
+      } catch (e) {
+        console.error('[Web Agents API] Failed to set up message delivery:', e);
+      }
+    }
 
     return successResponse(ctx.id, result);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Registration failed');
+    return harborFailure(ctx.id, e, 'Registration failed');
   }
 }
 
@@ -218,7 +241,7 @@ export async function handleAgentsUnregister(ctx: RequestContext): HandlerRespon
     registeredAgents.delete(agentId);
     return successResponse(ctx.id, null);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Unregistration failed');
+    return harborFailure(ctx.id, e, 'Unregistration failed');
   }
 }
 
@@ -254,7 +277,7 @@ export async function handleAgentsDiscover(ctx: RequestContext): HandlerResponse
     }, { signal: ctx.signal });
     return successResponse(ctx.id, result);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Discovery failed');
+    return harborFailure(ctx.id, e, 'Discovery failed');
   }
 }
 
@@ -263,7 +286,7 @@ export async function handleAgentsList(ctx: RequestContext): HandlerResponse {
     const result = await harborRequest<{ agents: unknown[] }>('agents.list', { origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
     return successResponse(ctx.id, result);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'List failed');
+    return harborFailure(ctx.id, e, 'List failed');
   }
 }
 
@@ -297,7 +320,7 @@ export async function handleAgentsInvoke(ctx: RequestContext): HandlerResponse {
 
     return successResponse(ctx.id, result);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Invocation failed');
+    return harborFailure(ctx.id, e, 'Invocation failed');
   }
 }
 
@@ -318,7 +341,7 @@ export async function handleAgentsSend(ctx: RequestContext): HandlerResponse {
 
     return successResponse(ctx.id, result);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Send failed');
+    return harborFailure(ctx.id, e, 'Send failed');
   }
 }
 
@@ -338,7 +361,7 @@ export async function handleAgentsSubscribe(ctx: RequestContext): HandlerRespons
 
     return successResponse(ctx.id, null);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Subscribe failed');
+    return harborFailure(ctx.id, e, 'Subscribe failed');
   }
 }
 
@@ -358,7 +381,7 @@ export async function handleAgentsUnsubscribe(ctx: RequestContext): HandlerRespo
 
     return successResponse(ctx.id, null);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Unsubscribe failed');
+    return harborFailure(ctx.id, e, 'Unsubscribe failed');
   }
 }
 
@@ -379,7 +402,7 @@ export async function handleAgentsBroadcast(ctx: RequestContext): HandlerRespons
 
     return successResponse(ctx.id, result);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Broadcast failed');
+    return harborFailure(ctx.id, e, 'Broadcast failed');
   }
 }
 
@@ -411,7 +434,7 @@ export async function handleAgentsPipeline(ctx: RequestContext): HandlerResponse
 
     return successResponse(ctx.id, result);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Pipeline failed');
+    return harborFailure(ctx.id, e, 'Pipeline failed');
   }
 }
 
@@ -440,7 +463,7 @@ export async function handleAgentsParallel(ctx: RequestContext): HandlerResponse
 
     return successResponse(ctx.id, result);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Parallel execution failed');
+    return harborFailure(ctx.id, e, 'Parallel execution failed');
   }
 }
 
@@ -473,7 +496,7 @@ export async function handleAgentsRoute(ctx: RequestContext): HandlerResponse {
 
     return successResponse(ctx.id, result);
   } catch (e) {
-    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Routing failed');
+    return harborFailure(ctx.id, e, 'Routing failed');
   }
 }
 

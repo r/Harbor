@@ -31,6 +31,7 @@ import {
   handleAgentsInvoke,
   handleAgentsSend,
   handleAgentsSubscribe,
+  handleAgentsBroadcast,
   handleAgentsUnsubscribe,
   handleAgentsRegisterMessageHandler,
   handleAgentsUnregisterMessageHandler,
@@ -80,6 +81,8 @@ async function routeMessage(ctx: RequestContext, sender: ResponseSender): Promis
       return handleAgentsSend(ctx, sender);
     case 'agents.subscribe':
       return handleAgentsSubscribe(ctx, sender);
+    case 'agents.broadcast':
+      return handleAgentsBroadcast(ctx, sender);
     case 'agents.unsubscribe':
       return handleAgentsUnsubscribe(ctx, sender);
     case 'agents.registerMessageHandler':
@@ -190,7 +193,7 @@ export function initializeRouter(): void {
  */
 export function routeAgentMessage(
   message: { type: string; payload?: unknown; requestId?: string },
-  sendResponse: (response: { ok: boolean; result?: unknown; error?: string }) => void,
+  sendResponse: (response: { ok: boolean; result?: unknown; error?: string; code?: string }) => void,
   options: { signal?: AbortSignal } = {},
 ): void {
   log('Agent message:', message.type);
@@ -219,6 +222,8 @@ export function routeAgentMessage(
         ok: response.ok,
         result: response.result,
         error: response.error?.message || (response.ok ? undefined : 'Unknown error'),
+        // Keep the handler's code (ERR_PERMISSION_DENIED, ...) so the page can tell why.
+        code: response.ok ? undefined : response.error?.code,
       });
     },
     sendStreamEvent: () => {

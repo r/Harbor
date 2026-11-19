@@ -998,6 +998,10 @@ console.log(`Delivered to ${delivered} agents`);
 await window.agent.agents.unsubscribe('research-complete');
 ```
 
+A broadcast reaches agents subscribed to that event on your own site, and on other sites you hold an `agents:crossOrigin` grant for (and that Harbor's policy still allows). It never asks about other sites, because there's no single site to ask about. `delivered` counts only the agents it reached. Broadcasting needs `agents:message`, and your page must be registered as an agent.
+
+Messages and broadcasts reach a page agent registered with `acceptsMessages` (the default). If Harbor refuses an agent call, the error keeps Harbor's code, such as `ERR_PERMISSION_DENIED` or `ERR_NOT_REGISTERED`.
+
 #### Orchestration Patterns
 
 An orchestration call needs `agents:invoke`. Harbor then checks each step's agent just before that step runs, the same way it checks a direct `invoke`. An agent on another origin needs an `agents:crossOrigin` grant for that agent's site, so the user may be asked partway through a pipeline. A route checks only the agent it picks. If the user refuses a step, a pipeline stops there. In a parallel run, only that task fails.

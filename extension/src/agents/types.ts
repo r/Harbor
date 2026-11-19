@@ -23,6 +23,9 @@ export type ApiErrorCode =
   // The caller stopped waiting while Harbor's policy check ran.
   | 'ERR_ABORTED'
   | 'ERR_INTERNAL'
+  | 'ERR_INVALID_REQUEST'
+  // Multi-agent: the caller hasn't registered as an agent.
+  | 'ERR_NOT_REGISTERED'
   // Typed-permission decisions surface these.
   | 'ERR_BLOCKED_BY_POLICY'
   | 'ERR_LABEL_FLOW_BLOCKED'
@@ -107,6 +110,8 @@ export interface PermissionStatus {
   allowedTools?: string[];
   /** Sites whose agents the origin may currently reach (`agents:crossOrigin`). */
   agentOrigins?: string[];
+  /** Sites the person refused agents:crossOrigin for (sidebar display). */
+  deniedAgentOrigins?: string[];
 }
 
 export interface RequestPermissionsOptions {
@@ -122,6 +127,8 @@ export interface StoredPermission {
   grantedAt: number;
   expiresAt?: number; // For 'granted-once'
   tabId?: number; // For 'granted-once'
+  /** For 'granted-once' answered by several tabs: tab id (or `*`) to its expiry. */
+  tabs?: Record<string, number>;
 }
 
 export interface StoredOriginPermissions {
@@ -569,6 +576,7 @@ export type MessageType =
   | 'agents.invoke'
   | 'agents.send'
   | 'agents.subscribe'
+  | 'agents.broadcast'
   | 'agents.unsubscribe'
   | 'agents.registerMessageHandler'
   | 'agents.unregisterMessageHandler'

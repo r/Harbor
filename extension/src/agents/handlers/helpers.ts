@@ -61,6 +61,11 @@ export interface RequireActionOptions {
   classifyHost?: boolean;
   /** Mark the audit record as a page's own fetch (see AuditRecord.pageFetch). */
   pageFetch?: boolean;
+  /**
+   * Never show a prompt: an ask or preview is a refusal. For a check with no
+   * one to ask about, such as one site among a broadcast's recipients.
+   */
+  noPrompt?: boolean;
 }
 
 /** A permission refusal, in the shape a handler sends as its error. */
@@ -144,6 +149,7 @@ export async function checkAction(
   }
 
   if (proceedsOnUpstreamConsent) return proceed();
+  if (options.noPrompt) return denialFor(decision);
 
   // ask | preview — surface the prompt via the existing flow.
   // We use the typed action's primary legacy scope unless the caller
@@ -176,7 +182,9 @@ export async function checkAction(
       promptResult.grantType,
       ctx.tabId,
       promptResult.allowedTools,
-      promptResult.agentOrigins,
+      // Only the site this call asked about: a merged prompt may have shown
+      // other sites, which their own callers grant for their own tabs.
+      targetSite ? [targetSite] : promptResult.agentOrigins,
     );
     return proceed();
   }

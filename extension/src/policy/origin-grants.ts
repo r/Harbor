@@ -23,6 +23,7 @@
 
 import { browserAPI } from '../browser-compat';
 import type { TypedAction } from './actions';
+import { onceGrantLive } from './once-grants';
 import type { OriginGrantOutcome, OriginGrantResolver, PolicyResource } from './engine';
 
 // =============================================================================
@@ -36,6 +37,7 @@ interface StoredPermission {
   grantedAt: number;
   expiresAt?: number;
   tabId?: number;
+  tabs?: Record<string, number>;
 }
 
 interface StoredOriginPermissions {
@@ -111,12 +113,9 @@ async function loadOriginPermissions(origin: string): Promise<StoredOriginPermis
 
 function isStoredGrantLive(stored: StoredPermission, now: number, tabId?: number): boolean {
   if (stored.grant === 'granted-always') return true;
-  if (stored.grant === 'granted-once') {
-    if (stored.expiresAt && now > stored.expiresAt) return false;
-    // "Allow once" covers only the tab that granted it (as isGrantValid in permissions.ts).
-    if (stored.tabId !== undefined && tabId !== undefined && stored.tabId !== tabId) return false;
-    return true;
-  }
+  // "Allow once" covers only the tabs that granted it, each until its own
+  // expiry (as isGrantValid in permissions.ts).
+  if (stored.grant === 'granted-once') return onceGrantLive(stored, now, tabId);
   return false;
 }
 

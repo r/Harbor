@@ -22,6 +22,7 @@ import {
   getAgentsByOrigin,
   getAgentUsage,
   discoverAgents,
+  listAllAgents,
 } from '../../multi-agent/registry';
 import {
   sendMessage as sendAgentMessage,
@@ -31,7 +32,9 @@ import {
   registerInvocationHandler,
   unregisterInvocationHandler,
   subscribeToEvent,
+  broadcastEvent,
   unsubscribeFromEvent,
+  cleanupAgentHandlers,
 } from '../../multi-agent/messaging';
 import {
   executePipeline,
@@ -60,6 +63,19 @@ import { handleIncomingInvocation } from '../../page-api/handlers/agent-handlers
 
 // Track which agent each origin has registered (origin -> agentId)
 const originAgents = new Map<string, string>();
+
+/**
+ * The calling page's agent: the one registered from the caller's own tab,
+ * or else the latest one its site registered. With a site open in two tabs,
+ * each tab acts as its own agent.
+ */
+function callerAgent(ctx: RequestContext): string | undefined {
+  if (ctx.tabId !== undefined) {
+    const own = getAgentsByOrigin(ctx.origin).find((agent) => agent.tabId === ctx.tabId);
+    if (own) return own.id;
+  }
+  return originAgents.get(ctx.origin);
+}
 
 // Track which agents have an invocation handler registered through Harbor's
 // own in-process page API, and where to deliver an invocation (origin/tab).
@@ -142,7 +158,7 @@ export async function handleAgentsGetInfo(
   sender: ResponseSender,
 ): Promise<void> {
   const payload = ctx.payload as { agentId?: string } | undefined;
-  const agentId = payload?.agentId || originAgents.get(ctx.origin);
+  const agentId = payload?.agentId || callerAgent(ctx);
 
   if (!agentId) {
     sender.sendResponse({ id: ctx.id, ok: true, result: null });
@@ -274,7 +290,7 @@ export async function handleAgentsInvoke(
   const traceId = payload.traceId || `harbor-trace-${Date.now()}`;
   log(`[TRACE ${traceId}] handleAgentsInvoke START - target: ${payload.agentId}`);
 
-  const fromAgentId = originAgents.get(ctx.origin);
+  const fromAgentId = callerAgent(ctx);
   if (!fromAgentId) {
     log(`[TRACE ${traceId}] ERROR - invoker not registered`);
     sender.sendResponse({
@@ -336,7 +352,7 @@ export async function handleAgentsSend(
     }
   }
 
-  const fromAgentId = originAgents.get(ctx.origin);
+  const fromAgentId = callerAgent(ctx);
   if (!fromAgentId) {
     sender.sendResponse({
       id: ctx.id,
@@ -366,13 +382,59 @@ export async function handleAgentsSubscribe(
   }
 
   const payload = ctx.payload as { eventType: string };
-  const agentId = originAgents.get(ctx.origin);
+  const agentId = callerAgent(ctx);
 
   if (agentId) {
     subscribeToEvent(agentId, payload.eventType);
   }
 
   sender.sendResponse({ id: ctx.id, ok: true, result: undefined });
+}
+
+/**
+ * Handle agents.broadcast - Send an event to every subscribed agent the
+ * sender may reach: agents on its own site, and on sites it holds an
+ * agents:crossOrigin grant for. A broadcast has no single target to ask
+ * about, so it never prompts.
+ */
+export async function handleAgentsBroadcast(
+  ctx: RequestContext,
+  sender: ResponseSender,
+): Promise<void> {
+  if (!(await requireAction(ctx, sender, 'agent.message', { promptAsScope: 'agents:message' }))) {
+    return;
+  }
+
+  const payload = ctx.payload as { eventType?: string; data?: unknown };
+  const fromAgentId = callerAgent(ctx);
+  if (!fromAgentId) {
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_NOT_REGISTERED', message: 'Must register as an agent before broadcasting' },
+    });
+    return;
+  }
+  if (!payload?.eventType) {
+    sender.sendResponse({ id: ctx.id, ok: false, error: { code: 'ERR_INVALID_REQUEST', message: 'Missing eventType' } });
+    return;
+  }
+
+  // Each other site the origin holds a grant for still goes through the
+  // policy engine (managed and user rules, the watchdog, the audit log),
+  // without a prompt: there's no single site to ask about.
+  const reachable = new Set<string>();
+  for (const site of (await getPermissionStatus(ctx.origin, ctx.tabId)).agentOrigins ?? []) {
+    const refusal = await checkAction(ctx, 'agent.delegate.crossOrigin', {
+      resource: { agentOrigin: site },
+      reason: `Broadcast ${payload.eventType} to agents on ${site}`,
+      noPrompt: true,
+    });
+    if (!refusal) reachable.add(site);
+  }
+  const result = broadcastEvent(fromAgentId, payload.eventType, payload.data, (site) => site === ctx.origin || reachable.has(site));
+
+  sender.sendResponse({ id: ctx.id, ok: true, result: { delivered: result.delivered } });
 }
 
 /**
@@ -383,7 +445,7 @@ export async function handleAgentsUnsubscribe(
   sender: ResponseSender,
 ): Promise<void> {
   const payload = ctx.payload as { eventType: string };
-  const agentId = originAgents.get(ctx.origin);
+  const agentId = callerAgent(ctx);
 
   if (agentId) {
     unsubscribeFromEvent(agentId, payload.eventType);
@@ -399,24 +461,61 @@ export function handleAgentsRegisterMessageHandler(
   ctx: RequestContext,
   sender: ResponseSender,
 ): void {
-  const agentId = originAgents.get(ctx.origin);
-  if (!agentId) {
+  const payload = ctx.payload as { agentId?: string; tabId?: number } | undefined;
+  const agentId = payload?.agentId || callerAgent(ctx);
+  const agent = agentId ? getAgent(agentId) : undefined;
+  // A page may only receive messages for its own site's agents.
+  if (!agent || agent.origin !== ctx.origin) {
     sender.sendResponse({ id: ctx.id, ok: true, result: undefined });
     return;
   }
+  const tabId = payload?.tabId || ctx.tabId;
 
-  // The actual handler is in the page, we just track registration
-  registerMessageHandler(agentId, (message) => {
-    // Forward message to the page
-    if (ctx.tabId) {
-      browserAPI.tabs.sendMessage(ctx.tabId, {
-        type: 'harbor_agent_message',
-        message,
-      }).catch(() => {});
-    }
+  // The actual handler is in the page: forward each message to its tab as an
+  // agent event, which the content script hands to the page. Broadcasts
+  // arrive as broadcast messages and go to the page's subscribers.
+  registerMessageHandler(agent.id, (message) => {
+    if (!tabId) return;
+    const event =
+      message.type === 'broadcast'
+        ? { type: 'broadcast', broadcast: message.payload }
+        : { type: 'message', message };
+    void forwardToAgentTab(tabId, agent.origin, { type: 'agentEvent', event });
   });
 
   sender.sendResponse({ id: ctx.id, ok: true, result: undefined });
+}
+
+/**
+ * Post to an agent's tab only while that tab still shows the agent's site.
+ * A tab that has moved to another site must not receive the agent's mail.
+ */
+async function forwardToAgentTab(tabId: number, agentOrigin: string, message: unknown): Promise<void> {
+  try {
+    const tab = await browserAPI.tabs.get(tabId);
+    if (!tab?.url || new URL(tab.url).origin !== agentOrigin) return;
+    await browserAPI.tabs.sendMessage(tabId, message);
+  } catch {
+    // The tab is gone, or its URL can't be read: drop the message.
+  }
+}
+
+/**
+ * Forget the agents a tab registered, once the page in it has gone (it
+ * navigated, reloaded or closed): their handlers, subscriptions and
+ * registration, so nothing more is delivered to that tab for them.
+ *
+ * `registeredBefore` spares agents a newer page in the tab registered, when
+ * the old page's disconnect arrives after the new page has started.
+ */
+export function forgetTabAgents(tabId: number, registeredBefore = Infinity): void {
+  for (const agent of listAllAgents()) {
+    if (agent.tabId !== tabId || agent.registeredAt >= registeredBefore) continue;
+    cleanupAgentHandlers(agent.id);
+    invocationHandlers.delete(agent.id);
+    if (originAgents.get(agent.origin) === agent.id) originAgents.delete(agent.origin);
+    unregisterAgent(agent.id, agent.origin);
+  }
 }
 
 /**
@@ -426,7 +525,7 @@ export function handleAgentsUnregisterMessageHandler(
   ctx: RequestContext,
   sender: ResponseSender,
 ): void {
-  const agentId = originAgents.get(ctx.origin);
+  const agentId = callerAgent(ctx);
   if (agentId) {
     unregisterMessageHandler(agentId);
   }
@@ -446,7 +545,7 @@ export function handleAgentsRegisterInvocationHandler(
 
   // If agentId is provided directly, use it; otherwise look up by origin
   // (for content script registrations).
-  const agentId = payload?.agentId || originAgents.get(ctx.origin);
+  const agentId = payload?.agentId || callerAgent(ctx);
 
   log('Resolved agentId:', agentId, 'from payload.agentId:', payload?.agentId, 'or originAgents lookup');
 
@@ -513,7 +612,7 @@ export function handleAgentsUnregisterInvocationHandler(
   ctx: RequestContext,
   sender: ResponseSender,
 ): void {
-  const agentId = originAgents.get(ctx.origin);
+  const agentId = callerAgent(ctx);
   if (agentId) {
     unregisterInvocationHandler(agentId);
   }
@@ -569,7 +668,7 @@ export async function handleOrchestratePipeline(
     initialInput?: unknown;
   };
 
-  const agentId = originAgents.get(ctx.origin);
+  const agentId = callerAgent(ctx);
 
   if (!agentId) {
     sender.sendResponse({
@@ -631,7 +730,7 @@ export async function handleOrchestrateParallel(
     return;
   }
 
-  const agentId = originAgents.get(ctx.origin);
+  const agentId = callerAgent(ctx);
 
   if (!agentId) {
     sender.sendResponse({
@@ -674,7 +773,7 @@ export async function handleOrchestrateRoute(
     task: string;
   };
 
-  const agentId = originAgents.get(ctx.origin);
+  const agentId = callerAgent(ctx);
 
   if (!agentId) {
     sender.sendResponse({
@@ -711,7 +810,7 @@ export async function handleOrchestrateSupervisor(
   }
 
   const payload = ctx.payload as { supervisor: Supervisor; tasks: SupervisorTask[] };
-  const agentId = originAgents.get(ctx.origin);
+  const agentId = callerAgent(ctx);
 
   if (!agentId) {
     sender.sendResponse({

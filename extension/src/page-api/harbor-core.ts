@@ -17,6 +17,7 @@
 import { gatePageAction, routeExtensionApiMessage, streamLlmChat } from '../extension-api';
 import type { TypedAction } from '../policy/actions';
 import { routeAgentMessage } from '../agents/background-router';
+import { forgetTabAgents } from '../agents/handlers/multi-agent';
 import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
@@ -144,9 +145,9 @@ async function dispatch<T>(type: string, payload: unknown, signal: AbortSignal):
   return new Promise<T>((resolve, reject) => {
     routeAgentMessage(
       { type, payload },
-      (response: { ok: boolean; result?: unknown; error?: string }) => {
+      (response: { ok: boolean; result?: unknown; error?: string; code?: string }) => {
         if (response.ok) resolve(response.result as T);
-        else reject(createError(response.error ?? 'Unknown error from Harbor'));
+        else reject(createError(response.error ?? 'Unknown error from Harbor', response.code));
       },
       { signal },
     );
@@ -308,4 +309,12 @@ export async function acpSend(channel: string, message: unknown): Promise<void> 
  */
 export async function acpClose(channel: string): Promise<void> {
   await rpcRequest('acp.close', { channel });
+}
+
+/**
+ * The page in a tab has gone (it navigated, reloaded or closed): forget the
+ * agents it registered, so nothing more is delivered to that tab for them.
+ */
+export function forgetAgentsInTab(tabId: number, registeredBefore?: number): void {
+  forgetTabAgents(tabId, registeredBefore);
 }

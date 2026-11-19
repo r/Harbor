@@ -1236,6 +1236,7 @@ type PermissionStatusEntry = {
   scopes: Record<string, string>;
   allowedTools?: string[];
   agentOrigins?: string[];
+  deniedAgentOrigins?: string[];
 };
 
 async function loadPermissions(): Promise<void> {
@@ -1305,10 +1306,13 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
     }
 
     let agentSitesHtml = '';
-    if (perm.agentOrigins && perm.agentOrigins.length > 0) {
-      const siteBadges = perm.agentOrigins
-        .map((site) => `<span class="permission-tool-badge">${escapeHtml(site)}</span>`)
-        .join('');
+    if ((perm.agentOrigins?.length ?? 0) > 0 || (perm.deniedAgentOrigins?.length ?? 0) > 0) {
+      const siteBadges = [
+        ...(perm.agentOrigins ?? []).map((site) => `<span class="permission-tool-badge">${escapeHtml(site)}</span>`),
+        ...(perm.deniedAgentOrigins ?? []).map(
+          (site) => `<span class="permission-scope-badge denied">${escapeHtml(site)} ✕</span>`,
+        ),
+      ].join('');
       agentSitesHtml = `
         <div class="permission-tools-section">
           <div class="permission-tools-title">Agents on these sites</div>
