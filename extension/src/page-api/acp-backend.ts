@@ -179,11 +179,18 @@ export class AcpAgentBackend implements AgentBackend {
       requestAbort.abort();
     };
 
+    let connectionCtx: ClientContext | undefined;
+
     const onPageAbort = () => triggerCancel('aborted', connectionCtx);
     signal.addEventListener('abort', onPageAbort);
+    // An abort landing between `openAcpChannel` resolving (this method's
+    // caller already has a channel and a cwd) and this listener being
+    // registered, just above, would otherwise be missed entirely — nothing
+    // else re-checks `signal` before the connection starts, so a run that
+    // raced exactly that window would run to completion, or sit until the
+    // 10-minute timeout, instead of ending right away.
+    if (signal.aborted) triggerCancel('aborted', connectionCtx);
     const timeoutHandle = setTimeout(() => triggerCancel('timeout', connectionCtx), ACP_RUN_TIMEOUT_MS);
-
-    let connectionCtx: ClientContext | undefined;
 
     function emitStopReason(stopReason: StopReason): void {
       const outcome = stopReasonOutcome(stopReason, cancelReason);

@@ -13,9 +13,12 @@
  * Also tracks sessions whose agent is still starting (`createAcpTextSession`
  * hasn't resolved yet): a tab closing, or its port disconnecting, while
  * `open()` is still in flight can't destroy a session that was never
- * registered, so it marks the pending open cancelled instead — once `open()`
- * settles, `createAcpTextSession` checks that flag and tears the session
- * down immediately rather than registering it.
+ * registered. `cancelPendingOpensForTab` both marks the pending open
+ * cancelled (for `createAcpTextSession` to check once `open()` settles on
+ * its own) and, if the open already registered an abort callback, calls it
+ * immediately — otherwise an agent hanging at `initialize` (never settling
+ * on its own) would keep the open running, and its slot held, forever: a
+ * tab closing has to be able to interrupt it, not just flag it for later.
  */
 
 interface RegistryEntry {
@@ -46,6 +49,8 @@ export function acpTextSessionIdsForTab(tabId: number): string[] {
 interface PendingOpen {
   tabId?: number;
   cancelled: boolean;
+  /** Set by `createAcpTextSession` once it has a signal it can abort to interrupt the in-flight `open()`. Called immediately by `cancelPendingOpensForTab` if it's already set; called by `setPendingOpenAbort` itself if cancellation was requested first. */
+  abort?: () => void;
 }
 
 const pendingOpens = new Map<string, PendingOpen>();
@@ -53,6 +58,19 @@ const pendingOpens = new Map<string, PendingOpen>();
 /** @internal acp-text-session.ts only. Call before starting `AcpTextSession.open()`. */
 export function registerPendingOpen(sessionId: string, tabId: number | undefined): void {
   pendingOpens.set(sessionId, { tabId, cancelled: false });
+}
+
+/**
+ * @internal acp-text-session.ts only. Gives this pending open a way to
+ * interrupt itself — called right away if `cancelPendingOpensForTab`
+ * already marked it cancelled before this was set (the tab closed before
+ * `createAcpTextSession` got this far).
+ */
+export function setPendingOpenAbort(sessionId: string, abort: () => void): void {
+  const pending = pendingOpens.get(sessionId);
+  if (!pending) return;
+  pending.abort = abort;
+  if (pending.cancelled) abort();
 }
 
 /** @internal acp-text-session.ts only. Call once `open()` has settled, success or not. */
@@ -68,12 +86,15 @@ export function isPendingOpenCancelled(sessionId: string): boolean {
 /**
  * Marks every still-opening session for `tabId` cancelled, so each one
  * tears itself down (and calls `acp.close`) as soon as its `open()` call
- * settles, instead of registering. Returns nothing: unlike
- * `acpTextSessionIdsForTab`, the caller has no live session object yet to
- * act on directly — `createAcpTextSession` is what finishes the job.
+ * settles, instead of registering — and, for one that already registered
+ * an abort callback, calls it now, so an agent hanging at `initialize`
+ * (which would otherwise never let `open()` settle on its own) is
+ * interrupted immediately rather than holding its slot forever.
  */
 export function cancelPendingOpensForTab(tabId: number): void {
   for (const pending of pendingOpens.values()) {
-    if (pending.tabId === tabId) pending.cancelled = true;
+    if (pending.tabId !== tabId) continue;
+    pending.cancelled = true;
+    pending.abort?.();
   }
 }

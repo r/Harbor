@@ -176,7 +176,16 @@ export class AcpTextSession {
           }
           this.acpSessionId = initialized.sessionId;
         } catch (e) {
-          readyResolve({ ok: false, error: agentFailedEvent(this.scrub(e instanceof Error ? e.message : 'The agent failed to start')) });
+          // `this.openAbort` aborting is what made `initialize`/`session/new`
+          // reject here (`stopWaitingOnCancel`) — that's this backend's own
+          // cancellation, same as a page abort anywhere else, not a genuine
+          // agent failure, so it's reported as ERR_ABORTED, not
+          // ERR_AGENT_FAILED's generic "the agent failed to start".
+          if (this.openAbort.signal.aborted) {
+            readyResolve({ ok: false, error: cancelReasonEvent('aborted') });
+          } else {
+            readyResolve({ ok: false, error: agentFailedEvent(this.scrub(e instanceof Error ? e.message : 'The agent failed to start')) });
+          }
           return;
         }
         readyResolve({ ok: true });
@@ -401,7 +410,7 @@ export class AcpTextSession {
 
 import {
   registerAcpTextSession, unregisterAcpTextSession, acpTextSessionIdsForTab,
-  registerPendingOpen, clearPendingOpen, isPendingOpenCancelled, cancelPendingOpensForTab,
+  registerPendingOpen, setPendingOpenAbort, clearPendingOpen, isPendingOpenCancelled, cancelPendingOpensForTab,
 } from './acp-text-session-registry';
 export { isAcpTextSession } from './acp-text-session-registry';
 
@@ -431,9 +440,18 @@ export async function createAcpTextSession(
   signal?: AbortSignal,
 ): Promise<void> {
   registerPendingOpen(sessionId, tabId);
+  // `cancelPendingOpensForTab` (the tab closing, or its port disconnecting
+  // without a `session.destroy` — handleTabRemoved's own cleanup) needs a
+  // way to interrupt this open even if the agent never answers on its own
+  // (hanging at `initialize`, say): this controller is that way, combined
+  // with the caller's own `signal` so either can end the open.
+  const tabAbort = new AbortController();
+  setPendingOpenAbort(sessionId, () => tabAbort.abort());
+  const openSignal = signal ? combineAbortSignals([signal, tabAbort.signal]) : tabAbort.signal;
+
   const session = new AcpTextSession(agentId, origin, tabId, systemPrompt);
   try {
-    await session.open(signal);
+    await session.open(openSignal);
   } catch (e) {
     clearPendingOpen(sessionId);
     throw e;

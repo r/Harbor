@@ -68,6 +68,7 @@ vi.mock('../handlers', async (importOriginal) => {
 import { createFakeAcpBridge } from './support/fake-acp-bridge';
 import { getMockStorage, resetMockBrowser } from '../../__tests__/test-setup';
 import { DEFAULT_FLAGS } from '../policy/feature-flag-set';
+import { liveAgentCountForOrigin } from '../acp-agent-limits';
 import type { RequestContext } from '../handlers/types';
 
 const AGENT_ID = 'text-agent';
@@ -826,5 +827,77 @@ describe('mutation coverage: the streaming chunk is actually scrubbed', () => {
     expect(tokenEvents).toHaveLength(1);
     expect(tokenEvents[0].event.token).toBe('see ./x.txt');
     expect(tokenEvents[0].event.token).not.toContain('/Users/sam');
+  });
+});
+
+describe('a page-side abort during ai.createTextSession, through the real port', () => {
+  it('ends the open with ERR_ABORTED, closes the agent process, and frees the per-site slot', async () => {
+    await setAcpBackend(AGENT_ID);
+    const fakeBridge = createFakeAcpBridge();
+    mocks.bridge.current = fakeBridge;
+    // Hangs at initialize forever, so only the page's own abort can end this.
+    const app = buildAgentApp({ name: 'x' })
+      .onRequest(AGENT_METHODS.initialize, () => new Promise(() => {}))
+      .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }));
+    fakeBridge.registerAgent(AGENT_ID, app, {});
+    const closeSpy = vi.spyOn(fakeBridge, 'acpClose');
+    const port = connectPort();
+
+    const id = 'create-1';
+    const createPromise = port.receive({ id, type: 'ai.createTextSession', payload: {} });
+    await vi.waitFor(() => expect(fakeBridge.openCalls).toHaveLength(1));
+
+    await port.receive({ type: 'abort', id });
+    await createPromise;
+
+    expect(responseFor(port.postMessage, id)).toMatchObject({ ok: false, error: { code: 'ERR_ABORTED' } });
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(liveAgentCountForOrigin(ORIGIN)).toBe(0);
+  });
+});
+
+describe('a page-side abort during a non-streaming session.prompt, through the real port', () => {
+  it('cancels that turn (session/cancel) with ERR_ABORTED, and a prompt already queued behind it then runs', async () => {
+    await setAcpBackend(AGENT_ID);
+    const fakeBridge = createFakeAcpBridge();
+    mocks.bridge.current = fakeBridge;
+    let resolveFirstPrompt: ((r: { stopReason: StopReason }) => void) | null = null;
+    let promptCalls = 0;
+    let sessionCancelled = false;
+    const app = buildAgentApp({ name: 'x' })
+      .onRequest(AGENT_METHODS.initialize, async () => ({ protocolVersion: 1 }))
+      .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }))
+      .onNotification(AGENT_METHODS.session_cancel, async () => {
+        sessionCancelled = true;
+        resolveFirstPrompt?.({ stopReason: 'cancelled' });
+      })
+      .onRequest(AGENT_METHODS.session_prompt, () => {
+        promptCalls++;
+        if (promptCalls === 1) return new Promise((resolve) => { resolveFirstPrompt = resolve; });
+        return Promise.resolve({ stopReason: 'end_turn' as StopReason });
+      });
+    fakeBridge.registerAgent(AGENT_ID, app, {});
+    const port = connectPort();
+
+    const created = await createViaPort(port);
+    const sessionId = created.result as string;
+
+    const firstId = 'prompt-1';
+    const firstPromise = port.receive({ id: firstId, type: 'session.prompt', payload: { sessionId, input: 'a' } });
+    await vi.waitFor(() => expect(resolveFirstPrompt).not.toBeNull());
+
+    // Queued behind the first turn — must not run until it ends.
+    const secondPromise = promptViaPort(port, sessionId, 'b');
+    expect(promptCalls).toBe(1);
+
+    await port.receive({ type: 'abort', id: firstId });
+    await firstPromise;
+
+    expect(responseFor(port.postMessage, firstId)).toMatchObject({ ok: false, error: { code: 'ERR_ABORTED' } });
+    expect(sessionCancelled).toBe(true);
+
+    const second = await secondPromise;
+    expect(second).toMatchObject({ ok: true });
+    expect(promptCalls).toBe(2);
   });
 });
