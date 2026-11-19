@@ -101,4 +101,50 @@ describe('cancelling a chat stream', () => {
     expect(events).toEqual([]);
     expect(sent('llm.chat_stream')).toHaveLength(0);
   });
+
+  it("doesn't ask the bridge to stop a chat stream that ended with an error", async () => {
+    const bridge = await connectedBridge();
+    const { cancel, done } = bridge.rpcStreamRequest('llm.chat_stream', { messages: [] }, () => {});
+    done.catch(() => {});
+    const id = streamId();
+    // The bridge ends a chat stream after an error event; it carries no `fatal` flag.
+    port.onMessage!({ type: 'stream', id, event: { type: 'error', error: { code: -1, message: 'rate limited' } } });
+
+    cancel();
+
+    expect(sent('llm.cancel_stream')).toHaveLength(0);
+  });
+
+  it("doesn't ask a disconnected bridge to stop anything", async () => {
+    const bridge = await connectedBridge();
+    const { cancel, done } = bridge.rpcStreamRequest('llm.chat_stream', { messages: [] }, () => {});
+    done.catch(() => {});
+    bridge.disconnectNativeBridge();
+
+    expect(() => cancel()).not.toThrow();
+    expect(sent('llm.cancel_stream')).toHaveLength(0);
+  });
+
+  it('never sends llm.cancel_stream for an acp.open stream', async () => {
+    const bridge = await connectedBridge();
+    const { cancel, done } = bridge.rpcStreamRequest('acp.open', { agentId: 'a', workspace: 'w' }, () => {});
+    done.catch(() => {});
+    cancel();
+    expect(sent('llm.cancel_stream')).toHaveLength(0);
+  });
+
+  it("stops listening to the caller's signal once the stream ends", async () => {
+    await connectedBridge();
+    const { bridgeStreamRequest } = await import('../bridge-client');
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, 'removeEventListener');
+    const reading = (async () => {
+      for await (const _event of bridgeStreamRequest('llm.chat_stream', { messages: [] }, controller.signal)) { /* drain */ }
+    })();
+    await vi.waitFor(() => expect(sent('llm.chat_stream')).toHaveLength(1));
+    port.onMessage!({ type: 'stream', id: streamId(), event: { type: 'done', finish_reason: 'stop' } });
+    await reading;
+    expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
 });
+
