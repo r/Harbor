@@ -194,4 +194,24 @@ describe('agent.run cancellation at the background port boundary', () => {
     expect(mocks.harborRequest).not.toHaveBeenCalled();
     expect(postMessage).not.toHaveBeenCalled();
   });
+
+  it("passes the run's signal to its model and tool calls, so Harbor can drop one the run gave up on", async () => {
+    let chatCalls = 0;
+    mocks.harborRequest.mockImplementation(async (method: string) => {
+      if (method === 'mcp.listTools') return { tools: [{ name: 'time', serverId: 'clock' }] };
+      if (method === 'mcp.callTool') return { result: 'noon' };
+      if (method === 'llm.chat') {
+        chatCalls++;
+        return chatCalls === 1 ? toolCallResponse('call-1') : { content: 'done', choices: [{ message: { role: 'assistant', content: 'done' } }] };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+
+    await receive({ id: 'signal-run', type: 'agent.run', origin: 'https://example.test', payload: { task: 'what time is it' } });
+
+    const withSignal = (method: string) =>
+      expect(mocks.harborRequest).toHaveBeenCalledWith(method, expect.anything(), expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    withSignal('llm.chat');
+    withSignal('mcp.callTool');
+  });
 });
