@@ -9,7 +9,7 @@ import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission, getPermissions } from './permission-handlers';
 import { ErrorCodes } from '../types';
-import { HARBOR_SESSION_GONE } from './ai-handlers';
+import { POLICY_REFUSAL_CODES } from '../policy-refusal';
 
 // =============================================================================
 // Handlers
@@ -76,14 +76,9 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
   }
 
   // A call made through a session counts against that session's tool budget.
-  // Harbor's registry checks that the session is alive and belongs to this
-  // origin, and refuses once `limits.maxToolCalls` is spent. Recording before
-  // the call means a refused call never runs.
-  if (sessionId !== undefined) {
-    const refusal = await recordSessionToolCall(ctx.origin, sessionId, tool);
-    if (refusal) return errorResponse(ctx.id, refusal.code, refusal.message);
-  }
-
+  // Harbor checks that the session is alive and belongs to this origin, and
+  // counts the call only once its policy gate allows it, so a call the policy
+  // engine refuses doesn't spend the budget. A call past the budget never runs.
   try {
     const result = await harborRequest<{ result: unknown }>('mcp.callTool', {
       origin: ctx.origin,
@@ -91,46 +86,27 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
       serverId,
       toolName,
       args: args || {},
+      ...(sessionId !== undefined ? { sessionId } : {}),
     });
     return successResponse(ctx.id, result.result);
   } catch (e) {
-    return errorResponse(
-      ctx.id,
-      'ERR_TOOL_FAILED',
-      e instanceof Error ? e.message : 'Tool call failed'
-    );
+    // Harbor's own refusals (the policy gate, the session's budget) carry
+    // their page-facing code. Anything else, whatever its message or code, is
+    // the tool failing.
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string' && HARBOR_REFUSAL_CODES.has(code)) {
+      return errorResponse(ctx.id, code, (e as Error).message);
+    }
+    return errorResponse(ctx.id, 'ERR_TOOL_FAILED', e instanceof Error ? e.message : 'Tool call failed');
   }
 }
-
-// =============================================================================
-// Session tool budget
-// =============================================================================
-
-/** Harbor's refusal when a session's `limits.maxToolCalls` is spent. */
-const BUDGET_EXCEEDED_MESSAGE = 'Tool call budget exceeded';
 
 /**
- * Count one tool call against a session's budget. Returns the error to send
- * the page if Harbor refuses it, or null if the call may run.
+ * The refusals Harbor reports on a page's tool call, as docs/PERMISSIONS.md
+ * lists them: the policy engine's, and the session's.
  */
-async function recordSessionToolCall(
-  origin: string,
-  sessionId: string,
-  toolName: string,
-): Promise<{ code: string; message: string } | null> {
-  try {
-    await harborRequest('session.recordUsage', { sessionId, origin, type: 'tool', detail: { toolName } });
-    return null;
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    if (message === BUDGET_EXCEEDED_MESSAGE) {
-      return { code: ErrorCodes.BUDGET_EXCEEDED, message: 'Session tool call budget exceeded' };
-    }
-    // Not found, terminated, expired, or another origin's session: all look
-    // the same to the page. Anything else is Harbor failing, and still refuses.
-    if (HARBOR_SESSION_GONE.test(message)) {
-      return { code: ErrorCodes.SESSION_NOT_FOUND, message: 'Session not found' };
-    }
-    return { code: ErrorCodes.INTERNAL, message: 'Could not check the session tool budget' };
-  }
-}
+const HARBOR_REFUSAL_CODES: ReadonlySet<string> = new Set([
+  ...POLICY_REFUSAL_CODES,
+  ErrorCodes.SESSION_NOT_FOUND,
+  ErrorCodes.BUDGET_EXCEEDED,
+]);

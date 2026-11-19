@@ -18,6 +18,7 @@
 import { harborRequest } from './harbor-core';
 import { hasPermission } from './handlers';
 import { toolResultText } from './tool-messages';
+import { policyRefusalCode } from './policy-refusal';
 import { ErrorCodes, type StreamToken } from './types';
 
 /** A tool the run may offer the model, already filtered to the site's `allowedTools`. */
@@ -144,7 +145,10 @@ export const builtinAgentBackend: AgentBackend = {
       } catch (e) {
         emit({
           type: 'error',
-          error: { code: ErrorCodes.MODEL_FAILED, message: `LLM request failed: ${e instanceof Error ? e.message : String(e)}` },
+          error: {
+            code: policyRefusalCode(e) ?? ErrorCodes.MODEL_FAILED,
+            message: `LLM request failed: ${e instanceof Error ? e.message : String(e)}`,
+          },
         });
         return;
       }

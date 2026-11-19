@@ -260,7 +260,7 @@ A **session** is origin-bound state for a task: the capabilities it requested, i
 
 Authority comes from the origin's grants — the permission prompt, `agent.requestPermissions`, per-tool allowlists — checked against the policy engine's tiers on every call. The engine sees the origin and the action, not the session. Harbor's background also refuses a prompt on a session that didn't ask for model access. The session's tool list and browser access are kept only by Harbor's page script, so a page can always use what its origin was granted. Treat the origin's grants as the boundary.
 
-Session tool budgets are enforced in the background: `SessionRegistry.recordToolCall` counts each `callTool()` against the session's `maxToolCalls`, and calls past the budget fail with `ERR_BUDGET_EXCEEDED` without running the tool. A call refused by the page-side permission or allowlist check doesn't count against the budget; a call that reaches the policy engine and is refused there does.
+Session tool budgets are enforced in the background: `SessionRegistry.recordToolCall` counts each `callTool()` against the session's `maxToolCalls`, and calls past the budget fail with `ERR_BUDGET_EXCEEDED` without running the tool. A call is counted only after the policy engine allows it, so a call refused by the page-side permission or allowlist check, or by the policy engine (a deny rule, a quarantined origin, a declined prompt), doesn't count against the budget. A call whose tool runs and fails does count. A call made after the budget is spent is refused before the policy engine, so it doesn't prompt. Calls made in parallel are each checked by the policy engine, and possibly prompted, before any is counted, so near the end of the budget a person can approve a call that is then refused with `ERR_BUDGET_EXCEEDED`; no more than the budget ever runs.
 
 ### Getting more authority later
 
@@ -551,6 +551,18 @@ try {
 ```
 
 Treat `ERR_BLOCKED_BY_POLICY`, `ERR_LABEL_FLOW_BLOCKED`, and `ERR_QUARANTINED` as terminal: the user has already been told, and retrying just generates noise in their activity feed.
+
+These are the policy engine's codes, and Harbor reports them as is wherever its policy check refuses a page's call:
+
+- `agent.tools.call()` and a session's `callTool()` throw them.
+- A `window.ai` text session's `prompt()` throws them, and `promptStreaming()` ends with them, when the session runs on Harbor's own model.
+- `agent.run()` ends with them as its `error` event when its tool list is refused, or, on Harbor's own model, a model call.
+
+When the person has chosen an ACP agent to answer, prompts go to that agent rather than through Harbor's policy engine, so its failures use the ACP codes (`ERR_AGENT_FAILED`, `ERR_AGENT_BUSY`, `ERR_AGENT_REFUSED`, `ERR_AGENT_LIMIT`). `agent.run()`'s tool list is still checked by the policy engine on either backend.
+
+A declined Harbor prompt is `ERR_PERMISSION_DENIED`. Any other failure keeps the call's own code (`ERR_TOOL_FAILED`, `ERR_MODEL_FAILED`, `ERR_AGENT_FAILED`), even when a tool or model returns text that looks like one of these codes.
+
+`ERR_LABEL_FLOW_BLOCKED` can't occur on a page's call yet: Harbor doesn't attach data labels to page tool calls or prompts. Handle it anyway; it's reserved for when it does.
 
 ### 6. Make pre-action reviews readable
 
@@ -925,7 +937,7 @@ The internal change is large, but the user-facing API is similar in shape. The b
 - `agent.requestPermissions({ scopes: [...] })` is replaced by `agent.requestCapabilities({ require: [...], optional: [...] })` with typed actions.
 - `model:prompt` becomes `model.prompt.local` or `model.prompt.remote.thirdParty` — pick the right one for your use case.
 - `web:fetch` becomes `network.egress.same_origin` or `network.egress.cross_origin`, with destination-aware policy.
-- New error codes (`ERR_BLOCKED_BY_POLICY`, `ERR_LABEL_FLOW_BLOCKED`) need to be handled in your error path.
+- New error codes (`ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`, `ERR_LABEL_FLOW_BLOCKED`) need to be handled in your error path.
 
 The sample apps and the demo site demonstrate the new shape.
 

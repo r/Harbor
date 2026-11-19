@@ -12,6 +12,7 @@
  * page or a compromised content script could otherwise forge.
  */
 import { harborRequest, harborStreamRequest } from './harbor-core';
+import { policyRefusalCode } from './policy-refusal';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
 import { type AgentBackend } from './agent-backend';
 import { selectAgentBackend } from './agent-backend-selection';
@@ -131,7 +132,10 @@ async function handleSessionPromptStreaming(
       } else if (event.type === 'error') {
         sendEvent({
           id: ctx.id,
-          event: { type: 'error', error: { code: 'ERR_MODEL_FAILED', message: event.error?.message || 'Stream error' } },
+          event: {
+            type: 'error',
+            error: { code: policyRefusalCode(event.error) ?? 'ERR_MODEL_FAILED', message: event.error?.message || 'Stream error' },
+          },
           done: true,
         });
         break;
@@ -140,7 +144,7 @@ async function handleSessionPromptStreaming(
   } catch (e) {
     sendEvent({
       id: ctx.id,
-      event: { type: 'error', error: { code: 'ERR_MODEL_FAILED', message: e instanceof Error ? e.message : 'Streaming failed' } },
+      event: { type: 'error', error: { code: policyRefusalCode(e) ?? 'ERR_MODEL_FAILED', message: e instanceof Error ? e.message : 'Streaming failed' } },
       done: true,
     });
   }
@@ -210,7 +214,7 @@ async function handleAgentRun(
   } catch (e) {
     sendEvent({
       id: ctx.id,
-      event: { type: 'error', error: { code: 'ERR_AGENT_FAILED', message: e instanceof Error ? e.message : 'Agent run failed' } },
+      event: { type: 'error', error: { code: policyRefusalCode(e) ?? 'ERR_AGENT_FAILED', message: e instanceof Error ? e.message : 'Agent run failed' } },
       done: true,
     });
   }

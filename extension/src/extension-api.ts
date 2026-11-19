@@ -25,6 +25,7 @@ import { promptActionForModel, type TypedAction } from './policy/actions';
 import type { PolicyResource } from './policy/engine';
 import { getPermissionStatus, requestPermissions, SCOPE_DESCRIPTIONS } from './policy/permissions';
 import type { PermissionScope } from './agents/types';
+import { ErrorCodes } from './page-api/types';
 
 // =============================================================================
 // Types
@@ -40,6 +41,12 @@ export interface ExtensionApiResponse {
   ok: boolean;
   result?: unknown;
   error?: string;
+  /**
+   * A page-facing error code, set only by Harbor's own refusals (the policy
+   * gate, a session's budget) so the page can tell them apart from a failure
+   * whose text came from elsewhere, such as a tool's error message.
+   */
+  code?: string;
 }
 
 // Message types for the extension API
@@ -263,6 +270,12 @@ async function handleMcpCallTool(payload: unknown): Promise<ExtensionApiResponse
     return failure('Missing serverId or toolName');
   }
 
+  // The policy gate has allowed this call, so it now counts against its
+  // session's budget. Checking and counting happen in one synchronous step,
+  // so parallel calls can't all pass the check before any is counted.
+  const budgetRefusal = sessionToolBudgetRefusal(payload, { spend: true });
+  if (budgetRefusal) return budgetRefusal;
+
   try {
     const result = await callTool(serverId, toolName, args || {});
     if (!result.ok) {
@@ -272,6 +285,47 @@ async function handleMcpCallTool(payload: unknown): Promise<ExtensionApiResponse
   } catch (e) {
     return failure(e);
   }
+}
+
+/**
+ * A page's `session.callTool()` reaches `mcp.callTool` with the session's id.
+ * Returns the failure to send back if the session can't take another call
+ * (gone, another origin's, or its `maxToolCalls` spent), or null if it can.
+ * With `spend`, an allowed call is also counted. Runs synchronously: there
+ * is no await between the check and the count.
+ *
+ * A refusal carries its page-facing code (`ERR_BUDGET_EXCEEDED` or
+ * `ERR_SESSION_NOT_FOUND`), so the page API never has to guess from the
+ * message, which a failing tool could also produce.
+ */
+function sessionToolBudgetRefusal(
+  payload: unknown,
+  { spend }: { spend: boolean },
+): ExtensionApiResponse | null {
+  const { sessionId, origin, serverId, toolName } = (payload || {}) as {
+    sessionId?: unknown;
+    origin?: unknown;
+    serverId?: unknown;
+    toolName?: unknown;
+  };
+  if (sessionId === undefined) return null;
+  // Not found, terminated, expired, or another origin's session: all look the
+  // same to the page.
+  const gone = { ok: false, error: 'Session not found', code: ErrorCodes.SESSION_NOT_FOUND };
+  const spent = { ok: false, error: 'Session tool call budget exceeded', code: ErrorCodes.BUDGET_EXCEEDED };
+  if (typeof sessionId !== 'string' || typeof origin !== 'string') return gone;
+  try {
+    SessionRegistry.getValidatedSession(sessionId, origin);
+  } catch {
+    return gone;
+  }
+  if (!spend) {
+    return SessionRegistry.getRemainingToolBudget(sessionId) === 0 ? spent : null;
+  }
+  const tool = `${String(serverId)}/${String(toolName)}`;
+  if (!SessionRegistry.recordToolCall(sessionId, tool)) return spent;
+  SessionRegistry.touchSession(sessionId);
+  return null;
 }
 
 async function handleMcpStartServer(payload: unknown): Promise<ExtensionApiResponse> {
@@ -559,57 +613,39 @@ async function handleSessionTerminate(payload: unknown): Promise<ExtensionApiRes
 }
 
 /**
- * Record usage for a session (prompt, tool call, etc.).
+ * Record a prompt and its reply in a session's history. Tool calls are
+ * counted by `mcp.callTool`, after its policy gate.
  */
 async function handleSessionRecordUsage(payload: unknown): Promise<ExtensionApiResponse> {
   const { sessionId, origin, type, detail } = payload as {
     sessionId?: string;
     origin?: string;
-    type?: 'prompt' | 'tool' | 'browser';
+    type?: string;
     detail?: unknown;
   };
 
   if (!sessionId || !origin || !type) {
     return failure('Missing sessionId, origin or type');
   }
+  if (type !== 'prompt') {
+    return failure(`Unknown usage type: ${type}`);
+  }
 
   try {
     // Only the owning origin may record against a live session.
     SessionRegistry.getValidatedSession(sessionId, origin);
 
-    switch (type) {
-      case 'prompt': {
-        const { userMessage, assistantMessage } = detail as {
-          userMessage?: string;
-          assistantMessage?: string;
-        };
-        if (userMessage && assistantMessage) {
-          SessionRegistry.recordPrompt(sessionId, userMessage, assistantMessage);
-        }
-        break;
-      }
-      case 'tool': {
-        const { toolName } = detail as { toolName?: string };
-        if (toolName) {
-          const allowed = SessionRegistry.recordToolCall(sessionId, toolName);
-          if (!allowed) {
-            return failure('Tool call budget exceeded');
-          }
-        }
-        break;
-      }
-      case 'browser': {
-        const { action } = detail as { action?: 'read' | 'interact' | 'screenshot' };
-        if (action) {
-          SessionRegistry.recordBrowserAccess(sessionId, action);
-        }
-        break;
-      }
+    const { userMessage, assistantMessage } = (detail || {}) as {
+      userMessage?: string;
+      assistantMessage?: string;
+    };
+    if (userMessage && assistantMessage) {
+      SessionRegistry.recordPrompt(sessionId, userMessage, assistantMessage);
     }
-    
+
     // Touch the session to update lastActiveAt
     SessionRegistry.touchSession(sessionId);
-    
+
     return success({ recorded: true });
   } catch (e) {
     return failure(e);
@@ -744,9 +780,14 @@ async function gatePageCall(
   };
   let denied: ExtensionApiResponse | null = null;
   const sender: ResponseSender = {
+    // Keep the policy engine's code (ERR_QUARANTINED, ERR_BLOCKED_BY_POLICY,
+    // ERR_PERMISSION_DENIED, ...) so the page can tell why it was refused.
     sendResponse: (response) => {
       const err = (response as { error?: { code?: string; message?: string } }).error;
-      denied = failure(err?.message ?? 'Permission denied');
+      denied = {
+        ...failure(err?.message ?? 'Permission denied'),
+        code: err?.code ?? ErrorCodes.PERMISSION_DENIED,
+      };
     },
     sendStreamEvent: () => {},
   };
@@ -776,6 +817,15 @@ export async function routeExtensionApiMessage(
   const { type, payload } = message;
   
   log(`Request from ${sender.id}: ${type}`);
+
+  // A session call whose budget is already spent is refused before the
+  // policy gate, so it isn't audited as allowed and never prompts. The
+  // budget is only spent once the gate allows the call (handleMcpCallTool),
+  // so a call the policy engine refuses doesn't count.
+  if (type === 'mcp.callTool') {
+    const budgetRefusal = sessionToolBudgetRefusal(payload, { spend: false });
+    if (budgetRefusal) return budgetRefusal;
+  }
 
   const gateFailure = await gatePageCall(type as MessageType, payload);
   if (gateFailure) return gateFailure;
@@ -981,7 +1031,8 @@ export type ChatStreamEvent = {
   token?: string;
   finish_reason?: string;
   model?: string;
-  error?: { code?: number; message: string };
+  /** A number from the bridge; a string when Harbor's policy gate refused the call. */
+  error?: { code?: number | string; message: string };
 };
 
 /**
@@ -1008,7 +1059,7 @@ export async function* streamLlmChat(payload: unknown, requestId?: string): Asyn
   // Fail closed, so a gate error can't leave the page's stream waiting forever.
   const gateFailure = await gatePageCall('llm.chatStream', payload, requestId).catch((e: unknown) => failure(e));
   if (gateFailure) {
-    yield { type: 'error', error: { message: gateFailure.error ?? 'Permission denied' } };
+    yield { type: 'error', error: { code: gateFailure.code, message: gateFailure.error ?? 'Permission denied' } };
     return;
   }
 

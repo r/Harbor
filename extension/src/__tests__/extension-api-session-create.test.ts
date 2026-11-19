@@ -62,6 +62,15 @@ describe('session.recordUsage', () => {
     expect(await promptCount(id)).toBe(0);
   });
 
+  it('refuses a usage type other than prompt', async () => {
+    const id = await newSession();
+    const res = await routeExtensionApiMessage({
+      type: 'session.recordUsage',
+      payload: { sessionId: id, origin, type: 'browser', detail: { action: 'read' } },
+    }, {}) as { ok: boolean };
+    expect(res.ok).toBe(false);
+  });
+
   it('refuses a terminated session', async () => {
     const id = await newSession();
     await routeExtensionApiMessage({ type: 'session.terminate', payload: { sessionId: id, origin } }, {});

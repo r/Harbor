@@ -32,6 +32,10 @@ vi.mock('../../llm/provider-registry', () => ({
   listAllProviders: vi.fn(async () => []),
   getRuntimeCapabilities: vi.fn(async () => ({})),
 }));
+vi.mock('../../policy/permissions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../policy/permissions')>()),
+  showPermissionPrompt: vi.fn(),
+}));
 
 type Listener = (port: unknown) => void;
 type Reply = { id?: string; ok: boolean; result?: unknown; error?: { code?: string; message: string } };
@@ -64,9 +68,29 @@ beforeEach(async () => {
   initializePageApi();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  const { Policy } = await import('../../policy/store');
+  Policy.__reset();
   vi.resetModules();
 });
+
+/** Load policy rules into the same module instance the background uses. */
+async function loadRules(rules: Array<Record<string, unknown>>) {
+  const { Policy } = await import('../../policy/store');
+  const { compileRule } = await import('../../policy/rules');
+  Policy.__setForTesting(rules.map(r => compileRule({ source: 'user', ...r } as never)));
+}
+
+/** A policy refusal reaches the page with the policy engine's code. */
+function expectPolicyRefusal(reply: Reply, code: string) {
+  expect(reply.ok).toBe(false);
+  expect(reply.error?.code).toBe(code);
+}
+
+async function clearRules() {
+  const { Policy } = await import('../../policy/store');
+  Policy.__reset();
+}
 
 function connectPort(senderUrl: string) {
   const listeners: Array<(m: unknown) => void> = [];
@@ -164,5 +188,135 @@ describe('a session tool budget', () => {
     expect(reply.ok).toBe(false);
     expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
     expect(host.callTool).not.toHaveBeenCalled();
+  });
+
+  it('does not spend the budget on a call a policy deny rule refuses', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+
+    await loadRules([{ id: 'no-tools', effect: 'deny', principal: { origin: '*' }, action: 'tool.call' }]);
+    const refused = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expectPolicyRefusal(refused, 'ERR_BLOCKED_BY_POLICY');
+    expect(host.callTool).not.toHaveBeenCalled();
+
+    await clearRules();
+    const allowed = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(allowed.ok, allowed.error?.message).toBe(true);
+    expect(host.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not spend the budget on a call whose prompt the person declines', async () => {
+    const { showPermissionPrompt } = await import('../../policy/permissions');
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+
+    await loadRules([{ id: 'ask-tools', effect: 'ask', principal: { origin: '*' }, action: 'tool.call' }]);
+    vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: false } as never);
+    const refused = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expectPolicyRefusal(refused, 'ERR_PERMISSION_DENIED');
+    expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
+    expect(host.callTool).not.toHaveBeenCalled();
+
+    await clearRules();
+    const allowed = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(allowed.ok, allowed.error?.message).toBe(true);
+    expect(host.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not prompt for a call the spent budget already refuses', async () => {
+    const { showPermissionPrompt } = await import('../../policy/permissions');
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 0);
+
+    await loadRules([{ id: 'ask-tools', effect: 'ask', principal: { origin: '*' }, action: 'tool.call' }]);
+    const reply = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(reply.error?.code).toBe('ERR_BUDGET_EXCEEDED');
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+    expect(host.callTool).not.toHaveBeenCalled();
+  });
+
+  it('counts a call whose tool runs and fails', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+
+    host.callTool.mockResolvedValueOnce({ ok: false, error: 'clock broke' });
+    const failed = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(failed.error?.code).toBe('ERR_TOOL_FAILED');
+
+    const next = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(next.error?.code).toBe('ERR_BUDGET_EXCEEDED');
+    expect(host.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs no more than the budget when calls arrive in parallel', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 2);
+
+    const replies = await Promise.all(
+      Array.from({ length: 5 }, () => request('agent.tools.call', { tool: TOOL, args: {}, sessionId })),
+    );
+    expect(replies.filter(r => r.ok)).toHaveLength(2);
+    expect(replies.filter(r => r.error?.code === 'ERR_BUDGET_EXCEEDED')).toHaveLength(3);
+    expect(host.callTool).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['Session not found', 'Session has expired', 'Tool call budget exceeded'])(
+    'reports a tool that fails with %j as a tool failure, not a Harbor refusal',
+    async (toolError) => {
+      const request = connectPort(`${ORIGIN}/page`);
+      const sessionId = await createSession(request, 5);
+
+      host.callTool.mockResolvedValueOnce({ ok: false, error: toolError });
+      const reply = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+      expect(reply.error).toEqual({ code: 'ERR_TOOL_FAILED', message: toolError });
+    },
+  );
+
+  it('does not spend the budget on a call refused because the origin is quarantined', async () => {
+    const { Watchdog } = await import('../../policy/watchdog');
+    const { setWatchdogResolver } = await import('../../policy/engine');
+    setWatchdogResolver(Watchdog.resolve);
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+
+    Watchdog.quarantine(ORIGIN, 'test');
+    const refused = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expectPolicyRefusal(refused, 'ERR_QUARANTINED');
+    expect(host.callTool).not.toHaveBeenCalled();
+
+    Watchdog.reset(ORIGIN);
+    const allowed = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(allowed.ok, allowed.error?.message).toBe(true);
+    expect(host.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a call against a terminated session, without running it', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 5);
+
+    const terminated = await request('agent.sessions.terminate', { sessionId });
+    expect(terminated.ok, terminated.error?.message).toBe(true);
+    const reply = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
+    expect(host.callTool).not.toHaveBeenCalled();
+  });
+
+  it('reports a quarantined origin as ERR_QUARANTINED on a call without a session', async () => {
+    const { Watchdog } = await import('../../policy/watchdog');
+    const { setWatchdogResolver } = await import('../../policy/engine');
+    setWatchdogResolver(Watchdog.resolve);
+    const request = connectPort(`${ORIGIN}/page`);
+
+    Watchdog.quarantine(ORIGIN, 'test');
+    const refused = await request('agent.tools.call', { tool: TOOL, args: {} });
+    expectPolicyRefusal(refused, 'ERR_QUARANTINED');
+    expect(host.callTool).not.toHaveBeenCalled();
+  });
+
+  it('reports a tool failure that carries its own code as ERR_TOOL_FAILED', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    host.callTool.mockRejectedValueOnce(Object.assign(new Error('transport broke'), { code: 'ERR_QUARANTINED' }));
+    const reply = await request('agent.tools.call', { tool: TOOL, args: {} });
+    expect(reply.error).toEqual({ code: 'ERR_TOOL_FAILED', message: 'transport broke' });
   });
 });
