@@ -39,14 +39,22 @@ export type AgentCheckResult =
   | { ok: true; message: string }
   | { ok: false; error: string };
 
-/** "Ready (<agent name> vN)", or just "Ready (<agent name>)" when the agent reports no `agentInfo`. */
+/**
+ * "Ready (<configured name> vN)", or just "Ready (<configured name>)" when
+ * the agent reports no version. Always the name the person gave this agent
+ * in the sidebar — never `agentInfo.name`, which is whatever package the
+ * agent itself reports (e.g. a Claude Code ACP adapter might report its own
+ * npm package name, not "Claude Code"); that would be a stray protocol-level
+ * detail in copy a person reads (maintainer decision). The
+ * version, by contrast, is useful and has no such mismatch, so it still
+ * comes from `agentInfo`.
+ */
 export function formatAgentCheckSuccess(
   configuredName: string,
   agentInfo: { name?: string; version?: string } | undefined,
 ): string {
-  const name = agentInfo?.name || configuredName;
-  if (agentInfo?.version) return `Ready (${name} v${agentInfo.version})`;
-  return `Ready (${name})`;
+  if (agentInfo?.version) return `Ready (${configuredName} v${agentInfo.version})`;
+  return `Ready (${configuredName})`;
 }
 
 /** The literal wording the maintainer settled on for a spawn failure. */

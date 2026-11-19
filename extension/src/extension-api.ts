@@ -470,7 +470,7 @@ async function handlePermissionsCheck(payload: unknown): Promise<ExtensionApiRes
   }
 }
 
-async function handlePermissionsRequest(payload: unknown): Promise<ExtensionApiResponse> {
+async function handlePermissionsRequest(payload: unknown, signal?: AbortSignal): Promise<ExtensionApiResponse> {
   const p = (payload || {}) as Record<string, unknown>;
   const origin = readPermissionOrigin(p);
   if (!origin) {
@@ -495,6 +495,7 @@ async function handlePermissionsRequest(payload: unknown): Promise<ExtensionApiR
         tools: tools as string[] | undefined,
       },
       readTabId(p),
+      signal,
     );
     return success({ ...result, allowedTools: result.allowedTools ?? [] });
   } catch (e) {
@@ -847,6 +848,13 @@ async function gatePageCall(
 export async function routeExtensionApiMessage(
   message: ExtensionApiRequest,
   sender: { id?: string; url?: string; tab?: { id?: number } },
+  // Forwarded only to 'permissions.request' today — the one call here that
+  // keeps a consent prompt open past this function's own return, so the
+  // page's own timeout/abort needs a way to reach it (see
+  // page-api/handlers/permission-handlers.ts and
+  // policy/permissions.ts's showPermissionPrompt). Every other case below
+  // ignores it.
+  signal?: AbortSignal,
 ): Promise<ExtensionApiResponse> {
   const { type, payload } = message;
   
@@ -933,7 +941,7 @@ export async function routeExtensionApiMessage(
     case 'permissions.check':
       return handlePermissionsCheck(payload);
     case 'permissions.request':
-      return handlePermissionsRequest(payload);
+      return handlePermissionsRequest(payload, signal);
 
     // System
     case 'system.health':

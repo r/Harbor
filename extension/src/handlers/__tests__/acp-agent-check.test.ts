@@ -41,12 +41,24 @@ beforeEach(() => {
 });
 
 describe('formatAgentCheckSuccess', () => {
-  it('reports the agent\'s own reported name and version when the agent sends one', () => {
+  it('reports the configured name and the agent\'s own reported version', () => {
     expect(formatAgentCheckSuccess('goose', { name: 'goose', version: '1.2.3' })).toBe('Ready (goose v1.2.3)');
   });
 
-  it('falls back to the configured name when the agent reports no agentInfo', () => {
+  it('uses the configured name, not the package name the agent reports (maintainer decision)', () => {
+    // A Claude Code ACP adapter might report its own npm package name as
+    // `agentInfo.name` — the person configured this agent as "Claude Code"
+    // in the sidebar, and that's the name the status line should show.
+    expect(formatAgentCheckSuccess('Claude Code', { name: '@agentclientprotocol/claude-agent-acp', version: '0.108.1' }))
+      .toBe('Ready (Claude Code v0.108.1)');
+  });
+
+  it('falls back to the configured name with no version suffix when the agent reports no agentInfo', () => {
     expect(formatAgentCheckSuccess('goose', undefined)).toBe('Ready (goose)');
+  });
+
+  it('falls back to the configured name with no version suffix when the agent reports no version', () => {
+    expect(formatAgentCheckSuccess('goose', { name: 'goose' })).toBe('Ready (goose)');
   });
 });
 

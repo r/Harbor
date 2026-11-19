@@ -76,11 +76,18 @@ const REQUEST_TIMEOUT_MS = 30_000;
  * contract as the old cross-extension harborRequest, including its time
  * limit: 30 seconds unless the caller asks for longer (a permission prompt
  * waits on the user).
+ *
+ * `options.signal`, when given, is forwarded to the handler itself (today,
+ * only `permissions.request` reads it) rather than racing it here — racing
+ * it here would only make *this* call reject early, while the consent
+ * prompt it started stayed open and could still grant well after the page
+ * gave up. Letting the handler act on the signal means the prompt itself
+ * closes, or discards this call's own answer.
  */
 export async function harborRequest<T = unknown>(
   type: string,
   payload?: unknown,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<T> {
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -88,15 +95,15 @@ export async function harborRequest<T = unknown>(
     timer = setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs}ms`)), timeoutMs);
   });
   try {
-    return await Promise.race([dispatch<T>(type, payload), timeout]);
+    return await Promise.race([dispatch<T>(type, payload, options.signal), timeout]);
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function dispatch<T>(type: string, payload: unknown): Promise<T> {
+async function dispatch<T>(type: string, payload: unknown, signal?: AbortSignal): Promise<T> {
   if (isExtensionApiType(type)) {
-    const response = await routeExtensionApiMessage({ type, payload }, PAGE_API_SENDER);
+    const response = await routeExtensionApiMessage({ type, payload }, PAGE_API_SENDER, signal);
     if (!response.ok) throw createError(response.error ?? 'Unknown error from Harbor', response.code);
     return response.result as T;
   }

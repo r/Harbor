@@ -134,4 +134,37 @@ describe('per-type request timeouts', () => {
     expect(state.settled).toBe(true);
     expect(state.error).toMatchObject({ code: 'ERR_TIMEOUT' });
   });
+
+  describe('agent.requestPermissions', () => {
+    it('survives past the old 30-second default: a person can still be reading the consent prompt then', async () => {
+      const { window } = page();
+      const state = track(window.agent.requestPermissions({ scopes: ['model:prompt'] }));
+
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(state.settled).toBe(false);
+    });
+
+    it('gives it 5 minutes, not the default 30 seconds', async () => {
+      const { window } = page();
+      const state = track(window.agent.requestPermissions({ scopes: ['model:prompt'] }));
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 - 1_000);
+      expect(state.settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(state.settled).toBe(true);
+      expect(state.error).toMatchObject({ code: 'ERR_TIMEOUT' });
+    });
+
+    it('tells the background to stop when it times out, so the prompt stops waiting on this call too', async () => {
+      const { window, lastRequestId, abortedIds } = page();
+      const state = track(window.agent.requestPermissions({ scopes: ['model:prompt'] }));
+      const id = lastRequestId('agent.requestPermissions');
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+      expect(state.settled).toBe(true);
+      expect(abortedIds()).toContain(id);
+    });
+  });
 });

@@ -6,7 +6,7 @@
  */
 
 import { browserAPI } from './browser-compat';
-import { consentScopeDescription } from './policy/agent-consent-copy';
+import { consentScopeDescription, consentScopeRows } from './policy/agent-consent-copy';
 import { buildScopeItem } from './scope-item';
 import { escapeHtml } from './html-escape';
 import type { PermissionScope } from './agents/types';
@@ -152,7 +152,13 @@ if (scopesList) {
     empty.textContent = 'No specific permissions requested';
     scopesList.appendChild(empty);
   } else {
-    for (const scope of scopes) {
+    // model:prompt and model:tools collapse into one row when an agent is
+    // selected and both are requested (consentScopeDescription already
+    // gives them the same title/description/risk in that case) — see
+    // consentScopeRows. Every other scope, and these two with no agent
+    // selected or only one requested, stays its own row.
+    for (const row of consentScopeRows(scopes, agentName)) {
+      const scope = row[0];
       const info = consentScopeDescription(scope, agentName);
       const icon = SCOPE_ICONS[scope] || '🔐';
 

@@ -468,6 +468,65 @@ let pendingPromptResolvers: PromptResolve[] = [];
 let promptBackendTag: BackendTag | undefined;
 
 /**
+ * Registers `resolve` as one of the answers the currently-open prompt will
+ * settle (`handlePermissionPromptResponse` calls every registered
+ * resolver with the same response) — or, when `signal` is given and fires
+ * first, pulls `resolve` back out and settles it early with `{granted:
+ * false}` instead, without ever calling `grantPermissions` for it (that
+ * only happens in `requestPermissions`, after its own call to
+ * `showPermissionPrompt` resolves). This is what makes a page's own
+ * giving-up (its client-side request timeout, or its tab/port closing —
+ * either one aborts `signal`, see page-api/background.ts) something this
+ * prompt actually acts on, rather than leaving a stale caller to be
+ * resolved, maybe much later, by a person answering a popup the page
+ * stopped listening to.
+ *
+ * If this was the only resolver still waiting on the prompt once removed,
+ * the popup itself is closed too — there is nobody left for its eventual
+ * answer to reach, so leaving it open would just be a dangling window.
+ * Other callers (same-origin requests merged into this same prompt, see
+ * the "reuse" branch below) and other origins' own prompts are untouched.
+ */
+function registerPromptResolver(resolve: PromptResolve, signal?: AbortSignal): void {
+  if (!signal) {
+    pendingPromptResolvers.push(resolve);
+    return;
+  }
+  // The page could already have given up by the time its own call reaches
+  // here (several awaits — resolveConsentAgentName, currentBackendTag, a
+  // same-origin merge's own window.get/tabs.update — sit between a
+  // request arriving and this point). `addEventListener('abort', ...)`
+  // never replays a past event, so this is checked explicitly rather than
+  // relying on one firing later; never pushed in the first place.
+  if (signal.aborted) {
+    resolve({ granted: false });
+    return;
+  }
+
+  let settled = false;
+  const wrapped: PromptResolve = (result) => {
+    if (settled) return;
+    settled = true;
+    signal.removeEventListener('abort', onAbort);
+    resolve(result);
+  };
+  const onAbort = (): void => {
+    if (settled) return;
+    settled = true;
+    const idx = pendingPromptResolvers.indexOf(wrapped);
+    if (idx !== -1) pendingPromptResolvers.splice(idx, 1);
+    resolve({ granted: false });
+    if (pendingPromptResolvers.length === 0 && promptWindowId !== null) {
+      const windowId = promptWindowId;
+      browserAPI.windows.remove(windowId).catch(() => {});
+      clearPromptState();
+    }
+  };
+  signal.addEventListener('abort', onAbort);
+  pendingPromptResolvers.push(wrapped);
+}
+
+/**
  * Session context for permission prompts.
  */
 export interface SessionPromptContext {
@@ -544,6 +603,10 @@ export async function showPermissionPrompt(
   reason?: string,
   requestedTools?: string[],
   sessionContext?: SessionPromptContext,
+  // Aborts when *this* call's own page has given up — see
+  // registerPromptResolver. Optional: callers with nothing of their own to
+  // watch (none today) simply never discard early.
+  signal?: AbortSignal,
 ): Promise<{
   granted: boolean;
   grantType?: 'granted-once' | 'granted-always';
@@ -600,7 +663,7 @@ export async function showPermissionPrompt(
 
     if (promptOrigin === origin) {
       return new Promise<{ granted: boolean; grantType?: 'granted-once' | 'granted-always'; allowedTools?: string[]; explicitDeny?: boolean; backendTag?: BackendTag }>((resolve) => {
-        pendingPromptResolvers.push(resolve);
+        registerPromptResolver(resolve, signal);
       });
     }
   }
@@ -634,7 +697,7 @@ export async function showPermissionPrompt(
   console.log('[Permissions] Opening permission prompt for', origin);
 
   return new Promise((resolve) => {
-    pendingPromptResolvers.push(resolve);
+    registerPromptResolver(resolve, signal);
 
     const createPromise = browserAPI.windows.create({
       url: promptUrl,
@@ -712,12 +775,18 @@ browserAPI.windows?.onRemoved?.addListener((windowId) => {
 // =============================================================================
 
 /**
- * Handle a permission request from a web page.
+ * Handle a permission request from a web page. `signal`, when given,
+ * aborts if the page's own request gives up first (its client-side
+ * timeout, or its tab/port closing) — forwarded to `showPermissionPrompt`
+ * so a prompt this call is waiting on closes, or discards this call's own
+ * answer, instead of still granting once nobody on the page's side is
+ * listening for the result.
  */
 export async function requestPermissions(
   origin: string,
   options: RequestPermissionsOptions,
   tabId?: number,
+  signal?: AbortSignal,
 ): Promise<PermissionGrantResult> {
   const { scopes, reason, tools } = options;
 
@@ -742,7 +811,7 @@ export async function requestPermissions(
       const missingTools = tools.filter((t) => !status.allowedTools?.includes(t));
       if (missingTools.length > 0) {
         // Need to prompt for additional tools
-        const promptResult = await showPermissionPrompt(origin, ['mcp:tools.call'], reason, missingTools);
+        const promptResult = await showPermissionPrompt(origin, ['mcp:tools.call'], reason, missingTools, undefined, signal);
         if (promptResult.granted && promptResult.grantType) {
           return grantPermissions(origin, [], promptResult.grantType, tabId, promptResult.allowedTools, promptResult.backendTag);
         }
@@ -757,7 +826,7 @@ export async function requestPermissions(
   }
 
   // Need to prompt user
-  const promptResult = await showPermissionPrompt(origin, check.missingScopes, reason, tools);
+  const promptResult = await showPermissionPrompt(origin, check.missingScopes, reason, tools, undefined, signal);
 
   if (promptResult.granted && promptResult.grantType) {
     // promptResult.backendTag is the backend the prompt itself named (the

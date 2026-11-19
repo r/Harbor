@@ -54,13 +54,13 @@ describe('buildScopeItem', () => {
 
   it('renders an agent name containing markup literally, as text', async () => {
     const { buildScopeItem } = await import('../scope-item');
-    const item = buildScopeItem('🤖', 'Requests go to <b>x</b> (via ACP), your own agent', 'desc', 'low') as unknown as FakeElement;
+    const item = buildScopeItem('🤖', 'Requests go to <b>x</b>, your own agent', 'desc', 'low') as unknown as FakeElement;
 
     // The literal string must appear somewhere as textContent — not split
     // into a real <b> element, which this fake document cannot create
     // except through explicit createElement calls (there are none for 'b').
-    expect(item.allText).toContain('Requests go to <b>x</b> (via ACP), your own agent');
-    expect(created.some((el) => el.className.includes('scope-title') && el.textContent === 'Requests go to <b>x</b> (via ACP), your own agent')).toBe(true);
+    expect(item.allText).toContain('Requests go to <b>x</b>, your own agent');
+    expect(created.some((el) => el.className.includes('scope-title') && el.textContent === 'Requests go to <b>x</b>, your own agent')).toBe(true);
   });
 
   it('renders the description literally too', async () => {

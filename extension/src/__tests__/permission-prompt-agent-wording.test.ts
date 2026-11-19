@@ -1,15 +1,15 @@
 /**
  * permission-prompt.ts is the actual popup script: it reads the `agent`
  * URL param (permissions.ts's `showPermissionPrompt` sets it from
- * `resolveConsentAgentName()`) and feeds it to
- * `consentScopeDescription` to decide the model:prompt/model:tools
- * wording. `agent-consent-copy.test.ts` already proves
- * `consentScopeDescription` itself does the right thing given an agent
- * name — this proves the *popup script* actually passes the URL's real
- * agent name through, rather than, say, a mutant that always passes
- * `null` (which would silently fall back to the built-in wording on
- * every real ACP-backed prompt, and nothing that calls
- * `consentScopeDescription` directly would ever notice).
+ * `resolveConsentAgentName()`) and feeds it to `consentScopeDescription`/
+ * `consentScopeRows` to decide the model:prompt/model:tools wording and
+ * row count. `agent-consent-copy.test.ts` already proves those two
+ * functions do the right thing given an agent name and a scope list — this
+ * proves the *popup script* actually passes the URL's real agent name and
+ * scopes through, rather than, say, a mutant that always passes `null`
+ * (which would silently fall back to the built-in wording and two separate
+ * rows on every real ACP-backed prompt, and nothing that calls those
+ * functions directly would ever notice).
  *
  * Runs in vitest's `node` environment (no real DOM) — builds just enough
  * of a fake `document`/`window` for this script's top-level code to run
@@ -21,7 +21,6 @@ class FakeElement {
   id = '';
   className = '';
   textContent = '';
-  innerHTML = '';
   style: Record<string, string> = {};
   dataset: Record<string, string> = {};
   checked = false;
@@ -72,13 +71,14 @@ afterEach(() => {
 });
 
 describe('permission-prompt.ts renders the agent-aware wording for model:prompt/model:tools', () => {
-  it('names the agent and "via ACP" in the scopes list when the URL names one', async () => {
+  it('names the agent, as "your own agent", in the scopes list when the URL names one — never the protocol', async () => {
     const byId = makeFakeDom('?origin=https://example.test&scopes=model:prompt&agent=goose');
     await import('../permission-prompt');
 
     const scopesList = byId.get('scopes-list')!;
     expect(scopesList.allText).toContain('goose');
-    expect(scopesList.allText).toContain('via ACP');
+    expect(scopesList.allText).toContain('your own agent');
+    expect(scopesList.allText).not.toMatch(/ACP/i);
   });
 
   it('falls back to the plain built-in wording when the URL carries no agent param', async () => {
@@ -86,6 +86,33 @@ describe('permission-prompt.ts renders the agent-aware wording for model:prompt/
     await import('../permission-prompt');
 
     const scopesList = byId.get('scopes-list')!;
-    expect(scopesList.allText).not.toContain('via ACP');
+    expect(scopesList.allText).not.toMatch(/ACP/i);
+  });
+});
+
+describe('permission-prompt.ts merges model:prompt and model:tools into one row when an agent is selected', () => {
+  it('renders a single row for a request naming both scopes with an agent selected', async () => {
+    const byId = makeFakeDom('?origin=https://example.test&scopes=model:prompt,model:tools&agent=goose');
+    await import('../permission-prompt');
+
+    const scopesList = byId.get('scopes-list')!;
+    expect(scopesList.children).toHaveLength(1);
+    expect(scopesList.allText).toContain('goose');
+  });
+
+  it('renders two rows for the same request with no agent selected', async () => {
+    const byId = makeFakeDom('?origin=https://example.test&scopes=model:prompt,model:tools');
+    await import('../permission-prompt');
+
+    const scopesList = byId.get('scopes-list')!;
+    expect(scopesList.children).toHaveLength(2);
+  });
+
+  it('renders two rows when only one of the two is requested, even with an agent selected', async () => {
+    const byId = makeFakeDom('?origin=https://example.test&scopes=model:prompt,mcp:tools.call&agent=goose');
+    await import('../permission-prompt');
+
+    const scopesList = byId.get('scopes-list')!;
+    expect(scopesList.children).toHaveLength(2);
   });
 });

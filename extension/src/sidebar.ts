@@ -12,6 +12,8 @@ import {
 } from './sidebar-agents';
 import { AgentPanelController, type AgentBackendIO } from './sidebar-agent-controller';
 import { AgentFormState } from './agent-form-state';
+import { buildAgentPresetDocsHint } from './agent-preset-docs-hint';
+import { llmPanelCollapsedForAgent, llmPanelNoteForAgent } from './sidebar-llm-panel';
 
 type SecretDecl = { name: string; label: string; type?: 'text' | 'password' };
 
@@ -116,6 +118,7 @@ const llmPanelToggle = document.getElementById('llm-panel-toggle') as HTMLSpanEl
 const llmPanelBody = document.getElementById('llm-panel-body') as HTMLDivElement;
 const llmStatusIndicator = document.getElementById('llm-status-indicator') as HTMLDivElement;
 const llmStatusText = document.getElementById('llm-status-text') as HTMLSpanElement;
+const llmPanelAgentNote = document.getElementById('llm-panel-agent-note') as HTMLSpanElement;
 const configuredModelsEl = document.getElementById('configured-models') as HTMLDivElement;
 const availableModelsSelect = document.getElementById('available-models') as HTMLSelectElement;
 const addModelBtn = document.getElementById('add-model-btn') as HTMLButtonElement;
@@ -1364,10 +1367,41 @@ async function loadAgentSettings(): Promise<void> {
     renderAgentBackendOptions();
     renderConfiguredAgents();
     setAgentControlsEnabled(true);
+    updateLlmPanelForAgentSelection(result.selection);
   } catch (err) {
     console.error('[Sidebar] Failed to load agent settings:', err);
     setAgentControlsEnabled(false);
   }
+}
+
+/**
+ * Collapses/expands the LLM Providers panel and shows/hides its
+ * agent-selected note (sidebar-llm-panel.ts), given the Agent panel's
+ * current selection. Called on load and every time that selection changes
+ * — picking an agent, switching back to the built-in model, or an agent
+ * being removed out from under the current selection.
+ */
+function updateLlmPanelForAgentSelection(selectedAgentId: string | null): void {
+  const agentSelected = selectedAgentId !== null;
+  const collapsed = llmPanelCollapsedForAgent(agentSelected);
+  llmPanelBody.classList.toggle('collapsed', collapsed);
+  llmPanelToggle.classList.toggle('collapsed', collapsed);
+
+  const note = llmPanelNoteForAgent(agentSelected);
+  llmPanelAgentNote.textContent = note ?? '';
+  llmPanelAgentNote.title = note ?? '';
+  llmPanelAgentNote.style.display = note ? '' : 'none';
+}
+
+/**
+ * Sets a status element's visible text and its `title` to the same string,
+ * so a result CSS truncates with an ellipsis (#agent-check-status, the
+ * header's one-line status next to "AGENT") still has the full text on
+ * hover.
+ */
+function setStatusText(target: HTMLElement, text: string): void {
+  target.textContent = text;
+  target.title = text;
 }
 
 /**
@@ -1380,14 +1414,14 @@ async function runAgentCheck(agent: ConfiguredAgent, target: HTMLElement, button
   if (checkingAgentIds.has(agent.id)) return;
   checkingAgentIds.add(agent.id);
   if (button) button.disabled = true;
-  target.textContent = 'Checking…';
+  setStatusText(target, 'Checking…');
   try {
     const result = await sendMessage<{ ok: boolean; message?: string; error?: string }>('acp_check_agent', {
       agentId: agent.id, name: agent.name, command: agent.command,
     });
-    target.textContent = result.ok ? (result.message ?? 'Ready') : (result.error ?? 'Check failed');
+    setStatusText(target, result.ok ? (result.message ?? 'Ready') : (result.error ?? 'Check failed'));
   } catch (err) {
-    target.textContent = err instanceof Error ? err.message : 'Check failed';
+    setStatusText(target, err instanceof Error ? err.message : 'Check failed');
   } finally {
     checkingAgentIds.delete(agent.id);
     if (button) button.disabled = !agentPanel.isLoaded;
@@ -1403,26 +1437,33 @@ agentBackendSelect.addEventListener('change', async () => {
     return;
   }
   agentCheckBtn.disabled = !agentPanel.isLoaded || !agentId;
+  updateLlmPanelForAgentSelection(agentId);
   if (agentId) {
     const agent = agentPanel.currentAgents.find((a) => a.id === agentId);
     if (agent) await runAgentCheck(agent, agentCheckStatus);
   } else {
-    agentCheckStatus.textContent = '';
+    setStatusText(agentCheckStatus, '');
   }
 });
 
 agentCheckBtn.addEventListener('click', async () => {
   const agentId = agentPanel.currentSelection;
   if (!agentId) {
-    agentCheckStatus.textContent = 'Select an agent to check';
+    setStatusText(agentCheckStatus, 'Select an agent to check');
     return;
   }
   const agent = agentPanel.currentAgents.find((a) => a.id === agentId);
   if (agent) await runAgentCheck(agent, agentCheckStatus, agentCheckBtn);
 });
 
-function presetDocsHintText(preset: AgentPresetId): string {
-  return `Give ${AGENT_PRESETS[preset].name}'s tools their keys in its own settings: ${AGENT_PRESETS[preset].docsUrl}`;
+/** Renders the docs-hint line for `preset` into `#agent-preset-docs-hint`, replacing whatever it held before. */
+function renderAgentPresetDocsHint(preset: AgentPresetId): void {
+  // textContent='' clears any previous render's children (same real-DOM
+  // behavior `innerHTML=''` would give, without ever parsing a string as
+  // markup) before appending the freshly built link.
+  agentPresetDocsHint.textContent = '';
+  agentPresetDocsHint.appendChild(buildAgentPresetDocsHint(AGENT_PRESETS[preset]));
+  agentPresetDocsHint.style.display = 'block';
 }
 
 function resetAgentForm(): void {
@@ -1432,6 +1473,8 @@ function resetAgentForm(): void {
   agentFormCommand.value = '';
   agentFormArgs.value = '';
   agentFormCheckResult.textContent = '';
+  agentFormCheckResult.title = '';
+  agentPresetDocsHint.textContent = '';
   agentPresetDocsHint.style.display = 'none';
 }
 
@@ -1465,8 +1508,7 @@ for (const preset of Object.keys(AGENT_PRESETS) as AgentPresetId[]) {
     // including any further edit the person makes to it.
     agentFormCommand.value = p.command;
     agentFormArgs.value = p.args.join('\n');
-    agentPresetDocsHint.textContent = presetDocsHintText(preset);
-    agentPresetDocsHint.style.display = 'block';
+    renderAgentPresetDocsHint(preset);
 
     try {
       const resolveResponse = await sendMessage<{ ok: boolean; path?: string | null }>('acp_resolve_command', { name: p.command });
@@ -1482,6 +1524,7 @@ for (const preset of Object.keys(AGENT_PRESETS) as AgentPresetId[]) {
 }
 document.getElementById('agent-preset-custom')?.addEventListener('click', () => {
   agentFormPreset = 'custom';
+  agentPresetDocsHint.textContent = '';
   agentPresetDocsHint.style.display = 'none';
 });
 
@@ -1543,7 +1586,10 @@ async function removeAgent(id: string): Promise<void> {
   }
   renderAgentBackendOptions();
   renderConfiguredAgents();
-  if (result.selectionCleared) agentCheckStatus.textContent = '';
+  if (result.selectionCleared) {
+    setStatusText(agentCheckStatus, '');
+    updateLlmPanelForAgentSelection(null);
+  }
   showToast('Agent removed');
 }
 

@@ -6,10 +6,14 @@
  * model; see docs/ACP_BACKEND_DESIGN.md section 2's mapping table). With
  * no agent selected, the built-in wording (SCOPE_DESCRIPTIONS) is
  * untouched.
+ *
+ * The wording never names the protocol (maintainer decision):
+ * a person reading this prompt doesn't need to know Harbor talks to the
+ * agent over ACP.
  */
 import { describe, expect, it } from 'vitest';
 import { SCOPE_DESCRIPTIONS } from '../permissions';
-import { consentScopeDescription } from '../agent-consent-copy';
+import { consentScopeDescription, consentScopeRows } from '../agent-consent-copy';
 
 describe('consentScopeDescription', () => {
   it('returns the built-in wording unchanged when no agent is selected', () => {
@@ -22,17 +26,18 @@ describe('consentScopeDescription', () => {
     expect(consentScopeDescription('browser:activeTab.read', 'goose')).toEqual(SCOPE_DESCRIPTIONS['browser:activeTab.read']);
   });
 
-  it('names the agent and says requests go to it, via ACP, for model:prompt', () => {
+  it('names the agent and says requests go to it, as the person\'s own agent, for model:prompt', () => {
     const info = consentScopeDescription('model:prompt', 'goose');
     expect(info.title).toContain('goose');
-    expect(info.title).toContain('via ACP');
     expect(info.title).toContain('your own agent');
   });
 
-  it('names the agent and says requests go to it, via ACP, for model:tools', () => {
-    const info = consentScopeDescription('model:tools', 'goose');
-    expect(info.title).toContain('goose');
-    expect(info.title).toContain('via ACP');
+  it('never names the protocol in the title or description, for model:prompt or model:tools', () => {
+    for (const scope of ['model:prompt', 'model:tools'] as const) {
+      const info = consentScopeDescription(scope, 'goose');
+      expect(info.title).not.toMatch(/ACP/i);
+      expect(info.description).not.toMatch(/ACP/i);
+    }
   });
 
   it('names which calls actually go to the agent: text prompts and agent runs', () => {
@@ -54,9 +59,13 @@ describe('consentScopeDescription', () => {
     expect(info.description.toLowerCase()).toContain('tools');
   });
 
-  it('keeps the risk tier from the built-in description', () => {
-    expect(consentScopeDescription('model:prompt', 'goose').risk).toBe(SCOPE_DESCRIPTIONS['model:prompt'].risk);
-    expect(consentScopeDescription('model:tools', 'goose').risk).toBe(SCOPE_DESCRIPTIONS['model:tools'].risk);
+  it('gives model:prompt and model:tools the MEDIUM risk level once an agent is selected — the higher of the two built-in tiers', () => {
+    // model:prompt's own built-in risk is 'low', model:tools' is 'medium' —
+    // with an agent selected, an agent answering a plain prompt can always
+    // reach for its own tools too, so model:prompt rises to match.
+    expect(consentScopeDescription('model:prompt', 'goose').risk).toBe('medium');
+    expect(consentScopeDescription('model:tools', 'goose').risk).toBe('medium');
+    expect(SCOPE_DESCRIPTIONS['model:prompt'].risk).toBe('low'); // unchanged built-in tier
   });
 
   it('uses a different agent\'s name when a different agent is selected', () => {
@@ -64,14 +73,38 @@ describe('consentScopeDescription', () => {
     expect(consentScopeDescription('model:prompt', 'Codex').title).toContain('Codex');
   });
 
-  it('gives model:prompt and model:tools the same title and description — both cover the same two calls', () => {
+  it('gives model:prompt and model:tools the same title, description and risk — both cover the same two calls', () => {
     const prompt = consentScopeDescription('model:prompt', 'goose');
     const tools = consentScopeDescription('model:tools', 'goose');
     expect(prompt.title).toBe(tools.title);
     expect(prompt.description).toBe(tools.description);
-    // Risk still comes from each scope's own built-in entry (model:tools
-    // is riskier than model:prompt regardless of backend).
-    expect(prompt.risk).toBe(SCOPE_DESCRIPTIONS['model:prompt'].risk);
-    expect(tools.risk).toBe(SCOPE_DESCRIPTIONS['model:tools'].risk);
+    expect(prompt.risk).toBe(tools.risk);
+  });
+});
+
+describe('consentScopeRows', () => {
+  it('merges model:prompt and model:tools into one row when both are requested and an agent is selected', () => {
+    const rows = consentScopeRows(['model:prompt', 'model:tools'], 'goose');
+    expect(rows).toEqual([['model:prompt', 'model:tools']]);
+  });
+
+  it('does not merge when no agent is selected, even if both scopes are requested', () => {
+    const rows = consentScopeRows(['model:prompt', 'model:tools'], null);
+    expect(rows).toEqual([['model:prompt'], ['model:tools']]);
+  });
+
+  it('does not merge a single-scope request — model:prompt alone stays its own row', () => {
+    expect(consentScopeRows(['model:prompt'], 'goose')).toEqual([['model:prompt']]);
+    expect(consentScopeRows(['model:tools'], 'goose')).toEqual([['model:tools']]);
+  });
+
+  it('leaves every other scope as its own row, merged pair placed at its first occurrence', () => {
+    const rows = consentScopeRows(['mcp:tools.call', 'model:prompt', 'model:tools'], 'goose');
+    expect(rows).toEqual([['mcp:tools.call'], ['model:prompt', 'model:tools']]);
+  });
+
+  it('merges regardless of which of the two scopes the request lists first', () => {
+    const rows = consentScopeRows(['model:tools', 'model:prompt'], 'goose');
+    expect(rows).toEqual([['model:prompt', 'model:tools']]);
   });
 });

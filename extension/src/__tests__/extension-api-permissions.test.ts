@@ -72,6 +72,7 @@ describe('permissions.request', () => {
       ORIGIN,
       { scopes: ['model:prompt'], reason: 'Summarize', tools: ['clock/now'] },
       3,
+      undefined,
     );
     expect(res.result).toMatchObject({ granted: true });
   });
