@@ -2313,6 +2313,8 @@ Websites can declare MCP server availability via HTML `<link>` elements:
 | `agent.chat.open(options)` | Open browser chat UI with config |
 | `agent.chat.close(chatId?)` | Close the chat UI |
 
+In Harbor today, `agent.mcp.register()` records the server but doesn't connect to it, so its tools aren't offered to the person's agent, and Harbor doesn't yet require `mcp:servers.register` for it. An implementation that connects registered servers should require that scope and run the registration past its permission checks, because that's when a site's tools start reaching the agent.
+
 The chat belongs to the implementer, not the page: Harbor shows a chat panel on the page, and a native host could use its own chat surface. Messages sent from it are still the page's prompts, because the page set the system prompt and tools. They're checked under the page's origin and need `model:prompt`.
 
 ### Example
