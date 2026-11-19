@@ -498,12 +498,12 @@ function getSidebarCSS(): string {
     /* While the panel is open, keep the toggle beside it, not on top of
        the panel's input and send button. */
     #harbor-page-chat.hpc-open .hpc-toggle {
-      right: 400px;
+      right: calc(380px + 16px); /* panel width + gap */
     }
 
     #harbor-page-chat.hpc-position-left.hpc-open .hpc-toggle {
       right: auto;
-      left: 400px;
+      left: calc(380px + 16px);
     }
     
     .hpc-toggle {
@@ -1028,6 +1028,12 @@ function getSidebarCSS(): string {
     @media (max-width: 768px) {
       .hpc-panel {
         width: 100%;
+      }
+
+      /* The open panel fills the screen, so there's no room beside it.
+         Its close button still ends the chat. */
+      #harbor-page-chat.hpc-open .hpc-toggle {
+        display: none;
       }
     }
   `;
