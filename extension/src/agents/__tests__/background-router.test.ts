@@ -63,6 +63,10 @@ describe('routeAgentMessage', () => {
   it('keeps the handler\'s error code in the response', async () => {
     const { grantPermissions } = await import('../../policy/permissions');
     await grantPermissions('https://unregistered.example', ['agents:message'], 'granted-always');
+    // Let the policy engine read the grant just stored.
+    const { setOriginGrantResolver } = await import('../../policy/engine');
+    const { originGrantResolver } = await import('../../policy/origin-grants');
+    setOriginGrantResolver(originGrantResolver);
     const { routeAgentMessage } = await import('../background-router');
     const sendResponse = vi.fn();
     routeAgentMessage(
@@ -76,6 +80,10 @@ describe('routeAgentMessage', () => {
   it('routes agents.broadcast', async () => {
     const { grantPermissions } = await import('../../policy/permissions');
     await grantPermissions('https://broadcaster.example', ['agents:message'], 'granted-always');
+    // Let the policy engine read the grant just stored.
+    const { setOriginGrantResolver } = await import('../../policy/engine');
+    const { originGrantResolver } = await import('../../policy/origin-grants');
+    setOriginGrantResolver(originGrantResolver);
     const { routeAgentMessage } = await import('../background-router');
     const sendResponse = vi.fn();
     routeAgentMessage(

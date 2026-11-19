@@ -288,7 +288,7 @@ export function broadcastEvent(
         id: generateMessageId(),
         from: sourceAgentId,
         to: subscriberId,
-        type: 'event',
+        type: 'broadcast',
         payload: { type: event.type, data: event.data, source: event.source },
         timestamp: Date.now(),
       });

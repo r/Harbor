@@ -451,7 +451,7 @@ export function handleAgentsRegisterMessageHandler(
   registerMessageHandler(agent.id, (message) => {
     if (!tabId) return;
     const event =
-      message.type === 'event'
+      message.type === 'broadcast'
         ? { type: 'broadcast', broadcast: message.payload }
         : { type: 'message', message };
     browserAPI.tabs.sendMessage(tabId, { type: 'agentEvent', event }).catch(() => {});

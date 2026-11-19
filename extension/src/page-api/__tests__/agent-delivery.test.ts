@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const harborRequest = vi.fn();
+let harborRequest = vi.fn();
 vi.mock('../harbor-core', () => ({ harborRequest: (...args: unknown[]) => harborRequest(...args) }));
 
 import { handleAgentsRegister, handleAgentsInvoke, handleAgentsSend } from '../handlers/agent-handlers';
@@ -14,7 +14,10 @@ function ctx(type: string, payload: unknown): RequestContext {
   return { id: 'r1', type, origin: 'https://b.example', tabId: 5, payload } as RequestContext;
 }
 
-beforeEach(() => harborRequest.mockReset());
+// A fresh mock per test: a rejected value from a reset mock fails the test in this vitest.
+beforeEach(() => {
+  harborRequest = vi.fn();
+});
 
 describe('registering a page agent', () => {
   it('sets up a message proxy when the agent accepts messages', async () => {
@@ -45,14 +48,17 @@ describe('registering a page agent', () => {
 });
 
 describe('a refusal keeps its code', () => {
-  const refusal = Object.assign(new Error('User denied agent.delegate.crossOrigin.'), { code: 'ERR_PERMISSION_DENIED' });
+  const refusal = () => Object.assign(new Error('User denied agent.delegate.crossOrigin.'), { code: 'ERR_PERMISSION_DENIED' });
 
-  it.each([
-    ['invoke', handleAgentsInvoke, { agentId: 'x', request: { task: 't' } }],
-    ['send', handleAgentsSend, { agentId: 'x', payload: 1 }],
-  ] as const)('%s', async (_name, handler, payload) => {
-    harborRequest.mockRejectedValue(refusal);
-    const response = await handler(ctx('agent.agents.x', payload));
+  it('on invoke', async () => {
+    harborRequest.mockImplementation(async () => { throw refusal(); });
+    const response = await handleAgentsInvoke(ctx('agent.agents.invoke', { agentId: 'x', request: { task: 't' } }));
+    expect(response).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
+  });
+
+  it('on send', async () => {
+    harborRequest.mockImplementation(async () => { throw refusal(); });
+    const response = await handleAgentsSend(ctx('agent.agents.send', { agentId: 'x', payload: 1 }));
     expect(response).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
   });
 });

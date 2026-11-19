@@ -21,6 +21,9 @@ export type ApiErrorCode =
   | 'ERR_SESSION_NOT_FOUND'
   | 'ERR_TIMEOUT'
   | 'ERR_INTERNAL'
+  | 'ERR_INVALID_REQUEST'
+  // Multi-agent: the caller hasn't registered as an agent.
+  | 'ERR_NOT_REGISTERED'
   // Typed-permission decisions surface these.
   | 'ERR_BLOCKED_BY_POLICY'
   | 'ERR_LABEL_FLOW_BLOCKED'
@@ -571,6 +574,7 @@ export type MessageType =
   | 'agents.invoke'
   | 'agents.send'
   | 'agents.subscribe'
+  | 'agents.broadcast'
   | 'agents.unsubscribe'
   | 'agents.registerMessageHandler'
   | 'agents.unregisterMessageHandler'

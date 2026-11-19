@@ -107,8 +107,8 @@ export interface AgentMessage {
   from: AgentId;
   /** Recipient agent ID */
   to: AgentId;
-  /** Message type */
-  type: 'request' | 'response' | 'event' | 'error';
+  /** Message type. A 'broadcast' carries `{ type, data, source }` for event subscribers. */
+  type: 'request' | 'response' | 'event' | 'error' | 'broadcast';
   /** Message payload */
   payload: unknown;
   /** Correlation ID for request/response matching */
@@ -485,6 +485,7 @@ export type MultiAgentMessageType =
   | 'agents.invoke'
   | 'agents.send'
   | 'agents.subscribe'
+  | 'agents.broadcast'
   | 'agents.unsubscribe'
   // Remote
   | 'agents.remote.connect'
