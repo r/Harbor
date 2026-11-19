@@ -149,8 +149,9 @@ class Watchdog {
     }
 
     // Cross-origin egress counter.
+    // A page's own fetch isn't counted: the site could make it without Harbor.
     if (
-      record.action === 'network.egress.cross_origin' ||
+      (record.action === 'network.egress.cross_origin' && !record.pageFetch) ||
       record.action === 'model.prompt.remote.thirdParty'
     ) {
       s.crossOriginEgressTimes.push(now);

@@ -57,6 +57,10 @@ export interface RequireActionOptions {
    * typed-action check runs.
    */
   upstreamConsent?: 'origin-grant';
+  /** Record and match `resource.host` without classifying it (see PolicyRequest.classifyHost). */
+  classifyHost?: boolean;
+  /** Mark the audit record as a page's own fetch (see AuditRecord.pageFetch). */
+  pageFetch?: boolean;
   /**
    * Never show a prompt: an ask or preview is a refusal. For a check with no
    * one to ask about, such as one site among a broadcast's recipients.
@@ -68,15 +72,16 @@ export interface RequireActionOptions {
 export interface ActionDenial {
   code: ApiErrorCode;
   message: string;
-  details: Record<string, unknown>;
+  details?: Record<string, unknown>;
 }
 
 /**
  * The single chokepoint the rest of the codebase calls. Returns `true` if
  * the action is allowed (either by the engine or after a successful
  * prompt). Returns `false` and sends an error response when the action is
- * denied. Either way, after `requireAction` returns the handler's
- * obligation regarding permissioning is complete.
+ * denied, or when the caller stopped waiting before it could proceed.
+ * Either way, after `requireAction` returns the handler's obligation
+ * regarding permissioning is complete.
  */
 export async function requireAction(
   ctx: RequestContext,
@@ -111,6 +116,7 @@ export async function checkAction(
     reason: options.reason,
     correlationId: ctx.id,
     tabId: ctx.tabId,
+    classifyHost: options.classifyHost,
   };
   const decision = await evaluate(request);
   const proceedsOnUpstreamConsent =
@@ -123,18 +129,26 @@ export async function checkAction(
   Audit.record(
     request,
     decision,
-    proceedsOnUpstreamConsent ? { consent: options.upstreamConsent } : {},
+    {
+      ...(proceedsOnUpstreamConsent ? { consent: options.upstreamConsent } : {}),
+      ...(options.pageFetch ? { pageFetch: true as const } : {}),
+    },
   );
 
   log('requireAction decision', decision);
 
-  if (decision.effect === 'allow') return null;
+  // The caller may have stopped waiting while the check ran (a prompt can
+  // stay open longer than a page's request timeout). Such a call isn't
+  // performed, even if the person then allowed it.
+  const proceed = (): ActionDenial | null => (ctx.signal?.aborted ? ABANDONED : null);
+
+  if (decision.effect === 'allow') return proceed();
 
   if (decision.effect === 'deny') {
     return denialFor(decision);
   }
 
-  if (proceedsOnUpstreamConsent) return null;
+  if (proceedsOnUpstreamConsent) return proceed();
   if (options.noPrompt) return denialFor(decision);
 
   // ask | preview — surface the prompt via the existing flow.
@@ -154,14 +168,11 @@ export async function checkAction(
     return denialFor(decision);
   }
 
-  const promptResult = await showPermissionPrompt(
-    ctx.origin,
-    [scopeForPrompt],
-    options.reason ?? decision.reason,
-    options.resource?.tool ? [options.resource.tool] : undefined,
-    undefined,
-    targetSite ? [targetSite] : undefined,
-  );
+  const promptReason = options.reason ?? decision.reason;
+  const promptTools = options.resource?.tool ? [options.resource.tool] : undefined;
+  const promptResult = targetSite
+    ? await showPermissionPrompt(ctx.origin, [scopeForPrompt], promptReason, promptTools, undefined, [targetSite])
+    : await showPermissionPrompt(ctx.origin, [scopeForPrompt], promptReason, promptTools);
 
   const coversTarget = !targetSite || (promptResult.agentOrigins ?? []).includes(targetSite);
   if (promptResult.granted && promptResult.grantType && coversTarget) {
@@ -175,7 +186,7 @@ export async function checkAction(
       // other sites, which their own callers grant for their own tabs.
       targetSite ? [targetSite] : promptResult.agentOrigins,
     );
-    return null;
+    return proceed();
   }
 
   // User dismissed or denied.
@@ -193,6 +204,8 @@ export async function checkAction(
   };
 }
 
+const ABANDONED: ActionDenial = { code: 'ERR_ABORTED', message: 'The page stopped waiting for this call' };
+
 /**
  * Whether consent obtained upstream can stand in for this verdict. It can
  * for a grant-level ask (no grant yet, or the default for the action's
@@ -209,6 +222,7 @@ function upstreamConsentCovers(decision: PolicyDecision): boolean {
   }
   return true;
 }
+
 
 function denialFor(decision: PolicyDecision): ActionDenial {
   return {

@@ -74,7 +74,7 @@ Every worker brief carries the invariants:
 - User data goes only to the provider the user configured.
 - External framing follows `docs/POSITIONING.md`.
 - Public artifacts stand alone (see below).
-- Scope grows only by the maintainer's call.
+- Scope grows only by the maintainer's call, except for the small fixes in [Leave it better](#leave-it-better-than-you-found-it).
 
 ## Public repo, internal tracker
 
@@ -147,7 +147,27 @@ Each of these has cost a real session time or produced a wrong result. They're r
 - **`tests/e2e/run-browser-tests.mjs` and the Firefox runner trap `SIGTERM` and wait for Firefox to close, so a plain `timeout` can't stop a stalled launch.** Wrap runs in `timeout -s KILL 300 ...`. After a killed run, check for a leftover test Firefox (a temporary profile under `$TMPDIR`) and stop only that process, not every Firefox on the machine.
 - **`git worktree remove` refuses a worktree with an initialized submodule**, even after `git submodule deinit`, because every worktree runs `git submodule update --init` for `bridge-rs/any-llm-rust`. Check that `git -C <worktree> status --porcelain` is empty and that its commits are merged or pushed, then use `git worktree remove --force <worktree>`. Never force-remove a worktree with uncommitted or unpushed work.
 - **Never use `git stash` to compare against the base or to capture red evidence.** The stash stack is shared by every worktree, so `stash pop` in one worktree can pop another checkout's stash and leave a conflict. Check the base out into a separate detached worktree (`git worktree add --detach <dir> <base>`), or read single files with `git show <base>:<path>`. To show a test failing against pre-fix code, copy the old file over with `git show <rev>:<path> > <path>`, run the test, then restore your version from a copy you made first. Builders reached for `stash` for this repeatedly. Read-only roles must not run `stash`, `reset`, `checkout` or anything else that changes git state.
+- **Check that a demo port is free on both IPv4 and IPv6 before using it.** Another session's server can be listening on `*:8001` over IPv6 while yours binds `127.0.0.1:8001`. `localhost` may then reach the other server, so the page you test isn't yours. Run `lsof -nP -iTCP:<port> -sTCP:LISTEN` first, bind `127.0.0.1`, and point Firefox at `http://127.0.0.1:<port>`, not `localhost`.
 - **Firefox may try to update itself when an agent launches it.** macOS then reports that the terminal app (for example "Rex Server") tried to modify an application, and blocks it. Leave the block in place; the test browser still runs.
+
+## Leave it better than you found it
+
+A flaw you notice while working is yours to fix in this change. That covers bugs, stale docs, dead code, misleading names, missing tests and broken pitfalls. Filing it as a new ticket costs a later session the context you already have.
+
+Fold the fix in when all of these hold:
+
+- it isn't on the [maintainer-decides list](#what-the-maintainer-decides);
+- you can verify it to the same bar as the rest of the change (red first for behavior);
+- it doesn't push the change past the size rule or raise its review tier beyond what you'll run.
+
+File a ticket only when one of those fails, for example substantial architecture, a new subsystem, or a permission-model change. Fixes count toward size.
+
+A folded-in fix is never hidden inside the main change:
+
+- **Ledger:** record each one, with its evidence.
+- **PR:** list each one under an **Also fixed** heading: what was wrong, how it showed up, and what changed.
+- **Changelog:** give each notable one its own entry in `CHANGELOG.md`, in the right section, separate from the main change's entry.
+- **Squash commit:** name each one in the body.
 
 ## What the maintainer decides
 

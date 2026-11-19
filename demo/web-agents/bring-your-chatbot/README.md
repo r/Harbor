@@ -1,13 +1,27 @@
 # Bring Your Own Chatbot (BYOC) Demo
 
-This demo showcases "Bring Your Own Chatbot" (BYOC) — a pattern where websites can leverage the user's own AI chatbot while providing site-specific context and tools.
+This demo shows "Bring Your Own Chatbot" (BYOC): a site that doesn't want to build its own
+chat UI calls `agent.chat.open()`, and the implementer of the Web Agent API — Harbor, in this
+browser — opens the chat surface instead. The page writes no chat UI of its own.
 
 ## How It Works
 
-1. **Website Declares MCP Server** — The page includes a `<link rel="mcp-server">` element pointing to its MCP server
-2. **User Clicks "Chat with AI"** — Website requests permission via `agent.requestPermissions()`
-3. **Browser Asks for Permission** — User sees what capabilities the website wants
-4. **Your AI Responds** — The embedded chat uses `window.ai.createTextSession()` for responses
+1. **The page calls `agent.chat.open({ systemPrompt, style })`** — Clicking the chat button
+   runs this one call with a system prompt describing the assistant and style hints (an accent
+   color, which side of the screen to open on). The page can also advertise tools with
+   `<link rel="mcp-server">`, as this page's `<head>` does.
+2. **Harbor asks whether the site may open a chat** — The first `chat.open()` call from this
+   origin prompts for the `chat:open` permission. If it's denied, the call rejects and the page
+   shows an inline message.
+3. **Harbor's chat opens on the page and runs on your own model** — Harbor draws the chat
+   panel on the page. Because the page could reach that panel, Harbor treats every message in
+   it as the site's prompt. Your first message prompts Harbor to ask,
+   once, whether the site may send prompts to your model (`model:prompt`). Replies come from
+   the model reading the page's visible text (the product grid), not from the MCP tools this
+   page advertises — Harbor's chat doesn't call those yet.
+4. **The site wrote no chat UI** — Every bubble and input box belongs to Harbor, not to Acme
+   Shop. A different implementer of the same API — for example a native app hosting this page
+   — could show its own chat surface instead, using the same `agent.chat.open()` call.
 
 ## Running the Demo
 
@@ -26,51 +40,37 @@ Open `http://localhost:8000/web-agents/bring-your-chatbot/` with Harbor installe
 
 ### 3. Try it out
 
-Click the chat button in the corner and ask questions like:
+Click "Chat with Acme Shop" and ask questions like:
 - "What laptops do you have?"
 - "Tell me about the wireless headphones"
 - "What do you recommend for home office?"
-- "Add the laptop stand to my cart"
 
 ## Key APIs Used
 
-This demo uses **only** the page-facing Web Agent API (`window.ai` / `window.agent`), not any Harbor-specific integration:
+This page uses exactly one call from the Web Agent API — no chat UI, no permission
+request, and no `window.ai` of its own:
 
 ```javascript
-// Request permission for text generation
-const { granted } = await window.agent.requestPermissions({
-  scopes: ['model:prompt'],
-  reason: 'To help you find products'
+await window.agent.chat.open({
+  systemPrompt: "You are Acme Shop's shopping assistant. Help the person find products on this page...",
+  style: { accentColor: '#ff9900', position: 'right' },
 });
-
-// Create a text session with context
-const session = await window.ai.createTextSession({
-  systemPrompt: 'You are a shopping assistant for Acme Shop...'
-});
-
-// Get AI responses (streaming)
-for await (const token of session.promptStreaming(userMessage)) {
-  // Display token
-}
 ```
 
-## Features
-
-- **Embedded Chat UI** — The chat panel is built into the page
-- **Streaming Responses** — Tokens appear as they're generated
-- **Shopping Context** — The AI knows about products in the catalog
-- **Cart Management** — Simple cart functionality
+Harbor asks for `chat:open` when the chat opens, and for `model:prompt` on the first message
+the person sends — the page never calls `agent.requestPermissions()` or `window.ai` itself.
 
 ## Graceful Degradation
 
-If the Web Agent API isn't available (Harbor not installed), the demo shows a message directing users to install the extension.
+If `window.agent?.chat?.open` isn't available (no Web Agent API implementer installed), the
+demo hides the chat button and shows a banner explaining why.
 
 ## Files
 
 ```
 bring-your-chatbot/
-├── index.html              # Demo page (e-commerce mockup with embedded chat)
-├── mcp-server/             # Optional MCP server (not required for basic demo)
+├── index.html              # Demo page (e-commerce mockup, no chat UI of its own)
+├── mcp-server/             # Optional MCP server (declared, not called by Harbor's chat yet)
 │   ├── http-server.js      # Real MCP server with SSE transport
 │   └── package.json
 └── README.md               # This file

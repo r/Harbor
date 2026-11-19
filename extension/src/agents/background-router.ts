@@ -194,6 +194,7 @@ export function initializeRouter(): void {
 export function routeAgentMessage(
   message: { type: string; payload?: unknown; requestId?: string },
   sendResponse: (response: { ok: boolean; result?: unknown; error?: string; code?: string }) => void,
+  options: { signal?: AbortSignal } = {},
 ): void {
   log('Agent message:', message.type);
 
@@ -211,6 +212,7 @@ export function routeAgentMessage(
     payload: message.payload,
     origin: pageOrigin,
     tabId: payload?.tabId,
+    signal: options.signal,
   };
 
   // Create a sender wrapper that uses sendResponse

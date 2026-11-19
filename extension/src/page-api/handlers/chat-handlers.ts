@@ -16,7 +16,7 @@ export async function handleChatCanOpen(ctx: RequestContext): HandlerResponse {
   try {
     const result = await harborRequest<{ available: boolean; reason?: string }>('agent.chat.canOpen', {
       origin: ctx.origin,
-    });
+    }, { signal: ctx.signal });
     return successResponse(ctx.id, result);
   } catch (e) {
     return errorResponse(
@@ -51,7 +51,7 @@ export async function handleChatOpen(ctx: RequestContext): HandlerResponse {
       initialMessage,
       tools,
       style,
-    });
+    }, { signal: ctx.signal });
     return successResponse(ctx.id, result);
   } catch (e) {
     return errorResponse(
@@ -73,7 +73,7 @@ export async function handleChatClose(ctx: RequestContext): HandlerResponse {
     const result = await harborRequest<{ success: boolean }>('agent.chat.close', {
       origin: ctx.origin,
       chatId,
-    });
+    }, { signal: ctx.signal });
     return successResponse(ctx.id, result);
   } catch (e) {
     return errorResponse(

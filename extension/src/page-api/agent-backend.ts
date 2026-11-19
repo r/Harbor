@@ -141,7 +141,7 @@ export const builtinAgentBackend: AgentBackend = {
             description: t.description,
             input_schema: t.input_schema,
           })) : undefined,
-        });
+        }, { signal });
       } catch (e) {
         emit({
           type: 'error',
@@ -223,7 +223,7 @@ export const builtinAgentBackend: AgentBackend = {
               serverId,
               toolName: actualToolName,
               args,
-            });
+            }, { signal });
             toolResult = callResult.result;
           } catch (e) {
             toolResult = { error: e instanceof Error ? e.message : 'Tool call failed' };
@@ -258,7 +258,7 @@ export const builtinAgentBackend: AgentBackend = {
       origin,
       tabId,
       messages,
-    });
+    }, { signal });
     const finalContent = finalResult.content;
 
     if (signal.aborted) {

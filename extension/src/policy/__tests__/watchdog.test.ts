@@ -182,3 +182,24 @@ describe('Sensitive-label distinct-count escalation', () => {
     detach();
   });
 });
+
+describe('cross-origin egress', () => {
+  const egress = (extra = {}) => {
+    const req: PolicyRequest = { origin: 'https://a.com', action: 'network.egress.cross_origin', resource: { host: 'b.com' } };
+    return evaluate(req).then((d) => Audit.record(req, d, extra));
+  };
+
+  it('restricts after crossOriginEgressToRestrict egresses in window', async () => {
+    const detach = attachWatchdogToAudit();
+    for (let i = 0; i < DEFAULT_THRESHOLDS.crossOriginEgressToRestrict; i++) await egress();
+    expect(Watchdog.inspect('https://a.com').status).toBe('restricted');
+    detach();
+  });
+
+  it("doesn't count a page's own fetch", async () => {
+    const detach = attachWatchdogToAudit();
+    for (let i = 0; i < DEFAULT_THRESHOLDS.crossOriginEgressToRestrict * 2; i++) await egress({ pageFetch: true });
+    expect(Watchdog.inspect('https://a.com').status).toBe('normal');
+    detach();
+  });
+});

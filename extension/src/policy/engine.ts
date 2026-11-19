@@ -89,6 +89,12 @@ export interface PolicyRequest {
   correlationId?: string;
   /** The calling tab, when known. An "Allow once" grant covers only its own tab. */
   tabId?: number;
+  /**
+   * `false` records and matches `resource.host` without classifying its
+   * sensitivity. Page browser calls use this: a page opening or fetching a
+   * sensitive domain isn't moving data there that it didn't already have.
+   */
+  classifyHost?: boolean;
 }
 
 export type DecisionEffect = 'allow' | 'ask' | 'deny' | 'preview';
@@ -536,7 +542,7 @@ function applyForcedMin(effect: DecisionEffect, forcedMin: DecisionEffect | unde
 
 function computeSensitivity(req: PolicyRequest, manifestTrusted: boolean): SensitivityVerdict {
   const verdicts: SensitivityVerdict[] = [];
-  if (req.resource?.host) verdicts.push(classifyDomain(req.resource.host));
+  if (req.resource?.host && req.classifyHost !== false) verdicts.push(classifyDomain(req.resource.host));
   if (req.resource?.toolManifest) {
     verdicts.push(classifyTool(req.resource.toolManifest.meta, manifestTrusted));
   }

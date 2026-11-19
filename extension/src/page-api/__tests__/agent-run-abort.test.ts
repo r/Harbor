@@ -98,7 +98,7 @@ describe('agent.run cancellation at the background port boundary', () => {
     // No further llm.chat call after the abort — neither for the tool
     // call's turn nor any later one.
     expect(chatCalls).toBe(1);
-    expect(mocks.harborRequest).not.toHaveBeenCalledWith('mcp.callTool', expect.anything());
+    expect(mocks.harborRequest.mock.calls.map(([method]) => method)).not.toContain('mcp.callTool');
 
     const terminal = postMessage.mock.calls.map(([m]) => m).filter((m) => m.id === 'abort-run' && m.done);
     expect(terminal).toHaveLength(1);
@@ -194,5 +194,41 @@ describe('agent.run cancellation at the background port boundary', () => {
     }
     expect(mocks.harborRequest).not.toHaveBeenCalled();
     expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("passes the run's signal to its model and tool calls, so Harbor can drop one the run gave up on", async () => {
+    let chatCalls = 0;
+    mocks.harborRequest.mockImplementation(async (method: string) => {
+      if (method === 'mcp.listTools') return { tools: [{ name: 'time', serverId: 'clock' }] };
+      if (method === 'mcp.callTool') return { result: 'noon' };
+      if (method === 'llm.chat') {
+        chatCalls++;
+        return chatCalls === 1 ? toolCallResponse('call-1') : { content: 'done', choices: [{ message: { role: 'assistant', content: 'done' } }] };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+
+    await receive({ id: 'signal-run', type: 'agent.run', origin: 'https://example.test', payload: { task: 'what time is it' } });
+
+    const withSignal = (method: string) =>
+      expect(mocks.harborRequest).toHaveBeenCalledWith(method, expect.anything(), expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    withSignal('mcp.listTools');
+    withSignal('llm.chat');
+    withSignal('mcp.callTool');
+  });
+
+  it("passes the run's signal to the final model call after the tool budget runs out", async () => {
+    mocks.harborRequest.mockImplementation(async (method: string) => {
+      if (method === 'mcp.listTools') return { tools: [{ name: 'time', serverId: 'clock' }] };
+      if (method === 'mcp.callTool') return { result: 'noon' };
+      if (method === 'llm.chat') return toolCallResponse(`call-${Math.random()}`);
+      throw new Error(`unexpected ${method}`);
+    });
+
+    await receive({ id: 'budget-run', type: 'agent.run', origin: 'https://example.test', payload: { task: 'loop', maxToolCalls: 1 } });
+
+    const chats = mocks.harborRequest.mock.calls.filter(([method]) => method === 'llm.chat');
+    expect(chats.length).toBeGreaterThan(1); // the loop's call(s) plus the final one
+    for (const [, , options] of chats) expect(options).toEqual({ signal: expect.any(AbortSignal) });
   });
 });

@@ -281,11 +281,7 @@ pub async fn run_native_messaging() {
                         }
                     }
                     Some(msg) => {
-                        let writer_clone = writer.clone();
-                        let host_tx = host_request_tx.clone();
-                        tokio::spawn(async move {
-                            handle_message(msg, writer_clone, host_tx).await;
-                        });
+                        dispatch_message(msg, writer.clone(), host_request_tx.clone());
                     }
                     None => {
                         // stdin closed (extension disconnected, or the
@@ -393,6 +389,27 @@ async fn handle_rpc(
     ).await;
 }
 
+/// Hand one incoming message to its own task. Called from the read loop in
+/// arrival order. A chat stream's id is noted first, here, so a cancel that
+/// follows can't run before the stream is known.
+fn dispatch_message(msg: IncomingMessage, writer: Arc<MessageWriter>, host_request_tx: HostRequestSender) {
+    note_incoming_stream(&msg);
+    tokio::spawn(async move {
+        handle_message(msg, writer, host_request_tx).await;
+    });
+}
+
+/// Reserve an `llm.chat_stream` request's id as it's read, before its
+/// handler is spawned, so an `llm.cancel_stream` for it is never lost to
+/// the handlers running out of order.
+fn note_incoming_stream(msg: &IncomingMessage) {
+    if msg.msg_type == "rpc" && msg.method.as_deref() == Some("llm.chat_stream") {
+        if let Some(id) = &msg.id {
+            llm::reserve_stream(&llm::stream_key(id));
+        }
+    }
+}
+
 /// Handle a streaming RPC request
 async fn handle_streaming_rpc(
     id: serde_json::Value,
@@ -404,12 +421,17 @@ async fn handle_streaming_rpc(
         "llm.chat_stream" => {
             let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(32);
             
-            // Spawn the streaming task
+            // Spawn the streaming task, and keep a handle so
+            // `llm.cancel_stream` can stop it when the page stops reading.
+            // Aborting drops `event_tx`, which ends the loop below.
             let stream_id = id.clone();
-            tokio::spawn(async move {
+            let key = llm::stream_key(&id);
+            // A stream cancelled before this point is never started; its
+            // event_tx is dropped, so the loop below ends at once.
+            llm::spawn_stream(&key, async move {
                 llm::chat_stream(stream_id, params, event_tx).await;
             });
-            
+
             // Forward events to the extension
             while let Some(event) = event_rx.recv().await {
                 let event_json = serde_json::to_value(&event).unwrap_or_default();
@@ -419,6 +441,7 @@ async fn handle_streaming_rpc(
                     break;
                 }
             }
+            llm::finish_stream(&key);
         }
         "acp.open" => {
             let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(32);
@@ -450,5 +473,83 @@ async fn handle_streaming_rpc(
                 })),
             ).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod stream_cancel_tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn chat_stream_message(id: &str) -> IncomingMessage {
+        IncomingMessage {
+            msg_type: "rpc".to_string(),
+            id: Some(serde_json::json!(id)),
+            method: Some("llm.chat_stream".to_string()),
+            params: serde_json::json!({
+                "model": "ollama:never-called",
+                "messages": [{ "role": "user", "content": "hi" }],
+            }),
+            result: None,
+            error: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_cancel_handled_before_the_stream_task_starts_stops_the_stream() {
+        // The read loop notes the stream in arrival order; the cancel that
+        // follows it can then run before the stream's handler does.
+        let msg = chat_stream_message("early-cancel");
+        note_incoming_stream(&msg);
+        let cancelled = llm::cancel_stream(serde_json::json!({ "id": "early-cancel" }))
+            .await
+            .unwrap();
+        assert_eq!(cancelled, serde_json::json!({ "cancelled": true }));
+
+        let (writer, mut out) = MessageWriter::new();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            handle_streaming_rpc(msg.id.clone().unwrap(), "llm.chat_stream".to_string(), msg.params, Arc::new(writer)),
+        )
+        .await
+        .expect("the cancelled stream kept running");
+        assert!(out.try_recv().is_err(), "a cancelled stream still sent events");
+
+        // Nothing is left behind for that id.
+        let again = llm::cancel_stream(serde_json::json!({ "id": "early-cancel" }))
+            .await
+            .unwrap();
+        assert_eq!(again, serde_json::json!({ "cancelled": false }));
+    }
+
+    #[tokio::test]
+    async fn the_read_loop_dispatch_keeps_an_early_cancel_from_being_lost() {
+        // This test runtime is single-threaded: the stream's handler, spawned
+        // by dispatch_message, can't run until the test yields, so the
+        // cancel below is handled first, as it can be in the real bridge.
+        let (writer, mut out) = MessageWriter::new();
+        let (host_tx, _host_rx) = mpsc::channel(1);
+        dispatch_message(chat_stream_message("dispatched"), Arc::new(writer), host_tx);
+        let cancelled = llm::cancel_stream(serde_json::json!({ "id": "dispatched" }))
+            .await
+            .unwrap();
+        assert_eq!(cancelled, serde_json::json!({ "cancelled": true }), "the read loop didn't note the stream");
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        while let Ok(msg) = out.try_recv() {
+            assert_ne!(msg.msg_type, "stream", "a cancelled stream still sent events");
+        }
+        assert!(!llm::is_stream_known("dispatched"), "the stream's entry was left behind");
+    }
+
+    #[test]
+    fn only_chat_stream_requests_are_noted() {
+        let mut other = chat_stream_message("not-a-stream");
+        other.method = Some("llm.chat".to_string());
+        note_incoming_stream(&other);
+        assert!(!llm::is_stream_known("not-a-stream"));
+        note_incoming_stream(&chat_stream_message("a-stream"));
+        assert!(llm::is_stream_known("a-stream"));
+        llm::finish_stream("a-stream");
     }
 }

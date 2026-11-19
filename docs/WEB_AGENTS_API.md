@@ -471,7 +471,7 @@ async function summarizePage() {
   // Permission granted, proceed
   const content = await window.agent.browser.activeTab.readability();
   const session = await window.ai.createTextSession();
-  return session.prompt(`Summarize: ${content.textContent}`);
+  return session.prompt(`Summarize: ${content.text}`);
 }
 ```
 
@@ -820,7 +820,7 @@ Interact with the current tab. **Requires:** `browserInteraction` feature flag.
 // Get readable content from the page
 const content = await window.agent.browser.activeTab.readability();
 console.log('Title:', content.title);
-console.log('Content:', content.textContent);
+console.log('Content:', content.text);
 
 // Get interactive elements
 const elements = await window.agent.browser.activeTab.getElements();
@@ -1196,12 +1196,9 @@ interface AgentSession {
 
 // Browser APIs
 interface ReadabilityContent {
+  url: string;
   title: string;
-  content: string;
-  textContent: string;
-  excerpt: string;
-  byline: string | null;
-  siteName: string | null;
+  text: string; // main text, line breaks kept, at most 50,000 characters
 }
 
 interface BrowserElement {
@@ -1329,7 +1326,7 @@ declare global {
           close(tabId: number): Promise<boolean>;
         };
         tab: {
-          readability(tabId: number): Promise<TabReadabilityResult>;
+          readability(tabId: number): Promise<ReadabilityContent>;
           getHtml(tabId: number, selector?: string): Promise<{ html: string; url: string; title: string }>;
           waitForLoad(tabId: number, options?: { timeout?: number }): Promise<void>;
         };
@@ -1539,7 +1536,7 @@ declare global {
         
         summaryDiv.textContent = `Title: ${content.title}\n\nSummary: `;
         
-        for await (const token of session.promptStreaming(content.textContent)) {
+        for await (const token of session.promptStreaming(content.text)) {
           summaryDiv.textContent += token;
         }
         
