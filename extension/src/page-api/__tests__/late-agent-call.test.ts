@@ -177,3 +177,44 @@ describe("Harbor's own request timer", () => {
     expect(await registeredAgents()).toHaveLength(0);
   });
 });
+
+describe('a refused agent.chat.open reports the policy engine\'s code', () => {
+  it('a deny rule refuses it with ERR_BLOCKED_BY_POLICY', async () => {
+    await loadRules([{ id: 'no-chat', effect: 'deny', principal: { origin: '*' }, action: 'chat.open' }]);
+    const page = connectPort(`${ORIGIN}/page`);
+    const reply = await page.request('agent.chat.open', {});
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_BLOCKED_BY_POLICY');
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it('a dismissed prompt refuses it with ERR_PERMISSION_DENIED', async () => {
+    await loadRules([{ id: 'confirm', effect: 'ask', principal: { origin: '*' }, action: 'chat.open' }]);
+    showPermissionPrompt.mockResolvedValueOnce({ granted: false });
+    const page = connectPort(`${ORIGIN}/page`);
+    const reply = await page.request('agent.chat.open', {});
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
+  });
+});
+
+describe("agent.mcp's own refusals reach the page with their code", () => {
+  it('registering a server on another origin is refused with ERR_PERMISSION_DENIED', async () => {
+    const page = connectPort(`${ORIGIN}/page`);
+    const reply = await page.request('agent.mcp.register', { url: 'https://elsewhere.example/mcp', name: 'Elsewhere' });
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
+  });
+
+  it("unregistering another site's server is refused with ERR_PERMISSION_DENIED", async () => {
+    const owner = connectPort('https://owner.example/page');
+    const registered = await owner.request('agent.mcp.register', { url: 'https://owner.example/mcp', name: 'Owner' });
+    expect(registered.ok, registered.error?.message).toBe(true);
+    const serverId = (registered.result as { serverId: string }).serverId;
+
+    const page = connectPort(`${ORIGIN}/page`);
+    const reply = await page.request('agent.mcp.unregister', { serverId });
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
+  });
+});

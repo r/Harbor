@@ -445,7 +445,7 @@ for (const server of servers) {
 
 Register a website's MCP server for the user's chatbot to use.
 
-**Requires:** `mcp:servers.register` permission
+**Status:** Harbor records the server but doesn't connect to it yet, so its tools aren't offered to agents. Until it does, Harbor doesn't require the `mcp:servers.register` permission for this call; request it anyway so your page keeps working once registration is connected.
 
 **Signature:**
 ```typescript
