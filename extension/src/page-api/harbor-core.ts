@@ -150,13 +150,17 @@ export function harborStreamRequest(
  * line the agent's process prints, already parsed as JSON; then `exit`
  * when the process ends. A `fatal` error means the agent never started
  * (no channel exists); any other `error` is a recoverable per-line failure
- * and more `message`/`exit` events can still follow it.
+ * and more `message`/`exit` events can still follow it. `code`, when
+ * present, is a machine-readable reason for a fatal error — today only
+ * `"agent_cap"`, when the bridge's global 8-agent cap is hit — which the
+ * caller matches on instead of `message` (which can name local paths or
+ * configuration, and isn't a stable contract).
  */
 export type AcpBridgeEvent =
   | { type: 'open'; channel: string; cwd?: string }
   | { type: 'message'; message: unknown }
   | { type: 'exit'; code: number | null }
-  | { type: 'error'; fatal?: boolean; message: string };
+  | { type: 'error'; fatal?: boolean; code?: string; message: string };
 
 /**
  * Opens a channel to a bridge-configured ACP agent. `workspace` is the

@@ -583,6 +583,47 @@ fn opening_beyond_the_cap_is_rejected() {
     let rejected = bridge.open_raw("fake", WORKSPACE, "Ocap");
     assert_eq!(rejected["event"]["type"], "error");
     assert_eq!(rejected["event"]["fatal"], true);
+    // A machine-readable code, not just the human-readable message: the
+    // extension maps this to ERR_AGENT_BUSY without pattern-matching text.
+    assert_eq!(rejected["event"]["code"], "agent_cap");
+
+    bridge.shutdown();
+}
+
+/// The cap can also be hit by the second, atomic re-check after the process
+/// has already spawned (two concurrent opens racing the first, read-only
+/// check) — `kill`s the process it just started and reports the same coded
+/// fatal error as the early, pre-spawn rejection above.
+#[test]
+fn opening_beyond_the_cap_on_the_atomic_recheck_is_coded_too() {
+    let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
+
+    let mut channels = Vec::new();
+    for i in 0..MAX_LIVE_AGENTS {
+        channels.push(bridge.open("fake", WORKSPACE, &format!("O{}", i)));
+    }
+
+    // Two opens past the cap in flight at once both reach the atomic
+    // recheck path; either can win the read-only pre-check race, but both
+    // still ultimately get the coded fatal error.
+    let first_id = "OcapA";
+    let second_id = "OcapB";
+    bridge.send(json!({
+        "type": "rpc", "id": first_id, "method": "acp.open",
+        "params": { "agentId": "fake", "workspace": WORKSPACE },
+    }));
+    bridge.send(json!({
+        "type": "rpc", "id": second_id, "method": "acp.open",
+        "params": { "agentId": "fake", "workspace": WORKSPACE },
+    }));
+
+    for id in [first_id, second_id] {
+        let rejected = bridge
+            .wait_for(|m| is_stream_event(m, id, "error"), Duration::from_secs(5))
+            .unwrap_or_else(|| panic!("no error event for {id}"));
+        assert_eq!(rejected["event"]["fatal"], true);
+        assert_eq!(rejected["event"]["code"], "agent_cap");
+    }
 
     bridge.shutdown();
 }

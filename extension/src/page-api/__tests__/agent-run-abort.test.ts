@@ -21,7 +21,7 @@ vi.mock('../policy/feature-flags', async (importOriginal) => ({
 vi.mock('../handlers', () => ({
   routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: mocks.hasPermission,
   getPermissions: async () => ({ scopes: {}, allowedTools: [] }),
-  resolveTextSession: mocks.resolveTextSession, recordExplicitPrompt: vi.fn(),
+  resolveTextSession: mocks.resolveTextSession, recordExplicitPrompt: vi.fn(), forgetTextSession: vi.fn(),
   restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
   isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
   cleanupAgentsForTab: vi.fn(), agentInvocationTabs: new Map(),

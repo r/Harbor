@@ -43,19 +43,22 @@ vi.mock('../agent-question', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../agent-question')>()),
   askAgentQuestion: mocks.askAgentQuestion,
 }));
-// background.ts's own barrel import, used only for the real-port-listener
-// tests below (promptStreaming, tab close, destroy racing a stream). The
-// ACP-specific pieces (ai-handlers.ts's handleAiCreateTextSession etc.) are
-// real; everything unrelated is stubbed the way explicit-session-streaming.test.ts
-// stubs it for the same file.
-vi.mock('../handlers', async () => {
-  const ai = await vi.importActual<typeof import('../handlers/ai-handlers')>('../handlers/ai-handlers');
+// background.ts's own barrel import, used for the real-port-listener tests
+// below (promptStreaming, tab close, destroy racing a stream, and the
+// mutation-coverage tests that drive ai.createTextSession/session.prompt/
+// session.destroy through the real `routeMessage`, not the handlers
+// directly). `routeMessage` itself is the real one — it's the thing these
+// tests are routing through — spread from the actual module so a bug in
+// the handler-lookup/feature-flag-gate plumbing would show up too; only
+// permission checks and a few unrelated subsystems (spawned tabs, the
+// multi-agent registry) are stubbed, the way explicit-session-streaming.test.ts
+// stubs them for this same file.
+vi.mock('../handlers', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../handlers')>();
   return {
-    routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: mocks.hasPermission,
+    ...actual,
+    hasPermission: mocks.hasPermission,
     getPermissions: async () => ({ scopes: {}, allowedTools: [] }),
-    resolveTextSession: ai.resolveTextSession,
-    recordExplicitPrompt: ai.recordExplicitPrompt,
-    forgetTextSession: ai.forgetTextSession,
     restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(() => ({})),
     isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
     cleanupAgentsForTab: vi.fn(), agentInvocationTabs: new Map(),
@@ -138,16 +141,60 @@ let nextTabId = 100;
  * directly" pitfall in docs/agent-workflow.md, one layer further down.
  * Each test instead gets its own tab id and its own port.
  */
-function connectPort(origin = ORIGIN): { receive: (m: unknown) => Promise<void>; postMessage: ReturnType<typeof vi.fn>; tabId: number } {
+function connectPort(origin = ORIGIN): {
+  receive: (m: unknown) => Promise<void>;
+  postMessage: ReturnType<typeof vi.fn>;
+  tabId: number;
+  /** Simulates the page's port disconnecting — a navigation or reload, or the tab closing. */
+  disconnect: () => void;
+} {
   const tabId = nextTabId++;
   let receiveFn: (m: unknown) => Promise<void> = async () => {};
+  let disconnectFn: () => void = () => {};
   const postMessage = vi.fn();
   onConnectListener({
     name: 'harbor-page-api', sender: { url: `${origin}/page`, tab: { id: tabId } }, postMessage,
     onMessage: { addListener: (l: typeof receiveFn) => { receiveFn = l; } },
-    onDisconnect: { addListener: () => {} },
+    onDisconnect: { addListener: (l: () => void) => { disconnectFn = l; } },
   });
-  return { receive: (m: unknown) => receiveFn(m), postMessage, tabId };
+  return { receive: (m: unknown) => receiveFn(m), postMessage, tabId, disconnect: () => disconnectFn() };
+}
+
+/**
+ * Drives `ai.createTextSession`/`session.prompt`/`session.destroy` through
+ * the real port — `routeMessage`, not the handlers directly — for the
+ * mutation-coverage and lifecycle tests the maintainer's bounce asked for.
+ */
+function responseFor(postMessage: ReturnType<typeof vi.fn>, id: string): { id: string; ok: boolean; result?: unknown; error?: { code: string; message: string } } | undefined {
+  return postMessage.mock.calls.map(([m]) => m).find((m) => m.id === id);
+}
+
+async function createViaPort(
+  port: { receive: (m: unknown) => Promise<void>; postMessage: ReturnType<typeof vi.fn> },
+  payload: Record<string, unknown> = {},
+) {
+  const id = crypto.randomUUID();
+  await port.receive({ id, type: 'ai.createTextSession', payload });
+  return responseFor(port.postMessage, id)!;
+}
+
+async function promptViaPort(
+  port: { receive: (m: unknown) => Promise<void>; postMessage: ReturnType<typeof vi.fn> },
+  sessionId: string,
+  input: string,
+) {
+  const id = crypto.randomUUID();
+  await port.receive({ id, type: 'session.prompt', payload: { sessionId, input } });
+  return responseFor(port.postMessage, id)!;
+}
+
+async function destroyViaPort(
+  port: { receive: (m: unknown) => Promise<void>; postMessage: ReturnType<typeof vi.fn> },
+  sessionId: string,
+) {
+  const id = crypto.randomUUID();
+  await port.receive({ id, type: 'session.destroy', payload: { sessionId } });
+  return responseFor(port.postMessage, id)!;
 }
 
 beforeAll(async () => {
@@ -166,13 +213,20 @@ beforeAll(async () => {
   onTabRemovedListener = onTabRemoved.addListener.mock.calls[0][0] as typeof onTabRemovedListener;
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   mocks.hasPermission.mockResolvedValue(true);
   mocks.askAgentQuestion.mockReset();
   mocks.getFeatureFlags.mockResolvedValue(DEFAULT_FLAGS);
   mocks.bridge.current = createFakeAcpBridge();
   resetMockBrowser();
+  // The per-site agent-slot count (acp-agent-limits.ts) is a module-level
+  // map that isn't reset by resetModules (this file doesn't call it — see
+  // connectPort's own comment on why), so a test that creates a session
+  // without destroying it would otherwise leave it counted against every
+  // later test on the same origin.
+  const { resetAgentSlotsForTests } = await import('../acp-agent-limits');
+  resetAgentSlotsForTests();
 });
 
 afterEach(() => {
@@ -481,5 +535,296 @@ describe('session.promptStreaming on the ACP backend, through the real backgroun
     // The session is gone: a prompt against it now fails closed.
     const res = await ai.handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'hi' }, { tabId }));
     expect(res).toMatchObject({ ok: false, error: { code: 'ERR_SESSION_NOT_FOUND' } });
+  });
+});
+
+describe('open() never hangs on a failed handshake', () => {
+  it('settles with a coded error, through the real port, when initialize rejects', async () => {
+    const fakeBridge = createFakeAcpBridge();
+    mocks.bridge.current = fakeBridge;
+    await setAcpBackend(AGENT_ID);
+    const app = buildAgentApp({ name: 'x' })
+      .onRequest(AGENT_METHODS.initialize, async () => { throw new Error('boom /Users/sam/secret'); })
+      .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }));
+    fakeBridge.registerAgent(AGENT_ID, app, {});
+    const port = connectPort();
+
+    const result = await Promise.race([
+      createViaPort(port),
+      new Promise<'HUNG'>((resolve) => setTimeout(() => resolve('HUNG'), 2000)),
+    ]);
+
+    expect(result).not.toBe('HUNG');
+    expect(result).toMatchObject({ ok: false, error: { code: 'ERR_AGENT_FAILED' } });
+  });
+
+  it('settles with a coded error, through the real port, when the agent exits mid-handshake', async () => {
+    const fakeBridge = createFakeAcpBridge();
+    mocks.bridge.current = fakeBridge;
+    await setAcpBackend(AGENT_ID);
+    const app = buildAgentApp({ name: 'x' })
+      .onRequest(AGENT_METHODS.initialize, async () => ({ protocolVersion: 1 }))
+      .onRequest(AGENT_METHODS.session_new, async () => {
+        setTimeout(() => fakeBridge.crashChannel('ch-0'), 0);
+        return new Promise(() => { /* the agent exits before answering */ });
+      });
+    fakeBridge.registerAgent(AGENT_ID, app, {});
+    const port = connectPort();
+
+    const result = await Promise.race([
+      createViaPort(port),
+      new Promise<'HUNG'>((resolve) => setTimeout(() => resolve('HUNG'), 2000)),
+    ]);
+
+    expect(result).not.toBe('HUNG');
+    expect(result).toMatchObject({ ok: false, error: { code: 'ERR_AGENT_FAILED' } });
+  });
+});
+
+describe('the agent process is never leaked on an open() failure', () => {
+  it('calls acp.close when the protocol version is unsupported', async () => {
+    const fakeBridge = createFakeAcpBridge();
+    mocks.bridge.current = fakeBridge;
+    await setAcpBackend(AGENT_ID);
+    const app = buildAgentApp({ name: 'x' })
+      .onRequest(AGENT_METHODS.initialize, async () => ({ protocolVersion: 2 }))
+      .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }));
+    fakeBridge.registerAgent(AGENT_ID, app, {});
+    const closeSpy = vi.spyOn(fakeBridge, 'acpClose');
+    const port = connectPort();
+
+    const result = await createViaPort(port);
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'ERR_AGENT_FAILED', message: expect.stringContaining('protocol version') } });
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls acp.close when initialize rejects after the channel opened', async () => {
+    const fakeBridge = createFakeAcpBridge();
+    mocks.bridge.current = fakeBridge;
+    await setAcpBackend(AGENT_ID);
+    const app = buildAgentApp({ name: 'x' })
+      .onRequest(AGENT_METHODS.initialize, async () => { throw new Error('boom'); })
+      .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }));
+    fakeBridge.registerAgent(AGENT_ID, app, {});
+    const closeSpy = vi.spyOn(fakeBridge, 'acpClose');
+    const port = connectPort();
+
+    await createViaPort(port);
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a tab (or its port) going away while a session is still opening', () => {
+  it('does not register the session, and kills the agent process', async () => {
+    const fakeBridge = createFakeAcpBridge();
+    mocks.bridge.current = fakeBridge;
+    await setAcpBackend(AGENT_ID);
+    let releaseInit!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseInit = resolve; });
+    const app = buildAgentApp({ name: 'x' })
+      .onRequest(AGENT_METHODS.initialize, async () => { await gate; return { protocolVersion: 1 }; })
+      .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }))
+      .onRequest(AGENT_METHODS.session_prompt, async () => ({ stopReason: 'end_turn' as StopReason }));
+    fakeBridge.registerAgent(AGENT_ID, app, {});
+    const closeSpy = vi.spyOn(fakeBridge, 'acpClose');
+    const port = connectPort();
+
+    const createPromise = createViaPort(port);
+    await new Promise((r) => setTimeout(r, 20));
+    await onTabRemovedListener(port.tabId);
+    releaseInit();
+    const result = await createPromise;
+
+    const { isAcpTextSession } = await import('../acp-text-session-registry');
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatchObject({ code: 'ERR_ABORTED' });
+    if (result.ok) expect(isAcpTextSession(result.result as string)).toBe(false);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("kills the agent process when the page's port disconnects (navigation), with no tabs.onRemoved event", async () => {
+    await setAcpBackend(AGENT_ID);
+    const b = registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const closeSpy = vi.spyOn(b, 'acpClose');
+    const port = connectPort();
+
+    const created = await createViaPort(port);
+    const sessionId = created.result as string;
+    const { isAcpTextSession } = await import('../acp-text-session-registry');
+    expect(isAcpTextSession(sessionId)).toBe(true);
+
+    port.disconnect();
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(isAcpTextSession(sessionId)).toBe(false);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a page breaking out of promptStreaming (the abort message)', () => {
+  it('sends session/cancel for that turn, and the page sees ERR_ABORTED', async () => {
+    const fakeBridge = createFakeAcpBridge();
+    mocks.bridge.current = fakeBridge;
+    await setAcpBackend(AGENT_ID);
+    let resolvePrompt: ((r: { stopReason: StopReason }) => void) | null = null;
+    let cancelled = false;
+    const app = buildAgentApp({ name: 'x' })
+      .onRequest(AGENT_METHODS.initialize, async () => ({ protocolVersion: 1 }))
+      .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }))
+      .onNotification(AGENT_METHODS.session_cancel, async () => {
+        cancelled = true;
+        resolvePrompt?.({ stopReason: 'cancelled' });
+      })
+      .onRequest(AGENT_METHODS.session_prompt, () => new Promise((resolve) => { resolvePrompt = resolve; }));
+    fakeBridge.registerAgent(AGENT_ID, app, {});
+    const port = connectPort();
+
+    const created = await createViaPort(port);
+    const sessionId = created.result as string;
+
+    const streamPromise = port.receive({ id: 'abort-st', type: 'session.promptStreaming', payload: { sessionId, input: 'hi' } });
+    await vi.waitFor(() => expect(resolvePrompt).not.toBeNull());
+    await port.receive({ type: 'abort', id: 'abort-st' });
+    await streamPromise;
+
+    expect(cancelled).toBe(true);
+    const terminal = port.postMessage.mock.calls.map(([m]) => m).filter((m) => m.id === 'abort-st' && m.done);
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0].event).toMatchObject({ type: 'error', error: { code: 'ERR_ABORTED' } });
+  });
+});
+
+describe('mid-turn model:prompt revoke, on a tool call during a text-session turn', () => {
+  it('cancels the turn with ERR_PERMISSION_DENIED and tells the agent session/cancel, on tool_call', async () => {
+    const fakeBridge = createFakeAcpBridge();
+    mocks.bridge.current = fakeBridge;
+    await setAcpBackend(AGENT_ID);
+    let sessionCancelled = false;
+    const app = buildAgentApp({ name: 'x' })
+      .onRequest(AGENT_METHODS.initialize, async () => ({ protocolVersion: 1 }))
+      .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }))
+      .onNotification(AGENT_METHODS.session_cancel, async () => { sessionCancelled = true; })
+      .onRequest(AGENT_METHODS.session_prompt, async (promptCtx) => {
+        // The grant is revoked only once the turn is already running — the
+        // same hasPermission check that gates every session.prompt
+        // (resolveTextSession) must still pass to reach the agent at all,
+        // so this flips it after, not before, the prompt is sent.
+        mocks.hasPermission.mockResolvedValue(false);
+        await promptCtx.client.notify(CLIENT_METHODS.session_update, {
+          sessionId: promptCtx.params.sessionId,
+          update: { sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'Read a file' },
+        });
+        return new Promise(() => { /* the backend ends this once it cancels, via the client's own cancellation */ });
+      });
+    fakeBridge.registerAgent(AGENT_ID, app, {});
+    const port = connectPort();
+    const created = await createViaPort(port);
+    const sessionId = created.result as string;
+
+    const result = await promptViaPort(port, sessionId, 'hi');
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
+    // session/cancel is fire-and-forget (stopWaitingOnCancel means our own
+    // promptViaPort() resolves without waiting for the agent to see it), so
+    // this can briefly lag the response.
+    await vi.waitFor(() => expect(sessionCancelled).toBe(true));
+  });
+
+  it('cancels the turn with ERR_PERMISSION_DENIED on tool_call_update, mirroring agent.run', async () => {
+    await setAcpBackend(AGENT_ID);
+    let sessionCancelled = false;
+    const fakeBridge = createFakeAcpBridge();
+    mocks.bridge.current = fakeBridge;
+    const app = buildAgentApp({ name: 'x' })
+      .onRequest(AGENT_METHODS.initialize, async () => ({ protocolVersion: 1 }))
+      .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }))
+      .onNotification(AGENT_METHODS.session_cancel, async () => { sessionCancelled = true; })
+      .onRequest(AGENT_METHODS.session_prompt, async (promptCtx) => {
+        // Same as the tool_call test above: the grant is revoked only once
+        // the turn is running, after resolveTextSession's own check passed.
+        mocks.hasPermission.mockResolvedValue(false);
+        await promptCtx.client.notify(CLIENT_METHODS.session_update, {
+          sessionId: promptCtx.params.sessionId,
+          update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', status: 'completed' },
+        });
+        return new Promise(() => { /* the backend ends this once it cancels */ });
+      });
+    fakeBridge.registerAgent(AGENT_ID, app, {});
+    const port = connectPort();
+    const created = await createViaPort(port);
+    const sessionId = created.result as string;
+
+    const result = await promptViaPort(port, sessionId, 'hi');
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
+    await vi.waitFor(() => expect(sessionCancelled).toBe(true));
+  });
+});
+
+describe('mutation coverage: destroy() actually kills the agent process', () => {
+  it('calls acp.close when destroy() runs with no turn in progress', async () => {
+    await setAcpBackend(AGENT_ID);
+    const b = registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const closeSpy = vi.spyOn(b, 'acpClose');
+    const port = connectPort();
+
+    const created = await createViaPort(port);
+    const sessionId = created.result as string;
+    expect(closeSpy).not.toHaveBeenCalled();
+
+    const destroyed = await destroyViaPort(port, sessionId);
+
+    expect(destroyed).toMatchObject({ ok: true });
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mutation coverage: tab-close cleanup actually kills every agent process for that tab', () => {
+  it('calls acp.close for each ACP-backed session the tab opened', async () => {
+    await setAcpBackend(AGENT_ID);
+    const b = registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const closeSpy = vi.spyOn(b, 'acpClose');
+    const port = connectPort();
+
+    await createViaPort(port);
+    await createViaPort(port);
+    expect(closeSpy).not.toHaveBeenCalled();
+
+    await onTabRemovedListener(port.tabId);
+
+    expect(closeSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('mutation coverage: the streaming chunk is actually scrubbed', () => {
+  it('replaces the working directory in a streamed agent_message_chunk, not just the final text', async () => {
+    const fakeBridge = createFakeAcpBridge();
+    mocks.bridge.current = fakeBridge;
+    await setAcpBackend(AGENT_ID);
+    const cwd = '/Users/sam/.harbor/acp/workspaces/example.test';
+    const app = buildAgentApp({ name: 'x' })
+      .onRequest(AGENT_METHODS.initialize, async () => ({ protocolVersion: 1 }))
+      .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }))
+      .onRequest(AGENT_METHODS.session_prompt, async (promptCtx) => {
+        await promptCtx.client.notify(CLIENT_METHODS.session_update, {
+          sessionId: promptCtx.params.sessionId,
+          update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `see ${cwd}/x.txt` } },
+        });
+        return { stopReason: 'end_turn' as StopReason };
+      });
+    fakeBridge.registerAgent(AGENT_ID, app, { cwd });
+    const port = connectPort();
+
+    const created = await createViaPort(port);
+    const sessionId = created.result as string;
+
+    await port.receive({ id: 'scrub-st', type: 'session.promptStreaming', payload: { sessionId, input: 'hi' } });
+
+    const tokenEvents = port.postMessage.mock.calls.map(([m]) => m).filter((m) => m.id === 'scrub-st' && m.event?.type === 'token');
+    expect(tokenEvents).toHaveLength(1);
+    expect(tokenEvents[0].event.token).toBe('see ./x.txt');
+    expect(tokenEvents[0].event.token).not.toContain('/Users/sam');
   });
 });

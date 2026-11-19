@@ -35,10 +35,12 @@ import {
 
 import { acpClose, acpOpenStream, type AcpBridgeEvent } from './harbor-core';
 import { hasPermission } from './handlers';
+import { PER_SITE_AGENT_LIMIT, tryAcquireAgentSlot, releaseAgentSlot } from './acp-agent-limits';
 import type { StreamToken } from './types';
 import type { AgentBackend, AgentRunRequest } from './agent-backend';
 import {
   ACP_TURN_TIMEOUT_MS,
+  agentBusyEvent,
   answerPermissionRequest,
   bridgeToSdkStream,
   buildPathScrubber,
@@ -67,6 +69,14 @@ export class AcpAgentBackend implements AgentBackend {
 
   async run(req: AgentRunRequest, emit: (event: StreamToken) => void, signal: AbortSignal): Promise<void> {
     const { origin, tabId, task, systemPrompt } = req;
+
+    // Checked, and reserved, before `acp.open` is ever called — a run past
+    // this site's own cap (counted together with its text sessions) never
+    // reaches the bridge at all.
+    if (!tryAcquireAgentSlot(origin)) {
+      emit(agentBusyEvent(`This site already has ${PER_SITE_AGENT_LIMIT} agents running`));
+      return;
+    }
 
     // Registered before the first `acp.open` event, not just checked once
     // up front: an abort (the page's, or a tab closing) can land at any
@@ -111,6 +121,7 @@ export class AcpAgentBackend implements AgentBackend {
       if (channel) {
         await acpClose(channel).catch(() => { /* best-effort: the run's own outcome already stands */ });
       }
+      releaseAgentSlot(origin);
     }
   }
 

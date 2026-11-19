@@ -577,8 +577,9 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
         let map = channels();
         let count = map.read().await.len();
         if count >= MAX_LIVE_AGENTS {
-            send_fatal(
+            send_fatal_coded(
                 &event_tx,
+                "agent_cap",
                 &format!("too many open agents (limit {})", MAX_LIVE_AGENTS),
             )
             .await;
@@ -650,8 +651,9 @@ async fn open_stream_with_config(params: Value, event_tx: mpsc::Sender<Value>, c
         if guard.len() >= MAX_LIVE_AGENTS {
             drop(guard);
             kill(&handle).await;
-            send_fatal(
+            send_fatal_coded(
                 &event_tx,
+                "agent_cap",
                 &format!("too many open agents (limit {})", MAX_LIVE_AGENTS),
             )
             .await;
@@ -876,6 +878,18 @@ async fn reap(channel: &str) -> Option<i32> {
 async fn send_fatal(event_tx: &mpsc::Sender<Value>, message: &str) {
     let _ = event_tx
         .send(json!({ "type": "error", "fatal": true, "message": message }))
+        .await;
+}
+
+/// `send_fatal`, plus a machine-readable `code` the extension can match on
+/// instead of the human-readable `message` (which can change wording, or
+/// name local paths/config, without that being a contract break). Used for
+/// the one fatal reason callers outside this module need to tell apart
+/// today: `MAX_LIVE_AGENTS` hit, so the extension can map it to its own
+/// per-site-cap error without pattern-matching text.
+async fn send_fatal_coded(event_tx: &mpsc::Sender<Value>, code: &str, message: &str) {
+    let _ = event_tx
+        .send(json!({ "type": "error", "fatal": true, "code": code, "message": message }))
         .await;
 }
 

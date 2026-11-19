@@ -351,6 +351,13 @@ export const ErrorCodes = {
   AGENT_NOT_ACCEPTING: 'ERR_AGENT_NOT_ACCEPTING',
   AGENT_REFUSED: 'ERR_AGENT_REFUSED',
   AGENT_LIMIT: 'ERR_AGENT_LIMIT',
+  /**
+   * Too many ACP agents are already running — this site's own cap
+   * (`PER_SITE_AGENT_LIMIT` in acp-agent-limits.ts) or the bridge's global
+   * one (`agent_cap` on `acp.open`'s fatal error, bridge-rs/src/acp/mod.rs).
+   * See docs/ACP_BACKEND_DESIGN.md sections 2 and 3.
+   */
+  AGENT_BUSY: 'ERR_AGENT_BUSY',
 } as const;
 
 // =============================================================================

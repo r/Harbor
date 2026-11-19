@@ -54,6 +54,17 @@ export function agentFailedEvent(message: string): StreamToken {
 }
 
 /**
+ * The bridge's global 8-agent cap and this backend's own per-site cap both
+ * surface to the page as the same coded error, worded for which limit was
+ * actually hit — the bridge's own ("too many agents are running", no site
+ * identifies it) versus this site's ("this site already has N agents
+ * running").
+ */
+export function agentBusyEvent(message: string): StreamToken {
+  return { type: 'error', error: { code: ErrorCodes.AGENT_BUSY, message } };
+}
+
+/**
  * Classifies a `session/prompt` response's `stopReason` into either a normal
  * end (the caller decides how to deliver its own accumulated text) or a
  * terminal error event, exactly as acp-backend.ts's `emitStopReason` did
@@ -330,8 +341,14 @@ export async function openAcpChannel(
     const opened = first.value;
     if (opened.type === 'error') {
       // The bridge's reason can name local paths or configuration, so the
-      // page only learns that the agent didn't start.
+      // page only learns that the agent didn't start — except for the one
+      // coded reason (`agent_cap`, the bridge's own global cap), which the
+      // page is told about directly, worded without the bridge's own limit
+      // number baked into Harbor's wording.
       console.warn('[Harbor] ACP agent failed to start:', opened.message);
+      if (opened.code === 'agent_cap') {
+        return { kind: 'failed', error: agentBusyEvent('Too many agents are running') };
+      }
       return { kind: 'failed', error: agentFailedEvent('The agent failed to start') };
     }
     if (opened.type !== 'open' || !opened.cwd) {

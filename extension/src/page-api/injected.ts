@@ -314,8 +314,28 @@ window.addEventListener('message', (event: MessageEvent) => {
   }
 });
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+
+/**
+ * A few request types can legitimately take much longer than the default
+ * 30 seconds, on the ACP agent backend: starting an agent process
+ * (`ai.createTextSession`, and its `ai.languageModel.create` alias), and
+ * one turn on an already-open session (`session.prompt` — the ACP backend
+ * caps a turn at 10 minutes, see acp-connection.ts's ACP_TURN_TIMEOUT_MS;
+ * this leaves a margin past that so the background's own cap fires first
+ * and this is only a backstop). Every other request type keeps the
+ * default — a page can't tell which backend it's on, so this doesn't widen
+ * what a slow built-in request gets either.
+ */
+const REQUEST_TIMEOUT_MS: Record<string, number> = {
+  'ai.createTextSession': 2 * 60 * 1000,
+  'ai.languageModel.create': 2 * 60 * 1000,
+  'session.prompt': 10 * 60 * 1000 + 30 * 1000,
+};
+
 function sendRequest<T>(type: string, payload?: unknown): Promise<T> {
   const id = crypto.randomUUID();
+  const timeoutMs = REQUEST_TIMEOUT_MS[type] ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
   return new Promise((resolve, reject) => {
     pendingRequests.set(id, {
@@ -325,15 +345,19 @@ function sendRequest<T>(type: string, payload?: unknown): Promise<T> {
 
     window.postMessage({ channel: CHANNEL, request: { id, type, payload } }, '*');
 
-    // Timeout after 30 seconds
     setTimeout(() => {
       if (pendingRequests.has(id)) {
         pendingRequests.delete(id);
+        // Tell the background to stop too, not just this page: left alone,
+        // a hung createTextSession keeps the agent process running
+        // unobserved, and a hung session.prompt would block every later
+        // prompt still queued behind it on the same session.
+        window.postMessage({ channel: CHANNEL, abort: { id } }, '*');
         const err = new Error('Request timeout');
         (err as Error & { code?: string }).code = 'ERR_TIMEOUT';
         reject(err);
       }
-    }, 30000);
+    }, timeoutMs);
   });
 }
 

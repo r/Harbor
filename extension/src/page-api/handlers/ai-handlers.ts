@@ -79,7 +79,10 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
     const systemPrompt = typeof options.systemPrompt === 'string' ? options.systemPrompt : undefined;
     try {
       const { createAcpTextSession } = await loadAcpTextSession();
-      await createAcpTextSession(sessionId, backendSetting.agentId, ctx.origin, ctx.tabId, systemPrompt);
+      // `ctx.signal` aborts on the page's own create-request timeout
+      // (injected.ts) or an explicit abort for this request id — either
+      // way, the agent shouldn't keep starting once nobody's waiting.
+      await createAcpTextSession(sessionId, backendSetting.agentId, ctx.origin, ctx.tabId, systemPrompt, ctx.signal);
     } catch (e) {
       const code = (e as { code?: string }).code ?? 'ERR_AGENT_FAILED';
       return errorResponse(ctx.id, code, e instanceof Error ? e.message : 'The agent failed to start');
@@ -209,7 +212,11 @@ export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse 
 
   if (isAcpTextSession(sessionId)) {
     const { promptAcpTextSession } = await loadAcpTextSession();
-    const result = await promptAcpTextSession(sessionId, input);
+    // `ctx.signal` aborts on the page's own request timeout (extended for
+    // this type past the default 30s, but still finite) or an explicit
+    // abort — this turn, and any later one still queued behind it, must not
+    // keep running once nobody's waiting for it.
+    const result = await promptAcpTextSession(sessionId, input, ctx.signal);
     if (!result.ok) {
       return errorResponse(ctx.id, result.error.error?.code ?? 'ERR_AGENT_FAILED', result.error.error?.message ?? 'Agent run failed');
     }
