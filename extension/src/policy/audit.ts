@@ -74,6 +74,8 @@ export interface AuditRecord {
    * as cross-origin egress: a site can already fetch freely from its page.
    */
   pageFetch?: true;
+  /** Set when the decision didn't classify `resource.host` (PolicyRequest.classifyHost). */
+  classifyHost?: false;
 }
 
 export interface AuditExtra {
@@ -128,6 +130,7 @@ class AuditLog {
       correlationId: req.correlationId,
       ...(extra.consent ? { consent: extra.consent } : {}),
       ...(extra.pageFetch ? { pageFetch: true as const } : {}),
+      ...(req.classifyHost === false ? { classifyHost: false as const } : {}),
     };
 
     this.buffer.push(record);

@@ -565,6 +565,23 @@ export async function handleBrowserFetch(ctx: RequestContext): HandlerResponse {
       void response.body?.cancel().catch(() => {});
       return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', LOCAL_NETWORK_MESSAGE);
     }
+    // A redirect to another origin is checked again where it ended up, so a
+    // rule about that host applies and the audit shows where the data came
+    // from. The request has already gone out by then; the page just never
+    // sees the response.
+    const final = response.url ? new URL(response.url) : target;
+    if (final.origin !== target.origin) {
+      const refusedAfterRedirect = await policyRefusal(
+        ctx,
+        final.origin === ctx.origin ? 'network.egress.same_origin' : 'network.egress.cross_origin',
+        final.host,
+        { pageFetch: true },
+      );
+      if (refusedAfterRedirect) {
+        void response.body?.cancel().catch(() => {});
+        return refusedAfterRedirect;
+      }
+    }
     const headers: Record<string, string> = {};
     response.headers.forEach((value, key) => { headers[key] = value; });
     const body = await response.text();
