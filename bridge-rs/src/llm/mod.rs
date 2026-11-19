@@ -335,7 +335,7 @@ pub async fn list_provider_types() -> Result<serde_json::Value, RpcError> {
                 .unwrap_or(0);
 
             let needs_api_key = matches!(t.as_str(), "openai" | "anthropic" | "mistral" | "groq");
-            let is_local = matches!(t.as_str(), "ollama" | "llamafile" | "lmstudio" | "apple");
+            let is_local = config::is_local_provider_type(t);
 
             serde_json::json!({
                 "type": t,
@@ -377,7 +377,7 @@ pub async fn list_providers() -> Result<serde_json::Value, RpcError> {
     // Add configured instances
     for instance in cfg.providers.values() {
         let needs_api_key = matches!(instance.provider_type.as_str(), "openai" | "anthropic" | "mistral" | "groq");
-        let is_local = matches!(instance.provider_type.as_str(), "ollama" | "llamafile" | "lmstudio" | "apple");
+        let is_local = config::is_local_provider_type(&instance.provider_type);
         let is_global_default = cfg.default_provider.as_deref() == Some(&instance.id);
         let is_available = is_local && local_available.contains(&instance.provider_type);
 
@@ -403,7 +403,7 @@ pub async fn list_providers() -> Result<serde_json::Value, RpcError> {
         let has_instance = cfg.get_instances_by_type(ptype).len() > 0;
         if !has_instance {
             let needs_api_key = matches!(ptype.as_str(), "openai" | "anthropic" | "mistral" | "groq");
-            let is_local = matches!(ptype.as_str(), "ollama" | "llamafile" | "lmstudio" | "apple");
+            let is_local = config::is_local_provider_type(ptype);
             let is_available = local_available.contains(ptype.as_str());
             
             // Auto-detected local providers show as configured
@@ -847,14 +847,18 @@ pub async fn model_locality(params: serde_json::Value) -> Result<serde_json::Val
 /// Companion to list_configured_models; use model_id to correlate.
 pub async fn get_configured_models_metadata() -> Result<serde_json::Value, RpcError> {
     let cfg = get_config().unwrap_or_default();
-    let metadata: Vec<serde_json::Value> = configured_model_rows(&cfg, apple::is_available().await)
+    Ok(configured_models_metadata(&cfg, apple::is_available().await))
+}
+
+fn configured_models_metadata(cfg: &LlmConfig, apple_available: bool) -> serde_json::Value {
+    let metadata: Vec<serde_json::Value> = configured_model_rows(cfg, apple_available)
         .iter()
         .map(|model| {
             let model_id = model["model_id"].as_str().unwrap_or_default();
             serde_json::json!({ "model_id": model_id, "is_local": cfg.is_local_model(model_id) })
         })
         .collect();
-    Ok(serde_json::json!({ "metadata": metadata }))
+    serde_json::json!({ "metadata": metadata })
 }
 
 /// Add a configured model.
@@ -1280,6 +1284,31 @@ mod message_tests {
                 .unwrap_err()
                 .code,
             -32602
+        );
+    }
+
+    #[test]
+    fn configured_models_metadata_marks_lm_studio_and_named_local_instances_local() {
+        let mut cfg = config::LlmConfig::default();
+        cfg.add_instance(ProviderInstance::with_id("my-ollama", "ollama", "Home"));
+        cfg.add_instance(ProviderInstance::with_id("work-openai", "openai", "Work"));
+        for model in ["lmstudio:qwen", "my-ollama:llama3", "work-openai:gpt-4o"] {
+            cfg.add_model(model, None);
+        }
+        let metadata = configured_models_metadata(&cfg, false);
+        let local: Vec<(String, bool)> = metadata["metadata"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| (m["model_id"].as_str().unwrap().to_string(), m["is_local"].as_bool().unwrap()))
+            .collect();
+        assert_eq!(
+            local,
+            vec![
+                ("lmstudio:qwen".to_string(), true),
+                ("my-ollama:llama3".to_string(), true),
+                ("work-openai:gpt-4o".to_string(), false),
+            ]
         );
     }
 
