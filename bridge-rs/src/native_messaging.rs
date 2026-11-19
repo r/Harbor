@@ -281,6 +281,9 @@ pub async fn run_native_messaging() {
                         }
                     }
                     Some(msg) => {
+                        // Noted here, in arrival order, so a cancel that
+                        // follows can't run before the stream is known.
+                        note_incoming_stream(&msg);
                         let writer_clone = writer.clone();
                         let host_tx = host_request_tx.clone();
                         tokio::spawn(async move {
@@ -393,6 +396,17 @@ async fn handle_rpc(
     ).await;
 }
 
+/// Reserve an `llm.chat_stream` request's id as it's read, before its
+/// handler is spawned, so an `llm.cancel_stream` for it is never lost to
+/// the handlers running out of order.
+fn note_incoming_stream(msg: &IncomingMessage) {
+    if msg.msg_type == "rpc" && msg.method.as_deref() == Some("llm.chat_stream") {
+        if let Some(id) = &msg.id {
+            llm::reserve_stream(&llm::stream_key(id));
+        }
+    }
+}
+
 /// Handle a streaming RPC request
 async fn handle_streaming_rpc(
     id: serde_json::Value,
@@ -409,10 +423,11 @@ async fn handle_streaming_rpc(
             // Aborting drops `event_tx`, which ends the loop below.
             let stream_id = id.clone();
             let key = llm::stream_key(&id);
-            let task = tokio::spawn(async move {
+            // A stream cancelled before this point is never started; its
+            // event_tx is dropped, so the loop below ends at once.
+            llm::spawn_stream(&key, async move {
                 llm::chat_stream(stream_id, params, event_tx).await;
             });
-            llm::register_stream(&key, task.abort_handle());
 
             // Forward events to the extension
             while let Some(event) = event_rx.recv().await {

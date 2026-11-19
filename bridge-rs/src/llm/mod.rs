@@ -3,7 +3,12 @@
 mod apple;
 mod streams;
 
-pub use streams::{cancel_stream, finish as finish_stream, register as register_stream, stream_key};
+#[cfg(test)]
+pub use streams::is_known as is_stream_known;
+pub use streams::{
+    cancel_stream, finish as finish_stream, reserve as reserve_stream, spawn as spawn_stream,
+    stream_key,
+};
 mod config;
 
 pub use config::{LlmConfig, ProviderInstance};

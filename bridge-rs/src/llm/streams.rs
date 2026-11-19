@@ -7,12 +7,22 @@
 
 use crate::rpc::RpcError;
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::{Mutex, OnceLock};
 use tokio::task::AbortHandle;
 
-fn running() -> &'static Mutex<HashMap<String, AbortHandle>> {
-    static RUNNING: OnceLock<Mutex<HashMap<String, AbortHandle>>> = OnceLock::new();
-    RUNNING.get_or_init(|| Mutex::new(HashMap::new()))
+/// A stream the bridge knows about. The native-messaging read loop reserves
+/// each `llm.chat_stream` id as the request arrives, in order, before the
+/// stream's own task is spawned. A cancel handled before that task starts
+/// then finds the reservation and marks it, instead of being lost.
+enum Slot {
+    Reserved { cancelled: bool },
+    Running(AbortHandle),
+}
+
+fn streams() -> &'static Mutex<HashMap<String, Slot>> {
+    static STREAMS: OnceLock<Mutex<HashMap<String, Slot>>> = OnceLock::new();
+    STREAMS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// The registry key for a stream's JSON-RPC id (a string or a number).
@@ -23,28 +33,60 @@ pub fn stream_key(id: &serde_json::Value) -> String {
     }
 }
 
-/// Remember a running stream task so `llm.cancel_stream` can stop it.
-pub fn register(key: &str, handle: AbortHandle) {
-    running().lock().unwrap().insert(key.to_string(), handle);
+/// Note a stream as its request arrives, before its task is spawned.
+pub fn reserve(key: &str) {
+    streams()
+        .lock()
+        .unwrap()
+        .insert(key.to_string(), Slot::Reserved { cancelled: false });
 }
 
-/// Forget a stream that has ended on its own.
+/// Whether the bridge is tracking a stream with this key.
+#[cfg(test)]
+pub fn is_known(key: &str) -> bool {
+    streams().lock().unwrap().contains_key(key)
+}
+
+/// Spawn a stream's task and record it so `llm.cancel_stream` can stop it.
+/// A stream that was cancelled while still reserved is never started:
+/// returns `false` and drops `task` unpolled.
+pub fn spawn<F>(key: &str, task: F) -> bool
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    let mut streams = streams().lock().unwrap();
+    if let Some(Slot::Reserved { cancelled: true }) = streams.get(key) {
+        return false;
+    }
+    let handle = tokio::spawn(task);
+    streams.insert(key.to_string(), Slot::Running(handle.abort_handle()));
+    true
+}
+
+/// Forget a stream once it has ended, whichever way it ended.
 pub fn finish(key: &str) {
-    running().lock().unwrap().remove(key);
+    streams().lock().unwrap().remove(key);
 }
 
-/// `llm.cancel_stream { id }` -> `{ cancelled }`. Stops the stream task with
-/// that id, if it's still running. Cancelling a stream that has already
-/// ended (or never existed) isn't an error: the caller just wants it gone.
+/// `llm.cancel_stream { id }` -> `{ cancelled }`. Stops the stream with that
+/// id: aborts its task if it's running, or keeps it from starting if it's
+/// only reserved. Cancelling a stream that has already ended (or never
+/// existed) isn't an error: the caller just wants it gone.
 pub async fn cancel_stream(params: serde_json::Value) -> Result<serde_json::Value, RpcError> {
     let id = params
         .get("id")
         .filter(|id| id.is_string() || id.is_number())
         .ok_or_else(|| RpcError::invalid_params("llm.cancel_stream needs the stream's id"))?;
-    let handle = running().lock().unwrap().remove(&stream_key(id));
-    let cancelled = match handle {
-        Some(handle) => {
+    let key = stream_key(id);
+    let mut streams = streams().lock().unwrap();
+    let cancelled = match streams.get_mut(&key) {
+        Some(Slot::Running(handle)) => {
             handle.abort();
+            streams.remove(&key);
+            true
+        }
+        Some(Slot::Reserved { cancelled }) => {
+            *cancelled = true;
             true
         }
         None => false,
@@ -97,7 +139,10 @@ mod tests {
             .unwrap();
         assert_eq!(result, serde_json::json!({ "cancelled": true }));
 
-        assert!(!spawn("stream-early", endless(tx)), "a cancelled stream was started");
+        assert!(
+            !spawn("stream-early", endless(tx)),
+            "a cancelled stream was started"
+        );
         assert!(closed(&mut rx).await);
         finish("stream-early");
     }
@@ -124,7 +169,9 @@ mod tests {
         let key = stream_key(&serde_json::json!(42));
         reserve(&key);
         assert!(spawn(&key, endless(tx)));
-        let result = cancel_stream(serde_json::json!({ "id": 42 })).await.unwrap();
+        let result = cancel_stream(serde_json::json!({ "id": 42 }))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!({ "cancelled": true }));
         assert!(closed(&mut rx).await);
     }
