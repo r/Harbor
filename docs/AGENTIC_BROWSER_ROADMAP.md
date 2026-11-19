@@ -35,7 +35,7 @@ The Web Agent API ships as one browser extension (Harbor) plus a Rust bridge. Th
 | CORS-bypass fetch | `agent.browser.fetch(url, opts)` | `web:fetch` | `browserControl` (OFF) | ✅ |
 | Capability-bounded sessions | `agent.sessions.create({capabilities, limits})` | (per declared capabilities) | — | ✅ |
 | Site-provided MCP servers (BYOC) | `agent.mcp.{discover, register, unregister}` | `mcp:servers.register` | — | ✅ |
-| Open user's chat with config (BYOC) | `agent.chat.{canOpen, open, close}` | `chat:open` | — | ✅ |
+| Open user's chat with config (BYOC) | `agent.chat.{canOpen, open, close}` | `chat:open`, and `model:prompt` for each message | — | ✅ |
 | Multi-agent registration | `agent.agents.{register, discover, list, getInfo, unregister}` | `agents:register` / `agents:discover` | `multiAgent` (OFF) | ✅ |
 | Multi-agent invocation + messaging | `agent.agents.{invoke, send, onMessage, onInvoke}` | `agents:invoke` / `agents:message` | `multiAgent` (OFF) | ✅ |
 | Multi-agent events | `agent.agents.{subscribe, unsubscribe, broadcast}` | `agents:message` | `multiAgent` (OFF) | ✅ |
@@ -125,7 +125,7 @@ Use these as concrete design forcing functions. Each one stresses a different pa
 
 **Shape.** Acme.com hosts an MCP server with `search_products`, `add_to_cart`. The site renders a button: "talk to your assistant about this." User clicks, Harbor opens the user's configured chat with Acme's tools loaded.
 
-**What today's surface gives you.** This is the only one that's effectively **complete**. `agent.mcp.register({url, name, tools})` and `agent.chat.open({systemPrompt, tools, style})` ship today. See `demo/web-agents/bring-your-chatbot/` for a working example. The only remaining work is documentation and discovery (the `<link rel="mcp-server">` declarative pattern is plumbed but not widely used).
+**What today's surface gives you.** `agent.mcp.register({url, name, tools})` and `agent.chat.open({systemPrompt, tools, style})` ship today. See `demo/web-agents/bring-your-chatbot/` for a working example. Messages sent from the chat are the page's prompts, so they need `model:prompt` and are checked and audited under the page's origin. Remaining work: Harbor's chat doesn't call the site's `tools` yet, sends each message without the earlier ones, and runs on the bridge's default model rather than the person's own agent. Discovery also needs work (the `<link rel="mcp-server">` declarative pattern is plumbed but not widely used).
 
 ### 4. A multi-agent research workflow
 

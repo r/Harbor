@@ -16,14 +16,20 @@ const bridgeChat = vi.fn(async () => ({ content: 'reply from the model' }));
 vi.mock('../../llm/chat', () => ({ bridgeChat: (...args: unknown[]) => bridgeChat(...(args as [])) }));
 
 let defaultModel: string | null = 'openai:gpt-test';
+let bridgeConfigUnavailable = false;
 vi.mock('../../llm/bridge-client', () => ({
   bridgeRequest: vi.fn(async (method: string) => {
-    if (method === 'llm.get_config') return { default_model: defaultModel };
+    if (method === 'llm.get_config') {
+      if (bridgeConfigUnavailable) throw new Error('bridge not connected');
+      return { default_model: defaultModel };
+    }
     throw new Error(`unexpected bridge call ${method}`);
   }),
 }));
 
-const showPermissionPrompt = vi.fn(async () => ({ granted: false, explicitDeny: true }));
+type PromptResult = { granted: boolean; explicitDeny?: boolean; grantType?: string };
+let promptAnswer: PromptResult = { granted: false, explicitDeny: true };
+const showPermissionPrompt = vi.fn(async (): Promise<PromptResult> => promptAnswer);
 vi.mock('../../policy/permissions', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   showPermissionPrompt: (...args: unknown[]) => showPermissionPrompt(...(args as [])),
@@ -95,6 +101,8 @@ beforeEach(() => {
   bridgeChat.mockClear();
   showPermissionPrompt.mockClear();
   defaultModel = 'openai:gpt-test';
+  bridgeConfigUnavailable = false;
+  promptAnswer = { granted: false, explicitDeny: true };
   grant = () => 'allow';
 });
 
@@ -150,6 +158,30 @@ describe('page chat messages are checked as the page\'s prompts', () => {
     expect(showPermissionPrompt).toHaveBeenCalledWith(SHOP, ['model:prompt'], expect.anything(), undefined);
     expect(response).toMatchObject({ ok: false, type: 'error' });
     expect(bridgeChat).not.toHaveBeenCalled();
+  });
+
+  it('asks the person when the origin has no prompt grant, and sends the message once they allow it', async () => {
+    grant = (_origin, action) => (action.startsWith('model.prompt') ? null : 'allow');
+    promptAnswer = { granted: true, grantType: 'granted-once' };
+    const { openChat, send } = await setup();
+    const chatId = await openChat();
+
+    const response = await send(chatId, { tab: { id: TAB }, url: `${SHOP}/`, frameId: 0 });
+
+    expect(showPermissionPrompt).toHaveBeenCalledWith(SHOP, ['model:prompt'], expect.anything(), undefined);
+    expect(response).toMatchObject({ ok: true, type: 'page_chat_response', response: 'reply from the model' });
+    expect(bridgeChat).toHaveBeenCalledTimes(1);
+    expect(promptRecords()[0]).toMatchObject({ origin: SHOP, action: 'model.prompt.remote.firstParty' });
+  });
+
+  it('treats the prompt as remote when the bridge can\'t say which model it will use', async () => {
+    bridgeConfigUnavailable = true;
+    const { openChat, send } = await setup();
+    const chatId = await openChat();
+
+    await send(chatId, { tab: { id: TAB }, url: `${SHOP}/`, frameId: 0 });
+
+    expect(promptRecords()[0]).toMatchObject({ origin: SHOP, action: 'model.prompt.remote.firstParty' });
   });
 
   it('refuses a message for a chat that was never opened', async () => {
