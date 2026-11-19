@@ -474,7 +474,8 @@ export async function runLoginThenCapture(params: Record<string, unknown>): Prom
     const { page, found } = await readThenScan<{ links: string[]; linksWithText: LinkWithText[] }>(
       tab.id,
       (expectedUrl: unknown) => {
-        if (window.location.href !== expectedUrl) return { navigated: true as const };
+        // A hash change alone (scrollspy, media time) is still the same page.
+        if (window.location.href.split('#')[0] !== String(expectedUrl).split('#')[0]) return { navigated: true as const };
         const links: string[] = [];
         const linksWithText: { text: string; url: string }[] = [];
         const base = window.location.origin;
@@ -516,7 +517,7 @@ function isNavigated(value: unknown): value is Navigated {
  * Read a capture tab's text with the shared extractor, then run `scan` in the
  * same tab for whatever else the capture needs (links, cookies, ...). `scan`
  * gets the URL and text that were read as its first two arguments, and must
- * return `{ navigated: true }` when `window.location.href` differs, so every
+ * return `{ navigated: true }` when the tab's URL (ignoring the hash) differs, so every
  * field of a capture describes one page. If the tab moved between the two
  * calls, read it once more; if it moves again, fail.
  */
@@ -628,7 +629,8 @@ export async function runCapturePage(params: Record<string, unknown>): Promise<C
       tab.id,
       (expectedUrl: unknown, content: unknown, doCaptureCookies: unknown) => {
         const url = window.location.href;
-        if (url !== expectedUrl) return { navigated: true as const };
+        // A hash change alone (scrollspy, media time) is still the same page.
+        if (url.split('#')[0] !== String(expectedUrl).split('#')[0]) return { navigated: true as const };
         const pageText = typeof content === 'string' ? content : '';
         const lines = pageText.split('\n');
         // Site-specific results below look inside the main content area.

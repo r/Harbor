@@ -1300,7 +1300,7 @@ declare global {
           close(tabId: number): Promise<boolean>;
         };
         tab: {
-          readability(tabId: number): Promise<TabReadabilityResult>;
+          readability(tabId: number): Promise<ReadabilityContent>;
           getHtml(tabId: number, selector?: string): Promise<{ html: string; url: string; title: string }>;
           waitForLoad(tabId: number, options?: { timeout?: number }): Promise<void>;
         };

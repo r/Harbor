@@ -83,6 +83,29 @@ describe('capture reads one page, even if the tab navigates between in-tab calls
     const { runCapturePage } = await import('../handlers/browser-capture');
     await expect(runCapturePage({ url: `${ORIGIN}/a`, waitForLoad: false })).rejects.toThrow('Failed to extract page content');
   });
+
+  it('treats a hash that keeps changing as the same page', async () => {
+    navigatingPage([`${ORIGIN}/a#t=1`, `${ORIGIN}/a#t=2`, `${ORIGIN}/a#t=3`]);
+    const { runCapturePage } = await import('../handlers/browser-capture');
+    const result = await runCapturePage({ url: `${ORIGIN}/a`, waitForLoad: false });
+    expect(result).toMatchObject({ url: `${ORIGIN}/a#t=1`, content: `text of ${ORIGIN}/a#t=1` });
+  });
+
+  it('login-then-capture fails rather than mix two pages when the tab keeps navigating', async () => {
+    const EMAIL = 'me@news.example';
+    const hrefs = [`${ORIGIN}/a`, `${ORIGIN}/b`, `${ORIGIN}/c`, `${ORIGIN}/d`];
+    let call = 0;
+    mocks.executeScriptInTab.mockImplementation(async (_id: number, fn: (...a: unknown[]) => unknown, args: unknown[] = []) => {
+      if (args.includes(EMAIL)) return { done: true, hasPassword: true };
+      const href = hrefs[Math.min(call++, hrefs.length - 1)];
+      vi.stubGlobal('window', { location: { origin: ORIGIN, href } });
+      vi.stubGlobal('document', { title: href, body: { innerText: href, querySelectorAll: () => [] }, querySelector: () => null });
+      return fn(...args);
+    });
+    const { runLoginThenCapture } = await import('../handlers/browser-capture');
+    await expect(runLoginThenCapture({ loginUrl: `${ORIGIN}/login`, url: `${ORIGIN}/a`, email: EMAIL, password: 'pw' }))
+      .rejects.toThrow('Failed to extract page content after login');
+  });
 });
 
 describe('runLoginThenCapture', () => {

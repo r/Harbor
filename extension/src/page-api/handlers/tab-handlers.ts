@@ -134,8 +134,6 @@ async function isTabOnOrigin(tabId: number, origin: string): Promise<boolean> {
   }
 }
 
-/** Returned by an injected script that found the page on another origin. */
-
 const OTHER_ORIGIN_MESSAGE = "Can only read tabs while they show a page on the caller's origin";
 
 // =============================================================================
