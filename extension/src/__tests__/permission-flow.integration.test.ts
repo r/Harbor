@@ -5,13 +5,11 @@
  * This test wires the modules together and walks the path a real
  * page-side `agent.requestCapabilities()` call would take:
  *
- *   1. Mint a capability token by creating an explicit session.
+ *   1. Create an explicit session.
  *   2. Run a typed-action request through the PolicyEngine.
  *   3. Confirm the audit log records the decision.
- *   4. Replay the decision under a different mode using the simulator
- *      and confirm the diff matches expectations.
- *   5. Confirm the mode lattice rejects widening attempts.
- *   6. Confirm session termination revokes the token.
+ *   4. Replay the decision using the simulator and confirm it produces
+ *      a result.
  */
 
 import { describe, expect, it, beforeEach } from 'vitest';
@@ -24,13 +22,11 @@ import {
 } from '../policy/engine';
 import { Policy } from '../policy/store';
 import { compileRule, type Rule } from '../policy/rules';
-import { Tokens } from '../policy/tokens';
 import { Audit } from '../policy/audit';
 import { simulate, replay } from '../policy/simulator';
 
 beforeEach(() => {
   Policy.__reset();
-  Tokens.__reset();
   Audit.__reset();
   setOriginGrantResolver(() => null);
   setWatchdogResolver(() => ({ status: 'normal' }));
@@ -48,24 +44,17 @@ describe('permission flow integration', () => {
 
     const created = SessionRegistry.createExplicitSession(origin, {
       name: 'Article assistant',
-      mode: 'plan',
       capabilities: { llm: {}, tools: [], browser: ['read'] },
     });
     expect(created.success).toBe(true);
     const sessionId = created.sessionId!;
-
-    // The token should exist and be valid.
-    const session = SessionRegistry.getSession(sessionId);
-    expect(session?.tokenId).toBeDefined();
-    const token = Tokens.get(session!.tokenId!);
-    expect(token?.mode).toBe('plan');
+    expect(SessionRegistry.getSession(sessionId)).toBeDefined();
 
     // Run a request that the typed-action defaults allow (tool.list is
     // metadata-only, defaults to allow at Tier 9).
     const request: PolicyRequest = {
       origin,
       action: 'tool.list',
-      mode: 'plan',
     };
     const decision = await evaluate(request);
     expect(decision.effect).toBe('allow');
@@ -76,11 +65,10 @@ describe('permission flow integration', () => {
     const record = Audit.record(request, decision);
     expect(record.id).toBeDefined();
 
-    // Replay the decision under a different mode and verify the
-    // simulator finds the record and produces a result.
-    const replayResult = await replay(record.id, { mode: 'execute' });
+    // Replay the decision and verify the simulator finds the record and
+    // produces a result.
+    const replayResult = await replay(record.id, {});
     expect(replayResult.decision.effect).toBeDefined();
-    expect(replayResult.request.mode).toBe('execute');
   });
 
   it('honors a deny rule even when the user has otherwise allowed the action', async () => {
@@ -111,39 +99,5 @@ describe('permission flow integration', () => {
     expect(result.decision.effect).toBeDefined();
     // simulate() must not pollute the audit log.
     expect(Audit.list().length).toBe(0);
-  });
-
-  it('rejects mode-widening attempts on an existing session', () => {
-    const origin = 'https://lattice.example';
-    const created = SessionRegistry.createExplicitSession(origin, {
-      mode: 'plan',
-      capabilities: { tools: [], browser: ['read'] },
-    });
-    const sessionId = created.sessionId!;
-
-    // Narrowing within Plan is a no-op (already at Plan).
-    expect(SessionRegistry.setMode(sessionId, origin, 'plan')).toBe(true);
-
-    // Widening to Execute must fail closed.
-    expect(SessionRegistry.setMode(sessionId, origin, 'execute')).toBe(false);
-
-    // Mode is unchanged after the failed widen.
-    expect(SessionRegistry.getSession(sessionId)?.mode).toBe('plan');
-  });
-
-  it('revokes the capability token when a session terminates', () => {
-    const origin = 'https://ttl.example';
-    const created = SessionRegistry.createExplicitSession(origin, {
-      mode: 'execute',
-      capabilities: { llm: {}, tools: [], browser: ['read'] },
-    });
-    const sessionId = created.sessionId!;
-    const tokenId = SessionRegistry.getSession(sessionId)!.tokenId!;
-
-    expect(Tokens.get(tokenId)?.revoked).not.toBe(true);
-
-    SessionRegistry.terminateSession(sessionId, origin);
-
-    expect(Tokens.get(tokenId)?.revoked).toBe(true);
   });
 });

@@ -166,7 +166,7 @@ describe('audit-handlers', () => {
     const r = (await dispatch({
       type: 'policy.replay',
       recordId: target.id,
-      modifications: { mode: 'plan' },
+      modifications: {},
     })) as {
       ok: boolean;
       result?: {

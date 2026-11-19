@@ -4,13 +4,11 @@ import { Watchdog, attachWatchdogToAudit, DEFAULT_THRESHOLDS } from '../watchdog
 import { Audit } from '../audit';
 import { evaluate, setOriginGrantResolver, setWatchdogResolver, type PolicyRequest } from '../engine';
 import { Policy } from '../store';
-import { Tokens } from '../tokens';
 import { LabelSet } from '../labels';
 
 beforeEach(() => {
   Audit.__reset();
   Policy.__reset();
-  Tokens.__reset();
   Watchdog.resetAll();
   Watchdog.setThresholds(DEFAULT_THRESHOLDS);
   setOriginGrantResolver(() => null);

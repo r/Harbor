@@ -3,7 +3,7 @@
  *
  * Per-origin "Allow always / once / deny" decisions remembered from
  * prompts. The engine consults this at Tier 8 of the ladder; both the
- * policy file (Tiers 6–7) and the safety floor (Tiers 1–5) take precedence.
+ * policy file (Tiers 6–7) and the safety floor (Tiers 1–4) take precedence.
  *
  * Scope of this module:
  *   - Read: typed-action lookup, used by the engine's Tier 8 resolver.

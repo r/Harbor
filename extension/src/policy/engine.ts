@@ -2,7 +2,7 @@
  * PolicyEngine
  *
  * The chokepoint. Every gated API call goes through `evaluate(request)`,
- * which walks the 9-tier ladder described in `docs/PERMISSIONS.md` and
+ * which walks the tier ladder described in `docs/PERMISSIONS.md` and
  * returns a `PolicyDecision`.
  *
  * The ladder, in order:
@@ -12,13 +12,16 @@
  *   Tier 2  Sensitivity gate  (attaches labels, may force preview)
  *   Tier 3  Information-flow check  (label set vs destination's accepts)
  *   Tier 4  Watchdog containment    (per-session anomaly response)
- *   Tier 5  Capability token check  (token authorizes this action)
  *   Tier 6  Policy allow rule       (managed → user → origin-grant)
  *   Tier 7  Policy ask rule         (managed → user → origin-grant)
  *   Tier 8  Per-origin grant        (Allow always / once / deny)
  *   Tier 9  Default for action's effect
  *
- * Tiers 1–5 are the safety floor: they always run, and a higher-tier
+ * Tier 5 was the capability-token check. No caller ever passed a token to
+ * it, so tokens were removed; the ladder goes from Tier 4 to Tier 6 and the
+ * other tier numbers are unchanged.
+ *
+ * Tiers 1–4 are the safety floor: they always run, and a higher-tier
  * `allow` cannot defeat a lower-tier `deny` from this band. That is the
  * structural property that makes the ladder different from a flat
  * priority list.
@@ -42,7 +45,6 @@ import {
   type ElementDescriptor,
 } from './sensitivity';
 import { trustManifest, type ManifestProvenance } from './manifest-trust';
-import { Tokens, TokenError, type SessionMode } from './tokens';
 
 // =============================================================================
 // Request / decision shapes
@@ -74,12 +76,8 @@ export interface PolicyRequest {
   action: TypedAction;
   /** Resource this action targets. */
   resource?: PolicyResource;
-  /** Capability token for this session. Optional only for unscoped calls. */
-  tokenId?: string;
   /** Labels carried on input (from the caller's existing context). */
   inputLabels?: LabelSet;
-  /** Session mode. Defaults to `execute` if omitted. */
-  mode?: SessionMode;
   /** Free-text reason from the caller, surfaced in prompts. */
   reason?: string;
   /** Correlation id for the audit log. */
@@ -88,7 +86,7 @@ export interface PolicyRequest {
   tabId?: number;
 }
 
-export type DecisionEffect = 'allow' | 'ask' | 'deny' | 'preview' | 'attenuate';
+export type DecisionEffect = 'allow' | 'ask' | 'deny' | 'preview';
 
 export type DecisionSource =
   | 'ambient'
@@ -98,15 +96,12 @@ export type DecisionSource =
   | 'sensitivity'
   | 'infoflow'
   | 'watchdog'
-  | 'token'
   | 'default'
   | 'safetyFloor';
 
 export type DecisionErrorCode =
   | 'ERR_BLOCKED_BY_POLICY'
   | 'ERR_LABEL_FLOW_BLOCKED'
-  | 'ERR_TOKEN_EXPIRED'
-  | 'ERR_TOKEN_NOT_FOR_ORIGIN'
   | 'ERR_UNKNOWN_ACTION'
   | 'ERR_QUARANTINED';
 
@@ -141,7 +136,7 @@ export interface PolicyDecision {
 export interface TraceStep {
   tier: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
   source: DecisionSource;
-  outcome: 'pass' | 'allow' | 'ask' | 'deny' | 'preview' | 'attenuate' | 'skip';
+  outcome: 'pass' | 'allow' | 'ask' | 'deny' | 'preview' | 'skip';
   reason: string;
   rule?: { id: string };
 }
@@ -177,7 +172,6 @@ export interface OriginGrantOutcome {
 export type WatchdogResolver = (
   origin: string,
   action: TypedAction,
-  context: { sessionId?: string; mode?: SessionMode },
 ) => Promise<WatchdogOutcome> | WatchdogOutcome;
 
 export interface WatchdogOutcome {
@@ -221,20 +215,24 @@ function defaultEffectForAction(meta: ActionMeta): DecisionEffect {
 
 /**
  * "Higher" effect on the safety scale (more cautious wins).
- * deny > preview > ask > attenuate > allow
+ * deny > preview > ask > allow
  */
 function moreCautious(a: DecisionEffect, b: DecisionEffect): DecisionEffect {
   const rank: Record<DecisionEffect, number> = {
     allow: 0,
-    attenuate: 1,
-    ask: 2,
-    preview: 3,
-    deny: 4,
+    ask: 1,
+    preview: 2,
+    deny: 3,
   };
   return rank[a] >= rank[b] ? a : b;
 }
 
 function ruleEffectToDecision(effect: RuleEffect): DecisionEffect {
+  // Policy files can predate the removal of capability tokens. A rule
+  // stored with the old `attenuate` effect has nothing left to attenuate,
+  // so it falls back to the prompt it always produced via requireAction.
+  const raw: unknown = effect;
+  if (raw === 'attenuate') return 'ask';
   return effect;
 }
 
@@ -245,7 +243,7 @@ function ruleEffectToDecision(effect: RuleEffect): DecisionEffect {
 function toMatchInput(
   req: PolicyRequest,
   meta: ActionMeta,
-  context: { trustedManifest: boolean; mode: SessionMode; labels: LabelSet },
+  context: { trustedManifest: boolean; labels: LabelSet },
 ): RuleMatchInput {
   return {
     principal: { origin: req.origin, isSubagent: req.isSubagent },
@@ -258,7 +256,6 @@ function toMatchInput(
       path: req.resource?.path,
     },
     context: {
-      mode: context.mode,
       labels: context.labels.toArray(),
       destinationLocality: meta.locality,
       reversible: meta.reversible ?? null,
@@ -274,7 +271,6 @@ function toMatchInput(
 export async function evaluate(req: PolicyRequest): Promise<PolicyDecision> {
   const trace: TraceStep[] = [];
   const inputLabels = req.inputLabels ?? LabelSet.empty();
-  const mode: SessionMode = req.mode ?? 'execute';
 
   // Tier 0: Ambient. Unknown actions are denied; bare metadata reads about
   // Harbor itself are always allowed.
@@ -316,7 +312,7 @@ export async function evaluate(req: PolicyRequest): Promise<PolicyDecision> {
     Policy.rules(),
     'deny',
     'managed',
-    toMatchInput(req, meta, { trustedManifest: manifestTrusted, mode, labels: inputLabels }),
+    toMatchInput(req, meta, { trustedManifest: manifestTrusted, labels: inputLabels }),
   );
   if (managedDeny) {
     trace.push({
@@ -394,9 +390,7 @@ export async function evaluate(req: PolicyRequest): Promise<PolicyDecision> {
   });
 
   // Tier 4: Watchdog containment.
-  const watchdog = await Promise.resolve(
-    watchdogResolver(req.origin, req.action, { sessionId: req.tokenId, mode }),
-  );
+  const watchdog = await Promise.resolve(watchdogResolver(req.origin, req.action));
   if (watchdog.status === 'quarantined') {
     trace.push({
       tier: 4,
@@ -433,54 +427,10 @@ export async function evaluate(req: PolicyRequest): Promise<PolicyDecision> {
     });
   }
 
-  // Tier 5: Capability token check.
-  if (req.tokenId) {
-    try {
-      Tokens.validate(req.tokenId, req.origin, req.action);
-      trace.push({
-        tier: 5,
-        source: 'token',
-        outcome: 'pass',
-        reason: `token ${req.tokenId} authorizes ${req.action}`,
-      });
-    } catch (err) {
-      const tokenErr = err as TokenError;
-      const errorCode: DecisionErrorCode =
-        tokenErr.code === 'ERR_TOKEN_EXPIRED'
-          ? 'ERR_TOKEN_EXPIRED'
-          : 'ERR_TOKEN_NOT_FOR_ORIGIN';
-      trace.push({
-        tier: 5,
-        source: 'token',
-        outcome: 'deny',
-        reason: tokenErr.message,
-      });
-      return finalize({
-        effect: 'deny',
-        tier: 5,
-        source: 'token',
-        reason: tokenErr.message,
-        errorCode,
-        outputLabels: labelsAfterTier2,
-        sensitivity: verdict,
-        manifestTrusted,
-        trace,
-      });
-    }
-  } else {
-    trace.push({
-      tier: 5,
-      source: 'token',
-      outcome: 'skip',
-      reason: 'no capability token in this request',
-    });
-  }
-
   // Tier 6 + 7: Find the first matching policy rule (managed and user
   // sources are already merged in priority order by the store).
   const matchInput = toMatchInput(req, meta, {
     trustedManifest: manifestTrusted,
-    mode,
     labels: labelsAfterTier2,
   });
   const rule = findFirstRule(Policy.rules(), matchInput);

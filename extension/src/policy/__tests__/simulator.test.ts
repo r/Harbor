@@ -3,13 +3,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { simulate, replay, recordCurrentResolvers } from '../simulator';
 import { Policy } from '../store';
 import { Audit } from '../audit';
-import { Tokens } from '../tokens';
 import { evaluate, setOriginGrantResolver, setWatchdogResolver } from '../engine';
 
 beforeEach(() => {
   Policy.__reset();
   Audit.__reset();
-  Tokens.__reset();
   setOriginGrantResolver(() => null);
   setWatchdogResolver(() => ({ status: 'normal' }));
   recordCurrentResolvers(

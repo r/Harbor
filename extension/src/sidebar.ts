@@ -1388,7 +1388,7 @@ type AuditRecordView = {
   timestamp: number;
   origin: string;
   action: string;
-  effect: 'allow' | 'ask' | 'preview' | 'deny' | 'attenuate';
+  effect: 'allow' | 'ask' | 'preview' | 'deny';
   tier: number;
   source: string;
   rule?: { id: string };
@@ -1420,7 +1420,6 @@ function effectBadge(effect: string): string {
     ask: '#ca8a04',
     preview: '#0891b2',
     deny: '#dc2626',
-    attenuate: '#7c3aed',
   };
   const c = colorMap[effect] ?? '#6b7280';
   return `<span style="background:${c};color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(effect)}</span>`;
@@ -1449,46 +1448,6 @@ function renderTrace(trace: AuditTraceStep[] | undefined): string {
   </table>`;
 }
 
-async function runWhatIf(recordId: string, modeOverride: string, container: HTMLElement): Promise<void> {
-  container.innerHTML = '<em style="color:var(--color-text-muted);">Running simulation…</em>';
-  try {
-    const resp = await browserAPI.runtime.sendMessage({
-      type: 'policy.replay',
-      recordId,
-      modifications: modeOverride ? { mode: modeOverride } : {},
-    }) as {
-      ok?: boolean;
-      result?: {
-        decision: { effect: string; tier: number; reason: string; trace?: AuditTraceStep[] };
-        diff?: {
-          effectChanged?: { from: string; to: string };
-          tierChanged?: { from: number; to: number };
-        };
-      };
-      error?: string;
-    };
-    if (!resp?.ok || !resp.result) {
-      container.innerHTML = `<em style="color:var(--color-error);">Simulation failed: ${escapeHtml(resp?.error ?? 'unknown')}</em>`;
-      return;
-    }
-    const { decision, diff } = resp.result;
-    const diffNote = diff?.effectChanged
-      ? `<div style="margin-bottom:4px;color:var(--color-warning);"><strong>Different outcome:</strong> ${escapeHtml(diff.effectChanged.from)} → ${escapeHtml(diff.effectChanged.to)}</div>`
-      : `<div style="margin-bottom:4px;color:var(--color-success);">Outcome unchanged: still <strong>${escapeHtml(decision.effect)}</strong>.</div>`;
-    container.innerHTML = `
-      ${diffNote}
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
-        ${effectBadge(decision.effect)}
-        <span style="font-size:11px;color:var(--color-text-muted);">tier ${decision.tier}</span>
-      </div>
-      <div style="font-size:11px;color:var(--color-text-muted);margin-bottom:6px;">${escapeHtml(decision.reason)}</div>
-      ${renderTrace(decision.trace)}
-    `;
-  } catch (err) {
-    container.innerHTML = `<em style="color:var(--color-error);">${escapeHtml(err instanceof Error ? err.message : String(err))}</em>`;
-  }
-}
-
 function renderActivityDetail(record: AuditRecordView): string {
   const labels = (record.labelsIn.length || record.labelsOut.length)
     ? `<div style="margin-bottom:6px;">
@@ -1501,29 +1460,13 @@ function renderActivityDetail(record: AuditRecordView): string {
     : '';
   const errorCode = record.errorCode ? `<div style="margin-bottom:6px;"><strong>Error:</strong> <code>${escapeHtml(record.errorCode)}</code></div>` : '';
   return `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-      <div>
-        <div style="font-weight:600;margin-bottom:4px;">Why?</div>
-        <div style="margin-bottom:4px;">${escapeHtml(record.reason)}</div>
-        ${resource}
-        ${labels}
-        ${errorCode}
-        <div style="margin-top:6px;">${renderTrace(record.trace)}</div>
-      </div>
-      <div>
-        <div style="font-weight:600;margin-bottom:4px;">What if…</div>
-        <div style="margin-bottom:6px;color:var(--color-text-muted);">Replay this decision under a different session mode. The simulator does not change live state.</div>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-          <select class="form-input form-input-sm whatif-mode" style="height:24px;font-size:var(--text-xs);padding:0 var(--space-2);">
-            <option value="">— current —</option>
-            <option value="plan">plan</option>
-            <option value="execute">execute</option>
-            <option value="watch">watch</option>
-          </select>
-          <button class="btn btn-sm whatif-run">Run</button>
-        </div>
-        <div class="whatif-result" style="margin-top:6px;"></div>
-      </div>
+    <div>
+      <div style="font-weight:600;margin-bottom:4px;">Why?</div>
+      <div style="margin-bottom:4px;">${escapeHtml(record.reason)}</div>
+      ${resource}
+      ${labels}
+      ${errorCode}
+      <div style="margin-top:6px;">${renderTrace(record.trace)}</div>
     </div>
   `;
 }
@@ -1546,17 +1489,6 @@ function toggleActivityDetail(row: HTMLElement): void {
   }
   detail.innerHTML = renderActivityDetail(record);
   detail.style.display = 'block';
-  // Wire up the What-if controls inside this detail panel.
-  const runBtn = detail.querySelector('.whatif-run') as HTMLButtonElement | null;
-  const modeSelect = detail.querySelector('.whatif-mode') as HTMLSelectElement | null;
-  const resultBox = detail.querySelector('.whatif-result') as HTMLElement | null;
-  if (runBtn && modeSelect && resultBox && record) {
-    runBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      runWhatIf(record!.id, modeSelect.value, resultBox);
-    });
-    modeSelect.addEventListener('click', (e) => e.stopPropagation());
-  }
 }
 
 async function loadActivity(): Promise<void> {
@@ -2293,8 +2225,6 @@ type SessionSummary = {
   type: 'implicit' | 'explicit';
   origin: string;
   status: 'active' | 'suspended' | 'terminated';
-  mode: 'plan' | 'execute' | 'watch';
-  tokenId?: string;
   name?: string;
   createdAt: number;
   lastActiveAt: number;
@@ -2307,24 +2237,6 @@ type SessionSummary = {
     promptCount: number;
     toolCallCount: number;
   };
-};
-
-const SESSION_MODE_BADGES: Record<'plan' | 'execute' | 'watch', { color: string; label: string; tip: string }> = {
-  plan: {
-    color: '#16a34a',
-    label: 'Plan',
-    tip: 'Read-only. Reasoning and analysis only — no tool calls, no writes.',
-  },
-  execute: {
-    color: '#ca8a04',
-    label: 'Execute',
-    tip: 'Allowed to call tools and write to the page within budget.',
-  },
-  watch: {
-    color: '#dc2626',
-    label: 'Watch',
-    tip: 'Step-through. Every action confirmed individually.',
-  },
 };
 
 const sessionsPanelHeader = document.getElementById('sessions-panel-header') as HTMLDivElement;
@@ -2410,25 +2322,12 @@ function renderSessions(sessions: SessionSummary[]): void {
       ? session.origin.slice(0, 37) + '...' 
       : session.origin;
 
-    const mode = session.mode || 'execute';
-    const modeBadge = SESSION_MODE_BADGES[mode];
-    // Available targets: only equal-or-narrower modes (no widening).
-    // The lattice is plan ⊑ watch ⊑ execute (intuitively: plan reads,
-    // watch confirms each step, execute runs freely). The registry
-    // enforces this; the UI just hides options that would 400.
-    const modeOptions: Array<'plan' | 'execute' | 'watch'> = (() => {
-      if (mode === 'execute') return ['execute', 'watch', 'plan'];
-      if (mode === 'watch') return ['watch', 'plan'];
-      return ['plan'];
-    })();
-
     return `
       <div class="session-item ${typeClass} ${statusClass}" data-session-id="${session.sessionId}">
         <div class="session-header">
           <div class="session-name">
             ${escapeHtml(displayName)}
             <span class="session-type-badge ${typeClass}">${session.type}</span>
-            <span class="session-mode-badge" title="${escapeHtml(modeBadge.tip)}" style="background:${modeBadge.color};color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;margin-left:4px;">${modeBadge.label}</span>
           </div>
           <span class="session-time">${formatRelativeTime(session.lastActiveAt)}</span>
         </div>
@@ -2442,10 +2341,6 @@ function renderSessions(sessions: SessionSummary[]): void {
         </div>
         ${session.status === 'active' ? `
           <div class="session-actions" style="display:flex;gap:6px;align-items:center;">
-            <label style="font-size:var(--text-xs);color:var(--color-text-muted);">Mode:</label>
-            <select class="form-input form-input-sm session-mode-select" data-session-id="${session.sessionId}" style="height:24px;font-size:var(--text-xs);padding:0 var(--space-2);" ${modeOptions.length <= 1 ? 'disabled' : ''}>
-              ${modeOptions.map((m) => `<option value="${m}" ${m === mode ? 'selected' : ''}>${SESSION_MODE_BADGES[m].label}</option>`).join('')}
-            </select>
             <button class="btn btn-sm btn-danger terminate-session-btn" data-session-id="${session.sessionId}" data-origin="${escapeHtml(session.origin)}">Terminate</button>
           </div>
         ` : `
@@ -2456,38 +2351,6 @@ function renderSessions(sessions: SessionSummary[]): void {
       </div>
     `;
   }).join('');
-
-  // Mode picker on each active session row. The registry refuses any
-  // request that widens authority (plan → execute, watch → execute,
-  // plan → watch) — the UI just narrows the visible choices to what
-  // succeeds, and shows a toast on the rare case it doesn't.
-  sessionsList.querySelectorAll('.session-mode-select').forEach((sel) => {
-    const select = sel as HTMLSelectElement;
-    select.addEventListener('change', async (e) => {
-      e.stopPropagation();
-      const sessionId = select.dataset.sessionId!;
-      const newMode = select.value as 'plan' | 'execute' | 'watch';
-      select.disabled = true;
-      try {
-        const resp = await browserAPI.runtime.sendMessage({
-          type: 'session.setMode',
-          sessionId,
-          mode: newMode,
-        }) as { ok?: boolean; upgraded?: boolean; error?: string };
-        if (!resp?.ok) {
-          showToast(`Mode change failed: ${resp?.error ?? 'unknown'}`, 'error');
-        } else if (resp.upgraded === false) {
-          showToast('Mode change refused (would widen authority).', 'error');
-        } else {
-          showToast(`Session is now in ${newMode} mode`);
-        }
-      } catch (err) {
-        console.error('[Sidebar] Failed to set mode:', err);
-        showToast('Failed to change mode', 'error');
-      }
-      await loadSessions();
-    });
-  });
 
   // Add event listeners for terminate buttons
   sessionsList.querySelectorAll('.terminate-session-btn').forEach((btn) => {

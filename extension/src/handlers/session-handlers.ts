@@ -6,19 +6,20 @@
 
 import { registerHandler } from './types';
 import { SessionRegistry } from '../sessions';
-import type { SessionMode } from '../policy/tokens';
 
 export function registerSessionHandlers(): void {
   // List sessions
   registerHandler('session.list', (message, _sender, sendResponse) => {
-    const { origin, status, type, activeOnly } = message as {
+    // The filters sit beside the message's own `type` ('session.list'), so
+    // the session-type filter is `sessionType`.
+    const { origin, status, sessionType, activeOnly } = message as {
       origin?: string;
       status?: 'active' | 'suspended' | 'terminated';
-      type?: 'implicit' | 'explicit';
+      sessionType?: 'implicit' | 'explicit';
       activeOnly?: boolean;
     };
     try {
-      const sessions = SessionRegistry.listSessions({ origin, status, type, activeOnly });
+      const sessions = SessionRegistry.listSessions({ origin, status, type: sessionType, activeOnly });
       sendResponse({ ok: true, sessions });
     } catch (error) {
       sendResponse({
@@ -39,39 +40,6 @@ export function registerSessionHandlers(): void {
     try {
       const terminated = SessionRegistry.terminateSession(sessionId, origin);
       sendResponse({ ok: true, terminated });
-    } catch (error) {
-      sendResponse({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    return true;
-  });
-
-  // Re-attenuate a session's mode. Used by the sidebar's mode picker
-  // and by `agent.upgradeSession` on the page side. The registry
-  // refuses widening attempts (e.g. plan → execute) and returns false.
-  // The sidebar already trusts the user to pick a session it owns;
-  // it does not need to re-prove origin here, so we look the session
-  // up to recover its origin before forwarding to the registry, which
-  // does the actual origin check.
-  registerHandler('session.setMode', (message, _sender, sendResponse) => {
-    const { sessionId, mode } = message as {
-      sessionId?: string;
-      mode?: SessionMode;
-    };
-    if (!sessionId || !mode) {
-      sendResponse({ ok: false, error: 'Missing sessionId or mode' });
-      return true;
-    }
-    try {
-      const session = SessionRegistry.getSession(sessionId);
-      if (!session) {
-        sendResponse({ ok: false, error: 'Session not found' });
-        return true;
-      }
-      const upgraded = SessionRegistry.setMode(sessionId, session.origin, mode);
-      sendResponse({ ok: true, upgraded });
     } catch (error) {
       sendResponse({
         ok: false,

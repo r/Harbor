@@ -65,7 +65,6 @@ type MessageType =
   | 'session.get'
   | 'session.list'
   | 'session.terminate'
-  | 'session.upgrade'
   | 'session.recordUsage'
   // Policy / audit
   | 'audit.query'
@@ -560,31 +559,6 @@ async function handleSessionTerminate(payload: unknown): Promise<ExtensionApiRes
 }
 
 /**
- * Change the mode of an existing session. Re-mints the capability token
- * with the new mode. Cannot widen — plan→execute requests fall back to
- * an `upgraded: false` response so the page can prompt the user to
- * recreate the session with the broader mode.
- */
-async function handleSessionUpgrade(payload: unknown): Promise<ExtensionApiResponse> {
-  const { sessionId, origin, mode } = payload as {
-    sessionId?: string;
-    origin?: string;
-    mode?: 'plan' | 'execute' | 'watch';
-  };
-
-  if (!sessionId || !origin || !mode) {
-    return failure('Missing sessionId, origin, or mode');
-  }
-
-  try {
-    const upgraded = SessionRegistry.setMode(sessionId, origin, mode);
-    return success({ upgraded });
-  } catch (e) {
-    return failure(e);
-  }
-}
-
-/**
  * Record usage for a session (prompt, tool call, etc.).
  */
 async function handleSessionRecordUsage(payload: unknown): Promise<ExtensionApiResponse> {
@@ -846,8 +820,6 @@ export async function routeExtensionApiMessage(
       return handleSessionList(payload);
     case 'session.terminate':
       return handleSessionTerminate(payload);
-    case 'session.upgrade':
-      return handleSessionUpgrade(payload);
     case 'session.recordUsage':
       return handleSessionRecordUsage(payload);
 
@@ -937,8 +909,7 @@ async function handleAuditClear(): Promise<ExtensionApiResponse> {
 
 /**
  * Run a hypothetical request through the engine without side effects.
- * The sidebar's "What if?" affordance uses this to preview what would
- * happen if the user changed a rule or turned off a feature flag.
+ * Previews what would happen if a rule or the input's labels changed.
  */
 async function handlePolicySimulate(payload: unknown): Promise<ExtensionApiResponse> {
   const input = (payload || {}) as Parameters<typeof simulate>[0];

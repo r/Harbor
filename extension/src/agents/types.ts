@@ -24,8 +24,6 @@ export type ApiErrorCode =
   // Typed-permission decisions surface these.
   | 'ERR_BLOCKED_BY_POLICY'
   | 'ERR_LABEL_FLOW_BLOCKED'
-  | 'ERR_TOKEN_EXPIRED'
-  | 'ERR_TOKEN_NOT_FOR_ORIGIN'
   | 'ERR_UNKNOWN_ACTION'
   | 'ERR_QUARANTINED';
 

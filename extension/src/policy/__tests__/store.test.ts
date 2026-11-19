@@ -122,31 +122,6 @@ describe('Policy.load', () => {
     expect(rules[1].source).toBe('user');
   });
 
-  it('merges defaultModes from both sources', async () => {
-    storage.managed.data['policy'] = {
-      version: 2,
-      defaultModes: { 'https://github.com': 'execute' },
-    } satisfies PolicyDocument;
-    storage.local.data['harbor_policy_v2'] = {
-      version: 2,
-      defaultModes: { 'https://example.com': 'plan' },
-    } satisfies PolicyDocument;
-
-    await Policy.load();
-    expect(Policy.defaultModeFor('https://github.com')).toBe('execute');
-    expect(Policy.defaultModeFor('https://example.com')).toBe('plan');
-  });
-
-  it('defaultModeFor falls back to glob patterns', async () => {
-    storage.local.data['harbor_policy_v2'] = {
-      version: 2,
-      defaultModes: { 'https://*.example.com': 'plan', '*': 'execute' },
-    } satisfies PolicyDocument;
-
-    await Policy.load();
-    expect(Policy.defaultModeFor('https://api.example.com')).toBe('plan');
-    expect(Policy.defaultModeFor('https://other.com')).toBe('execute');
-  });
 });
 
 // =============================================================================

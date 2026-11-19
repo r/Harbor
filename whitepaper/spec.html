@@ -124,7 +124,7 @@ for await (const ev of window.agent.run({
     <h2 id="permissions">Permission model</h2>
     <p>
       Every API call goes through a single chokepoint — the <strong>PolicyEngine</strong>
-      — which evaluates the call against a 9-tier ladder of checks. The full
+      — which evaluates the call against a tiered ladder of checks. The full
       design lives in <a class="link" href="https://github.com/r/harbor/blob/main/docs/PERMISSIONS.md" target="_blank" rel="noopener">docs/PERMISSIONS.md</a>;
       the short version is below.
     </p>
@@ -152,28 +152,16 @@ for await (const ev of window.agent.run({
       destructive actions are always confirmed and cannot be auto-allowed.
     </p>
 
-    <h3>Sessions and capability tokens</h3>
+    <h3>Sessions</h3>
     <p>
-      An agent operates inside a <strong>session</strong> that is bound to an
-      origin and to a <strong>capability token</strong> — the unit of authority
-      the engine checks on every gated action. Tokens carry an
-      <code>allowedActions</code> set, an <code>acceptedLabels</code> set,
-      explicit budgets (tool calls, wall clock, etc.), a TTL, and a
-      <strong>mode</strong>:
+      An agent operates inside a <strong>session</strong>: origin-bound state
+      for a task, carrying the capabilities it asked for, explicit limits
+      (tool calls, TTL), its history, and its usage. The engine checks the
+      origin's grants on every gated call; those grants are the boundary.
     </p>
-    <ul>
-      <li><code>plan</code> — reads and prompts only; the token's
-        <code>allowedActions</code> excludes every <code>write</code> action.</li>
-      <li><code>execute</code> — normal evaluation per the ladder.</li>
-      <li><code>watch</code> — Execute, but writes return <em>preview</em> and
-        pause for explicit confirmation.</li>
-    </ul>
     <p>
-      Mode transitions don't just flip a flag — they re-mint the token. Cached
-      authority can't be widened after the fact. When a session delegates to a
-      subagent, the engine enforces strict OCAP-style attenuation: child
-      <code>allowedActions</code> ⊆ parent, child <code>acceptedLabels</code> ⊆
-      parent, child budgets ≤ parent, child TTL ≤ parent.
+      Authority can't be widened after the fact: a site that needs more asks
+      for the grant it needs and then a new session.
     </p>
 
     <h3>Information-flow labels</h3>
@@ -194,7 +182,7 @@ for await (const ev of window.agent.run({
       allow-lists still let the user pick <em>which</em> tools each origin may
       call. Every engine decision is recorded in an audit log with the
       ladder tier that fired, the matched rule (if any), and the labels on
-      the input — surfaced as a "Why?" / "What if?" affordance in the
+      the input — surfaced as a "Why?" affordance in the
       sidebar so silent allows are never invisible.
     </p>
     <p style="color: var(--ink-mute); font-size: var(--t-small);">

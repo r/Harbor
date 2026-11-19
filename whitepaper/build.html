@@ -117,18 +117,16 @@ document.getElementById("ask").onclick = async () =&gt; {
 
     <h2 id="agent">3. Run an agent</h2>
     <p>
-      Real agents create an explicit session in <code>plan</code> mode, propose
-      what they want to do, and only ask the user to upgrade to <code>execute</code>
-      when they have something to apply. The session carries a capability
-      token that bounds everything the agent can do — when you upgrade, the
-      token is re-minted with the new actions. <code>agent.run</code> remains
-      gated by the <code>toolCalling</code> feature flag in Harbor's
-      sidebar — flip it on for development.
+      Real agents request a session scoped to the capabilities they need,
+      and ask for more only when the user gives them a reason to. The
+      origin's grants bound everything the agent can do.
+      <code>agent.run</code> remains gated by the
+      <code>toolCalling</code> feature flag in Harbor's sidebar — flip it
+      on for development.
     </p>
     <pre class="ex-code" style="white-space: pre">const session = await agent.requestCapabilities({
   name: "Research assistant",
   reason: "Research assistant needs search and memory.",
-  mode: "plan",
   require: [
     { action: "model.prompt.local" },
     { action: "tool.call", server: "brave-search", toolNames: ["search"] },
@@ -147,13 +145,15 @@ for await (const ev of agent.run({
   if (ev.type === "final")     console.log(ev.output);
 }
 
-// Capability tokens are one-way: upgradeSession can narrow but not
-// widen. To gain write authority later, mint a fresh session with a
-// scoped, reason-tagged prompt the user can grant in one click:
+// To gain write authority later, ask for it (the user sees one
+// prompt), then request a new session and terminate it when done:
+await agent.requestPermissions({
+  scopes:  ["browser:activeTab.interact"],
+  reason:  "Apply the changes you approved",
+});
 const writeSession = await agent.requestCapabilities({
   name:    "Apply suggested edit",
   reason:  "Apply the changes you approved",
-  mode:    "execute",
   require: [{ action: "browser.write.interact" }],
 });</pre>
 

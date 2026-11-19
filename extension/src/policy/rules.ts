@@ -2,7 +2,7 @@
  * Typed Policy Rules
  *
  * The PolicyEngine evaluates each request against an ordered list of rules.
- * A rule has an `effect` (allow / ask / deny / preview / attenuate), a
+ * A rule has an `effect` (allow / ask / deny / preview), a
  * `principal` (who is asking), an `action` or set of actions, an optional
  * `resource` predicate, and an optional `context` predicate.
  *
@@ -34,10 +34,12 @@ import type { DataLabel } from './labels';
  *   - `preview`: show the user a diff of what's about to happen, then ask.
  *     Used for write/destructive actions where seeing the change matters
  *     more than seeing the request.
- *   - `attenuate`: allow, but downgrade the session's capability token
- *     (e.g. drop a label, shorten TTL, reduce budget).
+ *
+ * A rule stored with the old `attenuate` effect (capability tokens have
+ * been removed) is treated by the engine as `ask`, the prompt it always
+ * produced.
  */
-export type RuleEffect = 'allow' | 'ask' | 'deny' | 'preview' | 'attenuate';
+export type RuleEffect = 'allow' | 'ask' | 'deny' | 'preview';
 
 // =============================================================================
 // Principals, resources, contexts
@@ -100,12 +102,10 @@ export interface ResourcePredicate {
  * Context predicate. Conditions evaluated against the live request.
  *
  * The engine populates the `context` of every request with information like
- * the current session mode, the labels on the input, the destination
- * locality, and so on. A rule can match on any of those.
+ * the labels on the input, the destination locality, and so on. A rule can
+ * match on any of those.
  */
 export interface ContextPredicate {
-  /** Match only if the session is in this mode. */
-  mode?: 'plan' | 'execute' | 'watch';
   /** Match only if the input carries any of these labels. */
   hasAnyLabel?: readonly DataLabel[];
   /** Match only if the input carries all of these labels. */
@@ -241,7 +241,6 @@ export interface RuleMatchInput {
     path?: string;
   };
   context?: {
-    mode?: 'plan' | 'execute' | 'watch';
     labels?: readonly DataLabel[];
     destinationLocality?:
       | 'local'
@@ -290,7 +289,11 @@ export function ruleMatches(rule: CompiledRule, input: RuleMatchInput): boolean 
   // Context.
   if (rule.context) {
     const c = input.context ?? {};
-    if (rule.context.mode && c.mode !== rule.context.mode) return false;
+    // Policy files can predate the removal of session modes. Every request
+    // ran as 'execute' then, so a rule scoped to any other mode never
+    // matched. Keep it that way rather than let it match everything.
+    const staleMode = (rule.context as { mode?: unknown }).mode;
+    if (staleMode !== undefined && staleMode !== 'execute') return false;
     if (rule.context.destinationLocality && c.destinationLocality) {
       if (!rule.context.destinationLocality.includes(c.destinationLocality)) return false;
     } else if (rule.context.destinationLocality) {

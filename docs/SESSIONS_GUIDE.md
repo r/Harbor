@@ -141,7 +141,7 @@ Explicit sessions have **requested capabilities** bounded by the origin's permis
 - **LLM**: Allowed if requested and origin has `model:prompt`
 - **Tools**: Only the allowlisted tools that the origin can access
 - **Browser**: Only the requested browser capabilities
-- **Limits**: `ttlMinutes` ends the session when it runs out. `maxToolCalls` caps the session's `callTool()` calls: once it's spent, `callTool()` fails with `ERR_BUDGET_EXCEEDED` and the tool doesn't run. Calls refused for permission or allowlist reasons don't count.
+- **Limits**: `ttlMinutes` ends the session when it runs out. `maxToolCalls` caps the session's `callTool()` calls: once it's spent, `callTool()` fails with `ERR_BUDGET_EXCEEDED` and the tool doesn't run. A call refused by the page-side permission or allowlist check doesn't count; one refused by the policy engine does.
 
 ### Permissions
 

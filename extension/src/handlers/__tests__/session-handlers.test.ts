@@ -1,9 +1,24 @@
 /**
- * Tests for the sidebar-facing session handlers, focused on the new
- * `session.setMode` route the mode picker calls.
+ * Tests for the sidebar-facing session handlers.
+ *
+ * A session is created the way a page creates one (the page API's
+ * agent.sessions.create handler, through Harbor's real in-process core and
+ * SessionRegistry), then listed and terminated through the runtime messages
+ * the sidebar sends.
  */
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  hasPermission: vi.fn(),
+  getPermissions: vi.fn(),
+}));
+vi.mock('../../page-api/handlers/permission-handlers', () => ({
+  hasPermission: mocks.hasPermission,
+  getPermissions: mocks.getPermissions,
+}));
+
+import { handleSessionsCreate } from '../../page-api/handlers/session-handlers';
 import { SessionRegistry } from '../../sessions';
 
 type Listener = (
@@ -13,110 +28,98 @@ type Listener = (
 ) => boolean | void;
 
 const listeners: Listener[] = [];
+const ORIGIN = 'https://example.test';
 
 beforeAll(async () => {
-  const chrome = (
-    globalThis as unknown as {
-      chrome: { runtime: { onMessage: { addListener: (l: Listener) => void } } };
-    }
-  ).chrome;
+  const chrome = (globalThis as unknown as { chrome: { runtime: { onMessage: { addListener: (l: Listener) => void } } } }).chrome;
   chrome.runtime.onMessage.addListener = (l: Listener) => {
     listeners.push(l);
   };
-
   const mod = await import('../session-handlers');
   mod.registerSessionHandlers();
 });
 
-async function dispatch(message: Record<string, unknown>): Promise<unknown> {
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.hasPermission.mockResolvedValue(true);
+  mocks.getPermissions.mockResolvedValue({ scopes: {}, allowedTools: [] });
+  for (const s of SessionRegistry.listSessions()) {
+    SessionRegistry.destroySession(s.sessionId, s.origin);
+  }
+});
+
+/** Send a runtime message the way the sidebar does and await the response. */
+function sidebarSend(message: Record<string, unknown>): Promise<unknown> {
   return new Promise((resolve) => {
     let resolved = false;
-    const sendResponse = (response: unknown): void => {
+    let async = false;
+    const sendResponse = (response: unknown) => {
       if (resolved) return;
       resolved = true;
       resolve(response);
     };
-    let async = false;
     for (const l of listeners) {
-      const r = l(message, {} as chrome.runtime.MessageSender, sendResponse);
-      if (r === true) async = true;
+      if (l(message, {} as chrome.runtime.MessageSender, sendResponse) === true) async = true;
     }
     if (!async && !resolved) resolve(undefined);
   });
 }
 
-describe('session-handlers', () => {
+async function createPageSession(name: string): Promise<string> {
+  const res = (await handleSessionsCreate({
+    id: 'req-create',
+    type: 'agent.sessions.create',
+    origin: ORIGIN,
+    payload: { name, capabilities: { tools: [], browser: [] } },
+  } as never)) as { ok: boolean; result: { sessionId: string } };
+  expect(res.ok).toBe(true);
+  return res.result.sessionId;
+}
 
-  describe('session.setMode', () => {
-    it('400s on missing fields', async () => {
-      const r = (await dispatch({ type: 'session.setMode' })) as {
-        ok: boolean;
-        error?: string;
-      };
-      expect(r.ok).toBe(false);
-      expect(r.error).toMatch(/Missing/);
-    });
+describe('sidebar session handlers', () => {
+  it('lists a session a page created', async () => {
+    const sessionId = await createPageSession('Page session');
 
-    it('reports session not found for an unknown id', async () => {
-      const r = (await dispatch({
-        type: 'session.setMode',
-        sessionId: 'nope',
-        mode: 'plan',
-      })) as { ok: boolean; error?: string };
-      expect(r.ok).toBe(false);
-      expect(r.error).toMatch(/not found/i);
-    });
+    const res = (await sidebarSend({ type: 'session.list' })) as {
+      ok: boolean;
+      sessions: Array<{ sessionId: string; origin: string; status: string; name?: string }>;
+    };
 
-    it('narrows execute → plan successfully', async () => {
-      const created = SessionRegistry.createExplicitSession(
-        'https://session-handler.example',
-        {
-          name: 'test',
-          mode: 'execute',
-          capabilities: { tools: [], browser: ['read'] },
-        },
-      );
-      expect(created.success).toBe(true);
-      const sessionId = created.sessionId!;
+    expect(res.ok).toBe(true);
+    expect(res.sessions).toEqual([
+      expect.objectContaining({ sessionId, origin: ORIGIN, status: 'active', name: 'Page session' }),
+    ]);
+  });
 
-      const r = (await dispatch({
-        type: 'session.setMode',
-        sessionId,
-        mode: 'plan',
-      })) as { ok: boolean; upgraded: boolean };
-      expect(r.ok).toBe(true);
-      expect(r.upgraded).toBe(true);
+  it('terminates a page session, and the list then shows it terminated', async () => {
+    const sessionId = await createPageSession('Page session');
 
-      const session = SessionRegistry.getSession(sessionId);
-      expect(session?.mode).toBe('plan');
-    });
+    const term = await sidebarSend({ type: 'session.terminate', sessionId, origin: ORIGIN });
+    expect(term).toEqual({ ok: true, terminated: true });
 
-    it('refuses widening (plan → execute) without crashing', async () => {
-      const created = SessionRegistry.createExplicitSession(
-        'https://widen.example',
-        {
-          name: 'test',
-          mode: 'plan',
-          capabilities: { tools: [], browser: ['read'] },
-        },
-      );
-      expect(created.success).toBe(true);
-      const sessionId = created.sessionId!;
+    const res = (await sidebarSend({ type: 'session.list' })) as {
+      sessions: Array<{ sessionId: string; status: string }>;
+    };
+    expect(res.sessions).toEqual([expect.objectContaining({ sessionId, status: 'terminated' })]);
+    expect(() => SessionRegistry.getValidatedSession(sessionId, ORIGIN)).toThrow(/terminated/);
+  });
 
-      const r = (await dispatch({
-        type: 'session.setMode',
-        sessionId,
-        mode: 'execute',
-      })) as { ok: boolean; upgraded: boolean };
-      // The handler reports `ok: true` (the request was processed
-      // without error) and `upgraded: false` (the mode lattice rejected
-      // the change). The sidebar uses this distinction to surface a
-      // refusal toast rather than an error.
-      expect(r.ok).toBe(true);
-      expect(r.upgraded).toBe(false);
+  it('still applies the list filters', async () => {
+    await createPageSession('Page session');
 
-      const session = SessionRegistry.getSession(sessionId);
-      expect(session?.mode).toBe('plan');
-    });
+    const other = (await sidebarSend({ type: 'session.list', origin: 'https://other.test' })) as {
+      sessions: unknown[];
+    };
+    expect(other.sessions).toEqual([]);
+
+    const implicitOnly = (await sidebarSend({ type: 'session.list', sessionType: 'implicit' })) as {
+      sessions: unknown[];
+    };
+    expect(implicitOnly.sessions).toEqual([]);
+
+    const explicitOnly = (await sidebarSend({ type: 'session.list', sessionType: 'explicit' })) as {
+      sessions: unknown[];
+    };
+    expect(explicitOnly.sessions).toHaveLength(1);
   });
 });
