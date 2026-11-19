@@ -6,6 +6,51 @@
 //! running to the end of a response nobody will read.
 
 use crate::rpc::RpcError;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use tokio::task::AbortHandle;
+
+fn running() -> &'static Mutex<HashMap<String, AbortHandle>> {
+    static RUNNING: OnceLock<Mutex<HashMap<String, AbortHandle>>> = OnceLock::new();
+    RUNNING.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The registry key for a stream's JSON-RPC id (a string or a number).
+pub fn stream_key(id: &serde_json::Value) -> String {
+    match id {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+/// Remember a running stream task so `llm.cancel_stream` can stop it.
+pub fn register(key: &str, handle: AbortHandle) {
+    running().lock().unwrap().insert(key.to_string(), handle);
+}
+
+/// Forget a stream that has ended on its own.
+pub fn finish(key: &str) {
+    running().lock().unwrap().remove(key);
+}
+
+/// `llm.cancel_stream { id }` -> `{ cancelled }`. Stops the stream task with
+/// that id, if it's still running. Cancelling a stream that has already
+/// ended (or never existed) isn't an error: the caller just wants it gone.
+pub async fn cancel_stream(params: serde_json::Value) -> Result<serde_json::Value, RpcError> {
+    let id = params
+        .get("id")
+        .filter(|id| id.is_string() || id.is_number())
+        .ok_or_else(|| RpcError::invalid_params("llm.cancel_stream needs the stream's id"))?;
+    let handle = running().lock().unwrap().remove(&stream_key(id));
+    let cancelled = match handle {
+        Some(handle) => {
+            handle.abort();
+            true
+        }
+        None => false,
+    };
+    Ok(serde_json::json!({ "cancelled": cancelled }))
+}
 
 #[cfg(test)]
 mod tests {
@@ -23,7 +68,9 @@ mod tests {
         });
         register("stream-1", task.abort_handle());
 
-        let result = cancel_stream(serde_json::json!({ "id": "stream-1" })).await.unwrap();
+        let result = cancel_stream(serde_json::json!({ "id": "stream-1" }))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!({ "cancelled": true }));
 
         // The task's sender is dropped once it's aborted.
@@ -36,9 +83,13 @@ mod tests {
         let task = tokio::spawn(async {});
         register("stream-2", task.abort_handle());
         finish("stream-2");
-        let result = cancel_stream(serde_json::json!({ "id": "stream-2" })).await.unwrap();
+        let result = cancel_stream(serde_json::json!({ "id": "stream-2" }))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!({ "cancelled": false }));
-        let unknown = cancel_stream(serde_json::json!({ "id": "nope" })).await.unwrap();
+        let unknown = cancel_stream(serde_json::json!({ "id": "nope" }))
+            .await
+            .unwrap();
         assert_eq!(unknown, serde_json::json!({ "cancelled": false }));
     }
 
@@ -62,6 +113,9 @@ mod tests {
             params: serde_json::json!({ "id": "not-running" }),
         })
         .await;
-        assert!(response.error.is_none(), "llm.cancel_stream isn't registered");
+        assert!(
+            response.error.is_none(),
+            "llm.cancel_stream isn't registered"
+        );
     }
 }

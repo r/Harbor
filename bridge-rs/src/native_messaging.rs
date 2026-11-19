@@ -404,12 +404,16 @@ async fn handle_streaming_rpc(
         "llm.chat_stream" => {
             let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(32);
             
-            // Spawn the streaming task
+            // Spawn the streaming task, and keep a handle so
+            // `llm.cancel_stream` can stop it when the page stops reading.
+            // Aborting drops `event_tx`, which ends the loop below.
             let stream_id = id.clone();
-            tokio::spawn(async move {
+            let key = llm::stream_key(&id);
+            let task = tokio::spawn(async move {
                 llm::chat_stream(stream_id, params, event_tx).await;
             });
-            
+            llm::register_stream(&key, task.abort_handle());
+
             // Forward events to the extension
             while let Some(event) = event_rx.recv().await {
                 let event_json = serde_json::to_value(&event).unwrap_or_default();
@@ -419,6 +423,7 @@ async fn handle_streaming_rpc(
                     break;
                 }
             }
+            llm::finish_stream(&key);
         }
         "acp.open" => {
             let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(32);
