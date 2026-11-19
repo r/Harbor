@@ -15,6 +15,7 @@ import { harborRequest, harborStreamRequest } from './harbor-core';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
 import { type AgentBackend } from './agent-backend';
 import { selectAgentBackend } from './agent-backend-selection';
+import { isAcpTextSession, promptStreamingAcpTextSession, cleanupAcpTextSessionsForTab } from './acp-text-session';
 import type { TransportStreamEvent } from './types';
 
 import {
@@ -26,6 +27,7 @@ import {
   // AI utilities
   resolveTextSession,
   recordExplicitPrompt,
+  forgetTextSession,
   // Tab utilities
   restoreSpawnedTabs,
   handleTabRemoved,
@@ -72,6 +74,26 @@ async function handleSessionPromptStreaming(
     return;
   }
   const { session } = resolved;
+
+  if (isAcpTextSession(sessionId)) {
+    try {
+      const result = await promptStreamingAcpTextSession(sessionId, input, (chunk) => {
+        sendEvent({ id: ctx.id, event: { type: 'token', token: chunk } });
+      });
+      if (result.ok) {
+        sendEvent({ id: ctx.id, event: { type: 'done' }, done: true });
+      } else {
+        sendEvent({ id: ctx.id, event: result.error, done: true });
+      }
+    } catch (e) {
+      sendEvent({
+        id: ctx.id,
+        event: { type: 'error', error: { code: 'ERR_AGENT_FAILED', message: e instanceof Error ? e.message : 'Agent run failed' } },
+        done: true,
+      });
+    }
+    return;
+  }
 
   try {
     session.history.push({ role: 'user', content: input });
@@ -225,6 +247,10 @@ export function initializePageApi(): void {
 
     handleTabRemoved(tabId);
     cleanupAgentsForTab(tabId);
+    // Cancels any turn in progress and kills the agent process for every
+    // ACP-backed window.ai text session this tab opened — a no-op when it
+    // opened none.
+    await cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
   });
 
   // Port connection handler: the page-facing transport.

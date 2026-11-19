@@ -10,6 +10,21 @@ import type { SessionSummary } from '../types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission } from './permission-handlers';
 import { FEATURE_LABELS, getFeatureFlags } from '../policy/feature-flags';
+import { readAgentBackendSetting } from '../agent-backend-setting';
+import { isAcpTextSession } from '../acp-text-session-registry';
+
+// Loaded lazily (not a top-level import): acp-text-session.ts pulls in
+// acp-connection.ts -> agent-question.ts, which registers a
+// `browserAPI.runtime.onMessage` listener as soon as it's imported. This
+// file is part of the handlers/ barrel that many unrelated tests reach
+// through `../handlers` with only a bare-bones `chrome` stub, so loading it
+// only once a sessionId is actually one of these (never for a page that
+// only uses the built-in backend) keeps that barrel's own import graph
+// unchanged. `isAcpTextSession` itself is cheap and side-effect-free
+// (acp-text-session-registry.ts), so every prompt/destroy can check it.
+async function loadAcpTextSession() {
+  return import('../acp-text-session');
+}
 
 // =============================================================================
 // Session State
@@ -46,13 +61,31 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
 
   const options = (ctx.payload || {}) as Record<string, unknown>;
   const sessionId = generateSessionId();
-  
+
   console.log('[Web Agents API] handleAiCreateTextSession: Creating session', {
     sessionId,
     systemPromptLength: options.systemPrompt ? String(options.systemPrompt).length : 0,
     hasTemperature: !!options.temperature,
   });
-  
+
+  // When the person has picked an ACP agent as their backend
+  // (docs/ACP_BACKEND_DESIGN.md section 2), this session runs on it instead
+  // of Harbor's own llm.chat: open the agent process and its ACP session
+  // now, so a later prompt/promptStreaming call has one ready. `model` and
+  // `temperature`/`topK` are ignored silently on this backend — the agent
+  // picks its own model and sampling.
+  const backendSetting = await readAgentBackendSetting();
+  if (backendSetting) {
+    const systemPrompt = typeof options.systemPrompt === 'string' ? options.systemPrompt : undefined;
+    try {
+      const { createAcpTextSession } = await loadAcpTextSession();
+      await createAcpTextSession(sessionId, backendSetting.agentId, ctx.origin, ctx.tabId, systemPrompt);
+    } catch (e) {
+      const code = (e as { code?: string }).code ?? 'ERR_AGENT_FAILED';
+      return errorResponse(ctx.id, code, e instanceof Error ? e.message : 'The agent failed to start');
+    }
+  }
+
   textSessions.set(sessionId, {
     sessionId,
     origin: ctx.origin,
@@ -167,12 +200,21 @@ export async function resolveTextSession(
 
 export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse {
   const { sessionId, input } = ctx.payload as { sessionId: string; input: string };
-  
+
   const resolved = await resolveTextSession(sessionId, ctx.origin, ctx.tabId);
   if (!('session' in resolved)) {
     return errorResponse(ctx.id, resolved.code, resolved.message);
   }
   const { session } = resolved;
+
+  if (isAcpTextSession(sessionId)) {
+    const { promptAcpTextSession } = await loadAcpTextSession();
+    const result = await promptAcpTextSession(sessionId, input);
+    if (!result.ok) {
+      return errorResponse(ctx.id, result.error.error?.code ?? 'ERR_AGENT_FAILED', result.error.error?.message ?? 'Agent run failed');
+    }
+    return successResponse(ctx.id, result.text);
+  }
 
   try {
     // Add user message to history
@@ -210,8 +252,20 @@ export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse 
 
 export async function handleSessionDestroy(ctx: RequestContext): HandlerResponse {
   const { sessionId } = ctx.payload as { sessionId: string };
-  if (textSessions.get(sessionId)?.origin === ctx.origin) textSessions.delete(sessionId);
+  if (textSessions.get(sessionId)?.origin === ctx.origin) {
+    textSessions.delete(sessionId);
+    if (isAcpTextSession(sessionId)) {
+      // Cancels any turn in progress and kills the agent process.
+      const { destroyAcpTextSession } = await loadAcpTextSession();
+      await destroyAcpTextSession(sessionId);
+    }
+  }
   return successResponse(ctx.id, null);
+}
+
+/** Drops a text session's state without an origin check — used for cleanup triggered by the extension itself (a tab closing), not a page request. */
+export function forgetTextSession(sessionId: string): void {
+  textSessions.delete(sessionId);
 }
 
 export async function handleLanguageModelCapabilities(ctx: RequestContext): HandlerResponse {
