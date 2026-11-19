@@ -89,6 +89,8 @@ export interface StoredPermissionLike {
   grantedAt: number;
   expiresAt?: number;
   tabId?: number;
+  /** A multi-tab "Allow once": tab id (or `*`) to its expiry. */
+  tabs?: Record<string, number>;
   /** Round 2's single-backend field. Still read (as that backend's own allow) when `allows` is absent; never written by `withBackendAllow`. */
   backend?: string;
   /** Round 3+: one allow per backend, for `model:prompt`/`model:tools` only. */
@@ -137,7 +139,7 @@ export function effectiveGrantForBackend(
   if (!isBackendScopedScope(scope)) {
     const grant = stored.grant;
     if (grant !== 'granted-once' && grant !== 'granted-always') return 'not-granted';
-    return isLiveEntry({ grant, expiresAt: stored.expiresAt, tabId: stored.tabId }, now, tabId) ? grant : 'not-granted';
+    return isLiveEntry({ grant, expiresAt: stored.expiresAt, tabId: stored.tabId, tabs: stored.tabs }, now, tabId) ? grant : 'not-granted';
   }
 
   const perBackend = stored.allows?.[backendTag];
@@ -147,7 +149,7 @@ export function effectiveGrantForBackend(
   const grant = stored.grant;
   if (!stored.allows && (grant === 'granted-once' || grant === 'granted-always')) {
     if ((stored.backend ?? 'builtin') !== backendTag) return 'not-granted';
-    return isLiveEntry({ grant, expiresAt: stored.expiresAt, tabId: stored.tabId }, now, tabId) ? grant : 'not-granted';
+    return isLiveEntry({ grant, expiresAt: stored.expiresAt, tabId: stored.tabId, tabs: stored.tabs }, now, tabId) ? grant : 'not-granted';
   }
   return 'not-granted';
 }
@@ -194,8 +196,8 @@ export function withBackendAllow(
     const legacyGrant = existing.grant;
     if (legacyGrant === 'granted-once' || legacyGrant === 'granted-always') {
       const legacyTag = existing.backend ?? 'builtin';
-      if (isLiveEntry({ grant: legacyGrant, expiresAt: existing.expiresAt, tabId: existing.tabId }, now) && !(legacyTag in allows)) {
-        allows[legacyTag] = { grant: legacyGrant, grantedAt: existing.grantedAt, expiresAt: existing.expiresAt, tabId: existing.tabId };
+      if (isLiveEntry({ grant: legacyGrant, expiresAt: existing.expiresAt, tabId: existing.tabId, tabs: existing.tabs }, now) && !(legacyTag in allows)) {
+        allows[legacyTag] = { grant: legacyGrant, grantedAt: existing.grantedAt, expiresAt: existing.expiresAt, tabId: existing.tabId, tabs: existing.tabs };
       }
     }
   }

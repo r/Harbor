@@ -33,7 +33,7 @@ Once setup is verified, continue here for everyday use and server management.
 
 The sidebar's **Agent** panel, next to LLM Providers, lets you run sites on an agent you already use instead of Harbor's built-in model: pick a preset (goose, Claude Code, Codex) or add a custom command line, then select it under "Run sites on." Harbor starts the agent without your shell environment, so give its tools their own keys in the agent's own settings — each preset links to its own settings docs for that. Press "Check" to confirm the agent starts; it reports "Ready (\<agent name\> vN)" using the name you gave it here, not whatever package name the agent itself reports. A site still asks for the same permissions either way; selecting an agent only changes who answers.
 
-Once you've selected an agent, the **LLM Providers** panel collapses and notes that it's "Still used by agent.sessions and Harbor's own chat" — those two still run on the built-in model either way. Selecting Harbor's built-in model again expands it back.
+Once you've selected an agent, the **LLM Providers** panel collapses and notes that it's "Still used by Harbor's own chat and some site features": Harbor's chat and a site's `agent.sessions` still run on the built-in model either way. Selecting Harbor's built-in model again expands it back.
 
 ### Install Your First MCP Server
 

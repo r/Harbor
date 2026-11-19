@@ -276,6 +276,8 @@ cannot be overridden by any grant. See
 
 Request permission scopes from the user. Shows a permission prompt if scopes aren't already granted.
 
+The call waits up to 5 minutes for the person to answer, then rejects with `ERR_TIMEOUT`. If the page stops waiting first, because of that timeout or because the tab closes, Harbor discards the answer, so a late Allow grants nothing.
+
 ```javascript
 const result = await window.agent.requestPermissions({
   scopes: [

@@ -263,7 +263,6 @@ async function grantPermissionsNow(
   backendOverride?: BackendTag,
   agentOrigins?: string[],
 ): Promise<PermissionGrantResult> {
-  console.log('[Permissions] grantPermissions:', { origin, scopes, grantType, tabId, allowedTools, backendOverride, agentOrigins });
 
   let stored = await loadOriginPermissions(origin);
 

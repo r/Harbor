@@ -13,7 +13,7 @@
  */
 
 /** The one-line note shown in the LLM panel's header area while an agent is selected. */
-export const LLM_PANEL_AGENT_NOTE = "Still used by agent.sessions and Harbor's own chat";
+export const LLM_PANEL_AGENT_NOTE = "Still used by Harbor's own chat and some site features";
 
 /** Whether the LLM Providers panel should start collapsed, given whether an ACP agent is currently selected. */
 export function llmPanelCollapsedForAgent(agentSelected: boolean): boolean {
