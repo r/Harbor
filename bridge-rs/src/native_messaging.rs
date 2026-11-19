@@ -281,14 +281,7 @@ pub async fn run_native_messaging() {
                         }
                     }
                     Some(msg) => {
-                        // Noted here, in arrival order, so a cancel that
-                        // follows can't run before the stream is known.
-                        note_incoming_stream(&msg);
-                        let writer_clone = writer.clone();
-                        let host_tx = host_request_tx.clone();
-                        tokio::spawn(async move {
-                            handle_message(msg, writer_clone, host_tx).await;
-                        });
+                        dispatch_message(msg, writer.clone(), host_request_tx.clone());
                     }
                     None => {
                         // stdin closed (extension disconnected, or the
@@ -394,6 +387,16 @@ async fn handle_rpc(
             "message": e.message,
         })),
     ).await;
+}
+
+/// Hand one incoming message to its own task. Called from the read loop in
+/// arrival order. A chat stream's id is noted first, here, so a cancel that
+/// follows can't run before the stream is known.
+fn dispatch_message(msg: IncomingMessage, writer: Arc<MessageWriter>, host_request_tx: HostRequestSender) {
+    note_incoming_stream(&msg);
+    tokio::spawn(async move {
+        handle_message(msg, writer, host_request_tx).await;
+    });
 }
 
 /// Reserve an `llm.chat_stream` request's id as it's read, before its
