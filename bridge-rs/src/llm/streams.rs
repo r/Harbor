@@ -1,0 +1,67 @@
+//! Running `llm.chat_stream` tasks, so the extension can stop one.
+//!
+//! When a page stops reading a streaming prompt, the extension sends
+//! `llm.cancel_stream { id }`. Aborting the task drops the in-flight
+//! request to the model provider, so the model stops generating instead of
+//! running to the end of a response nobody will read.
+
+use crate::rpc::RpcError;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn cancel_stream_aborts_a_running_stream_task() {
+        let (tx, mut rx) = mpsc::channel::<()>(1);
+        let task = tokio::spawn(async move {
+            // Holds the sender until aborted, as chat_stream holds event_tx.
+            let _tx = tx;
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+        });
+        register("stream-1", task.abort_handle());
+
+        let result = cancel_stream(serde_json::json!({ "id": "stream-1" })).await.unwrap();
+        assert_eq!(result, serde_json::json!({ "cancelled": true }));
+
+        // The task's sender is dropped once it's aborted.
+        let closed = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await;
+        assert!(matches!(closed, Ok(None)), "the stream task kept running");
+    }
+
+    #[tokio::test]
+    async fn cancel_stream_reports_an_unknown_or_finished_stream() {
+        let task = tokio::spawn(async {});
+        register("stream-2", task.abort_handle());
+        finish("stream-2");
+        let result = cancel_stream(serde_json::json!({ "id": "stream-2" })).await.unwrap();
+        assert_eq!(result, serde_json::json!({ "cancelled": false }));
+        let unknown = cancel_stream(serde_json::json!({ "id": "nope" })).await.unwrap();
+        assert_eq!(unknown, serde_json::json!({ "cancelled": false }));
+    }
+
+    #[tokio::test]
+    async fn cancel_stream_requires_an_id() {
+        let error = cancel_stream(serde_json::json!({})).await.unwrap_err();
+        assert_eq!(error.code, -32602);
+    }
+
+    #[test]
+    fn stream_key_matches_string_and_numeric_ids() {
+        assert_eq!(stream_key(&serde_json::json!("abc")), "abc");
+        assert_eq!(stream_key(&serde_json::json!(7)), "7");
+    }
+
+    #[tokio::test]
+    async fn llm_cancel_stream_is_an_rpc_method() {
+        let response = crate::rpc::handle(crate::rpc::RpcRequest {
+            id: serde_json::json!(1),
+            method: "llm.cancel_stream".to_string(),
+            params: serde_json::json!({ "id": "not-running" }),
+        })
+        .await;
+        assert!(response.error.is_none(), "llm.cancel_stream isn't registered");
+    }
+}

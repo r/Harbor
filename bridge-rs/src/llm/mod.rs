@@ -1,6 +1,7 @@
 //! LLM module using any-llm for multi-provider support.
 
 mod apple;
+mod streams;
 mod config;
 
 pub use config::{LlmConfig, ProviderInstance};
