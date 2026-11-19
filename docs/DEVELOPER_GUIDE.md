@@ -515,8 +515,10 @@ extension code.
 4. **Sessions.** Every active agent session is origin-bound state:
    the capabilities it asked for, its limits (`maxToolCalls`, TTL),
    its history, and its usage. The engine checks origin grants, not
-   sessions; `SessionRegistry.recordToolCall` enforces a session's tool
-   budget in the background.
+   sessions; `SessionRegistry` enforces a session's tool budget in the
+   background, holding a slot while a call is checked
+   (`reserveToolCall`) and counting it once the call is allowed
+   (`commitToolCall`).
 5. **Audit + simulator.** Every decision lands in
    `extension/src/policy/audit.ts` and shows up in the sidebar's
    Activity panel, with a "Why?" trace. The decision simulator
