@@ -68,6 +68,35 @@ function agentFailedEvent(message: string): StreamToken {
 }
 
 /**
+ * One signal that aborts as soon as any of `signals` does — used to give
+ * `askAgentQuestion` a signal that reflects every way this run can end
+ * while its dialog is open: Harbor's own cancellation (`requestAbort`),
+ * the SDK's per-request signal for this `session/request_permission`
+ * (`ctx.signal`, which aborts on the agent's own `$/cancel_request` or the
+ * connection closing), and the run's own terminal event (`runEnded`, set
+ * the instant `send()` emits one, so this doesn't depend on how soon the
+ * SDK notices the connection is done).
+ *
+ * Prefers the platform's `AbortSignal.any` (Firefox 136+, Chrome 116+);
+ * falls back to a manual combinator for any target without it. A signal
+ * that's already aborted when this runs still needs to produce an
+ * already-aborted result — `addEventListener('abort', ...)` alone would
+ * never fire for one, since its abort already happened.
+ */
+export function combineAbortSignals(signals: readonly AbortSignal[]): AbortSignal {
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any([...signals]);
+
+  const controller = new AbortController();
+  if (signals.some((s) => s.aborted)) {
+    controller.abort();
+    return controller.signal;
+  }
+  const onAbort = () => controller.abort();
+  for (const s of signals) s.addEventListener('abort', onAbort, { once: true });
+  return controller.signal;
+}
+
+/**
  * Answers one `session/request_permission` by relaying the agent's own
  * question to the person (`askAgentQuestion`, in a popup window) and
  * passing their choice back unchanged — Harbor adds no options and no
@@ -317,9 +346,19 @@ export class AcpAgentBackend implements AgentBackend {
     // anything reaches the page from here on, so this flag alone decides
     // it: once a terminal event has gone out, nothing more does.
     let terminalSent = false;
+    // Aborts the instant a terminal event is sent, whatever ends the run
+    // (success, refusal, a limit, an error, or a cancellation) — so a
+    // `session/request_permission` dialog still open at that moment closes
+    // right away, rather than waiting on `ctx.signal`'s own timing (which
+    // depends on the SDK noticing the connection closed) or the 5-minute
+    // liveness timeout.
+    const runEnded = new AbortController();
     function send(event: StreamToken): void {
       if (terminalSent) return;
-      if (event.type === 'done' || event.type === 'error') terminalSent = true;
+      if (event.type === 'done' || event.type === 'error') {
+        terminalSent = true;
+        runEnded.abort();
+      }
       emit(event);
     }
     function sendToken(payload: Record<string, unknown>): void {
@@ -430,6 +469,11 @@ export class AcpAgentBackend implements AgentBackend {
     });
 
     app.onRequest(CLIENT_METHODS.session_request_permission, async (ctx) => {
+      // The run can already be over by the time this arrives (the agent's
+      // own request can race session/prompt's response) — never open a
+      // dialog for a question nobody's run is still waiting on.
+      if (terminalSent) return { outcome: { outcome: 'cancelled' } };
+
       const { toolCall, options } = ctx.params;
       return answerPermissionRequest(
         () => cancelReason !== null,
@@ -444,7 +488,11 @@ export class AcpAgentBackend implements AgentBackend {
           },
           options,
         },
-        requestAbort.signal,
+        // Combined so the dialog closes on whichever happens first: Harbor's
+        // own cancellation, the SDK's signal for this request (the agent's
+        // `$/cancel_request`, or the connection closing), or the run
+        // reaching its terminal event right here in this same connection.
+        combineAbortSignals([requestAbort.signal, ctx.signal, runEnded.signal]),
       );
     });
 

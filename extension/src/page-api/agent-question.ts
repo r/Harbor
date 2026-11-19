@@ -109,15 +109,19 @@ function questionUrl(id: string): string {
  * Shows the agent's own question to the person in a new popup window, and
  * resolves with their choice, passed back unchanged as `optionId`.
  *
- * `signal` is the run's own cancellation (the page's abort, a tab closing,
- * a revoked grant, or the run's overall timeout — whichever triggered
- * `acp-backend.ts`'s `triggerCancel`). If it aborts while this question is
- * still open, the question is answered with the agent's reject option (via
- * `rejectOutcomeFor`) — same as a liveness timeout or the person closing
- * the window — and the window closes. This is the one seam the backend's
- * tests mock to drive "the person answered", "they closed the window", "it
- * timed out" and "the run got cancelled while it was open" without a real
- * window.
+ * `signal` is the run ending, for any reason, while this question is still
+ * open: Harbor's own cancellation (the page's abort, a tab closing, a
+ * revoked grant, the run's overall timeout), the agent withdrawing the
+ * request or closing the connection, or the run simply reaching its own
+ * terminal event (acp-backend.ts combines all of these into the one signal
+ * it passes in). Nobody asked the person in that case, so if it aborts
+ * while this question is still open, the question is answered `cancelled`
+ * — never the agent's reject option, which is reserved for a choice that
+ * *was* put to the person and went unanswered (closing the window, or the
+ * liveness timeout below) — and the window closes. This is the one seam
+ * the backend's tests mock to drive "the person answered", "they closed
+ * the window", "it timed out" and "the run ended while it was open"
+ * without a real window.
  */
 export function askAgentQuestion(request: AgentQuestionRequest, signal: AbortSignal): Promise<AgentQuestionOutcome> {
   const rejectOutcome = rejectOutcomeFor(request.options);
@@ -163,16 +167,22 @@ export function askAgentQuestion(request: AgentQuestionRequest, signal: AbortSig
 // =============================================================================
 
 /**
- * Accepts a message only from the one page this flow trusts: the extension
- * running `agent-question.html` itself. A content script's `sender.url` is
- * the site's own URL, and nothing with a non-extension URL ever matches —
- * `sender.id` alone wouldn't tell them apart, since a content script's
- * sender also carries this extension's id.
+ * The `id` the sender's own `agent-question.html?id=...` URL carries, or
+ * `null` if the sender isn't that page at all (a content script, another
+ * extension page, or anything with a non-extension URL). Checking only the
+ * page, not which question's window it is, would let one open question's
+ * page send a message naming a *different* pending id — there's nothing
+ * about the extension-page check alone that ties a sender to the one
+ * question its own window was opened for.
  */
-function isAgentQuestionPage(sender: { id?: string; url?: string }): boolean {
-  return sender.id === browserAPI.runtime.id
-    && typeof sender.url === 'string'
-    && sender.url.startsWith(browserAPI.runtime.getURL('agent-question.html'));
+function senderQuestionId(sender: { id?: string; url?: string }): string | null {
+  if (sender.id !== browserAPI.runtime.id || typeof sender.url !== 'string') return null;
+  if (!sender.url.startsWith(browserAPI.runtime.getURL('agent-question.html'))) return null;
+  try {
+    return new URL(sender.url).searchParams.get('id');
+  } catch {
+    return null;
+  }
 }
 
 function handleAgentQuestionGet(id: unknown, sendResponse: (response: unknown) => void): void {
@@ -199,8 +209,12 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (msg?.type !== 'agent_question_get' && msg?.type !== 'agent_question_answer') {
     return undefined; // not ours
   }
-  if (!isAgentQuestionPage(sender)) {
-    return undefined; // ignored: not the agent-question page
+  // Not just "some agent-question.html page" — *this* message's own id has
+  // to match the id that page's own URL was opened with, so one open
+  // question's page can't read or answer a different one by naming its id.
+  const senderId = senderQuestionId(sender);
+  if (senderId === null || typeof msg.id !== 'string' || msg.id !== senderId) {
+    return undefined; // ignored: not this question's own page
   }
 
   if (msg.type === 'agent_question_get') {
