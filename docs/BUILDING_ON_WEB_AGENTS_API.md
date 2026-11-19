@@ -108,8 +108,8 @@ one that fits your codebase.
 
 ### Recommended: `agent.requestCapabilities()` (typed actions)
 
-`requestCapabilities` mints a session scoped to exactly the typed
-actions you asked for, in the same vocabulary the policy engine uses
+`requestCapabilities` mints a session with the typed actions you asked
+for that your origin has been granted, in the same vocabulary the policy engine uses
 internally, with a per-session budget. See
 [`docs/PERMISSIONS.md`](./PERMISSIONS.md) for the full design.
 

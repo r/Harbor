@@ -180,11 +180,13 @@ The model has three properties page authors should know:
 3. **Auditable.** Every decision, including silent allows, is recorded
    and surfaced in the sidebar's Activity feed with a "Why?" trace.
 
-A session only ever holds the typed actions its origin was granted,
-checked against the policy engine on every call. When a page calls
-`agent.requestCapabilities()` (the recommended entry point), the
-session that comes back carries exactly that grant: no separate token,
-and no way to act outside it.
+A session never holds more than its origin was granted. When a page
+calls `agent.requestCapabilities()` (the recommended entry point), the
+session that comes back lists the capabilities it was given, and
+Harbor's page script keeps the session object to that list. What
+Harbor's background enforces is the origin's grants, checked against
+the policy engine on every call, so the origin's grants are the real
+boundary.
 
 The legacy `agent.requestPermissions()` and `PermissionScope` surface
 documented further below remains a working path for simple

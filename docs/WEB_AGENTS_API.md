@@ -359,7 +359,7 @@ If tools are specified, the permission prompt displays each tool with a checkbox
 #### agent.requestCapabilities(options)
 
 The recommended replacement for `requestPermissions`. Mints a session
-scoped to exactly the typed actions you asked for. Returns
+with the typed actions you asked for that your origin has been granted. Returns
 the session object you can pass to `agent.tools.call`,
 `agent.browser.*`, etc.
 

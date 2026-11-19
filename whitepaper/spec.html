@@ -156,9 +156,9 @@ for await (const ev of window.agent.run({
     <p>
       An agent operates inside a <strong>session</strong>: origin-bound state
       for a task, carrying the <code>allowedActions</code> set it was granted,
-      explicit limits (tool calls, TTL), its history, and its usage. The
-      engine checks a session's granted actions on every gated call; a
-      session never holds more than its origin was granted.
+      explicit limits (tool calls, TTL), its history, and its usage. A
+      session never holds more than its origin was granted, and the engine
+      checks the origin's grants on every gated call.
     </p>
     <p>
       Authority can't be widened after the fact: a site that needs more asks

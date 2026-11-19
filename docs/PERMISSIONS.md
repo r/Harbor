@@ -258,7 +258,7 @@ A **session** is origin-bound state for a task: the capabilities it requested, i
 - An origin (the requesting site)
 - The set of typed actions it was granted when it was created
 
-A session never holds more authority than its origin was granted. Authority comes from the origin's grants — the permission prompt, `agent.requestPermissions`, per-tool allowlists — checked against the policy engine's tiers on every call. There is no separate token the engine checks; the session's granted actions and the origin's grants are the whole story.
+A session never holds more authority than its origin was granted. Authority comes from the origin's grants — the permission prompt, `agent.requestPermissions`, per-tool allowlists — checked against the policy engine's tiers on every call. The session's own list of granted actions is enforced by Harbor's page script, not the background, so a page can always use what its origin was granted. Treat the origin's grants as the boundary.
 
 Session tool budgets are enforced in the background: `SessionRegistry.recordToolCall` counts each `callTool()` against the session's `maxToolCalls`, and calls past the budget fail with `ERR_BUDGET_EXCEEDED` without running the tool. Calls refused for permission or allowlist reasons don't count against the budget.
 
@@ -395,7 +395,7 @@ const session = await agent.requestCapabilities({
 });
 
 // session.granted lists what was granted (may be a subset of `require + optional`).
-// The engine checks every call against it.
+// The session object only exposes those; the engine checks the origin's grants.
 ```
 
 A few things worth knowing up front:
