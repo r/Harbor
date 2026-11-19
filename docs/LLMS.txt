@@ -73,8 +73,8 @@ All APIs require permission. There are two paths — pick one per session:
 
 ### Recommended — `agent.requestCapabilities()` (typed actions)
 
-Mints a session bound to a capability token. Plays nicely with
-budgets and the activity feed.
+Mints a session with the typed actions you asked for that the origin has been granted.
+Plays nicely with budgets and the activity feed.
 
 ```javascript
 const session = await window.agent.requestCapabilities({

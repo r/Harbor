@@ -119,8 +119,8 @@ document.getElementById("ask").onclick = async () =&gt; {
     <p>
       Real agents request a session scoped to the capabilities they need,
       and ask for more only when the user gives them a reason to. The
-      session carries a capability token that bounds everything the agent
-      can do. <code>agent.run</code> remains gated by the
+      origin's grants bound everything the agent can do.
+      <code>agent.run</code> remains gated by the
       <code>toolCalling</code> feature flag in Harbor's sidebar — flip it
       on for development.
     </p>
