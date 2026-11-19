@@ -148,6 +148,7 @@ async function dispatch<T>(type: string, payload: unknown, signal: AbortSignal):
         if (response.ok) resolve(response.result as T);
         else reject(createError(response.error ?? 'Unknown error from Harbor'));
       },
+      { signal },
     );
   });
 }
