@@ -121,6 +121,19 @@ describe('page-facing calls go through the PolicyEngine', () => {
     ]);
   });
 
+  it("audits a prompt to an LM Studio model as local, as the bridge reports", async () => {
+    vi.mocked(bridgeRequest).mockImplementation(async (method: string) =>
+      method === 'llm.model_locality'
+        ? { is_local: true }
+        : { choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], model: 'lmstudio:qwen' },
+    );
+    await routeExtensionApiMessage(
+      { type: 'llm.chat', payload: { origin: ORIGIN, messages, model: 'lmstudio:qwen' } },
+      {},
+    );
+    expect(Audit.query({ origin: ORIGIN })[0].action).toBe('model.prompt.local');
+  });
+
   it('treats a non-local provider as a first-party remote prompt', async () => {
     await routeExtensionApiMessage(
       { type: 'llm.chat', payload: { origin: ORIGIN, messages, model: 'openai:gpt-x' } },
