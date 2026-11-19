@@ -157,6 +157,27 @@ describe('askAgentQuestion', () => {
       expect(send({ type: 'agent_question_answer', id, optionId: 'allow' }, pageSender(id))).toEqual({ ok: true });
       await expect(promise).resolves.toEqual({ outcome: 'selected', optionId: 'allow' });
     });
+
+    it('a page cannot read or answer a different question by naming its id — only the id its own URL was opened with counts', async () => {
+      const requestA = { ...REQUEST, origin: 'https://a.example' };
+      const requestB = { ...REQUEST, origin: 'https://b.example' };
+      const promiseA = askAgentQuestion(requestA, new AbortController().signal);
+      const promiseB = askAgentQuestion(requestB, new AbortController().signal);
+      await vi.waitFor(() => expect(createSpy).toHaveBeenCalledTimes(2));
+      await flush();
+      const idA = new URL((createSpy.mock.calls[0][0] as { url: string }).url).searchParams.get('id')!;
+      const idB = new URL((createSpy.mock.calls[1][0] as { url: string }).url).searchParams.get('id')!;
+
+      // B's page (its sender.url carries idB) naming idA in the message itself.
+      expect(send({ type: 'agent_question_get', id: idA }, pageSender(idB))).toBeUndefined();
+      expect(send({ type: 'agent_question_answer', id: idA, optionId: 'reject' }, pageSender(idB))).toBeUndefined();
+
+      // Both questions are still open and answerable from their own page.
+      expect(send({ type: 'agent_question_answer', id: idA, optionId: 'reject' }, pageSender(idA))).toEqual({ ok: true });
+      await expect(promiseA).resolves.toEqual({ outcome: 'selected', optionId: 'reject' });
+      expect(send({ type: 'agent_question_answer', id: idB, optionId: 'allow' }, pageSender(idB))).toEqual({ ok: true });
+      await expect(promiseB).resolves.toEqual({ outcome: 'selected', optionId: 'allow' });
+    });
   });
 
   describe('answering without an explicit choice', () => {
@@ -228,6 +249,67 @@ describe('askAgentQuestion', () => {
 
       await expect(promise).resolves.toEqual({ outcome: 'cancelled' });
       expect(removeSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('windows.create failing', () => {
+    it('resolves with the agent’s reject option and leaves no pending entry behind', async () => {
+      createSpy.mockRejectedValueOnce(new Error('window creation failed'));
+      const promise = askAgentQuestion(REQUEST, new AbortController().signal);
+      await vi.waitFor(() => expect(createSpy).toHaveBeenCalled());
+      const id = openedUrl().searchParams.get('id')!;
+
+      await expect(promise).resolves.toEqual({ outcome: 'selected', optionId: 'reject' });
+      // No leaked pending entry: the id this never-opened window would have
+      // used answers "unknown" now, exactly as a real settled/unknown id does.
+      expect(send({ type: 'agent_question_get', id }, pageSender(id))).toEqual({ ok: false });
+    });
+
+    it('resolves cancelled, the same way, when the agent offered no reject option at all', async () => {
+      createSpy.mockRejectedValueOnce(new Error('window creation failed'));
+      const request = { ...REQUEST, options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }] };
+      await expect(askAgentQuestion(request, new AbortController().signal)).resolves.toEqual({ outcome: 'cancelled' });
+    });
+  });
+
+  describe('timers are cleared on every path, not just the ones that fire', () => {
+    it('after an explicit answer', async () => {
+      vi.useFakeTimers();
+      const promise = askAgentQuestion(REQUEST, new AbortController().signal);
+      await vi.waitFor(() => expect(createSpy).toHaveBeenCalled(), { timeout: 2000 });
+      const id = openedUrl().searchParams.get('id')!;
+      send({ type: 'agent_question_answer', id, optionId: 'allow' }, pageSender(id));
+      await promise;
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('after the window closes', async () => {
+      vi.useFakeTimers();
+      const promise = askAgentQuestion(REQUEST, new AbortController().signal);
+      await vi.waitFor(() => expect(createSpy).toHaveBeenCalled(), { timeout: 2000 });
+      const windowId = (await createSpy.mock.results[0]!.value).id;
+      onWindowRemoved(windowId);
+      await promise;
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('after the run is cancelled', async () => {
+      vi.useFakeTimers();
+      const controller = new AbortController();
+      const promise = askAgentQuestion(REQUEST, controller.signal);
+      await vi.waitFor(() => expect(createSpy).toHaveBeenCalled(), { timeout: 2000 });
+      controller.abort();
+      await promise;
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('after the liveness timeout itself fires', async () => {
+      vi.useFakeTimers();
+      const promise = askAgentQuestion(REQUEST, new AbortController().signal);
+      await vi.waitFor(() => expect(createSpy).toHaveBeenCalled(), { timeout: 2000 });
+      await vi.advanceTimersByTimeAsync(AGENT_QUESTION_TIMEOUT_MS);
+      await promise;
+      expect(vi.getTimerCount()).toBe(0);
     });
   });
 

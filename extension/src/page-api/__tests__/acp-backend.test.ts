@@ -35,7 +35,7 @@ vi.mock('../agent-question', async (importOriginal) => ({
 }));
 
 import { createFakeAcpBridge } from './support/fake-acp-bridge';
-import { AcpAgentBackend, ACP_RUN_TIMEOUT_MS, answerPermissionRequest } from '../acp-backend';
+import { AcpAgentBackend, ACP_RUN_TIMEOUT_MS, answerPermissionRequest, combineAbortSignals } from '../acp-backend';
 import { AGENT_QUESTION_TIMEOUT_MS } from '../agent-question';
 import type { AgentRunRequest } from '../agent-backend';
 import type { StreamToken } from '../types';
@@ -50,7 +50,7 @@ interface FakeAgentOptions {
   initializeResponse?: { protocolVersion: number };
   onSessionNew?: (params: unknown) => void;
   onSessionCancel?: (params: unknown) => void;
-  onPrompt: (ctx: { params: { sessionId: string; prompt: unknown }; client: { notify: (method: string, params: unknown) => Promise<void>; request: (method: string, params: unknown) => Promise<unknown> } }) => Promise<{ stopReason: StopReason }>;
+  onPrompt: (ctx: { params: { sessionId: string; prompt: unknown }; client: { notify: (method: string, params: unknown) => Promise<void>; request: (method: string, params: unknown, options?: { cancellationSignal?: AbortSignal; stopWaitingOnCancel?: boolean }) => Promise<unknown> } }) => Promise<{ stopReason: StopReason }>;
 }
 
 function buildFakeAgent(opts: FakeAgentOptions): AgentApp {
@@ -406,6 +406,7 @@ describe('AcpAgentBackend', () => {
       const removeSpy = vi.spyOn(chrome.windows, 'remove');
       let settle: ((outcome: unknown) => void) | null = null;
       mocks.askAgentQuestion.mockImplementation(async (_request: unknown, signal: AbortSignal) => {
+        if (signal.aborted) return { outcome: 'cancelled' }; // matches the real module: never opens a window for an already-aborted signal
         const win = await chrome.windows.create({ url: 'chrome-extension://harbor-test/agent-question.html?id=test' }) as { id: number };
         return new Promise((resolve) => {
           const onAbort = () => { settle = null; chrome.windows.remove(win.id); resolve({ outcome: 'cancelled' }); };
@@ -570,6 +571,188 @@ describe('AcpAgentBackend', () => {
 
       expect(outcome).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } });
       expect(events.at(-1)).toEqual({ type: 'done' }); // not ERR_TIMEOUT: the dialog answered well within 10 minutes
+    });
+
+    describe('closing the dialog when the run ends for reasons other than Harbor’s own cancellation', () => {
+      // Bug this guards against: the dialog used to get only `requestAbort.signal`
+      // (Harbor's own cancellation — page abort, revoked grant, the run's own
+      // timeout). The agent's own `session/request_permission` is answered by
+      // *Harbor*, so none of those three fire just because the agent's run
+      // ends on its own: end_turn with the question still open, the agent
+      // erroring out of session/prompt, or the agent withdrawing the request
+      // with `$/cancel_request`. Without also combining in `ctx.signal` (the
+      // SDK's per-request signal, aborted on `$/cancel_request` or the
+      // connection closing) and the run's own terminal event, the window used
+      // to stay open — answering nothing — for up to the 5-minute liveness
+      // timeout.
+
+      it('end_turn while the question is still open closes the dialog (cancelled)', async () => {
+        const { removeSpy } = mockDialogWithWindow();
+        let resolvePrompt: ((r: { stopReason: StopReason }) => void) | null = null;
+        let outcome: unknown;
+        registerFakeAgent({
+          onPrompt: async (ctx) => {
+            ctx.client.request(CLIENT_METHODS.session_request_permission, {
+              sessionId: ctx.params.sessionId,
+              toolCall: { toolCallId: 'tc-1', title: 'Run command' },
+              options: [{ optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
+            }).then((r) => { outcome = r; }).catch(() => { /* not expected here */ });
+            return new Promise((resolve) => { resolvePrompt = resolve; });
+          },
+        });
+        const backend = new AcpAgentBackend(AGENT_ID);
+        const events: StreamToken[] = [];
+        const runPromise = backend.run(baseRequest(), (e) => events.push(e), new AbortController().signal);
+
+        await vi.waitFor(() => expect(mocks.askAgentQuestion).toHaveBeenCalled());
+        resolvePrompt!({ stopReason: 'end_turn' });
+        await runPromise;
+
+        await vi.waitFor(() => expect(removeSpy).toHaveBeenCalledTimes(1));
+        expect(outcome).toEqual({ outcome: { outcome: 'cancelled' } });
+        expect(events.at(-1)).toEqual({ type: 'done' });
+      });
+
+      it('the agent erroring out of session/prompt while the question is still open closes the dialog (cancelled)', async () => {
+        const { removeSpy } = mockDialogWithWindow();
+        let rejectPrompt: ((e: Error) => void) | null = null;
+        registerFakeAgent({
+          onPrompt: async (ctx) => {
+            void ctx.client.request(CLIENT_METHODS.session_request_permission, {
+              sessionId: ctx.params.sessionId,
+              toolCall: { toolCallId: 'tc-1', title: 'Run command' },
+              options: [{ optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
+            }).catch(() => { /* the connection tearing down may reject this; not what's under test */ });
+            return new Promise((_resolve, reject) => { rejectPrompt = reject; });
+          },
+        });
+        const backend = new AcpAgentBackend(AGENT_ID);
+        const events: StreamToken[] = [];
+        const runPromise = backend.run(baseRequest(), (e) => events.push(e), new AbortController().signal);
+
+        await vi.waitFor(() => expect(mocks.askAgentQuestion).toHaveBeenCalled());
+        rejectPrompt!(new Error('agent crashed'));
+        await runPromise;
+
+        await vi.waitFor(() => expect(removeSpy).toHaveBeenCalledTimes(1));
+        expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_AGENT_FAILED' } });
+      });
+
+      it('the agent withdrawing its own request ($/cancel_request) while session/prompt is still pending closes the dialog, via ctx.signal specifically', async () => {
+        // Isolates ctx.signal: session/prompt itself never resolves in this
+        // test, so neither `requestAbort` (Harbor's own cancellation) nor
+        // `runEnded` (the run's terminal event) ever fires — only the SDK's
+        // per-request signal does, from the agent's own `$/cancel_request`.
+        const { removeSpy } = mockDialogWithWindow();
+        let outcome: unknown;
+        registerFakeAgent({
+          onPrompt: async (ctx) => {
+            const withdrawn = new AbortController();
+            ctx.client.request(CLIENT_METHODS.session_request_permission, {
+              sessionId: ctx.params.sessionId,
+              toolCall: { toolCallId: 'tc-1', title: 'Run command' },
+              options: [{ optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
+            }, { cancellationSignal: withdrawn.signal }).then((r) => { outcome = r; }).catch((e) => { outcome = e; });
+            await vi.waitFor(() => expect(mocks.askAgentQuestion).toHaveBeenCalled());
+            withdrawn.abort(); // the agent withdraws its own permission request
+            return new Promise(() => { /* session/prompt itself stays pending */ });
+          },
+        });
+        const backend = new AcpAgentBackend(AGENT_ID);
+        const controller = new AbortController();
+        const runPromise = backend.run(baseRequest(), () => {}, controller.signal);
+
+        await vi.waitFor(() => expect(removeSpy).toHaveBeenCalledTimes(1));
+        expect(outcome).toEqual({ outcome: { outcome: 'cancelled' } });
+
+        controller.abort(); // session/prompt never resolves on its own in this test; clean up
+        await runPromise;
+      });
+
+      it('a request_permission that arrives once the run is already terminal gets a combined signal that is already aborted, so the dialog never opens a window', async () => {
+        // A live round trip that reliably lands a request *after* Harbor's
+        // side has already marked the run terminal is impractical to
+        // engineer deterministically: both the prompt's own response and
+        // any further message from the agent travel the same async
+        // pipeline, so there's no ordering guarantee to hang a test on (as
+        // with the pre-existing "already cancelled" case below). What *is*
+        // guaranteed, and what this tests directly: `combineAbortSignals`
+        // produces an already-aborted signal the instant any input already
+        // is (see the describe block below) — which is exactly the state
+        // `runEnded.signal` is in once the run is terminal — and
+        // `askAgentQuestion` never opens a window for an already-aborted
+        // signal (see agent-question.test.ts). Composed, a handler built
+        // after the terminal event can only ever answer `cancelled` without
+        // a dialog, whatever mock is standing in for askAgentQuestion here.
+        const { createSpy } = mockDialogWithWindow();
+        const alreadyAborted = new AbortController();
+        alreadyAborted.abort();
+        const combined = combineAbortSignals([new AbortController().signal, alreadyAborted.signal]);
+        expect(combined.aborted).toBe(true);
+
+        await expect(answerPermissionRequest(() => false, {
+          origin: 'https://example.test', agentName: 'test-agent',
+          toolCall: { title: 'Run command' },
+          options: [{ optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
+        }, combined)).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+        expect(createSpy).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('combineAbortSignals', () => {
+    it('does not abort while none of the inputs have', () => {
+      const a = new AbortController();
+      const b = new AbortController();
+      expect(combineAbortSignals([a.signal, b.signal]).aborted).toBe(false);
+    });
+
+    it('aborts once any one input aborts, using the platform AbortSignal.any when available', () => {
+      const a = new AbortController();
+      const b = new AbortController();
+      const combined = combineAbortSignals([a.signal, b.signal]);
+      b.abort();
+      expect(combined.aborted).toBe(true);
+    });
+
+    it('is already aborted when any input already is, without waiting for a later event', () => {
+      const a = new AbortController();
+      const alreadyAborted = new AbortController();
+      alreadyAborted.abort();
+      expect(combineAbortSignals([a.signal, alreadyAborted.signal]).aborted).toBe(true);
+    });
+
+    describe('the manual fallback (AbortSignal.any unavailable)', () => {
+      let realAny: typeof AbortSignal.any;
+      beforeEach(() => {
+        realAny = AbortSignal.any;
+        // @ts-expect-error - simulating a target without AbortSignal.any
+        delete AbortSignal.any;
+      });
+      afterEach(() => {
+        AbortSignal.any = realAny;
+      });
+
+      it('does not abort while none of the inputs have', () => {
+        const a = new AbortController();
+        const b = new AbortController();
+        expect(combineAbortSignals([a.signal, b.signal]).aborted).toBe(false);
+      });
+
+      it('aborts once any one input aborts', () => {
+        const a = new AbortController();
+        const b = new AbortController();
+        const combined = combineAbortSignals([a.signal, b.signal]);
+        b.abort();
+        expect(combined.aborted).toBe(true);
+      });
+
+      it('is already aborted when any input already is', () => {
+        const a = new AbortController();
+        const alreadyAborted = new AbortController();
+        alreadyAborted.abort();
+        expect(combineAbortSignals([a.signal, alreadyAborted.signal]).aborted).toBe(true);
+      });
     });
   });
 
