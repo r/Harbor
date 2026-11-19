@@ -11,7 +11,7 @@
  * URL in Firefox, its `origin` in Chrome) — never from the message, which a
  * page or a compromised content script could otherwise forge.
  */
-import { harborRequest, harborStreamRequest } from './harbor-core';
+import { harborRequest, harborStreamRequest, forgetAgentsInTab } from './harbor-core';
 import { policyRefusalCode } from './policy-refusal';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
 import { type AgentBackend } from './agent-backend';
@@ -345,6 +345,10 @@ export function initializePageApi(): void {
       // tabs.onRemoved also catches: a same-tab navigation disconnects this
       // port without ever firing tabs.onRemoved.
       if (tabId !== undefined) void cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
+      // The page's agents go with it, so nothing more is delivered to this
+      // tab for them once it shows another page. Only the top frame runs the
+      // page API.
+      if (tabId !== undefined && (port.sender?.frameId ?? 0) === 0) forgetAgentsInTab(tabId);
     });
   });
 

@@ -66,7 +66,7 @@ Each call needs its scope: `agents:register` for `register` and `unregister`, `a
 Two differences from Harbor:
 
 - If the page calls without the scope, Harbor shows a permission prompt. The mock can't prompt, so the call fails with `ERR_SCOPE_REQUIRED`. That way a test shows whether your page requests the scope before it uses it.
-- The mock leaves out `subscribe`, `unsubscribe`, `broadcast`, `orchestrate.*`, and cross-origin and remote agents. `broadcast` always fails in Harbor today.
+- The mock leaves out `subscribe`, `unsubscribe`, `broadcast`, `orchestrate.*`, and cross-origin and remote agents.
 
 ## E2E tests (Playwright + Harbor extension)
 

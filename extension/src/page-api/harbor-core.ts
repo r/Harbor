@@ -16,6 +16,7 @@
  */
 import { routeExtensionApiMessage, streamLlmChat } from '../extension-api';
 import { routeAgentMessage } from '../agents/background-router';
+import { forgetTabAgents } from '../agents/handlers/multi-agent';
 import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
@@ -249,4 +250,12 @@ export async function acpSend(channel: string, message: unknown): Promise<void> 
  */
 export async function acpClose(channel: string): Promise<void> {
   await rpcRequest('acp.close', { channel });
+}
+
+/**
+ * The page in a tab has gone (it navigated, reloaded or closed): forget the
+ * agents it registered, so nothing more is delivered to that tab for them.
+ */
+export function forgetAgentsInTab(tabId: number): void {
+  forgetTabAgents(tabId);
 }

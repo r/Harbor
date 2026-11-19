@@ -79,6 +79,11 @@ beforeEach(async () => {
   (chrome.tabs as unknown as { sendMessage: unknown }).sendMessage = vi.fn(async (tabId: number, message: unknown) => {
     tabMessages.push({ tabId, message });
   });
+  // Each tab still shows its own site.
+  (chrome.tabs as unknown as { get: unknown }).get = vi.fn(async (tabId: number) => ({
+    id: tabId,
+    url: `${Object.keys(TAB).find((site) => TAB[site] === tabId)}/page`,
+  }));
 });
 
 describe('messages reach a page agent', () => {
@@ -89,6 +94,7 @@ describe('messages reach a page agent', () => {
     const response = await call(handleAgentsSend, A, 'agents.send', { agentId: onB, payload: 'hi' });
 
     expect((response as { result: { delivered: boolean } }).result.delivered).toBe(true);
+    await vi.waitFor(() => expect(tabMessages).toHaveLength(1));
     expect(tabMessages).toEqual([
       { tabId: 5, message: { type: 'agentEvent', event: { type: 'message', message: expect.objectContaining({ to: onB, payload: 'hi' }) } } },
     ]);
@@ -103,6 +109,7 @@ describe('messages reach a page agent', () => {
 
     await call(handleAgentsSend, A, 'agents.send', { agentId: onB, payload: 'hi' });
 
+    await vi.waitFor(() => expect(tabMessages).toHaveLength(1));
     expect(tabMessages.map((m) => m.tabId)).toEqual([5]);
   });
 });
@@ -121,6 +128,7 @@ describe('broadcasts reach only sites the sender may reach', () => {
 
     expect((response as { result: { delivered: number } }).result.delivered).toBe(1);
     expect(prompts).toEqual([]);
+    await vi.waitFor(() => expect(tabMessages).toHaveLength(1));
     expect(tabMessages).toEqual([
       { tabId: 5, message: { type: 'agentEvent', event: { type: 'broadcast', broadcast: { type: 'news', data: { n: 1 }, source: expect.any(String) } } } },
     ]);

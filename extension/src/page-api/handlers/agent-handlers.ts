@@ -214,8 +214,13 @@ export async function handleAgentsRegister(ctx: RequestContext): HandlerResponse
       await registerProxyInvocationHandler(result.id, ctx.origin, tabId || 0);
     }
     if (result.acceptsMessages) {
-      // Messages and broadcasts for this agent go to this tab.
-      await harborRequest('agents.registerMessageHandler', { agentId: result.id, origin: ctx.origin, tabId: tabId || 0 });
+      // Messages and broadcasts for this agent go to this tab. The agent is
+      // registered either way, so a failure here doesn't fail registration.
+      try {
+        await harborRequest('agents.registerMessageHandler', { agentId: result.id, origin: ctx.origin, tabId: tabId || 0 });
+      } catch (e) {
+        console.error('[Web Agents API] Failed to set up message delivery:', e);
+      }
     }
 
     return successResponse(ctx.id, result);

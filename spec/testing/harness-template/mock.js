@@ -137,8 +137,8 @@ export function installWebAgentsMock(global) {
   }
 
   // agent.agents: the methods and shapes from extension/src/page-api/injected.ts.
-  // Not mocked: subscribe/unsubscribe, broadcast (always fails in Harbor
-  // today), orchestrate.*, remote and cross-origin agents.
+  // Not mocked: subscribe/unsubscribe, broadcast, orchestrate.*, remote and
+  // cross-origin agents.
   const agents = {
     async register(options) {
       checkFeature();

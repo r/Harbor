@@ -57,6 +57,11 @@ export interface RequireActionOptions {
    * typed-action check runs.
    */
   upstreamConsent?: 'origin-grant';
+  /**
+   * Never show a prompt: an ask or preview is a refusal. For a check with no
+   * one to ask about, such as one site among a broadcast's recipients.
+   */
+  noPrompt?: boolean;
 }
 
 /** A permission refusal, in the shape a handler sends as its error. */
@@ -130,6 +135,7 @@ export async function checkAction(
   }
 
   if (proceedsOnUpstreamConsent) return null;
+  if (options.noPrompt) return denialFor(decision);
 
   // ask | preview — surface the prompt via the existing flow.
   // We use the typed action's primary legacy scope unless the caller

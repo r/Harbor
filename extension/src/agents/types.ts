@@ -125,8 +125,8 @@ export interface StoredPermission {
   grantedAt: number;
   expiresAt?: number; // For 'granted-once'
   tabId?: number; // For 'granted-once'
-  /** Every tab an unexpired 'granted-once' covers, when more than one answered. */
-  tabIds?: number[];
+  /** For 'granted-once' answered by several tabs: tab id (or `*`) to its expiry. */
+  tabs?: Record<string, number>;
 }
 
 export interface StoredOriginPermissions {

@@ -5,6 +5,7 @@
  */
 
 import { browserAPI } from '../browser-compat';
+import { onceGrantLive, withEarlierTabs } from './once-grants';
 import type {
   PermissionScope,
   PermissionGrant,
@@ -40,6 +41,19 @@ async function getAllOriginPermissions(): Promise<Record<string, StoredOriginPer
   return (result[PERMISSIONS_STORAGE_KEY] || {}) as Record<string, StoredOriginPermissions>;
 }
 
+/**
+ * Writes to the grant store run one at a time. Each one loads the whole
+ * record, changes it and saves it, so two writes at once (two tabs answering
+ * one prompt, say) would otherwise both load the old record and the second
+ * save would drop the first's change.
+ */
+let storeWrites: Promise<unknown> = Promise.resolve();
+function oneWriteAtATime<T>(write: () => Promise<T>): Promise<T> {
+  const run = storeWrites.then(write, write);
+  storeWrites = run.catch(() => undefined);
+  return run;
+}
+
 // =============================================================================
 // Grant Checking
 // =============================================================================
@@ -54,37 +68,11 @@ function isGrantValid(stored: StoredPermission, tabId?: number): boolean {
   }
 
   if (stored.grant === 'granted-once') {
-    // Check expiry
-    if (stored.expiresAt && Date.now() > stored.expiresAt) {
-      return false; // Expired
-    }
-    // Check tab (if we're tracking it)
-    if (tabId !== undefined && !onceGrantCoversTab(stored, tabId)) {
-      return false; // Different tab
-    }
-    return true;
+    // Not expired for this tab: each tab that answered has its own clock.
+    return onceGrantLive(stored, Date.now(), tabId);
   }
 
   return false;
-}
-
-/** Whether a 'granted-once' grant covers this tab. A grant with no tab covers every tab. */
-function onceGrantCoversTab(stored: StoredPermission, tabId: number): boolean {
-  if (stored.tabIds) return stored.tabIds.includes(tabId);
-  return stored.tabId === undefined || stored.tabId === tabId;
-}
-
-/**
- * A new 'granted-once' for a grant that is still live from another tab
- * covers both tabs, so two tabs answering one prompt each keep their grant.
- */
-function withEarlierTabs(previous: StoredPermission | undefined, next: StoredPermission, now: number): StoredPermission {
-  if (next.grant !== 'granted-once' || previous?.grant !== 'granted-once') return next;
-  if (previous.expiresAt !== undefined && previous.expiresAt < now) return next;
-  const earlier = previous.tabIds ?? (previous.tabId !== undefined ? [previous.tabId] : undefined);
-  // An earlier grant for every tab, or a new one, stays for every tab.
-  if (!earlier || next.tabId === undefined) return { ...next, tabId: undefined, tabIds: undefined };
-  return { ...next, tabIds: [...new Set([...earlier, next.tabId])] };
 }
 
 function getEffectiveGrant(stored: StoredPermission | undefined, tabId?: number): PermissionGrant {
@@ -244,7 +232,7 @@ export async function isToolAllowed(origin: string, toolName: string): Promise<b
 /**
  * Grant permissions for an origin.
  */
-export async function grantPermissions(
+async function grantPermissionsNow(
   origin: string,
   scopes: PermissionScope[],
   grantType: 'granted-once' | 'granted-always',
@@ -318,7 +306,7 @@ export async function grantPermissions(
 /**
  * Deny permissions for an origin.
  */
-export async function denyPermissions(
+async function denyPermissionsNow(
   origin: string,
   scopes: PermissionScope[],
   agentOrigins?: string[],
@@ -367,7 +355,7 @@ export async function denyPermissions(
 /**
  * Revoke all permissions for an origin.
  */
-export async function revokePermissions(origin: string): Promise<void> {
+async function revokePermissionsNow(origin: string): Promise<void> {
   const result = await browserAPI.storage.local.get(PERMISSIONS_STORAGE_KEY);
   const allPermissions = (result[PERMISSIONS_STORAGE_KEY] || {}) as Record<string, StoredOriginPermissions>;
   delete allPermissions[origin];
@@ -377,7 +365,7 @@ export async function revokePermissions(origin: string): Promise<void> {
 /**
  * Clean up expired once-grants.
  */
-export async function cleanupExpiredGrants(): Promise<void> {
+async function cleanupExpiredGrantsNow(): Promise<void> {
   const allPermissions = await getAllOriginPermissions();
   const now = Date.now();
   let changed = false;
@@ -808,7 +796,9 @@ export async function requestPermissions(
       promptResult.grantType,
       tabId,
       promptResult.allowedTools,
-      promptResult.agentOrigins,
+      // Only sites this request asked about: a merged prompt may have shown
+      // other requests' sites, which those requests grant for their own tabs.
+      (promptResult.agentOrigins ?? []).filter((site) => missingTargets.includes(site)),
     );
     // Granted only if every site asked for is now reachable.
     const now = new Set(result.agentOrigins ?? []);
@@ -1064,4 +1054,39 @@ export async function validateSessionCapabilities(
     valid: invalid.length === 0,
     invalidCapabilities: invalid,
   };
+}
+
+// =============================================================================
+// Grant store writers (serialized; see oneWriteAtATime)
+// =============================================================================
+
+/** Grant permissions for an origin, and for `agents:crossOrigin` the named target sites. */
+export function grantPermissions(
+  origin: string,
+  scopes: PermissionScope[],
+  grantType: 'granted-once' | 'granted-always',
+  tabId?: number,
+  allowedTools?: string[],
+  agentOrigins?: string[],
+): Promise<PermissionGrantResult> {
+  return oneWriteAtATime(() => grantPermissionsNow(origin, scopes, grantType, tabId, allowedTools, agentOrigins));
+}
+
+/** Store a refusal for an origin, and for `agents:crossOrigin` the named target sites. */
+export function denyPermissions(
+  origin: string,
+  scopes: PermissionScope[],
+  agentOrigins?: string[],
+): Promise<PermissionGrantResult> {
+  return oneWriteAtATime(() => denyPermissionsNow(origin, scopes, agentOrigins));
+}
+
+/** Revoke all permissions for an origin. */
+export function revokePermissions(origin: string): Promise<void> {
+  return oneWriteAtATime(() => revokePermissionsNow(origin));
+}
+
+/** Clean up expired once-grants. */
+export function cleanupExpiredGrants(): Promise<void> {
+  return oneWriteAtATime(() => cleanupExpiredGrantsNow());
 }
