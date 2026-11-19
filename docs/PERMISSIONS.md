@@ -38,7 +38,7 @@ The system is **provider-agnostic**: permissions are expressed in terms of *effe
 
 Every API call from a website goes through a single chokepoint: the **PolicyEngine**. The engine answers one question per call:
 
-> Given this **principal** (origin + session + capability token), this typed **action** (`model.prompt.remote`, `tool.call`, `network.egress.cross_origin`, …), this **resource** (a tool, a URL, an element, a data label set), and this **context** (watchdog state, time, user gesture) — should this action be allowed, denied, previewed, or asked about?
+> Given this **principal** (origin + session), this typed **action** (`model.prompt.remote`, `tool.call`, `network.egress.cross_origin`, …), this **resource** (a tool, a URL, an element, a data label set), and this **context** (watchdog state, time, user gesture) — should this action be allowed, denied, previewed, or asked about?
 
 It answers by walking a **tier ladder**, top to bottom, returning the first decisive answer.
 
@@ -54,7 +54,6 @@ Page calls window.ai or window.agent
    │   Tier 2  Sensitivity gate ────────────────► ask   (sensitive site/element/tool)
    │   Tier 3  Information-flow check ──────────► ask / deny  (label-tainted egress)
    │   Tier 4  Watchdog containment ────────────► downgrade / deny
-   │   Tier 5  Capability token check ──────────► deny (token doesn't grant this action)
    │   Tier 6  Policy allow rule ───────────────► allow
    │   Tier 7  Policy ask rule ─────────────────► ask
    │   Tier 8  Per-origin grant ────────────────► allow / deny / ask
@@ -65,7 +64,7 @@ Page calls window.ai or window.agent
    audit  +  watchdog  +  execute
 ```
 
-One important property of this ladder: **Sensitivity, info-flow, watchdog, and capability tokens always run.** They are above policy rules deliberately — a generous `allow` rule cannot defeat a label-aware egress check or a destructive-tool gate. This is the safety floor; nothing in the policy file or per-origin grants can disable it.
+One important property of this ladder: **Sensitivity, info-flow, and watchdog checks always run.** They are above policy rules deliberately — a generous `allow` rule cannot defeat a label-aware egress check or a destructive-tool gate. This is the safety floor; nothing in the policy file or per-origin grants can disable it.
 
 ## Typed actions and effects
 
@@ -252,43 +251,20 @@ When any classifier says "sensitive," PolicyEngine returns **ask** with `promptK
 
 Sensitivity gates cannot be turned off site-by-site through ordinary "Allow always" — they require an explicit "I understand, always allow this category" decision in the sidebar that records exactly what was waived.
 
-## Sessions and capability tokens
+## Sessions
 
-A **session** is the agent context for a particular task. Each session is bound to:
+A **session** is origin-bound state for a task: the capabilities it requested, its limits (`maxToolCalls`, TTL), its history, and its usage so far. Each session is bound to:
 
 - An origin (the requesting site)
-- A **capability token** — an opaque identifier that the engine maps to a specific allowed-action set, label-acceptance set, budget, TTL, and parent token (if delegated)
+- The set of typed actions it was granted when it was created
 
-The capability token is the unit of authority. It's how Harbor implements the review's recommendation that authority be **attenuated**, not ambient: every agent action checks the token, and the token's `allowedActions` is the exhaustive list of what the session may do — there is nothing for the engine to "force deny" beyond that, because the authority isn't there to begin with.
+A session never holds more authority than its origin was granted. Authority comes from the origin's grants — the permission prompt, `agent.requestPermissions`, per-tool allowlists — checked against the policy engine's tiers on every call. There is no separate token the engine checks; the session's granted actions and the origin's grants are the whole story.
 
-### What's in a token
-
-```ts
-type CapabilityToken = {
-  tokenId: string;
-  origin: string;
-  parentTokenId?: string;        // for delegated subagents
-  allowedActions: TypedAction[]; // strict subset of parent if delegated
-  acceptedLabels: DataLabel[];   // labels this token can carry across egress
-  budgets: { toolCalls?: number; navigations?: number; remotePromptUsd?: number };
-  ttl: number;                   // expires at this timestamp
-};
-```
+Session tool budgets are enforced in the background: `SessionRegistry.recordToolCall` counts each `callTool()` against the session's `maxToolCalls`, and calls past the budget fail with `ERR_BUDGET_EXCEEDED` without running the tool. Calls refused for permission or allowlist reasons don't count against the budget.
 
 ### Getting more authority later
 
 A session only ever holds the actions it was granted. There's no in-place upgrade: when a site needs more than its current session allows — say, write access it didn't ask for up front — it calls `agent.requestCapabilities()` again for a new session scoped to exactly the additional actions, with its own `reason`. The user sees a fresh, narrowly scoped prompt; the original session keeps working with what it already had. Terminate a session when you're done with it so its authority goes away.
-
-### Delegation: subagents inherit a strict subset
-
-When a session calls `agent.delegate` to invoke a subagent, the parent must mint a child token. The engine enforces:
-
-- Child `allowedActions` ⊆ parent `allowedActions`
-- Child `acceptedLabels` ⊆ parent `acceptedLabels`
-- Child `budgets` ≤ parent `budgets` (and consume from the parent's pool)
-- Child `ttl` ≤ parent `ttl`
-
-This is capability attenuation in the OCAP sense: the parent passes a strict subset of its authority to the child, and the child cannot accumulate authority by recursion. Sanity check: if you revoke the parent token, every descendant token is revoked.
 
 ## The Watchdog
 
@@ -331,7 +307,6 @@ Every PolicyEngine decision — whether it prompted, auto-allowed, denied, or do
   ts: 1699999999000,
   origin: "https://example.com",
   sessionId: "sess_abc",
-  tokenId: "tok_def",
   action: "tool.call",
   resource: { tool_server: "github", tool_name: "create_issue" },
   inputLabels: ["confidential"],
@@ -351,7 +326,7 @@ Harbor holds the only store of per-origin grants and the only consent prompt. Th
 
 The older, separate Web Agents API extension no longer injects anything, and Harbor no longer accepts a message or connection from it, or from any other extension: there is no cross-extension entry point left to reach.
 
-For page calls, Harbor enforces `deny` (safety floor, policy rules, a denied origin grant, the watchdog). When the only thing left to settle is the origin grant (Tier 8 or the Tier 9 default), Harbor proceeds without prompting again, because the page API has just checked that grant in Harbor's store; the audit record carries `consent: "origin-grant"`. A watchdog restriction (Tier 4) or a policy rule that asks, previews or attenuates (Tier 7) still shows Harbor's prompt.
+For page calls, Harbor enforces `deny` (safety floor, policy rules, a denied origin grant, the watchdog). When the only thing left to settle is the origin grant (Tier 8 or the Tier 9 default), Harbor proceeds without prompting again, because the page API has just checked that grant in Harbor's store; the audit record carries `consent: "origin-grant"`. A watchdog restriction (Tier 4) or a policy rule that asks or previews (Tier 7) still shows Harbor's prompt.
 
 The engine treats a write that can't be undone as needing a preview even when the origin holds a grant. Calling or messaging another agent on this device (`agent.invoke`, `agent.message`) doesn't count as one: the call itself changes nothing, and the other agent's own actions are checked separately. So once a site holds `agents:invoke` or `agents:message`, later calls go through without another prompt. An "Allow once" grant covers only the tab that granted it, for ten minutes; another tab on the same site is asked again.
 
@@ -391,7 +366,6 @@ Once the system is deployed we want to track, in aggregate and locally:
 - **Sensitivity false-positive rate** — how often a sensitivity gate fires on something the user immediately allows. Tells us where to tighten the classifier.
 - **Label-egress block rate** — how often the info-flow tracker prevents a labeled-data exfiltration attempt. Tells us whether the label set covers reality.
 - **Containment trigger frequency** — how often the watchdog tightens an origin's containment state, by rule.
-- **Token attenuation depth** — how often agents delegate to subagents and how many levels deep delegation goes in practice.
 
 This data is local-first; nothing is exported by default. The user can opt in to anonymized aggregates in the sidebar.
 
@@ -420,8 +394,8 @@ const session = await agent.requestCapabilities({
   reason: 'Read this page, draft a fix, and optionally apply it if you approve.',
 });
 
-// session.token is your capability token. The engine uses it to enforce.
 // session.granted lists what was granted (may be a subset of `require + optional`).
+// The engine checks every call against it.
 ```
 
 A few things worth knowing up front:
@@ -481,7 +455,7 @@ Some scope combinations are common enough that the prompt batches them as a sing
 
 Create your session with only the actions you need right away, and request a new, additionally-scoped session when the user explicitly takes an action that needs more — for example, clicking "Apply." This is the same shape Cursor and Claude Code use, and it gives the user a natural moment to grant write authority.
 
-Capability tokens don't widen in place: call `agent.requestCapabilities()` again to mint a fresh token for the new actions. The user gets a new prompt that names the additional authority — that's the "natural moment" for a re-grant, and it keeps the audit log honest about which token was acting when.
+A session's granted actions don't widen in place: call `agent.requestCapabilities()` again for a new session scoped to the new actions. The user gets a new prompt that names the additional authority — that's the "natural moment" for a re-grant, and it keeps the audit log honest about which session was acting when.
 
 ```ts
 const readSession = await agent.requestCapabilities({
@@ -505,7 +479,7 @@ const writeSession = await agent.requestCapabilities({
 });
 ```
 
-The user gets two prompts, but each is small and scoped to a real moment of intent. That's much cheaper to grant than one giant upfront prompt. The two sessions hold separate capability tokens; the original read-only session keeps working for further reads, and the new session covers the write you just authorized. When the write is done, terminate it.
+The user gets two prompts, but each is small and scoped to a real moment of intent. That's much cheaper to grant than one giant upfront prompt. The two sessions are independent; the original read-only session keeps working for further reads, and the new session covers the write you just authorized. When the write is done, terminate it.
 
 ### 4. Annotate destructive tools in your MCP manifests, but don't expect them to be trusted
 
@@ -569,8 +543,8 @@ try {
       // err.details.destination = 'api.openai.com'
       // Don't retry blindly — strip the label or use a local model.
       break;
-    case 'ERR_TOKEN_EXPIRED':
-      // Capability token has expired or been revoked. Re-request.
+    case 'ERR_SESSION_NOT_FOUND':
+      // The session was terminated, destroyed, or expired. Re-request.
       break;
   }
 }
@@ -652,7 +626,6 @@ extension/src/policy/
   origin-grants.ts    # Per-origin "Allow always / once / deny" remembered from prompts
   sensitivity.ts      # Domain, element, and tool classifiers
   manifest-trust.ts   # Trusted manifest registry; signature verification
-  tokens.ts           # Capability token mint / validate / attenuate
   watchdog.ts         # Rolling stats, anomaly rules, containment
   consent-bus.ts      # Pending-consent broadcaster (sidebar + popup)
   audit.ts            # Ring-buffer audit log
@@ -666,7 +639,6 @@ agents/handlers/*  ─[requireAction]─►  policy/engine.evaluate
                                               │
                                               ├─►  policy/sensitivity
                                               ├─►  policy/labels (input/output flow)
-                                              ├─►  policy/tokens (capability check)
                                               ├─►  policy/store (typed rules)
                                               ├─►  policy/watchdog (state)
                                               ├─►  policy/manifest-trust (for tool meta)
@@ -929,7 +901,6 @@ If a site is hammering you with prompts, that's almost always a sign the site is
 - **Action metadata.** Each action's declared `effect`, `locality`, `reversible`, `defaultDataLabels`, and `acceptsLabels`.
 - **Ambient.** An action whose `effect` is `metadata` — auto-allowed, never prompts.
 - **Audit record.** A single decision logged by the PolicyEngine, with full trace including matched rule, source, and labels.
-- **Capability token.** An opaque handle bound to an `(origin, allowedActions, acceptedLabels, budgets, ttl, parentToken)` tuple. The unit of authority a session holds.
 - **Containment.** A graduated reduction of a session's authority, walked by the Watchdog in response to bad behavior; see [The Watchdog](#the-watchdog).
 - **Data label.** A tag (`credentials`, `payments`, `identity`, `confidential`, `regulated`) attached to data flowing through the agent. Tracked through reads, prompts, and tool calls; checked at egress.
 - **Decision simulator.** A read-only replay of a recorded decision under different rules or labels, reached through the `policy.simulate` and `policy.replay` messages.
@@ -954,7 +925,7 @@ The internal change is large, but the user-facing API is similar in shape. The b
 - `agent.requestPermissions({ scopes: [...] })` is replaced by `agent.requestCapabilities({ require: [...], optional: [...] })` with typed actions.
 - `model:prompt` becomes `model.prompt.local` or `model.prompt.remote.thirdParty` — pick the right one for your use case.
 - `web:fetch` becomes `network.egress.same_origin` or `network.egress.cross_origin`, with destination-aware policy.
-- New error codes (`ERR_BLOCKED_BY_POLICY`, `ERR_LABEL_FLOW_BLOCKED`, `ERR_TOKEN_EXPIRED`) need to be handled in your error path.
+- New error codes (`ERR_BLOCKED_BY_POLICY`, `ERR_LABEL_FLOW_BLOCKED`) need to be handled in your error path.
 
 The sample apps and the demo site demonstrate the new shape.
 
@@ -980,10 +951,6 @@ The PolicyEngine is the structural defense: even if the agent is convinced by in
 
 One limit applies to requests from web pages. The engine gates their calls to the model and to tools, but those calls don't carry data labels yet, so the label check described above doesn't cover them. See [Against Prompt Injection](../spec/security-privacy.md#against-prompt-injection) for what limits a page's session today and what is planned.
 
-**Q: How does multi-agent delegation work?**
-
-Each session has a capability token. When the session calls `agent.delegate` to invoke a subagent, it must mint a child token, and the engine enforces strict attenuation: the child's `allowedActions` is a subset of the parent's, the child's `acceptedLabels` is a subset of the parent's, the child's budgets and TTL are bounded by the parent's. A subagent cannot accumulate authority by recursion, and revoking the parent token transitively revokes every descendant.
-
 **Q: Can my organization centrally manage this?**
 
 Yes. Ship a `harbor-managed-policy.json` via Firefox's `policies.json`, Chrome enterprise policies, or your MDM. It loads at the highest precedence and cannot be overridden by user policy or per-origin grants. Use this for company-wide deny rules, trusted-origin allowlists, label-egress restrictions, signed-publisher allowlists, and budget caps.
@@ -994,7 +961,7 @@ Not in the initial rollout. Anthropic-style classifier-as-approver is a candidat
 
 **Q: Where's the empirical evidence?**
 
-Honest answer: not yet. The architecture is grounded by analogy to comparable systems (Cedar / XACML for typed policy, OCAP for capability attenuation, CaMeL for information-flow tracking, Anthropic Auto Mode for graduated containment), but Harbor's specific tier ladder, label set, and watchdog rules need to run on real traffic before we can publish meaningful numbers. The telemetry section above lists what we plan to measure; we expect to publish summary statistics — sensitivity false-positive rate, label-egress block rate, attacker success on a public benchmark before/after containment — once we have a representative window of real-world usage.
+Honest answer: not yet. The architecture is grounded by analogy to comparable systems (Cedar / XACML for typed policy, CaMeL for information-flow tracking, Anthropic Auto Mode for graduated containment), but Harbor's specific tier ladder, label set, and watchdog rules need to run on real traffic before we can publish meaningful numbers. The telemetry section above lists what we plan to measure; we expect to publish summary statistics — sensitivity false-positive rate, label-egress block rate, attacker success on a public benchmark before/after containment — once we have a representative window of real-world usage.
 
 ---
 

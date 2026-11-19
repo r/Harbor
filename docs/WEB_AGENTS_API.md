@@ -256,8 +256,8 @@ All agent capabilities require user permission. The permission system is **per-o
 Behind the scenes, every call from your page now flows through the
 **PolicyEngine**, which evaluates the call against typed actions
 (`model.prompt.local`, `tool.call`, `browser.read.activeTab`,
-`network.egress.cross_origin`, etc.) and capability tokens minted at
-session creation. Origin grants from `requestPermissions` are honored
+`network.egress.cross_origin`, etc.) and the session's granted
+actions. Origin grants from `requestPermissions` are honored
 at Tier 8 of the engine ladder; explicit `deny` rules in the user's
 policy still win, and Tier 1–4 safety floors (managed denies,
 sensitivity gates, information-flow checks, watchdog containment)
@@ -359,7 +359,7 @@ If tools are specified, the permission prompt displays each tool with a checkbox
 #### agent.requestCapabilities(options)
 
 The recommended replacement for `requestPermissions`. Mints a session
-bound to a capability token in the typed-action vocabulary. Returns
+scoped to exactly the typed actions you asked for. Returns
 the session object you can pass to `agent.tools.call`,
 `agent.browser.*`, etc.
 
@@ -382,19 +382,16 @@ const session = await window.agent.requestCapabilities({
 await session.tools.call('time-wasm', 'time.now', {});
 ```
 
-Behind the scenes the request becomes a `session.create` call with a
-freshly-minted capability token; the engine narrows the token to the
-intersection of what the user has granted, what your `require` list
-asks for, and what your origin policy allows. Subagents the session
-spawns are attenuated from this token automatically — they cannot
-gain authority you didn't have.
+Behind the scenes the request becomes a `session.create` call; the
+engine grants the intersection of what the user has granted, what
+your `require` list asks for, and what your origin policy allows.
 
 To get more authority later — e.g. write access after the user
 clicks "Apply" — call `agent.requestCapabilities()` again with the
 additional actions and a `reason`. The user gets a fresh prompt
-scoped to exactly the new authority, and the new session carries its
-own capability token; the original session continues with its
-narrower scope. Terminate a session when you're done with it.
+scoped to exactly the new authority, and the new session is
+independent; the original session continues with its narrower
+scope. Terminate a session when you're done with it.
 
 For the full design, see
 [`docs/PERMISSIONS.md`](./PERMISSIONS.md).

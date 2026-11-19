@@ -157,17 +157,17 @@ const availability = await window.ai.canCreateTextSession();
 
 > **Canonical reference:** [`docs/PERMISSIONS.md`](./PERMISSIONS.md). The
 > short version below is the surface a page author needs; the deeper
-> design (typed actions, capability tokens, the 9-tier policy ladder,
+> design (typed actions, the policy ladder,
 > information-flow labels, watchdog containment, the audit log, the
 > decision simulator) lives in that document.
 
 All API calls go through a single chokepoint — the **PolicyEngine** —
-which evaluates each call against a 9-tier ladder of checks. The
-ladder produces one of five effects: `allow`, `ask`, `preview`,
-`attenuate`, or `deny`. Page authors usually do not see the ladder
+which evaluates each call against a tiered ladder of checks. The
+ladder produces one of four effects: `allow`, `ask`, `preview`,
+or `deny`. Page authors usually do not see the ladder
 directly; they request capabilities up front, then call APIs.
 
-The model has four properties page authors should know:
+The model has three properties page authors should know:
 
 1. **Origin-scoped.** `example.com`'s grants do not transfer to
    `other.com`. Tool allowlists are per-origin too.
@@ -177,14 +177,14 @@ The model has four properties page authors should know:
    `network.egress.cross_origin`, etc.). Policy rules are expressed
    in the same vocabulary, so what gets logged and what gets prompted
    line up exactly.
-3. **Sessions are bound to a capability token.** When a page calls
-   `agent.requestCapabilities()` (the recommended entry point), the
-   extension mints an unforgeable token that carries the session's
-   `allowedActions`, `acceptedLabels`, budgets, and TTL. Subagent
-   delegations re-attenuate the parent token; authority can shrink,
-   never grow.
-4. **Auditable.** Every decision, including silent allows, is recorded
+3. **Auditable.** Every decision, including silent allows, is recorded
    and surfaced in the sidebar's Activity feed with a "Why?" trace.
+
+A session only ever holds the typed actions its origin was granted,
+checked against the policy engine on every call. When a page calls
+`agent.requestCapabilities()` (the recommended entry point), the
+session that comes back carries exactly that grant: no separate token,
+and no way to act outside it.
 
 The legacy `agent.requestPermissions()` and `PermissionScope` surface
 documented further below remains a working path for simple

@@ -152,20 +152,17 @@ for await (const ev of window.agent.run({
       destructive actions are always confirmed and cannot be auto-allowed.
     </p>
 
-    <h3>Sessions and capability tokens</h3>
+    <h3>Sessions</h3>
     <p>
-      An agent operates inside a <strong>session</strong> that is bound to an
-      origin and to a <strong>capability token</strong> — the unit of authority
-      the engine checks on every gated action. Tokens carry an
-      <code>allowedActions</code> set, an <code>acceptedLabels</code> set,
-      explicit budgets (tool calls, wall clock, etc.), and a TTL.
+      An agent operates inside a <strong>session</strong>: origin-bound state
+      for a task, carrying the <code>allowedActions</code> set it was granted,
+      explicit limits (tool calls, TTL), its history, and its usage. The
+      engine checks a session's granted actions on every gated call; a
+      session never holds more than its origin was granted.
     </p>
     <p>
       Authority can't be widened after the fact: a site that needs more asks
-      for a new session. When a session delegates to a
-      subagent, the engine enforces strict OCAP-style attenuation: child
-      <code>allowedActions</code> ⊆ parent, child <code>acceptedLabels</code> ⊆
-      parent, child budgets ≤ parent, child TTL ≤ parent.
+      for a new session, scoped to exactly the additional actions.
     </p>
 
     <h3>Information-flow labels</h3>
