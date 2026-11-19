@@ -55,6 +55,36 @@ describe('runCapturePage', () => {
   });
 });
 
+describe('capture reads one page, even if the tab navigates between in-tab calls', () => {
+  /** Each in-tab call sees the next URL in `hrefs` (the last one repeats). */
+  function navigatingPage(hrefs: string[]) {
+    let call = 0;
+    mocks.executeScriptInTab.mockImplementation(async (_id: number, fn: (...a: unknown[]) => unknown, args: unknown[] = []) => {
+      const href = hrefs[Math.min(call++, hrefs.length - 1)];
+      vi.stubGlobal('window', { location: { origin: new URL(href).origin, href } });
+      vi.stubGlobal('document', {
+        title: href, cookie: '',
+        body: { innerText: `text of ${href}`, querySelectorAll: () => [] },
+        querySelector: () => null,
+      });
+      return fn(...args);
+    });
+  }
+
+  it('reads again when the page changed after its text was read', async () => {
+    navigatingPage([`${ORIGIN}/a`, `${ORIGIN}/b`, `${ORIGIN}/b`, `${ORIGIN}/b`]);
+    const { runCapturePage } = await import('../handlers/browser-capture');
+    const result = await runCapturePage({ url: `${ORIGIN}/a`, waitForLoad: false });
+    expect(result).toMatchObject({ url: `${ORIGIN}/b`, title: `${ORIGIN}/b`, content: `text of ${ORIGIN}/b` });
+  });
+
+  it('fails rather than mix two pages when the tab keeps navigating', async () => {
+    navigatingPage([`${ORIGIN}/a`, `${ORIGIN}/b`, `${ORIGIN}/c`, `${ORIGIN}/d`]);
+    const { runCapturePage } = await import('../handlers/browser-capture');
+    await expect(runCapturePage({ url: `${ORIGIN}/a`, waitForLoad: false })).rejects.toThrow('Failed to extract page content');
+  });
+});
+
 describe('runLoginThenCapture', () => {
   it('returns the shared extractor text as content after logging in', async () => {
     const EMAIL = 'me@news.example';

@@ -471,11 +471,10 @@ export async function runLoginThenCapture(params: Record<string, unknown>): Prom
       await waitForTabLoadAndInjectable(tab.id, timeout);
     }
 
-    const page = await executeScriptInTab<ReadablePage | OriginMismatch>(tab.id, extractReadablePage);
-    if (!page || isOriginMismatch(page)) throw new Error('Failed to extract page content after login');
-    const found = await executeScriptInTab<{ links: string[]; linksWithText: LinkWithText[] }>(
+    const { page, found } = await readThenScan<{ links: string[]; linksWithText: LinkWithText[] }>(
       tab.id,
-      () => {
+      (expectedUrl: unknown) => {
+        if (window.location.href !== expectedUrl) return { navigated: true as const };
         const links: string[] = [];
         const linksWithText: { text: string; url: string }[] = [];
         const base = window.location.origin;
@@ -491,19 +490,50 @@ export async function runLoginThenCapture(params: Record<string, unknown>): Prom
         });
         return { links, linksWithText };
       },
-      []
+      [],
+      'Failed to extract page content after login'
     );
 
     return {
       content: page.text,
       title: page.title,
       url: page.url,
-      links: found?.links ?? [],
-      linksWithText: found?.linksWithText ?? [],
+      links: found.links,
+      linksWithText: found.linksWithText,
     };
   } finally {
     await browserAPI.tabs.remove(tab.id).catch(() => {});
   }
+}
+
+/** A capture script's answer when the tab is no longer on the page whose text was read. */
+type Navigated = { navigated: true };
+function isNavigated(value: unknown): value is Navigated {
+  return typeof value === 'object' && value !== null && (value as Navigated).navigated === true;
+}
+
+/**
+ * Read a capture tab's text with the shared extractor, then run `scan` in the
+ * same tab for whatever else the capture needs (links, cookies, ...). `scan`
+ * gets the URL and text that were read as its first two arguments, and must
+ * return `{ navigated: true }` when `window.location.href` differs, so every
+ * field of a capture describes one page. If the tab moved between the two
+ * calls, read it once more; if it moves again, fail.
+ */
+async function readThenScan<T>(
+  tabId: number,
+  scan: (expectedUrl: unknown, text: unknown, ...rest: unknown[]) => T | Navigated,
+  args: unknown[],
+  failure: string
+): Promise<{ page: ReadablePage; found: T }> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const page = await executeScriptInTab<ReadablePage | OriginMismatch>(tabId, extractReadablePage);
+    if (!page || isOriginMismatch(page)) break;
+    const found = await executeScriptInTab<T | Navigated>(tabId, scan as (...a: unknown[]) => T | Navigated, [page.url, page.text, ...args]);
+    if (found === undefined) break;
+    if (!isNavigated(found)) return { page, found };
+  }
+  throw new Error(failure);
 }
 
 /** True if URL looks like an Atlantic article (not search/login/section index). Used to scroll-to-end before capture. */
@@ -588,13 +618,7 @@ export async function runCapturePage(params: Record<string, unknown>): Promise<C
       await scrollTabToEnd(tab.id);
     }
 
-    const page = await executeScriptInTab<ReadablePage | OriginMismatch>(tab.id, extractReadablePage);
-    if (!page || isOriginMismatch(page)) {
-      throw new Error('Failed to extract page content');
-    }
-    const content = page.text;
-
-    const result = await executeScriptInTab<{
+    const { page, found: result } = await readThenScan<{
       cookies?: string;
       links?: string[];
       linksWithText?: LinkWithText[];
@@ -602,10 +626,11 @@ export async function runCapturePage(params: Record<string, unknown>): Promise<C
       articleDetail?: ArticleDetail;
     }>(
       tab.id,
-      (doCaptureCookies: unknown, content: unknown) => {
+      (expectedUrl: unknown, content: unknown, doCaptureCookies: unknown) => {
+        const url = window.location.href;
+        if (url !== expectedUrl) return { navigated: true as const };
         const pageText = typeof content === 'string' ? content : '';
         const lines = pageText.split('\n');
-        const url = window.location.href;
         // Site-specific results below look inside the main content area.
         const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.article'];
         let root: Element | null = null;
@@ -773,15 +798,12 @@ export async function runCapturePage(params: Record<string, unknown>): Promise<C
 
         return { cookies, links, linksWithText, searchResults, articleDetail };
       },
-      [captureCookies, content]
+      [captureCookies],
+      'Failed to extract page content'
     );
 
-    if (!result) {
-      throw new Error('Failed to extract page content');
-    }
-
     return {
-      content,
+      content: page.text,
       title: page.title,
       url: page.url,
       ...(result.cookies !== undefined && { cookies: result.cookies }),
