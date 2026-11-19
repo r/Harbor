@@ -751,6 +751,12 @@ is prepended as a system message, and tool definitions use
 response IDs are preserved. Streaming forwards tools to the provider; its
 existing token/done/error events do not expose tool-call deltas.
 
+`llm.cancel_stream { id }` stops a running `llm.chat_stream` by its request
+id: the bridge aborts the stream's task, which drops the request to the
+provider, and answers `{ cancelled }` (`false` if the stream had already
+ended). The extension sends it when the caller of a stream stops reading,
+for example when a page breaks out of `promptStreaming()` or closes its tab.
+
 Ollama history includes assistant tool calls with structured JSON arguments in
 both chat modes. Tool-only assistant turns keep empty text; the page agent loop
 uses the structured calls followed by tool results without a synthetic text

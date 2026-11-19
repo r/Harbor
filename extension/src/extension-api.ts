@@ -1161,7 +1161,10 @@ export async function* streamLlmChat(
 
   try {
     let tokenCount = 0;
-    for await (const event of bridgeStreamRequest('llm.chat_stream', { messages, model, max_tokens, temperature, system_prompt: system, tools })) {
+    // The signal also stops the model mid-response when the page stops
+    // reading (see bridgeStreamRequest).
+    for await (const event of bridgeStreamRequest('llm.chat_stream', { messages, model, max_tokens, temperature, system_prompt: system, tools }, signal)) {
+      if (signal?.aborted) break;
       if (event.type === 'token') tokenCount++;
       yield event;
       if (event.type === 'done' || event.type === 'error') {
