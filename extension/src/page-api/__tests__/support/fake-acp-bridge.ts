@@ -35,13 +35,17 @@ interface OpenChannel {
 export function createFakeAcpBridge() {
   const registry = new Map<string, { app: AgentApp; options: RegisterAgentOptions }>();
   const channels = new Map<string, OpenChannel>();
+  /** Every `acp.open` call this bridge has seen, in order, so a test can
+   * assert what the backend actually passed as `workspace`. */
+  const openCalls: Array<{ agentId: string; workspace: string }> = [];
   let nextChannel = 0;
 
   function registerAgent(agentId: string, app: AgentApp, options: RegisterAgentOptions = {}): void {
     registry.set(agentId, { app, options });
   }
 
-  function acpOpenStream(agentId: string, _workspace: string): { stream: AsyncGenerator<FakeAcpEvent>; cancel: () => void } {
+  function acpOpenStream(agentId: string, workspace: string): { stream: AsyncGenerator<FakeAcpEvent>; cancel: () => void } {
+    openCalls.push({ agentId, workspace });
     const queue: FakeAcpEvent[] = [];
     let resolveWaiting: ((event: FakeAcpEvent) => void) | null = null;
     let ended = false;
@@ -140,5 +144,5 @@ export function createFakeAcpBridge() {
     ch?.push({ type: 'exit', code });
   }
 
-  return { acpOpenStream, acpSend, acpClose, registerAgent, crashChannel };
+  return { acpOpenStream, acpSend, acpClose, registerAgent, crashChannel, openCalls };
 }

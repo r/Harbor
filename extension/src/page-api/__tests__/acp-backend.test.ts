@@ -23,7 +23,7 @@ vi.mock('../harbor-core', () => ({
 }));
 
 import { createFakeAcpBridge } from './support/fake-acp-bridge';
-import { AcpAgentBackend, ACP_RUN_TIMEOUT_MS } from '../acp-backend';
+import { AcpAgentBackend, ACP_RUN_TIMEOUT_MS, answerPermissionRequest } from '../acp-backend';
 import type { AgentRunRequest } from '../agent-backend';
 import type { StreamToken } from '../types';
 
@@ -33,6 +33,8 @@ interface FakeAgentOptions {
   cwd?: string;
   failToStart?: string;
   onInitialize?: (params: unknown) => void;
+  /** Overrides the `initialize` response, e.g. to simulate a protocol mismatch. */
+  initializeResponse?: { protocolVersion: number };
   onSessionNew?: (params: unknown) => void;
   onSessionCancel?: (params: unknown) => void;
   onPrompt: (ctx: { params: { sessionId: string; prompt: unknown }; client: { notify: (method: string, params: unknown) => Promise<void>; request: (method: string, params: unknown) => Promise<unknown> } }) => Promise<{ stopReason: StopReason }>;
@@ -42,7 +44,7 @@ function buildFakeAgent(opts: FakeAgentOptions): AgentApp {
   return buildAgentApp({ name: 'fake-agent' })
     .onRequest(AGENT_METHODS.initialize, async (ctx) => {
       opts.onInitialize?.(ctx.params);
-      return { protocolVersion: 1 };
+      return opts.initializeResponse ?? { protocolVersion: 1 };
     })
     .onRequest(AGENT_METHODS.session_new, async (ctx) => {
       opts.onSessionNew?.(ctx.params);
@@ -159,6 +161,23 @@ describe('AcpAgentBackend', () => {
     const texts = promptBlocks.map((b) => b.text);
     expect(texts).toContain('find the weather');
     expect(texts.some((t) => t.includes('Instructions from https://site.example:') && t.includes('Always answer in French.'))).toBe(true);
+  });
+
+  it('sends provenance _meta on session/prompt, for an agent that reads it instead of the labelled text', async () => {
+    let promptMeta: unknown;
+    registerFakeAgent({
+      onPrompt: async (ctx) => {
+        promptMeta = (ctx.params as { _meta?: unknown })._meta;
+        return { stopReason: 'end_turn' };
+      },
+    });
+
+    const backend = new AcpAgentBackend(AGENT_ID);
+    await collect(backend, baseRequest({ origin: 'https://site.example', task: 't' }));
+
+    expect(promptMeta).toEqual({
+      'harbor/provenance': { source: 'website', origin: 'https://site.example' },
+    });
   });
 
   it('omits the instructions block when the page sends no systemPrompt', async () => {
@@ -405,6 +424,35 @@ describe('AcpAgentBackend', () => {
       await collect(backend, baseRequest());
       expect(outcome).toEqual({ outcome: { outcome: 'cancelled' } });
     });
+
+  });
+
+  // A live round trip for "cancelled already, what does a permission
+  // request get" is impractical to engineer deterministically: by the
+  // time `cancelReason` is set, the connection is already tearing down
+  // (the same `requestAbort.abort()` that sets it also rejects the
+  // in-flight session/prompt wait), so a request sent after that point
+  // either races the teardown or just hangs. `answerPermissionRequest` is
+  // the guard itself, pulled out so it's testable without that race.
+  describe('answerPermissionRequest (the session/request_permission guard)', () => {
+    const rejectOnce = { optionId: 'reject', kind: 'reject_once' };
+    const allowOnce = { optionId: 'allow', kind: 'allow_once' };
+
+    it('answers cancelled once the run is cancelled, even when reject_once is offered', () => {
+      expect(answerPermissionRequest(true, [allowOnce, rejectOnce])).toEqual({ outcome: { outcome: 'cancelled' } });
+    });
+
+    it('answers cancelled once the run is cancelled, even with no options at all', () => {
+      expect(answerPermissionRequest(true, [])).toEqual({ outcome: { outcome: 'cancelled' } });
+    });
+
+    it('answers the reject_once option when the run is not cancelled', () => {
+      expect(answerPermissionRequest(false, [allowOnce, rejectOnce])).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } });
+    });
+
+    it('answers cancelled when the run is not cancelled but no reject_once option is offered', () => {
+      expect(answerPermissionRequest(false, [allowOnce])).toEqual({ outcome: { outcome: 'cancelled' } });
+    });
   });
 
   describe('cancellation', () => {
@@ -467,57 +515,27 @@ describe('AcpAgentBackend', () => {
       expect(tokenEvents(events).some((e) => e.type === 'tool_result')).toBe(false);
     });
 
-    it('cancels and reports ERR_BUDGET_EXCEEDED once tool_call_update count reaches maxToolCalls', async () => {
-      let resolvePrompt: ((r: { stopReason: StopReason }) => void) | null = null;
+    it('ignores maxToolCalls entirely: many distinct tool calls never trip a budget error', async () => {
+      // Harbor gates whether a site may use the agent at all; it doesn't
+      // constrain how the agent works once it's running. The page's
+      // maxToolCalls is a builtinAgentBackend concept and does nothing here.
       registerFakeAgent({
-        onSessionCancel: () => resolvePrompt?.({ stopReason: 'cancelled' }),
         onPrompt: async (ctx) => {
-          for (let i = 0; i < 3; i++) {
+          for (let i = 0; i < 10; i++) {
             await ctx.client.notify(CLIENT_METHODS.session_update, {
               sessionId: ctx.params.sessionId,
               update: { sessionUpdate: 'tool_call_update', toolCallId: `tc-${i}`, status: 'completed', rawOutput: i },
             });
           }
-          return new Promise((resolve) => { resolvePrompt = resolve; });
-        },
-      });
-
-      const backend = new AcpAgentBackend(AGENT_ID);
-      const events = await collect(backend, baseRequest({ maxToolCalls: 2 }));
-
-      expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_BUDGET_EXCEEDED' } });
-      // Only the first two updates (within budget) may have reached the page.
-      expect(tokenEvents(events).filter((e) => e.type === 'tool_result')).toHaveLength(2);
-    });
-
-    it('counts a tool call once across its progress updates, but trips the budget on a second distinct call', async () => {
-      let resolvePrompt: ((r: { stopReason: StopReason }) => void) | null = null;
-      registerFakeAgent({
-        onSessionCancel: () => resolvePrompt?.({ stopReason: 'cancelled' }),
-        onPrompt: async (ctx) => {
-          // Three progress updates then completion, all for the same id —
-          // none of this should spend more than one unit of budget.
-          for (const status of ['in_progress', 'in_progress', 'in_progress', 'completed'] as const) {
-            await ctx.client.notify(CLIENT_METHODS.session_update, {
-              sessionId: ctx.params.sessionId,
-              update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', status },
-            });
-          }
-          // A second, distinct call must trip a budget of 1.
-          await ctx.client.notify(CLIENT_METHODS.session_update, {
-            sessionId: ctx.params.sessionId,
-            update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc-2', status: 'completed' },
-          });
-          return new Promise((resolve) => { resolvePrompt = resolve; });
+          return { stopReason: 'end_turn' };
         },
       });
 
       const backend = new AcpAgentBackend(AGENT_ID);
       const events = await collect(backend, baseRequest({ maxToolCalls: 1 }));
 
-      // tc-1's own completion reached the page; tc-2's never could.
-      expect(tokenEvents(events).filter((e) => e.type === 'tool_result')).toHaveLength(1);
-      expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_BUDGET_EXCEEDED' } });
+      expect(tokenEvents(events).filter((e) => e.type === 'tool_result')).toHaveLength(10);
+      expect(events.at(-1)).toEqual({ type: 'done' });
     });
 
     it('re-checks model:prompt on a tool_call with no update yet, and cancels with ERR_PERMISSION_DENIED', async () => {
@@ -539,8 +557,11 @@ describe('AcpAgentBackend', () => {
       const events = await collect(backend, baseRequest());
 
       expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_PERMISSION_DENIED' } });
-      // The denied call must never reach the page.
-      expect(tokenEvents(events).some((e) => e.type === 'tool_call')).toBe(false);
+      // The announcement itself (the agent's own order) still reaches the
+      // page — it's just an announcement, not a decision — but nothing
+      // about its actual result does, since there was never an update.
+      expect(tokenEvents(events)).toContainEqual({ type: 'tool_call', tool: 'Read file', args: {} });
+      expect(tokenEvents(events).some((e) => e.type === 'tool_result')).toBe(false);
     });
 
     it('cancels and reports ERR_TIMEOUT once the overall run timeout elapses', async () => {
@@ -566,6 +587,20 @@ describe('AcpAgentBackend', () => {
   });
 
   describe('transport and agent failures', () => {
+    it('reports ERR_AGENT_FAILED and closes the channel when initialize answers an unsupported protocolVersion', async () => {
+      let promptCalled = false;
+      const fakeBridge = registerFakeAgent({
+        initializeResponse: { protocolVersion: 2 },
+        onPrompt: async () => { promptCalled = true; return { stopReason: 'end_turn' }; },
+      });
+      const closeSpy = vi.spyOn(fakeBridge, 'acpClose');
+      const backend = new AcpAgentBackend(AGENT_ID);
+      const events = await collect(backend, baseRequest());
+      expect(promptCalled).toBe(false);
+      expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_AGENT_FAILED' } });
+      expect(closeSpy).toHaveBeenCalledTimes(1);
+    });
+
     it('reports ERR_AGENT_FAILED when acp.open fails fatally before any channel exists', async () => {
       registerFakeAgent({ failToStart: 'agent binary not found', onPrompt: async () => ({ stopReason: 'end_turn' }) });
       const backend = new AcpAgentBackend(AGENT_ID);
@@ -649,6 +684,207 @@ describe('AcpAgentBackend', () => {
       const backend = new AcpAgentBackend(AGENT_ID);
       await collect(backend, baseRequest());
       expect(closeSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('an abort that lands before acp.open resolves', () => {
+    it('ends with exactly one ERR_ABORTED once the open event arrives, closes the channel, and never sends initialize or a prompt', async () => {
+      const fakeBridge = createFakeAcpBridge();
+      mocks.bridge.current = fakeBridge;
+      let initializeCalled = false;
+      let promptCalled = false;
+      const app = buildAgentApp({ name: 'fake-agent' })
+        .onRequest(AGENT_METHODS.initialize, async () => { initializeCalled = true; return { protocolVersion: 1 }; })
+        .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 'sess-1' }))
+        .onRequest(AGENT_METHODS.session_prompt, async () => { promptCalled = true; return { stopReason: 'end_turn' as StopReason }; });
+      fakeBridge.registerAgent(AGENT_ID, app, {});
+      const closeSpy = vi.spyOn(fakeBridge, 'acpClose');
+
+      // Delay the bridge's first event (`open`) so the abort can land
+      // while `acp.open` is still pending, before any channel exists yet.
+      const realOpen = fakeBridge.acpOpenStream;
+      let releaseOpen!: () => void;
+      const openGate = new Promise<void>((resolve) => { releaseOpen = resolve; });
+      fakeBridge.acpOpenStream = (agentId: string, workspace: string) => {
+        const result = realOpen(agentId, workspace);
+        const originalNext = result.stream.next.bind(result.stream);
+        let first = true;
+        result.stream.next = (async () => {
+          if (first) { first = false; await openGate; }
+          return originalNext();
+        }) as typeof result.stream.next;
+        return result;
+      };
+
+      const backend = new AcpAgentBackend(AGENT_ID);
+      const events: StreamToken[] = [];
+      const controller = new AbortController();
+      const runPromise = backend.run(baseRequest(), (e) => events.push(e), controller.signal);
+
+      await new Promise((r) => setTimeout(r, 10));
+      controller.abort();
+      releaseOpen();
+      await runPromise;
+
+      expect(initializeCalled).toBe(false);
+      expect(promptCalled).toBe(false);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ type: 'error', error: { code: 'ERR_ABORTED' } });
+      expect(closeSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('event ordering and the terminal event', () => {
+    it('emits tool_call before awaiting the grant re-check, matching the agent’s own order', async () => {
+      // hasPermission is also called once before session/prompt is even
+      // sent (unrelated to this tool_call); only its second call is the
+      // tool_call's own re-check.
+      const order: string[] = [];
+      let hasPermissionCalls = 0;
+      mocks.hasPermission.mockImplementation(async () => {
+        hasPermissionCalls++;
+        if (hasPermissionCalls === 2) order.push('grant-checked');
+        return true;
+      });
+      registerFakeAgent({
+        onPrompt: async (ctx) => {
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId: ctx.params.sessionId,
+            update: { sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'Read file' },
+          });
+          return { stopReason: 'end_turn' };
+        },
+      });
+      const backend = new AcpAgentBackend(AGENT_ID);
+      await backend.run(baseRequest(), (e) => {
+        if (e.type === 'token' && typeof e.token === 'string' && JSON.parse(e.token).type === 'tool_call') {
+          order.push('tool_call');
+        }
+      }, new AbortController().signal);
+      expect(order).toEqual(['tool_call', 'grant-checked']);
+    });
+
+    it('drops every emit after the terminal event, even from a notification handler still awaiting a grant check', async () => {
+      // The first call is the pre-prompt check (unrelated to this test) and
+      // resolves normally; the second, the tool_call_update's own re-check,
+      // hangs until the test releases it — long after session/prompt's
+      // response (and the final/done it produces) has already arrived.
+      let releaseGate!: (value: boolean) => void;
+      let hasPermissionCalls = 0;
+      mocks.hasPermission.mockImplementation(() => {
+        hasPermissionCalls++;
+        if (hasPermissionCalls === 1) return Promise.resolve(true);
+        return new Promise((resolve) => { releaseGate = resolve; });
+      });
+      registerFakeAgent({
+        onPrompt: async (ctx) => {
+          // Fire-and-forget: the agent doesn't wait for this notification
+          // to be processed before answering the prompt.
+          void ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId: ctx.params.sessionId,
+            update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', status: 'completed', rawOutput: 'late' },
+          });
+          return { stopReason: 'end_turn' };
+        },
+      });
+      const backend = new AcpAgentBackend(AGENT_ID);
+      const events: StreamToken[] = [];
+      let terminalSeen = false;
+      const runPromise = backend.run(baseRequest(), (e) => {
+        events.push(e);
+        if (e.type === 'done' || e.type === 'error') terminalSeen = true;
+      }, new AbortController().signal);
+
+      // The run already ended with exactly one terminal event, while the
+      // tool_call_update handler is still awaiting its grant check...
+      await vi.waitFor(() => expect(terminalSeen).toBe(true));
+      expect(events.at(-1)).toEqual({ type: 'done' });
+      expect(events.filter((e) => e.type === 'done' || e.type === 'error')).toHaveLength(1);
+
+      // ...and the slow grant check's eventual answer no longer matters:
+      // releasing it now must not add a late tool_result after the fact.
+      releaseGate(true);
+      await runPromise;
+      await new Promise((r) => setTimeout(r, 10));
+      expect(tokenEvents(events).some((e) => e.type === 'tool_result')).toBe(false);
+    });
+  });
+
+  describe('scrubbing the working directory and home path from page-visible content', () => {
+    const CWD = '/Users/testuser/.harbor/acp/workspaces/abc123hash';
+    const HOME = '/Users/testuser';
+
+    it('replaces the cwd with "." and the home prefix with "~", including inside nested tool args/results', async () => {
+      registerFakeAgent({
+        cwd: CWD,
+        onPrompt: async (ctx) => {
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId: ctx.params.sessionId,
+            update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: `looking in ${CWD}` } },
+          });
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId: ctx.params.sessionId,
+            update: {
+              sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'Read file',
+              rawInput: { path: `${CWD}/notes.txt`, nested: { other: `${HOME}/Desktop/x` } },
+            },
+          });
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId: ctx.params.sessionId,
+            update: {
+              sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', status: 'completed',
+              content: [{ type: 'content', content: { type: 'text', text: `found it in ${CWD}, home is ${HOME}` } }],
+            },
+          });
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId: ctx.params.sessionId,
+            update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `done, see ${CWD}/notes.txt` } },
+          });
+          return { stopReason: 'end_turn' };
+        },
+      });
+
+      const backend = new AcpAgentBackend(AGENT_ID);
+      const events = tokenEvents(await collect(backend, baseRequest()));
+
+      expect(events).toContainEqual({ type: 'thinking', content: 'looking in .' });
+      expect(events).toContainEqual({
+        type: 'tool_call', tool: 'Read file',
+        args: { path: './notes.txt', nested: { other: '~/Desktop/x' } },
+      });
+      expect(events).toContainEqual({
+        type: 'tool_result', tool: 'Read file',
+        result: [{ type: 'content', content: { type: 'text', text: 'found it in ., home is ~' } }],
+      });
+      expect(events).toContainEqual({ type: 'final', output: 'done, see ./notes.txt' });
+    });
+
+    it('also scrubs the non-canonical /var alias of a canonicalized /private/var cwd', async () => {
+      const privateCwd = '/private/var/folders/XX/T/x/.harbor/acp/workspaces/hash2';
+      const varAlias = '/var/folders/XX/T/x/.harbor/acp/workspaces/hash2';
+      const homeAlias = '/var/folders/XX/T/x';
+      registerFakeAgent({
+        cwd: privateCwd,
+        onPrompt: async (ctx) => {
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId: ctx.params.sessionId,
+            update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `${varAlias} and ${homeAlias}/x.txt` } },
+          });
+          return { stopReason: 'end_turn' };
+        },
+      });
+      const backend = new AcpAgentBackend(AGENT_ID);
+      const events = tokenEvents(await collect(backend, baseRequest()));
+      expect(events).toContainEqual({ type: 'final', output: '. and ~/x.txt' });
+    });
+  });
+
+  describe('acp.open workspace', () => {
+    it('passes the run origin as the workspace', async () => {
+      const fakeBridge = registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+      const backend = new AcpAgentBackend(AGENT_ID);
+      await collect(backend, baseRequest({ origin: 'https://site.example' }));
+      expect(fakeBridge.openCalls).toEqual([{ agentId: AGENT_ID, workspace: 'https://site.example' }]);
     });
   });
 });
