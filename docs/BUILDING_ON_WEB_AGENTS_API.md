@@ -131,7 +131,7 @@ await session.tools.call('time-wasm', 'time.now', {});
 Need more later — e.g. write access once the user clicks "Run"? Ask
 for it with `agent.requestPermissions()`, which shows the prompt, then
 call `agent.requestCapabilities()` again for a new session.
-`requestCapabilities()` doesn't prompt by itself.
+`requestCapabilities()` doesn't ask for grants itself.
 
 ### Legacy: `agent.requestPermissions()` (origin-level scopes)
 

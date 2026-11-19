@@ -264,7 +264,7 @@ Session tool budgets are enforced in the background: `SessionRegistry.recordTool
 
 ### Getting more authority later
 
-There's no in-place upgrade: when a site needs more than its current session asked for — say, write access — it gets the origin grant it needs (`agent.requestPermissions()` shows the prompt) and calls `agent.requestCapabilities()` again for a new session. `requestCapabilities()` itself never prompts; without the grant it fails. The original session keeps working with what it already had. Terminate a session when you're done with it.
+There's no in-place upgrade: when a site needs more than its current session asked for — say, write access — it gets the origin grant it needs (`agent.requestPermissions()` shows the prompt) and calls `agent.requestCapabilities()` again for a new session. `requestCapabilities()` doesn't ask for grants: without one it fails. (It can still prompt when the watchdog has restricted the origin, or a policy rule says `ask` or `preview` for a requested capability.) The original session keeps working with what it already had. Terminate a session when you're done with it.
 
 ## The Watchdog
 

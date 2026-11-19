@@ -359,7 +359,7 @@ If tools are specified, the permission prompt displays each tool with a checkbox
 
 The recommended replacement for `requestPermissions`. Creates a session
 for the capabilities you ask for. Model and tool access need the matching
-origin grant first; the call fails without one rather than prompting. Returns
+origin grant first; without one the call fails instead of asking for it. Returns
 the session object you can pass to `agent.tools.call`,
 `agent.browser.*`, etc.
 
@@ -389,7 +389,8 @@ your `require` list asks for, and what your origin policy allows.
 To get more authority later — e.g. write access after the user
 clicks "Apply" — ask for the grant with `agent.requestPermissions()`, which shows
 the user a prompt, then call `agent.requestCapabilities()` again for
-a new session. `requestCapabilities()` never prompts by itself. The
+a new session. `requestCapabilities()` doesn't ask for grants; it only prompts when
+a policy rule or a watchdog restriction calls for it. The
 new session is independent; the original session continues with its
 narrower scope. Terminate a session when you're done with it.
 
