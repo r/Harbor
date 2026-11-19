@@ -10,14 +10,16 @@ import { SessionRegistry } from '../sessions';
 export function registerSessionHandlers(): void {
   // List sessions
   registerHandler('session.list', (message, _sender, sendResponse) => {
-    const { origin, status, type, activeOnly } = message as {
+    // The filters sit beside the message's own `type` ('session.list'), so
+    // the session-type filter is `sessionType`.
+    const { origin, status, sessionType, activeOnly } = message as {
       origin?: string;
       status?: 'active' | 'suspended' | 'terminated';
-      type?: 'implicit' | 'explicit';
+      sessionType?: 'implicit' | 'explicit';
       activeOnly?: boolean;
     };
     try {
-      const sessions = SessionRegistry.listSessions({ origin, status, type, activeOnly });
+      const sessions = SessionRegistry.listSessions({ origin, status, type: sessionType, activeOnly });
       sendResponse({ ok: true, sessions });
     } catch (error) {
       sendResponse({
