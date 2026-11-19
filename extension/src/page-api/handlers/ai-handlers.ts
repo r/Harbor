@@ -17,10 +17,10 @@ import { isAcpTextSession } from '../acp-text-session-registry';
 // acp-connection.ts -> agent-question.ts, which registers a
 // `browserAPI.runtime.onMessage` listener as soon as it's imported. This
 // file is part of the handlers/ barrel that many unrelated tests reach
-// through `../handlers` with only a bare-bones `chrome` stub, so loading it
-// only once a sessionId is actually one of these (never for a page that
-// only uses the built-in backend) keeps that barrel's own import graph
-// unchanged. `isAcpTextSession` itself is cheap and side-effect-free
+// through `../handlers` with only a bare-bones `chrome` stub, so importing
+// it lazily keeps that barrel's own import graph light for those tests. It
+// doesn't save anything at runtime: background.ts imports acp-text-session.ts
+// directly, so the background script loads it for every page anyway. `isAcpTextSession` itself is cheap and side-effect-free
 // (acp-text-session-registry.ts), so every prompt/destroy can check it.
 async function loadAcpTextSession() {
   return import('../acp-text-session');
