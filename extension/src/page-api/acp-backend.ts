@@ -38,6 +38,7 @@ import {
 
 import { acpClose, acpOpenStream, acpSend, type AcpBridgeEvent } from './harbor-core';
 import { hasPermission } from './handlers';
+import { askAgentQuestion, type AgentQuestionOutcome, type AgentQuestionOption, type AgentQuestionToolCall } from './agent-question';
 import { ErrorCodes, type StreamToken } from './types';
 import type { AgentBackend, AgentRunRequest } from './agent-backend';
 
@@ -67,26 +68,36 @@ function agentFailedEvent(message: string): StreamToken {
 }
 
 /**
- * Answers one `session/request_permission`. Harbor never passes an
- * agent-native "always" through, and once the run is already cancelled
- * (`cancelled` is true before this is even asked — see the guard below),
- * every request gets `cancelled` too, whatever options it offers: a
- * request that's still in flight when Harbor gives up must not approve
- * anything on the page's behalf.
+ * Answers one `session/request_permission` by relaying the agent's own
+ * question to the person (`askAgentQuestion`, in a popup window) and
+ * passing their choice back unchanged — Harbor adds no options and no
+ * rules about which calls need approval (docs/ACP_BACKEND_DESIGN.md
+ * section 3).
  *
- * A pure function, not a method, so the guard is testable on its own
- * without needing a live round trip through a real connection, which
- * normally tears down at almost the same moment `cancelled` becomes true.
+ * `isCancelled` is read right before asking, not only once up front: once
+ * the run is already cancelled, every request gets `cancelled` immediately
+ * — never a dialog — because a request that's still in flight when Harbor
+ * gives up must not approve anything on the page's behalf. While the
+ * dialog is open, `askAgentQuestion` is itself given `signal`, so a run
+ * that gets cancelled *after* the dialog opened still ends with
+ * `cancelled`, and closes the window.
+ *
+ * `isCancelled` is a function, and the dialog is behind its own module
+ * (`askAgentQuestion`, mocked at that seam in acp-backend.test.ts), so this
+ * is testable without a live round trip through a real connection or a
+ * real window.
  */
-export function answerPermissionRequest(
-  cancelled: boolean,
-  options: ReadonlyArray<{ optionId: string; kind: string }>,
-): { outcome: { outcome: 'cancelled' } | { outcome: 'selected'; optionId: string } } {
-  if (cancelled) return { outcome: { outcome: 'cancelled' } };
-  const rejectOnce = options.find((o) => o.kind === 'reject_once');
-  return rejectOnce
-    ? { outcome: { outcome: 'selected', optionId: rejectOnce.optionId } }
-    : { outcome: { outcome: 'cancelled' } };
+export async function answerPermissionRequest(
+  isCancelled: () => boolean,
+  request: { origin: string; agentName: string; toolCall: AgentQuestionToolCall; options: ReadonlyArray<AgentQuestionOption> },
+  signal: AbortSignal,
+): Promise<{ outcome: AgentQuestionOutcome }> {
+  if (isCancelled()) return { outcome: { outcome: 'cancelled' } };
+  const outcome = await askAgentQuestion(
+    { origin: request.origin, agentName: request.agentName, toolCall: request.toolCall, options: [...request.options] },
+    signal,
+  );
+  return { outcome };
 }
 
 /**
@@ -418,8 +429,24 @@ export class AcpAgentBackend implements AgentBackend {
       }
     });
 
-    app.onRequest(CLIENT_METHODS.session_request_permission, async (ctx) =>
-      answerPermissionRequest(cancelReason !== null, ctx.params.options));
+    app.onRequest(CLIENT_METHODS.session_request_permission, async (ctx) => {
+      const { toolCall, options } = ctx.params;
+      return answerPermissionRequest(
+        () => cancelReason !== null,
+        {
+          origin,
+          agentName: this.agentId,
+          toolCall: {
+            title: toolCall.title ?? '',
+            kind: toolCall.kind ?? undefined,
+            rawInput: toolCall.rawInput,
+            locations: toolCall.locations?.map((l) => ({ path: l.path, line: l.line ?? undefined })),
+          },
+          options,
+        },
+        requestAbort.signal,
+      );
+    });
 
     const stream = bridgeToSdkStream(channel, bridgeEvents);
 
