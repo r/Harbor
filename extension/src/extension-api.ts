@@ -57,19 +57,13 @@ type MessageType =
   | 'llm.chatStream'
   | 'llm.listProviders'
   | 'llm.getActiveProvider'
-  | 'llm.configureProvider'
-  | 'llm.listModels'
   | 'llm.listConfiguredModels'
   | 'llm.getConfiguredModelsMetadata'
   // MCP Operations
-  | 'mcp.listServers'
   | 'mcp.listTools'
   | 'mcp.callTool'
-  | 'mcp.startServer'
-  | 'mcp.stopServer'
   // Session Operations
   | 'session.create'
-  | 'session.createImplicit'
   | 'session.get'
   | 'session.list'
   | 'session.terminate'
@@ -83,9 +77,7 @@ type MessageType =
   | 'watchdog.snapshot'
   | 'watchdog.resetOrigin'
   // System
-  | 'system.health'
   | 'system.getCapabilities'
-  | 'system.getVersion'
   // Permissions (Harbor holds the only store)
   | 'permissions.check'
   | 'permissions.request';
@@ -165,39 +157,6 @@ async function handleLlmGetActiveProvider(): Promise<ExtensionApiResponse> {
   }
 }
 
-async function handleLlmConfigureProvider(payload: unknown): Promise<ExtensionApiResponse> {
-  const { id, provider, name, api_key, base_url, enabled } = payload as {
-    id?: string;
-    provider?: string;
-    name?: string;
-    api_key?: string;
-    base_url?: string;
-    enabled?: boolean;
-  };
-
-  if (!provider && !id) {
-    return failure('Missing provider or id');
-  }
-
-  try {
-    const result = await bridgeRequest<{ ok: boolean; id: string }>('llm.configure_provider', {
-      id, provider, name, api_key, base_url, enabled,
-    });
-    return success({ id: result.id });
-  } catch (e) {
-    return failure(e);
-  }
-}
-
-async function handleLlmListModels(): Promise<ExtensionApiResponse> {
-  try {
-    const result = await bridgeRequest<{ models: unknown[] }>('llm.list_models');
-    return success({ models: result.models });
-  } catch (e) {
-    return failure(e);
-  }
-}
-
 async function handleLlmListConfiguredModels(): Promise<ExtensionApiResponse> {
   try {
     const result = await bridgeRequest<{ models: unknown[] }>('llm.list_configured_models');
@@ -213,15 +172,6 @@ async function handleLlmGetConfiguredModelsMetadata(): Promise<ExtensionApiRespo
       'llm.get_configured_models_metadata'
     );
     return success({ metadata: result.metadata });
-  } catch (e) {
-    return failure(e);
-  }
-}
-
-async function handleMcpListServers(): Promise<ExtensionApiResponse> {
-  try {
-    const servers = await listServersWithStatus();
-    return success({ servers });
   } catch (e) {
     return failure(e);
   }
@@ -363,54 +313,6 @@ function holdSessionToolSlot(
   };
 }
 
-async function handleMcpStartServer(payload: unknown): Promise<ExtensionApiResponse> {
-  const { serverId } = payload as { serverId?: string };
-
-  if (!serverId) {
-    return failure('Missing serverId');
-  }
-
-  try {
-    const started = await startServer(serverId);
-    return success({ started });
-  } catch (e) {
-    return failure(e);
-  }
-}
-
-async function handleMcpStopServer(payload: unknown): Promise<ExtensionApiResponse> {
-  const { serverId } = payload as { serverId?: string };
-
-  if (!serverId) {
-    return failure('Missing serverId');
-  }
-
-  try {
-    const stopped = stopServer(serverId);
-    return success({ stopped });
-  } catch (e) {
-    return failure(e);
-  }
-}
-
-async function handleSystemHealth(): Promise<ExtensionApiResponse> {
-  try {
-    const bridgeState = getBridgeConnectionState();
-    const bridgeHealthy = await checkBridgeHealth();
-    
-    return success({
-      healthy: bridgeHealthy,
-      bridge: {
-        connected: bridgeState.connected,
-        ready: bridgeState.bridgeReady,
-        error: bridgeState.error,
-      },
-    });
-  } catch (e) {
-    return failure(e);
-  }
-}
-
 async function handleSystemGetCapabilities(): Promise<ExtensionApiResponse> {
   try {
     const capabilities = await getRuntimeCapabilities();
@@ -429,13 +331,6 @@ async function handleSystemGetCapabilities(): Promise<ExtensionApiResponse> {
   } catch (e) {
     return failure(e);
   }
-}
-
-function handleSystemGetVersion(): ExtensionApiResponse {
-  return success({
-    version: '0.1.0',
-    extensionId: browserAPI.runtime.id,
-  });
 }
 
 // =============================================================================
@@ -566,31 +461,6 @@ async function handleSessionCreate(payload: unknown): Promise<ExtensionApiRespon
     } else {
       return failure(result.error?.message || 'Session creation failed');
     }
-  } catch (e) {
-    return failure(e);
-  }
-}
-
-/**
- * Create an implicit session (from ai.createTextSession).
- */
-async function handleSessionCreateImplicit(payload: unknown): Promise<ExtensionApiResponse> {
-  const { origin, tabId, options } = payload as {
-    origin?: string;
-    tabId?: number;
-    options?: { systemPrompt?: string; temperature?: number };
-  };
-
-  if (!origin) {
-    return failure('Missing origin');
-  }
-
-  try {
-    const session = SessionRegistry.createImplicitSession(origin, options || {}, tabId);
-    return success({
-      sessionId: session.sessionId,
-      capabilities: session.capabilities,
-    });
   } catch (e) {
     return failure(e);
   }
@@ -773,6 +643,12 @@ const PAGE_GATES: Partial<
   'llm.chat': async (p) => [await promptCheck(p.model)],
   'llm.chatStream': async (p) => [await promptCheck(p.model)],
   'mcp.listTools': () => [{ action: 'tool.list' }],
+  // A page's own model listings (window.ai.providers.*). The page API has
+  // already checked the site's model:list grant.
+  'llm.listProviders': () => [{ action: 'model.list' }],
+  'llm.getActiveProvider': () => [{ action: 'model.list' }],
+  'llm.listConfiguredModels': () => [{ action: 'model.list' }],
+  'llm.getConfiguredModelsMetadata': () => [{ action: 'model.list' }],
   'mcp.callTool': (p) => [
     {
       action: 'tool.call',
@@ -946,31 +822,19 @@ export async function routeExtensionApiMessage(
       return handleLlmListProviders();
     case 'llm.getActiveProvider':
       return handleLlmGetActiveProvider();
-    case 'llm.configureProvider':
-      return handleLlmConfigureProvider(payload);
-    case 'llm.listModels':
-      return handleLlmListModels();
     case 'llm.listConfiguredModels':
       return handleLlmListConfiguredModels();
     case 'llm.getConfiguredModelsMetadata':
       return handleLlmGetConfiguredModelsMetadata();
 
     // MCP Operations
-    case 'mcp.listServers':
-      return handleMcpListServers();
     case 'mcp.listTools':
       return handleMcpListTools(payload);
     // 'mcp.callTool' is handled above, around its budget slot.
-    case 'mcp.startServer':
-      return handleMcpStartServer(payload);
-    case 'mcp.stopServer':
-      return handleMcpStopServer(payload);
 
     // Session Operations
     case 'session.create':
       return handleSessionCreate(payload);
-    case 'session.createImplicit':
-      return handleSessionCreateImplicit(payload);
     case 'session.get':
       return handleSessionGet(payload);
     case 'session.list':
@@ -1003,12 +867,8 @@ export async function routeExtensionApiMessage(
       return handlePermissionsRequest(payload);
 
     // System
-    case 'system.health':
-      return handleSystemHealth();
     case 'system.getCapabilities':
       return handleSystemGetCapabilities();
-    case 'system.getVersion':
-      return handleSystemGetVersion();
 
     default:
       return failure(`Unknown message type: ${type}`);
