@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Bring your own agent.** The sidebar's new **Agent** panel lets sites run on an agent you already use instead of Harbor's built-in model. Presets for goose, Claude Code and Codex fill in how to start each one, finding the command through your login shell so agents installed with nvm or Homebrew work when Firefox starts from the Dock; you can also add any agent by its command. **Check** starts the agent and says whether it's ready or what's wrong. A preset sets no approval mode or environment: Harbor starts agents without your shell environment, and each preset links to its agent's settings docs for giving its tools their keys. With an agent selected, `window.ai` text sessions and `agent.run` go to it; `agent.sessions` and Harbor's own chat still use the built-in model, and the LLM Providers panel collapses with a note saying so.
+- **Bring your own agent.** The sidebar's new **Agent** panel lets sites run on an agent you already use instead of Harbor's built-in model. Presets for goose, Claude Code and Codex fill in how to start each one, finding the command through your login shell so agents installed with nvm or Homebrew work when Firefox starts from the Dock; you can also add any agent by its command. **Check** starts the agent and says whether it's ready or what's wrong. A preset sets no approval mode or environment: Harbor starts agents without your shell environment, and each preset links to its agent's settings docs for giving its tools their keys. With an agent selected, `window.ai` text sessions, `agent.run` and a site's own chat (`agent.chat.open`, as in the [Bring Your Own Chatbot](demo/web-agents/bring-your-chatbot/) demo) all go to it — a page chat gets one agent session, opened on its first message and reused for the rest. `agent.sessions` and Harbor's own chat still use the built-in model, and the LLM Providers panel collapses with a note saying so; the rest of what uses a model is meant to follow the same way, as separate work.
 - A policy action for prompts sent to your own agent, `model.prompt.agent`, so rules and the audit log see them. `Prompt(*)` covers it, and `Prompt(agent)` names it alone.
 - The bridge methods behind the Agent panel: `acp.get_agents`, `acp.save_agents` (validates each agent and writes `acp.json` atomically, mode 0600) and `acp.resolve_command`. Like the rest of `acp.*`, they're refused over HTTP and WebSocket.
 
@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - A site's `model:prompt` and `model:tools` allows are kept per backend. After you switch between the built-in model and an agent, or between agents, the site has to ask again, and the prompt names where its requests will go; switching back restores the earlier allow. A deny applies whichever backend is selected. Switching also ends the site's open text sessions on the old agent and cancels its running `agent.run`.
-- With an agent selected, the permission prompt says "Text prompts and agent runs go to <agent>, your own agent", shows prompts and tools as one row, and rates it medium risk, since the site gets an agent that can use its tools.
+- With an agent selected, the permission prompt says "Text prompts, agent runs and page chat go to <agent>, your own agent", shows prompts and tools as one row, and rates it medium risk, since the site gets an agent that can use its tools.
 - `agent.requestPermissions()` waits up to 5 minutes for an answer, up from 30 seconds. If the page stops waiting first, its answer is discarded, so a late Allow grants nothing.
 
 - The test harness for third-party apps (`spec/testing/`) mocks the multi-agent API: `agent.agents.register`, `discover`, `invoke`, `send` and their handlers, with the agent scopes and real TypeScript types, plus an example multi-agent test. Its `requestPermissions()` now grants only the scopes it names, as Harbor does, and `grantAll()` means the user allows each request rather than granting every scope up front.
@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A page chat (`agent.chat.open`) no longer stays registered after its tab closes or navigates to another document; a message for it is then refused the same as one for a chat that was never opened. A same-document change (a hash or `pushState`) no longer ends it by mistake.
+- A page can no longer close another site's chat. `agent.chat.close(chatId)` now checks that the chat belongs to the calling origin (and tab, when known) before closing it; a mismatch is refused the same as a chat id that doesn't exist. Chat ids are also no longer predictable.
+- Closing a page chat (or its tab navigating away) while its agent was still starting no longer hangs: an agent that never answers now has its start cancelled immediately, freeing the site's agent slot and settling the chat's own pending message right away, instead of waiting on an agent that may never respond.
 - The permission prompt shows each scope's title and description as text. Before, the known-scope rows were inserted as HTML, so markup in a name could render.
 - Harbor's settings messages for agents answer only Harbor's own extension pages. A content script, which carries Harbor's extension ID but a site's URL, is refused.
 

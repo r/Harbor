@@ -261,9 +261,18 @@ export function buildPromptBlocks(origin: string, text: string, systemPrompt: st
  * `_meta` carried on every `session/prompt`, so a Harbor-aware agent can
  * read it instead of (or alongside) the labelled text block above, which
  * stays for agents that don't look at `_meta`.
+ *
+ * `source` defaults to `'website'` (`agent.run`, and a `window.ai` text
+ * session). A page chat opened with `agent.chat.open` passes `'page-chat'`
+ * instead, so a Harbor-aware agent — or Harbor's own audit log — can tell
+ * the bring-your-chatbot surface apart from a page's own `window.ai`
+ * session on the same origin.
  */
-export function provenanceMeta(origin: string): { 'harbor/provenance': { source: 'website'; origin: string } } {
-  return { 'harbor/provenance': { source: 'website', origin } };
+export function provenanceMeta(
+  origin: string,
+  source: 'website' | 'page-chat' = 'website',
+): { 'harbor/provenance': { source: 'website' | 'page-chat'; origin: string } } {
+  return { 'harbor/provenance': { source, origin } };
 }
 
 /**

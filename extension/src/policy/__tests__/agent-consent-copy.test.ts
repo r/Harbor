@@ -40,23 +40,26 @@ describe('consentScopeDescription', () => {
     }
   });
 
-  it('names which calls actually go to the agent: text prompts and agent runs', () => {
+  it('names which calls actually go to the agent: text prompts, agent runs and page chat', () => {
     const info = consentScopeDescription('model:prompt', 'goose');
     expect(info.title.toLowerCase()).toContain('text prompt');
     expect(info.title.toLowerCase()).toContain('agent run');
+    expect(info.title.toLowerCase()).toContain('page chat');
   });
 
   it('names the page APIs that reach the agent, and says the rest still uses the built-in model', () => {
     const info = consentScopeDescription('model:prompt', 'goose');
     expect(info.description).toContain('window.ai');
     expect(info.description).toContain('agent.run');
+    expect(info.description.toLowerCase()).toContain('page chat');
     expect(info.description.toLowerCase()).toContain("harbor's built-in model");
   });
 
-  it('says plainly that the site gets the agent with whatever it can do, including its tools', () => {
+  it('says plainly that the site gets the agent with whatever it can do, including its tools and what it remembers about the person', () => {
     const info = consentScopeDescription('model:prompt', 'goose');
     expect(info.description.toLowerCase()).toContain('goose');
     expect(info.description.toLowerCase()).toContain('tools');
+    expect(info.description.toLowerCase()).toContain('remembers about you');
   });
 
   it('gives model:prompt and model:tools the MEDIUM risk level once an agent is selected — the higher of the two built-in tiers', () => {

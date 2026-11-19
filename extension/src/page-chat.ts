@@ -11,6 +11,7 @@
  */
 
 import { browserAPI } from './browser-compat';
+import { connectPageChatPort } from './page-chat-port';
 
 // Harbor's lighthouse mark (assets/icon.svg). The overlay lives in the host
 // page's DOM, so the badge draws it as a background image: page CSS such as
@@ -32,15 +33,25 @@ interface PageChatConfig {
   };
 }
 
-// Read configuration injected by background script
-const byocConfig: PageChatConfig = 
-  (window as unknown as { __harborPageChatConfig?: PageChatConfig }).__harborPageChatConfig || {};
+// Read configuration injected by background script. The `typeof window`
+// check (and the `typeof document` one below) aren't needed in a real
+// content script — `window`/`document` always exist there — but they let
+// this module be imported from a test with no DOM at all
+// (extension/src/handlers/__tests__/page-chat-port.test.ts), to exercise
+// `connectPageChatPort` (page-chat-port.ts) without needing the rest of
+// this file's DOM-heavy UI construction.
+const byocConfig: PageChatConfig =
+  (typeof window !== 'undefined'
+    ? (window as unknown as { __harborPageChatConfig?: PageChatConfig }).__harborPageChatConfig
+    : undefined) || {};
 
 // Check if sidebar is already injected
-if (document.getElementById('harbor-page-chat')) {
-  console.log('[Harbor Page Chat] Already injected, skipping');
-} else {
-  initPageChat();
+if (typeof document !== 'undefined') {
+  if (document.getElementById('harbor-page-chat')) {
+    console.log('[Harbor Page Chat] Already injected, skipping');
+  } else {
+    initPageChat();
+  }
 }
 
 function initPageChat() {
@@ -116,6 +127,13 @@ function initPageChat() {
   });
 
   closeBtn.addEventListener('click', () => {
+    // Tears down the DOM locally either way; in BYOC mode, also tells the
+    // background to end this chat's agent session (a no-op on the
+    // built-in backend) — there's no other signal that this chat's UI is
+    // gone short of the tab closing or navigating away.
+    if (byocConfig.chatId) {
+      browserAPI.runtime.sendMessage({ type: 'page_chat_closed', chatId: byocConfig.chatId }).catch(() => {});
+    }
     container.remove();
     styles.remove();
   });
@@ -129,6 +147,19 @@ function initPageChat() {
         styles.remove();
       }
     });
+
+    // A long-lived port, held open for as long as this document is: the
+    // background's own onDisconnect listener (page-chat-handlers.ts) is
+    // what actually ends this chat's agent session on a real navigation or
+    // reload. This fires only when the *document* goes away — unlike
+    // `tabs.onUpdated`'s `url` field, which Firefox and Chrome also report
+    // for a same-document hash or pushState change (clicking a `href="#"`
+    // link shouldn't end the chat), closing the port this way is accurate
+    // either way, the same way a window.ai session's own port already
+    // disconnects on navigation (page-api/background.ts). The close
+    // button's own `page_chat_closed` message, above, still handles the
+    // chat closing while the document stays put.
+    connectPageChatPort(byocConfig.chatId);
   }
 
   // Connect to Harbor directly (no Web Agent API required)

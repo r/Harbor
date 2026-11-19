@@ -109,6 +109,8 @@ export class AcpTextSession {
     private readonly origin: string,
     private readonly tabId: number | undefined,
     private readonly systemPrompt: string | undefined,
+    /** `'website'` for a `window.ai` text session (the default); a page chat (`handlers/page-chat-agent-sessions.ts`) passes `'page-chat'` so the provenance `_meta` on every prompt says so. */
+    private readonly provenanceSource: 'website' | 'page-chat' = 'website',
   ) {}
 
   /**
@@ -398,7 +400,7 @@ export class AcpTextSession {
 
       const result = await ctx.request(
         AGENT_METHODS.session_prompt,
-        { sessionId, prompt, _meta: provenanceMeta(this.origin) },
+        { sessionId, prompt, _meta: provenanceMeta(this.origin, this.provenanceSource) },
         { cancellationSignal: turn.requestAbort.signal, stopWaitingOnCancel: true },
       );
       turn.terminalSent = true;

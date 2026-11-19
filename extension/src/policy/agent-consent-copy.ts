@@ -2,13 +2,15 @@
  * The consent prompt's wording for `model:prompt`/`model:tools` when the
  * person has selected an ACP agent (docs/ACP_BACKEND_DESIGN.md section 4):
  * it names which calls these two scopes actually send to that agent —
- * `window.ai` text sessions and `agent.run` — and says plainly that the
- * site gets that agent with whatever it can do in the person's setup,
- * including its tools. It also says what *doesn't* go to the agent:
- * `agent.sessions` and a direct `llm.chat` still run on Harbor's own
- * model (docs/ACP_BACKEND_DESIGN.md section 2's mapping table), so the
- * wording doesn't claim more than is true. No agent selected is
- * unchanged: the built-in wording stands.
+ * `window.ai` text sessions, `agent.run` and now a page's own chat
+ * (`agent.chat.open`) — and says plainly that the site gets that agent
+ * with whatever it can do in the person's setup, including its tools and
+ * what it remembers about the person. It also says what *doesn't* go to
+ * the agent yet: `agent.sessions` and a direct `llm.chat` still run on
+ * Harbor's own model (docs/ACP_BACKEND_DESIGN.md section 2's mapping
+ * table and its "everything that uses a model" decision), so the wording
+ * doesn't claim more than is true. No agent selected is unchanged: the
+ * built-in wording stands.
  *
  * The wording never names the protocol (maintainer decision):
  * a person looking at the consent prompt doesn't need to know Harbor talks
@@ -49,8 +51,8 @@ export function consentScopeDescription(
   if (!agentName || !AGENT_COVERED_SCOPES.has(scope)) return builtin;
 
   return {
-    title: `Text prompts and agent runs go to ${agentName}, your own agent`,
-    description: `When this site uses window.ai text sessions or agent.run, ${agentName} answers, with whatever it can do in your setup, including its tools. Other features still use Harbor's built-in model.`,
+    title: `Text prompts, agent runs and page chat go to ${agentName}, your own agent`,
+    description: `When this site uses window.ai text sessions, agent.run or page chat, ${agentName} answers, with whatever it can do in your setup, including its tools and what it remembers about you. Other features still use Harbor's built-in model.`,
     risk: AGENT_COVERED_RISK,
   };
 }
