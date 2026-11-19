@@ -230,29 +230,47 @@ fn workspace_hash(workspace: &str) -> String {
         .collect()
 }
 
-/// Derives, creates (recursively, mode 0700 on unix) and canonicalizes the
-/// working directory for `workspace`: `<harbor_dir>/acp/workspaces/<hash>`.
-/// Left alone if it already exists - the same site gets the same directory,
-/// and whatever its agent wrote there, across runs and bridge restarts.
+/// Derives, creates and canonicalizes the working directory for
+/// `workspace`: `<harbor_dir>/acp/workspaces/<hash>`. `acp/`,
+/// `acp/workspaces/` and the leaf directory are each created mode `0700` on
+/// unix (not just the leaf), so another local user can't list site hashes
+/// by reading an intermediate directory; `harbor_dir` itself is left alone,
+/// since other code (`oauth::storage`) owns its mode. The leaf directory is
+/// left alone if it already exists - the same site gets the same
+/// directory, and whatever its agent wrote there, across runs and bridge
+/// restarts.
 fn workspace_dir_under(harbor_dir: &Path, workspace: &str) -> io::Result<PathBuf> {
     let mut dir = harbor_dir.to_path_buf();
     for part in WORKSPACES_SUBDIRS {
         dir.push(part);
+        create_dir_0700(&dir)?;
     }
     dir.push(workspace_hash(workspace));
-
-    std::fs::create_dir_all(&dir)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
-    }
+    create_dir_0700(&dir)?;
     dir.canonicalize()
 }
 
-/// `workspace_dir_under`, rooted at the real Harbor data directory.
+/// Creates `dir` (recursively, via `create_dir_all`) if it doesn't exist,
+/// then sets it to mode `0700` on unix whether it was just created or
+/// already existed - so re-running this on an already-existing directory
+/// still tightens a mode that predates this check.
+fn create_dir_0700(dir: &Path) -> io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+/// `workspace_dir_under`, rooted at the real Harbor data directory. Errors
+/// (as a fatal stream event, not a silent fallback to the bridge's current
+/// directory) if there's no home directory to find it under.
 fn workspace_dir(workspace: &str) -> io::Result<PathBuf> {
-    workspace_dir_under(&crate::paths::harbor_dir(), workspace)
+    let harbor_dir = crate::paths::harbor_dir()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no home directory"))?;
+    workspace_dir_under(&harbor_dir, workspace)
 }
 
 // =============================================================================

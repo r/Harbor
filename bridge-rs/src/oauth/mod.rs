@@ -107,9 +107,15 @@ lazy_static::lazy_static! {
         Arc::new(RwLock::new(None));
 }
 
-/// Get the path to the credentials file.
+/// Get the path to the credentials file. Falls back to `./.harbor` if the
+/// home directory can't be found - unchanged from before `credentials_file_path`
+/// was pointed at the shared `paths::harbor_dir` helper, and deliberately
+/// kept that way here rather than treating a missing home directory as
+/// fatal (unlike `oauth::storage::TokenStore` and `acp::workspace_dir`).
 fn credentials_file_path() -> std::path::PathBuf {
-    crate::paths::harbor_dir().join("oauth_credentials.json")
+    crate::paths::harbor_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from(".").join(".harbor"))
+        .join("oauth_credentials.json")
 }
 
 /// Load credentials from the credentials file.
