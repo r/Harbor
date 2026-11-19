@@ -644,8 +644,14 @@ export function rpcStreamRequest(
 
   return {
     cancel: () => {
-      pendingStreams.delete(id);
-      // Note: we don't have a way to cancel the stream on the bridge side yet
+      const running = pendingStreams.delete(id);
+      // Stop a chat stream that's still running in the bridge too, so the
+      // model stops generating rather than finishing a response nobody will
+      // read. An older bridge without llm.cancel_stream answers with an
+      // error, which is ignored.
+      if (running && method === 'llm.chat_stream') {
+        rpcRequest('llm.cancel_stream', { id }).catch(() => {});
+      }
     },
     done,
   };
