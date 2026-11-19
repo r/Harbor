@@ -1040,7 +1040,7 @@ agent.run(options: AgentRunOptions): AsyncIterable<RunEvent>
 | `provider` | `string` | — | LLM provider to use (e.g., `'ollama'`, `'openai'`) |
 | `useAllTools` | `boolean` | `false` | Disable tool router, use all tools |
 | `requireCitations` | `boolean` | `false` | Include source citations |
-| `maxToolCalls` | `number` | `5` | Maximum tool invocations |
+| `maxToolCalls` | `number` | `5` | Maximum tool invocations for the whole run, including several in one model turn. A turn whose tool calls are denied also counts as one. |
 | `signal` | `AbortSignal` | — | Cancellation signal |
 
 **Permission Required:** `model:tools` (plus `mcp:tools.list` and `mcp:tools.call` for tool access)
@@ -1161,6 +1161,7 @@ enum ApiErrorCode {
   "ERR_MODEL_FAILED",
   "ERR_NOT_IMPLEMENTED",
   "ERR_SESSION_NOT_FOUND",
+  "ERR_BUDGET_EXCEEDED",
   "ERR_TIMEOUT",
   "ERR_INTERNAL"
 };
@@ -2006,6 +2007,7 @@ const caps = await window.agent.capabilities();
 | `ERR_MODEL_FAILED` | LLM request failed | Backend unavailable |
 | `ERR_NOT_IMPLEMENTED` | Feature not available | `web:fetch` in v1 |
 | `ERR_SESSION_NOT_FOUND` | Session was destroyed | Operation on destroyed session |
+| `ERR_BUDGET_EXCEEDED` | Session tool budget spent | `session.callTool()` past `maxToolCalls` |
 | `ERR_TIMEOUT` | Request timed out | Slow backend response |
 | `ERR_INTERNAL` | Internal error | Unexpected failure |
 
