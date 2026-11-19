@@ -203,12 +203,12 @@ If you want to ship an agent browser today, do 2a as the demo, and lobby for Pha
 
 ## Pattern 3 — A site-specific assistant (BYOC, ships today)
 
-This one is *complete*. See `demo/web-agents/bring-your-chatbot/` for the working example.
+See `demo/web-agents/bring-your-chatbot/` for the working example. Messages sent from the chat are the page's prompts, so the site needs `model:prompt` as well as `chat:open`. Harbor's chat doesn't call the `tools` listed here yet; replies come from the model alone.
 
 ```javascript
 // On shop.example
 await window.agent.requestPermissions({
-  scopes: ['mcp:servers.register', 'chat:open'],
+  scopes: ['mcp:servers.register', 'chat:open', 'model:prompt'],
   reason: 'Connect our shop tools to your assistant'
 });
 

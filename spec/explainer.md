@@ -2311,6 +2311,8 @@ Websites can declare MCP server availability via HTML `<link>` elements:
 | `agent.chat.open(options)` | Open browser chat UI with config |
 | `agent.chat.close(chatId?)` | Close the chat UI |
 
+The chat belongs to the implementer, not the page: Harbor shows a chat panel on the page, and a native host could use its own chat surface. Messages sent from it are still the page's prompts, because the page set the system prompt and tools. They're checked under the page's origin and need `model:prompt`.
+
 ### Example
 
 ```javascript
