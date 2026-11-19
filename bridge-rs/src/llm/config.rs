@@ -537,6 +537,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn local_models_include_every_local_provider_type() {
+        let cfg = LlmConfig::default();
+        for model in ["ollama:llama3", "llamafile:mistral", "lmstudio:qwen", "apple:system"] {
+            assert!(cfg.is_local_model(model), "{model} should be local");
+        }
+        for model in ["openai:gpt-4o", "anthropic:claude", "unknown:x", "no-prefix", ""] {
+            assert!(!cfg.is_local_model(model), "{model} should not be local");
+        }
+    }
+
+    #[test]
+    fn a_named_instance_is_local_by_its_provider_type() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_instance(ProviderInstance::with_id("my-ollama", "ollama", "Home Ollama"));
+        cfg.add_instance(ProviderInstance::with_id("work-openai", "openai", "Work"));
+        assert!(cfg.is_local_model("my-ollama:llama3"));
+        assert!(!cfg.is_local_model("work-openai:gpt-4o"));
+    }
+
+    #[test]
     fn default_config_serializes_current_version() {
         let json = serde_json::to_value(LlmConfig::default()).unwrap();
         assert_eq!(json["version"], 2);
