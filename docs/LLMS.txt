@@ -73,14 +73,13 @@ All APIs require permission. There are two paths — pick one per session:
 
 ### Recommended — `agent.requestCapabilities()` (typed actions)
 
-Mints a session bound to a capability token. Scoped to `plan` /
-`execute` / `watch`. Plays nicely with budgets and the activity feed.
+Creates a session for the actions you ask for. Model and tool access need the origin grant first (requestPermissions); it fails without one.
+Plays nicely with budgets and the activity feed.
 
 ```javascript
 const session = await window.agent.requestCapabilities({
   name: 'Article assistant',
   reason: 'Read the page and propose follow-ups.',
-  mode: 'plan',
   require: [
     { action: 'model.prompt.local' },
     { action: 'browser.read.activeTab' },
@@ -89,8 +88,8 @@ const session = await window.agent.requestCapabilities({
   budget: { maxToolCalls: 30, ttlMinutes: 15 },
 });
 
-// Narrow into Watch when the user clicks "Run":
-await window.agent.upgradeSession(session.id, { mode: 'watch' });
+// Need more later? Ask with requestPermissions() (that shows the
+// prompt), then call requestCapabilities() again for a new session.
 ```
 
 ### Legacy — `agent.requestPermissions()` (origin-level scopes)

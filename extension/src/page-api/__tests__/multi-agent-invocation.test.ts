@@ -45,7 +45,6 @@ vi.mock('../../sessions', () => ({
     getValidatedSession: vi.fn(),
     listSessions: vi.fn(() => []),
     terminateSession: vi.fn(),
-    setMode: vi.fn(),
     recordPrompt: vi.fn(),
     recordToolCall: vi.fn(),
     recordBrowserAccess: vi.fn(),

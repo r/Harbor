@@ -157,17 +157,17 @@ const availability = await window.ai.canCreateTextSession();
 
 > **Canonical reference:** [`docs/PERMISSIONS.md`](./PERMISSIONS.md). The
 > short version below is the surface a page author needs; the deeper
-> design (typed actions, capability tokens, the 9-tier policy ladder,
+> design (typed actions, the policy ladder,
 > information-flow labels, watchdog containment, the audit log, the
 > decision simulator) lives in that document.
 
 All API calls go through a single chokepoint — the **PolicyEngine** —
-which evaluates each call against a 9-tier ladder of checks. The
-ladder produces one of five effects: `allow`, `ask`, `preview`,
-`attenuate`, or `deny`. Page authors usually do not see the ladder
+which evaluates each call against a tiered ladder of checks. The
+ladder produces one of four effects: `allow`, `ask`, `preview`,
+or `deny`. Page authors usually do not see the ladder
 directly; they request capabilities up front, then call APIs.
 
-The model has four properties page authors should know:
+The model has three properties page authors should know:
 
 1. **Origin-scoped.** `example.com`'s grants do not transfer to
    `other.com`. Tool allowlists are per-origin too.
@@ -177,30 +177,29 @@ The model has four properties page authors should know:
    `network.egress.cross_origin`, etc.). Policy rules are expressed
    in the same vocabulary, so what gets logged and what gets prompted
    line up exactly.
-3. **Sessions are bound to a capability token.** When a page calls
-   `agent.requestCapabilities()` (the recommended entry point), the
-   extension mints an unforgeable token that carries the session's
-   `allowedActions`, `acceptedLabels`, budgets, TTL, and **mode**
-   (`plan` / `execute` / `watch`). Subagent delegations re-attenuate
-   the parent token; authority can shrink, never grow.
-4. **Auditable.** Every decision, including silent allows, is recorded
-   and surfaced in the sidebar's Activity feed with a "Why?" trace
-   and a "What if?" simulator.
+3. **Auditable.** Every decision, including silent allows, is recorded
+   and surfaced in the sidebar's Activity feed with a "Why?" trace.
+
+When a page calls `agent.requestCapabilities()` (the recommended
+entry point), the session that comes back lists the capabilities it
+was given. Harbor's background checks the origin's grants against the
+policy engine on every call, and refuses prompts on a session that
+didn't ask for model access. The session's tool list and browser
+access are kept only by Harbor's page script, so the origin's grants
+are the real boundary.
 
 The legacy `agent.requestPermissions()` and `PermissionScope` surface
 documented further below remains a working path for simple
 origin-level grants; it is implemented by mapping each scope to its
 typed action(s) on the way in. New code should prefer
-`agent.requestCapabilities()` and `agent.upgradeSession()` because
-those map directly to the engine's vocabulary and play nicely with
-mode and budgets.
+`agent.requestCapabilities()` because it maps directly to the
+engine's vocabulary and plays nicely with budgets.
 
 ```javascript
 // Recommended: request typed actions up front.
 const session = await agent.requestCapabilities({
   name: 'Article assistant',
   reason: 'Read the page and propose follow-ups.',
-  mode: 'plan',
   require: [
     { action: 'model.prompt.local' },
     { action: 'browser.read.activeTab' },
@@ -208,8 +207,17 @@ const session = await agent.requestCapabilities({
   budget: { maxToolCalls: 30, ttlMinutes: 15 },
 });
 
-// Later, narrow into Execute (only on user-driven write):
-await agent.upgradeSession(session.id, { mode: 'execute' });
+// Later, when the user takes an action that needs more, ask for the
+// grant (this shows the prompt), then request a new session:
+await agent.requestPermissions({
+  scopes: ['browser:activeTab.interact'],
+  reason: 'Apply the change you approved.',
+});
+const writeSession = await agent.requestCapabilities({
+  name: 'Apply edit',
+  reason: 'Apply the change you approved.',
+  require: [{ action: 'browser.write.interact' }],
+});
 ```
 
 ---

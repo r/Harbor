@@ -24,7 +24,6 @@ const githubInput: RuleMatchInput = {
     host: 'api.github.com',
   },
   context: {
-    mode: 'execute',
     destinationLocality: 'cross_origin',
     reversible: false,
     trustedManifest: true,
@@ -143,20 +142,6 @@ describe('Rule matching', () => {
     ).toBe(true);
   });
 
-  it('matches when context.mode aligns', () => {
-    const rule = compile({
-      id: 'plan-only',
-      effect: 'deny',
-      principal: { origin: '*' },
-      action: 'tool.call',
-      context: { mode: 'plan' },
-    });
-    expect(ruleMatches(rule, githubInput)).toBe(false);
-    expect(
-      ruleMatches(rule, { ...githubInput, context: { ...githubInput.context, mode: 'plan' } }),
-    ).toBe(true);
-  });
-
   it('rejects when toolTags do not overlap', () => {
     const rule = compile({
       id: 'r1',
@@ -230,6 +215,22 @@ describe('Rule matching', () => {
         action: 'browser.write.interact',
       }),
     ).toBe(true);
+  });
+
+  it('a stored rule scoped to a removed session mode keeps its old reach', () => {
+    // Every request used to run as 'execute'. A rule scoped to 'plan' or
+    // 'watch' never matched one, and must not start matching everything.
+    const legacy = (mode: string) =>
+      compile({
+        id: `legacy-${mode}`,
+        effect: 'allow',
+        principal: { origin: '*' },
+        action: 'tool.call',
+        context: { mode } as unknown as Rule['context'],
+      });
+    expect(ruleMatches(legacy('plan'), githubInput)).toBe(false);
+    expect(ruleMatches(legacy('watch'), githubInput)).toBe(false);
+    expect(ruleMatches(legacy('execute'), githubInput)).toBe(true);
   });
 });
 

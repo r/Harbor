@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { requireAction } from '../helpers';
 import { Policy } from '../../../policy/store';
-import { Tokens } from '../../../policy/tokens';
 import { setOriginGrantResolver, setWatchdogResolver } from '../../../policy/engine';
 import { compileRule, type Rule } from '../../../policy/rules';
 import type { RequestContext, ResponseSender } from '../router-types';
@@ -11,7 +10,6 @@ import { resetMockBrowser } from '../../../__tests__/test-setup';
 beforeEach(() => {
   resetMockBrowser();
   Policy.__reset();
-  Tokens.__reset();
   setOriginGrantResolver(() => null);
   setWatchdogResolver(() => ({ status: 'normal' }));
 });
@@ -88,21 +86,6 @@ describe('requireAction', () => {
     expect(result).toBe(false);
     const response = calls[0] as { error: { code: string } };
     expect(response.error.code).toBe('ERR_LABEL_FLOW_BLOCKED');
-  });
-
-  it('passes the token id and rejects bad tokens', async () => {
-    const t = Tokens.mint({
-      sessionId: 's',
-      origin: 'https://example.com',
-      mode: 'plan',
-      allowedActions: ['model.prompt.local'],
-      acceptedLabels: [],
-    });
-    const { sender: s, calls } = sender();
-    const result = await requireAction(ctx(), s, 'tool.list', { tokenId: t.id });
-    expect(result).toBe(false);
-    const response = calls[0] as { error: { code: string } };
-    expect(response.error.code).toBe('ERR_TOKEN_NOT_FOR_ORIGIN');
   });
 
   it('quarantine response uses ERR_QUARANTINED', async () => {

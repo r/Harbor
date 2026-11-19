@@ -3,7 +3,7 @@
  *
  * The single entry point handlers use is `requireAction(ctx, sender,
  * action, options)`, which routes through the PolicyEngine. The engine
- * walks the 9-tier ladder and returns a decision; on `ask` or `preview`
+ * walks the tier ladder and returns a decision; on `ask` or `preview`
  * we surface the existing prompt UI; on `allow` the handler proceeds; on
  * `deny` the handler emits a structured error response.
  */
@@ -13,7 +13,6 @@ import type { RequestContext, ResponseSender } from './router-types';
 import { evaluate, type PolicyResource, type PolicyDecision } from '../../policy/engine';
 import type { TypedAction } from '../../policy/actions';
 import type { LabelSet } from '../../policy/labels';
-import type { SessionMode } from '../../policy/tokens';
 import { showPermissionPrompt } from '../../policy/permissions';
 import { grantPermissions } from '../../policy/permissions';
 import { Audit } from '../../policy/audit';
@@ -35,10 +34,6 @@ export interface RequireActionOptions {
   resource?: PolicyResource;
   /** Labels carried on the input (from prior reads). */
   inputLabels?: LabelSet;
-  /** Capability token id, if the handler is operating inside a session. */
-  tokenId?: string;
-  /** Session mode override. Defaults to 'execute'. */
-  mode?: SessionMode;
   /**
    * If the engine returns `ask` or `preview`, fall back to the legacy
    * prompt with this scope. When omitted, we derive a default from the
@@ -55,7 +50,7 @@ export interface RequireActionOptions {
    * or the Tier 9 default), proceed without a Harbor prompt and record the
    * upstream consent in the audit log. `deny` is still enforced, and so are
    * the asks that consent can't stand in for: a watchdog restriction and a
-   * policy rule that says ask, preview or attenuate. Those prompt as usual.
+   * policy rule that says ask or preview. Those prompt as usual.
    *
    * Used for page calls, which the page API gates against Harbor's own
    * origin-grant store (`permissions.check`) before this second,
@@ -84,8 +79,6 @@ export async function requireAction(
     action,
     resource: options.resource,
     inputLabels: options.inputLabels,
-    tokenId: options.tokenId,
-    mode: options.mode,
     reason: options.reason,
     correlationId: ctx.id,
     tabId: ctx.tabId,
@@ -114,7 +107,7 @@ export async function requireAction(
 
   if (proceedsOnUpstreamConsent) return true;
 
-  // ask | preview | attenuate — surface the prompt via the existing flow.
+  // ask | preview — surface the prompt via the existing flow.
   // We use the typed action's primary legacy scope unless the caller
   // overrides via options.promptAsScope.
   const scopeForPrompt = options.promptAsScope ?? primaryLegacyScope(action);

@@ -186,7 +186,7 @@ class AuditLog {
     return out;
   }
 
-  /** Look up a record by id (for the simulator's "What if?"). */
+  /** Look up a record by id (for the simulator's replay). */
   get(id: string): AuditRecord | undefined {
     return this.buffer.find((r) => r.id === id);
   }

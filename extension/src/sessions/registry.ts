@@ -24,9 +24,6 @@ import type {
 } from './types';
 import { getDefaultImplicitCapabilities, buildCapabilitiesFromRequest } from './types';
 import type { ConversationMessage } from '../agents/types';
-import { Tokens, type SessionMode, type CapabilityToken, TokenError } from '../policy/tokens';
-import type { TypedAction } from '../policy/actions';
-import type { DataLabel } from '../policy/labels';
 
 // =============================================================================
 // Session Registry
@@ -61,18 +58,6 @@ class SessionRegistryImpl {
     const now = Date.now();
 
     const capabilities = getDefaultImplicitCapabilities();
-    // Implicit sessions only get the local-prompt action — they're created
-    // by ai.createTextSession and the user hasn't been prompted for
-    // anything else. The token's mode is `execute` because there's no
-    // explicit plan/execute distinction at the implicit level.
-    const token = Tokens.mint({
-      sessionId,
-      origin,
-      mode: 'execute',
-      allowedActions: capabilitiesToActions(capabilities, /*toolsAllowList=*/ []),
-      acceptedLabels: ['confidential'],
-      ttlMs: 60 * 60 * 1000,
-    });
 
     const session: AgentSession = {
       sessionId,
@@ -89,14 +74,12 @@ class SessionRegistryImpl {
         promptCount: 0,
         toolCallCount: 0,
       },
-      mode: 'execute',
-      tokenId: token.id,
     };
 
     this.sessions.set(sessionId, session);
     this.emit({ type: 'session_created', session: this.toSummary(session) });
 
-    console.log('[SessionRegistry] Created implicit session:', sessionId, 'for', origin, 'token:', token.id);
+    console.log('[SessionRegistry] Created implicit session:', sessionId, 'for', origin);
     return session;
   }
 
@@ -126,24 +109,6 @@ class SessionRegistryImpl {
       };
     }
 
-    // Explicit sessions get a capability token sized to the request.
-    const mode: SessionMode = request.mode ?? 'execute';
-    const ttlMs = capabilities.limits?.expiresAt
-      ? Math.max(0, capabilities.limits.expiresAt - now)
-      : 30 * 60 * 1000;
-    const token = Tokens.mint({
-      sessionId,
-      origin,
-      mode,
-      allowedActions: capabilitiesToActions(capabilities, capabilities.tools.allowedTools),
-      acceptedLabels: defaultAcceptedLabelsForMode(mode),
-      budgets: {
-        toolCalls: capabilities.limits?.maxToolCalls,
-        wallClockMs: ttlMs,
-      },
-      ttlMs,
-    });
-
     const session: AgentSession = {
       sessionId,
       type: 'explicit',
@@ -161,8 +126,6 @@ class SessionRegistryImpl {
         promptCount: 0,
         toolCallCount: 0,
       },
-      mode,
-      tokenId: token.id,
     };
 
     this.sessions.set(sessionId, session);
@@ -171,7 +134,6 @@ class SessionRegistryImpl {
     console.log('[SessionRegistry] Created explicit session:', sessionId, 'for', origin, {
       name: request.name,
       capabilities,
-      tokenId: token.id,
     });
 
     return {
@@ -179,73 +141,6 @@ class SessionRegistryImpl {
       sessionId,
       capabilities,
     };
-  }
-
-  /**
-   * Change the mode of an existing session. Re-mints the capability token
-   * with the new mode (cannot widen — see Tokens.attenuate's mode lattice).
-   * Used by `agent.upgradeSession`.
-   */
-  setMode(sessionId: string, origin: string, mode: SessionMode): boolean {
-    const session = this.getValidatedSession(sessionId, origin);
-    if (session.mode === mode) return true;
-    if (!session.tokenId) {
-      session.mode = mode;
-      return true;
-    }
-    try {
-      // Re-attenuate the token. The mode lattice will reject widenings.
-      const child = Tokens.attenuate(session.tokenId, { sessionId, mode });
-      session.mode = mode;
-      session.tokenId = child.id;
-      return true;
-    } catch (err) {
-      if (err instanceof TokenError) {
-        console.warn('[SessionRegistry] setMode rejected:', err.message);
-        return false;
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Mint a child capability token for a subagent the session is about to
-   * delegate to. Always strictly attenuated from the parent. Used by the
-   * multi-agent invoke path.
-   */
-  attenuateForSubagent(
-    parentSessionId: string,
-    origin: string,
-    childSessionId: string,
-    restrictions: {
-      allowedActions?: TypedAction[];
-      acceptedLabels?: DataLabel[];
-      mode?: SessionMode;
-      ttlMs?: number;
-      maxToolCalls?: number;
-    } = {},
-  ): CapabilityToken | null {
-    const parent = this.getValidatedSession(parentSessionId, origin);
-    if (!parent.tokenId) return null;
-    try {
-      return Tokens.attenuate(parent.tokenId, {
-        sessionId: childSessionId,
-        allowedActions: restrictions.allowedActions,
-        acceptedLabels: restrictions.acceptedLabels,
-        mode: restrictions.mode,
-        ttlMs: restrictions.ttlMs,
-        budgets: {
-          toolCalls: restrictions.maxToolCalls,
-          wallClockMs: restrictions.ttlMs,
-        },
-      });
-    } catch (err) {
-      if (err instanceof TokenError) {
-        console.warn('[SessionRegistry] attenuateForSubagent rejected:', err.message);
-        return null;
-      }
-      throw err;
-    }
   }
 
   // ===========================================================================
@@ -432,9 +327,6 @@ class SessionRegistryImpl {
     }
 
     session.status = 'terminated';
-    if (session.tokenId) {
-      Tokens.revoke(session.tokenId, 'session_terminated');
-    }
     this.emit({ type: 'session_terminated', sessionId, origin });
 
     console.log('[SessionRegistry] Terminated session:', sessionId);
@@ -450,9 +342,6 @@ class SessionRegistryImpl {
       return false;
     }
 
-    if (session.tokenId) {
-      Tokens.revoke(session.tokenId, 'session_destroyed');
-    }
     this.sessions.delete(sessionId);
     this.emit({ type: 'session_terminated', sessionId, origin });
 
@@ -622,10 +511,6 @@ class SessionRegistryImpl {
     }
 
     for (const sessionId of sessionsToRemove) {
-      const session = this.sessions.get(sessionId);
-      if (session?.tokenId) {
-        Tokens.revoke(session.tokenId, 'session_cleanup');
-      }
       this.sessions.delete(sessionId);
     }
 
@@ -644,8 +529,6 @@ class SessionRegistryImpl {
       type: session.type,
       origin: session.origin,
       status: session.status,
-      mode: session.mode,
-      tokenId: session.tokenId,
       name: session.name,
       createdAt: session.createdAt,
       lastActiveAt: session.lastActiveAt,
@@ -687,74 +570,6 @@ class SessionRegistryImpl {
     }
 
     return stats;
-  }
-}
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-/**
- * Translate a SessionCapabilities object into the set of typed actions the
- * capability token should authorize. Keeps the legacy capability shape as
- * the source of truth for what the user agreed to; the engine's allowedActions
- * just mirror that decision in the typed-action vocabulary.
- */
-function capabilitiesToActions(
-  capabilities: SessionCapabilities,
-  allowedToolsList: string[],
-): TypedAction[] {
-  const actions: TypedAction[] = [];
-
-  if (capabilities.llm.allowed) {
-    // Local prompts are always available. Remote first-party (the user's
-    // configured provider) is added when the session asks for LLM at all,
-    // since we don't know at session-creation time whether the chosen model
-    // is local or remote. Third-party remote is never auto-granted; that
-    // requires an explicit page-driven provider choice the engine gates
-    // separately.
-    actions.push('model.prompt.local');
-    actions.push('model.prompt.remote.firstParty');
-    actions.push('model.list');
-  }
-
-  if (capabilities.tools.allowed && allowedToolsList.length > 0) {
-    actions.push('tool.list', 'tool.call');
-  }
-
-  if (capabilities.browser.readActiveTab) {
-    actions.push('browser.read.activeTab', 'browser.read.element', 'browser.read.tabs');
-  }
-  if (capabilities.browser.interact) {
-    actions.push('browser.write.interact');
-  }
-  if (capabilities.browser.screenshot) {
-    actions.push('browser.read.screenshot');
-  }
-
-  // Same-origin egress is implicit for any session — it's how we fetch
-  // from the page's own backend. Cross-origin is gated separately by
-  // policy and never auto-granted by session creation.
-  actions.push('network.egress.same_origin');
-
-  return actions;
-}
-
-/**
- * Default accepted label set for a session of the given mode. Plan and
- * watch sessions never accept sensitive labels at the egress boundary; only
- * execute sessions can carry credentials/payments/identity into outgoing
- * requests, and even then only with explicit user consent.
- */
-function defaultAcceptedLabelsForMode(mode: SessionMode): DataLabel[] {
-  switch (mode) {
-    case 'plan':
-    case 'watch':
-      return ['confidential'];
-    case 'execute':
-      return ['confidential', 'identity'];
-    default:
-      return ['confidential'];
   }
 }
 
