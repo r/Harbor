@@ -195,7 +195,7 @@ describe('discovery and getInfo show only sites the page may call', () => {
 
 describe('messages: the target site needs its own grant', () => {
   it('asks before messaging an agent on another site, naming that site', async () => {
-    const response = await call(handleAgentsSend, 'agents.send', { to: onB, payload: 'hi' });
+    const response = await call(handleAgentsSend, 'agents.send', { agentId: onB, payload: 'hi' });
 
     expect(response.ok).toBe(true);
     expect(prompts).toEqual([{ origin: A, scopes: ['agents:crossOrigin'], agentOrigins: [B] }]);
@@ -203,9 +203,9 @@ describe('messages: the target site needs its own grant', () => {
   });
 
   it('refuses a message to a site that was not allowed', async () => {
-    await call(handleAgentsSend, 'agents.send', { to: onB, payload: 'hi' });
+    await call(handleAgentsSend, 'agents.send', { agentId: onB, payload: 'hi' });
     promptAnswer = () => false;
-    const response = await call(handleAgentsSend, 'agents.send', { to: onC, payload: 'hi' });
+    const response = await call(handleAgentsSend, 'agents.send', { agentId: onC, payload: 'hi' });
 
     expect(response.ok).toBe(false);
     expect(delivered).toEqual([`message:${onB}`]);

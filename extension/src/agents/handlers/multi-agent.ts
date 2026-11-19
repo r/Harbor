@@ -321,11 +321,11 @@ export async function handleAgentsSend(
     return;
   }
 
-  const payload = ctx.payload as { to: string; payload: unknown };
+  const payload = ctx.payload as { agentId: string; payload: unknown };
 
   // A message to another site's agent needs a grant for that site, as an
   // invoke does.
-  const recipient = getAgent(payload.to);
+  const recipient = getAgent(payload.agentId);
   if (recipient && recipient.origin !== ctx.origin) {
     if (!(await requireAction(ctx, sender, 'agent.delegate.crossOrigin', {
       promptAsScope: 'agents:crossOrigin',
@@ -349,7 +349,7 @@ export async function handleAgentsSend(
     return;
   }
 
-  const result = await sendAgentMessage(fromAgentId, payload.to, payload.payload);
+  const result = await sendAgentMessage(fromAgentId, payload.agentId, payload.payload);
 
   sender.sendResponse({ id: ctx.id, ok: true, result });
 }
