@@ -253,7 +253,7 @@ export type SessionEvent =
   | { type: 'session_created'; session: SessionSummary }
   | { type: 'session_updated'; session: SessionSummary }
   | { type: 'session_terminated'; sessionId: string; origin: string }
-  | { type: 'session_capability_used'; sessionId: string; capability: 'llm' | 'tool' | 'browser'; detail?: string };
+  | { type: 'session_capability_used'; sessionId: string; capability: 'llm' | 'tool'; detail?: string };
 
 /**
  * Listener for session events.

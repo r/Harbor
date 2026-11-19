@@ -613,48 +613,39 @@ async function handleSessionTerminate(payload: unknown): Promise<ExtensionApiRes
 }
 
 /**
- * Record usage for a session: a prompt or a browser access. Tool calls are
+ * Record a prompt and its reply in a session's history. Tool calls are
  * counted by `mcp.callTool`, after its policy gate.
  */
 async function handleSessionRecordUsage(payload: unknown): Promise<ExtensionApiResponse> {
   const { sessionId, origin, type, detail } = payload as {
     sessionId?: string;
     origin?: string;
-    type?: 'prompt' | 'browser';
+    type?: string;
     detail?: unknown;
   };
 
   if (!sessionId || !origin || !type) {
     return failure('Missing sessionId, origin or type');
   }
+  if (type !== 'prompt') {
+    return failure(`Unknown usage type: ${type}`);
+  }
 
   try {
     // Only the owning origin may record against a live session.
     SessionRegistry.getValidatedSession(sessionId, origin);
 
-    switch (type) {
-      case 'prompt': {
-        const { userMessage, assistantMessage } = detail as {
-          userMessage?: string;
-          assistantMessage?: string;
-        };
-        if (userMessage && assistantMessage) {
-          SessionRegistry.recordPrompt(sessionId, userMessage, assistantMessage);
-        }
-        break;
-      }
-      case 'browser': {
-        const { action } = detail as { action?: 'read' | 'interact' | 'screenshot' };
-        if (action) {
-          SessionRegistry.recordBrowserAccess(sessionId, action);
-        }
-        break;
-      }
+    const { userMessage, assistantMessage } = (detail || {}) as {
+      userMessage?: string;
+      assistantMessage?: string;
+    };
+    if (userMessage && assistantMessage) {
+      SessionRegistry.recordPrompt(sessionId, userMessage, assistantMessage);
     }
-    
+
     // Touch the session to update lastActiveAt
     SessionRegistry.touchSession(sessionId);
-    
+
     return success({ recorded: true });
   } catch (e) {
     return failure(e);

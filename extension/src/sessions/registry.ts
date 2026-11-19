@@ -278,23 +278,6 @@ class SessionRegistryImpl {
   }
 
   /**
-   * Record browser API usage in the session.
-   */
-  recordBrowserAccess(sessionId: string, action: 'read' | 'interact' | 'screenshot'): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-
-    session.lastActiveAt = Date.now();
-
-    this.emit({
-      type: 'session_capability_used',
-      sessionId,
-      capability: 'browser',
-      detail: action,
-    });
-  }
-
-  /**
    * Add a message to session history.
    */
   addToHistory(sessionId: string, message: ConversationMessage): void {
