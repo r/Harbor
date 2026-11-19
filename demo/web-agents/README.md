@@ -13,7 +13,7 @@ Basic Web Agent API demos for LLM and MCP server access.
 | **Email Chat** | Chat with your Gmail inbox using MCP tools | `email-chat/` |
 | **Time Agent** | Simple MCP time tool demo | `time-agent/` |
 | **Page Chat Bookmarklet** | Drag-and-drop bookmarklet for chatting about any page | `bookmarklet/` |
-| **Bring Your Own Chatbot** | BYOC integration using `<link rel="mcp-server">` | `bring-your-chatbot/` |
+| **Bring Your Own Chatbot** | A shop page that opens your agent's chat with one `agent.chat.open()` call: no chat UI of its own | `bring-your-chatbot/` |
 
 ## APIs Covered
 

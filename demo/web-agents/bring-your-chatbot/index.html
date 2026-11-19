@@ -4,34 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bring Your Own Chatbot — Web Agent API</title>
-  
-  <!-- 
+
+  <!--
     Declarative MCP Server Discovery
-    
-    This <link> element allows browsers to discover that this site
-    offers MCP servers for the user's chatbot. The browser can show
-    an indicator (like the RSS icon) that the user can click to connect.
-    
-    The Web Agent API exposes this via agent.mcp.discover().
-  -->
-  <!-- 
-    Real MCP Server Discovery
-    
-    The href points to our actual MCP server running at http://localhost:3001
-    This server provides shopping tools via Server-Sent Events (SSE) transport.
-    
+
+    This <link> element lets Harbor (or another implementer of the Web Agent
+    API) discover that this site advertises an MCP server. Harbor's chat
+    doesn't call these tools yet, so they don't affect what the chat below
+    can do — this is just the declaration.
+
     To start the MCP server:
-    $ cd demo/bring-your-chatbot/mcp-server && node http-server.js
+    $ cd demo/web-agents/bring-your-chatbot/mcp-server && node http-server.js
   -->
-  <link 
-    rel="mcp-server" 
+  <link
+    rel="mcp-server"
     href="http://localhost:3001/mcp"
     title="Your AI Assistant - Connected to Acme Shop"
     data-description="Search products, manage cart, track orders"
     data-tools="search_products,get_product_details,add_to_cart,get_cart"
     data-transport="sse"
   >
-  
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -205,7 +198,7 @@
     /* ============================================
        BYOC Demo UI - Amazon-style cards
        ============================================ */
-    
+
     /* Demo banner */
     .demo-banner {
       background: var(--shop-surface);
@@ -305,385 +298,24 @@
       display: none;
     }
 
-    /* Permission modal overlay */
-    .permission-modal-overlay {
+    /* Inline chat error (shown instead of an alert() when chat.open rejects) */
+    .chat-error-banner {
       position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 200;
-      animation: fadeIn 0.15s ease;
-    }
-
-    .permission-modal-overlay.hidden {
-      display: none;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-    .permission-modal {
-      background: var(--shop-surface);
-      border: 1px solid var(--shop-border);
-      border-radius: 8px;
-      width: 480px;
-      max-width: 90%;
-      padding: var(--demo-space-5);
-      animation: slideUp 0.2s ease;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-    }
-
-    @keyframes slideUp {
-      from { transform: translateY(20px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-
-    .permission-header {
-      display: flex;
-      align-items: center;
-      gap: var(--demo-space-3);
-      margin-bottom: var(--demo-space-4);
-    }
-
-    .permission-icon {
-      width: 44px;
-      height: 44px;
-      background: var(--shop-primary);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-    }
-
-    .permission-title {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--shop-text);
-    }
-
-    .permission-origin {
-      font-size: 13px;
-      color: var(--shop-text-muted);
-    }
-
-    .permission-description {
-      font-size: 14px;
-      color: var(--shop-text-muted);
-      margin-bottom: var(--demo-space-4);
-      line-height: 1.5;
-    }
-
-    .permission-tools {
-      background: #f7f7f7;
-      border: 1px solid var(--shop-border);
-      border-radius: 8px;
-      padding: var(--demo-space-3);
-      margin-bottom: var(--demo-space-4);
-    }
-
-    .permission-tools-title {
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--shop-text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: var(--demo-space-2);
-    }
-
-    .permission-tool {
-      display: flex;
-      align-items: center;
-      gap: var(--demo-space-2);
-      padding: var(--demo-space-2) 0;
-      font-size: 13px;
-      color: var(--shop-text);
-    }
-
-    .permission-tool-check {
-      color: #067d17;
-    }
-
-    .permission-tool-name {
-      font-family: monospace;
-      color: var(--shop-link);
-      font-size: 12px;
-    }
-
-    .permission-tool-desc {
-      color: var(--shop-text-muted);
-    }
-
-    .permission-note {
-      font-size: 12px;
-      color: var(--shop-text-muted);
-      margin-bottom: var(--demo-space-4);
-      padding: var(--demo-space-3);
-      background: #fff8e6;
-      border: 1px solid #f0c36d;
-      border-radius: 8px;
-    }
-
-    .permission-actions {
-      display: flex;
-      gap: var(--demo-space-3);
-      justify-content: flex-end;
-    }
-
-    .permission-btn {
-      padding: 8px 16px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-
-    .permission-btn-deny {
-      background: var(--shop-surface);
-      border: 1px solid var(--shop-border);
-      color: var(--shop-text);
-    }
-
-    .permission-btn-deny:hover {
-      background: #f7f7f7;
-    }
-
-    .permission-btn-once {
-      background: var(--shop-surface);
-      border: 1px solid var(--shop-border);
-      color: var(--shop-text);
-    }
-
-    .permission-btn-once:hover {
-      background: #f7f7f7;
-    }
-
-    .permission-btn-allow {
-      background: var(--shop-primary);
-      border: 1px solid #a88734;
-      color: var(--shop-header-bg);
-      background: linear-gradient(to bottom, #f7dfa5, #f0c14b);
-      color: #111;
-    }
-
-    .permission-btn-allow:hover {
-      background: linear-gradient(to bottom, #f5d78e, #eeb933);
-    }
-
-    /* Chatbot panel - Amazon style */
-    .chatbot-panel {
-      position: fixed;
-      bottom: var(--demo-space-6);
+      bottom: calc(var(--demo-space-6) + 68px);
       right: var(--demo-space-6);
-      width: 380px;
-      max-width: calc(100vw - 48px);
-      height: 560px;
-      max-height: calc(100vh - 100px);
-      background: var(--shop-surface);
-      border: 1px solid var(--shop-border);
+      max-width: 300px;
+      background: #fff0f0;
+      border: 1px solid #e0a0a0;
+      color: #a11;
       border-radius: 8px;
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-      display: flex;
-      flex-direction: column;
-      z-index: 150;
-      animation: slideUp 0.2s ease;
-      overflow: hidden;
-    }
-
-    .chatbot-panel.hidden {
-      display: none;
-    }
-
-    .chatbot-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: var(--demo-space-3) var(--demo-space-4);
-      background: var(--shop-header-bg);
-      color: var(--shop-header-text);
-    }
-
-    .chatbot-header-left {
-      display: flex;
-      align-items: center;
-      gap: var(--demo-space-3);
-    }
-
-    .chatbot-header-icon {
-      width: 32px;
-      height: 32px;
-      background: var(--shop-primary);
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-    }
-
-    .chatbot-header-title {
-      font-weight: 700;
-      font-size: 14px;
-    }
-
-    .chatbot-header-subtitle {
-      font-size: 11px;
-      opacity: 0.7;
-    }
-
-    .chatbot-close {
-      width: 28px;
-      height: 28px;
-      background: transparent;
-      border: none;
-      border-radius: 4px;
-      color: var(--shop-header-text);
-      font-size: 18px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.15s;
-    }
-
-    .chatbot-close:hover {
-      background: rgba(255, 255, 255, 0.1);
-    }
-
-    .chatbot-messages {
-      flex: 1;
-      overflow-y: auto;
-      padding: var(--demo-space-4);
-      display: flex;
-      flex-direction: column;
-      gap: var(--demo-space-3);
-      background: #fafafa;
-    }
-
-    .chat-message {
-      max-width: 85%;
-      animation: fadeIn 0.2s ease;
-    }
-
-    .chat-message.user {
-      align-self: flex-end;
-    }
-
-    .chat-message.assistant {
-      align-self: flex-start;
-    }
-
-    .chat-message-bubble {
-      padding: 10px 14px;
-      border-radius: 16px;
-      font-size: 14px;
-      line-height: 1.4;
-    }
-
-    .chat-message.user .chat-message-bubble {
-      background: var(--shop-header-bg);
-      color: var(--shop-header-text);
-      border-bottom-right-radius: 4px;
-    }
-
-    .chat-message.assistant .chat-message-bubble {
-      background: var(--shop-surface);
-      color: var(--shop-text);
-      border: 1px solid var(--shop-border);
-      border-bottom-left-radius: 4px;
-    }
-
-    .chat-tool-call {
-      background: #f0f0f0;
-      border: 1px solid var(--shop-border);
-      border-radius: 6px;
-      padding: 6px 10px;
-      margin-top: 8px;
-      font-size: 12px;
-      color: var(--shop-text-muted);
-    }
-
-    .chat-tool-name {
-      font-family: monospace;
-      color: var(--shop-link);
-    }
-
-    .chat-typing {
-      display: flex;
-      gap: 4px;
-      padding: 8px;
-    }
-
-    .chat-typing span {
-      width: 8px;
-      height: 8px;
-      background: var(--shop-text-muted);
-      border-radius: 50%;
-      animation: typing 1s infinite;
-    }
-
-    .chat-typing span:nth-child(2) { animation-delay: 0.15s; }
-    .chat-typing span:nth-child(3) { animation-delay: 0.3s; }
-
-    @keyframes typing {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-4px); }
-    }
-
-    .chatbot-input {
       padding: var(--demo-space-3);
-      border-top: 1px solid var(--shop-border);
-      display: flex;
-      gap: 8px;
-      background: var(--shop-surface);
+      font-size: 13px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      z-index: 100;
     }
 
-    .chatbot-input textarea {
-      flex: 1;
-      padding: 10px 12px;
-      background: var(--shop-surface);
-      border: 1px solid var(--shop-border);
-      border-radius: 8px;
-      color: var(--shop-text);
-      font-family: Arial, sans-serif;
-      font-size: 14px;
-      resize: none;
-      min-height: 40px;
-      max-height: 100px;
-    }
-
-    .chatbot-input textarea:focus {
-      outline: none;
-      border-color: var(--shop-link);
-      box-shadow: 0 0 0 3px rgba(0, 113, 133, 0.1);
-    }
-
-    .chatbot-input button {
-      width: 40px;
-      height: 40px;
-      background: linear-gradient(to bottom, #f7dfa5, #f0c14b);
-      border: 1px solid #a88734;
-      border-radius: 8px;
-      color: #111;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      transition: background 0.15s;
-    }
-
-    .chatbot-input button:hover:not(:disabled) {
-      background: linear-gradient(to bottom, #f5d78e, #eeb933);
-    }
-
-    .chatbot-input button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+    .chat-error-banner.hidden {
+      display: none;
     }
 
     /* API not available state */
@@ -762,8 +394,9 @@
         <div class="demo-banner-content">
           <h2>Bring Your Own Chatbot (BYOC) Demo</h2>
           <p>
-            This demo shows how websites can integrate with <strong>your own AI chatbot</strong> instead of 
-            embedding their own AI. Click the chat button in the corner to try it!
+            This page writes no chat UI of its own. It calls <code>agent.chat.open()</code>
+            and the Web Agent API's implementer — Harbor, in this browser — opens a chat
+            surface that runs on your own model. Click the chat button in the corner to try it.
           </p>
         </div>
       </div>
@@ -771,66 +404,77 @@
         <a href="../../" class="demo-btn demo-btn-ghost">← Back to Demos</a>
       </div>
     </div>
-    
+
     <!-- How It Works Explanation -->
     <div class="byoc-explanation" style="background: var(--shop-surface); border: 1px solid var(--shop-border); border-radius: 8px; padding: var(--demo-space-5); margin-bottom: var(--demo-space-4); box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
       <h3 style="font-size: 16px; font-weight: 700; margin-bottom: var(--demo-space-4); color: var(--shop-text);">
         📋 How BYOC Works
       </h3>
-      
+
       <div class="byoc-steps" style="display: grid; gap: var(--demo-space-3);">
         <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
           <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">1</span>
           <div>
-            <strong style="color: var(--shop-text);">Website Declares MCP Server</strong>
+            <strong style="color: var(--shop-text);">The page calls <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">agent.chat.open()</code></strong>
             <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
-              This page has <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">&lt;link rel="mcp-server" href="http://localhost:3001/mcp"&gt;</code> in its <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">&lt;head&gt;</code>. 
-              The browser can detect this and show an indicator (like RSS did).
+              Clicking the chat button runs <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">window.agent.chat.open({ systemPrompt, style })</code> —
+              a system prompt describing the assistant, and style hints like an accent color and
+              which side of the screen to open on. The page can also advertise tools with
+              <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">&lt;link rel="mcp-server"&gt;</code>, as this page's <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">&lt;head&gt;</code> does.
             </p>
           </div>
         </div>
-        
+
         <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
           <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">2</span>
           <div>
-            <strong style="color: var(--shop-text);">User Clicks "Chat with AI"</strong>
+            <strong style="color: var(--shop-text);">Harbor asks whether the site may open a chat</strong>
             <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
-              Website requests permission via <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">agent.requestPermissions()</code> then creates a chat session with <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">window.ai.createTextSession()</code>.
+              The first call to <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">chat.open()</code> from this origin prompts you for the
+              <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">chat:open</code> permission. Deny it and the call rejects; this page
+              catches that and shows an inline message instead of pretending it worked.
             </p>
           </div>
         </div>
-        
+
         <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
           <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">3</span>
           <div>
-            <strong style="color: var(--shop-text);">Browser Asks for Permission</strong>
+            <strong style="color: var(--shop-text);">Harbor's chat opens and runs on your own model</strong>
             <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
-              Your browser shows a permission prompt listing the tools the website wants to provide. You decide to allow or deny.
+              Harbor draws the chat surface on this page itself; the page never sees its markup.
+              Your first message prompts Harbor to ask, once, whether this site may send prompts
+              to your model — that's the <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">model:prompt</code> permission. Replies come from the
+              model reading this page's visible text (the product grid below), not from the
+              MCP tools this page advertises — Harbor's chat doesn't call those yet.
             </p>
           </div>
         </div>
-        
+
         <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
           <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">4</span>
           <div>
-            <strong style="color: var(--shop-text);">AI Responds with Website Context</strong>
+            <strong style="color: var(--shop-text);">This site wrote no chat UI</strong>
             <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
-              If you allow, the AI assistant responds using <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">session.promptStreaming()</code> with knowledge of the shop's products.
+              Every bubble, input box and typing indicator you see belongs to Harbor, not to
+              Acme Shop. A different implementer of the same API — for example a native app
+              hosting this page — could show its own chat surface instead, using the same
+              <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">agent.chat.open()</code> call.
             </p>
           </div>
         </div>
       </div>
-      
+
     </div>
 
-    <!-- API Not Available Warning (shown if agent not available) -->
+    <!-- API Not Available Warning (shown if agent.chat.open is not available) -->
     <div class="no-api-banner hidden" id="no-api-banner">
       <div class="no-api-icon">⚠️</div>
       <div class="no-api-content">
         <h3>Web Agent API Required</h3>
         <p>
-          This demo requires the Web Agent API for the full BYOC experience. 
-          Install one to try the "Bring Your Own Chatbot" feature!
+          This demo requires an implementer of <code>agent.chat.open()</code> — Harbor, for
+          example. Install one to try the "Bring Your Own Chatbot" feature!
         </p>
       </div>
     </div>
@@ -894,693 +538,127 @@
     </section>
   </main>
 
-  <!-- Chat FAB -->
-  <button class="chat-fab hidden" id="chat-fab" title="Chat with AI Assistant">
+  <!-- Chat button: the only chat-related UI this page owns. Clicking it
+       hands off to window.agent.chat.open() — everything past this button
+       is drawn by the Web Agent API's implementer, not by this page. -->
+  <button class="chat-fab hidden" id="chat-fab" title="Chat with Acme Shop">
     💬
   </button>
 
-  <!-- Permission Modal (simulated) -->
-  <div class="permission-modal-overlay hidden" id="permission-modal">
-    <div class="permission-modal">
-      <div class="permission-header">
-        <div class="permission-icon">🛍️</div>
-        <div>
-          <div class="permission-title">Acme Shop wants to use your AI assistant</div>
-          <div class="permission-origin">localhost:8000</div>
-        </div>
-      </div>
-      
-      <p class="permission-description">
-        This website wants to register an AI assistant that can help you shop. 
-        Your chatbot will be able to use these tools:
-      </p>
-      
-      <div class="permission-tools">
-        <div class="permission-tools-title">Tools requested</div>
-        <div class="permission-tool">
-          <span class="permission-tool-check">☑</span>
-          <span class="permission-tool-name">search_products</span>
-          <span class="permission-tool-desc">— Search the product catalog</span>
-        </div>
-        <div class="permission-tool">
-          <span class="permission-tool-check">☑</span>
-          <span class="permission-tool-name">get_product_details</span>
-          <span class="permission-tool-desc">— Get product information</span>
-        </div>
-        <div class="permission-tool">
-          <span class="permission-tool-check">☑</span>
-          <span class="permission-tool-name">add_to_cart</span>
-          <span class="permission-tool-desc">— Add items to your cart</span>
-        </div>
-        <div class="permission-tool">
-          <span class="permission-tool-check">☑</span>
-          <span class="permission-tool-name">get_cart</span>
-          <span class="permission-tool-desc">— View cart contents</span>
-        </div>
-      </div>
-      
-      <div class="permission-note">
-        <strong>Note:</strong> This is a simulated permission prompt. In a real implementation, 
-        this would be shown by your browser, not the website.
-      </div>
-      
-      <div class="permission-actions">
-        <button class="permission-btn permission-btn-deny" id="perm-deny">Deny</button>
-        <button class="permission-btn permission-btn-once" id="perm-once">Allow Once</button>
-        <button class="permission-btn permission-btn-allow" id="perm-allow">Always Allow</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Chatbot Panel -->
-  <div class="chatbot-panel hidden" id="chatbot-panel">
-    <div class="chatbot-header">
-      <div class="chatbot-header-left">
-        <div class="chatbot-header-icon">🛍️</div>
-        <div>
-          <div class="chatbot-header-title">Your AI Assistant</div>
-          <div class="chatbot-header-subtitle">Connected to Acme Shop</div>
-        </div>
-      </div>
-      <button class="chatbot-close" id="chatbot-close">×</button>
-    </div>
-    
-    <div class="chatbot-messages" id="chatbot-messages">
-      <!-- Messages will be added here -->
-    </div>
-    
-    <div class="chatbot-input">
-      <textarea 
-        id="chatbot-input" 
-        placeholder="Ask about products, get recommendations..."
-        rows="1"
-      ></textarea>
-      <button id="chatbot-send">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-        </svg>
-      </button>
-    </div>
-  </div>
+  <!-- Inline error shown if agent.chat.open() rejects (e.g. permission denied) -->
+  <div class="chat-error-banner hidden" id="chat-error-banner"></div>
 
   <!-- Footer -->
   <footer class="shop-footer">
     <p>
-      This is a demo for the <a href="../../">Web Agent API</a>. 
+      This is a demo for the <a href="../../">Web Agent API</a>.
       <a href="README.md">Learn more about how BYOC works</a>.
     </p>
   </footer>
 
   <script>
     // =============================================================================
-    // Mock Product Database (simulates website's MCP server)
-    // =============================================================================
-    
-    const PRODUCTS = {
-      'wireless-headphones': {
-        id: 'wireless-headphones',
-        name: 'Wireless Headphones Pro',
-        price: 149.99,
-        description: 'Premium wireless headphones with active noise cancellation, 30-hour battery life, and crystal-clear audio.',
-        category: 'audio',
-        rating: 5,
-        reviews: 128,
-        inStock: true
-      },
-      'smart-watch': {
-        id: 'smart-watch',
-        name: 'Smart Watch Series X',
-        price: 299.99,
-        description: 'Advanced smartwatch with health monitoring, GPS, and 5-day battery life. Water resistant to 50m.',
-        category: 'wearables',
-        rating: 4,
-        reviews: 89,
-        inStock: true
-      },
-      'laptop-stand': {
-        id: 'laptop-stand',
-        name: 'Ergonomic Laptop Stand',
-        price: 59.99,
-        description: 'Adjustable aluminum laptop stand for better posture. Compatible with laptops up to 17 inches.',
-        category: 'accessories',
-        rating: 5,
-        reviews: 256,
-        inStock: true
-      },
-      'mechanical-keyboard': {
-        id: 'mechanical-keyboard',
-        name: 'Mechanical Keyboard RGB',
-        price: 129.99,
-        description: 'Tactile mechanical keyboard with customizable RGB lighting and programmable keys.',
-        category: 'accessories',
-        rating: 4,
-        reviews: 64,
-        inStock: false
-      },
-      'webcam-hd': {
-        id: 'webcam-hd',
-        name: 'HD Webcam 4K',
-        price: 89.99,
-        description: '4K webcam with auto-focus, noise-canceling microphone, and low-light correction.',
-        category: 'accessories',
-        rating: 5,
-        reviews: 192,
-        inStock: true
-      },
-      'usb-hub': {
-        id: 'usb-hub',
-        name: 'USB-C Hub 7-in-1',
-        price: 49.99,
-        description: 'Compact USB-C hub with HDMI, USB-A, SD card reader, and power delivery support.',
-        category: 'accessories',
-        rating: 4,
-        reviews: 156,
-        inStock: true
-      }
-    };
-
-    let cart = [];
-
-    // =============================================================================
-    // MCP Tool Implementations (used by the MCP server at localhost:3001)
-    // =============================================================================
-    // Note: These tool implementations are served by the external MCP server.
-    // The website does NOT directly handle tool calls - that goes through MCP.
-    
-    // MCP tool implementations (for reference - actual execution is in mcp-server/)
-    const SHOP_TOOLS = {
-      search_products: async (args) => {
-        const query = (args.query || '').toLowerCase();
-        const results = Object.values(PRODUCTS).filter(p => 
-          p.name.toLowerCase().includes(query) ||
-          p.description.toLowerCase().includes(query) ||
-          p.category.toLowerCase().includes(query)
-        );
-        return {
-          results: results.map(p => ({
-            id: p.id,
-            name: p.name,
-            price: `$${p.price}`,
-            rating: '⭐'.repeat(p.rating),
-            inStock: p.inStock ? 'In Stock' : 'Out of Stock'
-          })),
-          count: results.length
-        };
-      },
-      
-      get_product_details: async (args) => {
-        const product = PRODUCTS[args.productId];
-        if (!product) {
-          return { error: 'Product not found' };
-        }
-        return {
-          name: product.name,
-          price: `$${product.price}`,
-          description: product.description,
-          rating: `${product.rating}/5 stars (${product.reviews} reviews)`,
-          availability: product.inStock ? 'In Stock' : 'Out of Stock'
-        };
-      },
-      
-      add_to_cart: async (args) => {
-        const product = PRODUCTS[args.productId];
-        if (!product) {
-          return { error: 'Product not found' };
-        }
-        if (!product.inStock) {
-          return { error: 'Product is out of stock' };
-        }
-        cart.push(product);
-        return {
-          success: true,
-          message: `Added ${product.name} to cart`,
-          cartTotal: `$${cart.reduce((sum, p) => sum + p.price, 0).toFixed(2)}`,
-          itemCount: cart.length
-        };
-      },
-      
-      get_cart: async () => {
-        if (cart.length === 0) {
-          return { empty: true, message: 'Your cart is empty' };
-        }
-        return {
-          items: cart.map(p => ({ name: p.name, price: `$${p.price}` })),
-          total: `$${cart.reduce((sum, p) => sum + p.price, 0).toFixed(2)}`,
-          itemCount: cart.length
-        };
-      }
-    };
-
-    // =============================================================================
-    // State
-    // =============================================================================
-    
-    let apiAvailable = false;
-    let permissionGranted = false;
-    let chatOpen = false;
-    let isProcessing = false;
-    let messages = [];
-
-    // =============================================================================
     // DOM Elements
     // =============================================================================
-    
+
     const chatFab = document.getElementById('chat-fab');
-    const permissionModal = document.getElementById('permission-modal');
-    const chatbotPanel = document.getElementById('chatbot-panel');
-    const chatbotMessages = document.getElementById('chatbot-messages');
-    const chatbotInput = document.getElementById('chatbot-input');
-    const chatbotSend = document.getElementById('chatbot-send');
-    const chatbotClose = document.getElementById('chatbot-close');
     const noApiBanner = document.getElementById('no-api-banner');
-    const permDeny = document.getElementById('perm-deny');
-    const permOnce = document.getElementById('perm-once');
-    const permAllow = document.getElementById('perm-allow');
+    const chatErrorBanner = document.getElementById('chat-error-banner');
 
     // =============================================================================
     // API Checking
     // =============================================================================
-    
-    async function checkApiAvailability() {
-      console.log('[BYOC Demo] Checking Web Agent API availability...');
-      
-      try {
-        // Check for the Web Agent API (window.ai for text generation, window.agent for permissions)
-        const hasAi = typeof window.ai !== 'undefined';
-        const hasAgent = typeof window.agent !== 'undefined';
-        
-        console.log('[BYOC Demo] API check:', { hasAi, hasAgent });
-        
-        // Require both window.ai and window.agent
-        if (hasAi && hasAgent) {
-          apiAvailable = true;
-          chatFab.classList.remove('hidden');
-          console.log('[BYOC Demo] Web Agent API detected - ready!');
-          return true;
-        }
-        
-        // API not available - show warning, hide chat button
-        noApiBanner.classList.remove('hidden');
-        chatFab.classList.add('hidden');
-        console.log('[BYOC Demo] Web Agent API not available - install Harbor');
-        return false;
-        
-      } catch (err) {
-        console.error('[BYOC Demo] Error checking API:', err);
-        return false;
-      }
-    }
 
-    // =============================================================================
-    // Permission Flow
-    // =============================================================================
-    
-    function showPermissionPrompt() {
-      permissionModal.classList.remove('hidden');
-    }
+    let apiAvailable = false;
 
-    function hidePermissionPrompt() {
-      permissionModal.classList.add('hidden');
-    }
+    function checkApiAvailability() {
+      console.log('[BYOC Demo] Checking for window.agent.chat.open...');
 
-    async function requestRealPermissions() {
-      try {
-        const result = await window.agent.requestPermissions({
-          scopes: ['model:prompt', 'model:tools', 'mcp:tools.list', 'mcp:tools.call'],
-          reason: 'Connect your AI assistant to help you shop at Acme Shop'
-        });
-        return result.granted;
-      } catch (err) {
-        console.error('[BYOC Demo] Permission request failed:', err);
-        return false;
-      }
-    }
+      apiAvailable = typeof window.agent?.chat?.open === 'function';
 
-    async function handlePermissionChoice(choice) {
-      hidePermissionPrompt();
-      
-      if (choice === 'deny') {
-        console.log('[BYOC Demo] User denied permission');
-        return;
-      }
-      
-      // If real API is available, request actual permissions
       if (apiAvailable) {
-        const granted = await requestRealPermissions();
-        if (!granted) {
-          console.log('[BYOC Demo] Real permission denied');
-          return;
-        }
+        chatFab.classList.remove('hidden');
+        noApiBanner.classList.add('hidden');
+        console.log('[BYOC Demo] agent.chat.open is available - ready!');
+      } else {
+        chatFab.classList.add('hidden');
+        noApiBanner.classList.remove('hidden');
+        console.log('[BYOC Demo] agent.chat.open is not available - install Harbor');
       }
-      
-      permissionGranted = true;
-      openChatbot();
+
+      return apiAvailable;
     }
 
     // =============================================================================
-    // Chatbot UI
+    // Chat error display (inline, not alert())
     // =============================================================================
-    
-    function openChatbot() {
-      chatOpen = true;
-      chatFab.classList.add('hidden');
-      chatbotPanel.classList.remove('hidden');
-      
-      // Add welcome message
-      if (messages.length === 0) {
-        addAssistantMessage(
-          "Connected to Acme Shop! I can see their product catalog and help you browse items, check availability, and manage your cart. What would you like to know about their products?"
-        );
-      }
-      
-      chatbotInput.focus();
+
+    function showChatError(message) {
+      chatErrorBanner.textContent = message;
+      chatErrorBanner.classList.remove('hidden');
     }
 
-    function closeChatbot() {
-      chatOpen = false;
-      chatbotPanel.classList.add('hidden');
-      chatFab.classList.remove('hidden');
-    }
-
-    function addUserMessage(text) {
-      messages.push({ role: 'user', content: text });
-      
-      const div = document.createElement('div');
-      div.className = 'chat-message user';
-      div.innerHTML = `<div class="chat-message-bubble">${escapeHtml(text)}</div>`;
-      chatbotMessages.appendChild(div);
-      scrollChatToBottom();
-    }
-
-    function addAssistantMessage(text, toolCalls = []) {
-      messages.push({ role: 'assistant', content: text, tools: toolCalls });
-      
-      const div = document.createElement('div');
-      div.className = 'chat-message assistant';
-      
-      let html = `<div class="chat-message-bubble">${escapeHtml(text)}</div>`;
-      
-      for (const tool of toolCalls) {
-        html += `
-          <div class="chat-tool-call">
-            🔧 Used <span class="chat-tool-name">${tool.name}</span>
-          </div>
-        `;
-      }
-      
-      div.innerHTML = html;
-      chatbotMessages.appendChild(div);
-      scrollChatToBottom();
-    }
-
-    function addTypingIndicator() {
-      const div = document.createElement('div');
-      div.className = 'chat-message assistant';
-      div.id = 'typing-indicator';
-      div.innerHTML = `
-        <div class="chat-message-bubble">
-          <div class="chat-typing">
-            <span></span><span></span><span></span>
-          </div>
-        </div>
-      `;
-      chatbotMessages.appendChild(div);
-      scrollChatToBottom();
-    }
-
-    function removeTypingIndicator() {
-      const indicator = document.getElementById('typing-indicator');
-      if (indicator) indicator.remove();
-    }
-
-    function scrollChatToBottom() {
-      chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
-    }
-
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
+    function hideChatError() {
+      chatErrorBanner.classList.add('hidden');
     }
 
     // =============================================================================
-    // Message Handling (Web Agent API only - uses window.ai)
+    // Open Harbor's chat on this page
     // =============================================================================
-    
-    async function sendMessage() {
-      const text = chatbotInput.value.trim();
-      console.log('[BYOC Debug] sendMessage called', { text, isProcessing, apiAvailable, hasSession: !!chatSession });
-      if (!text || isProcessing) return;
-      
-      // Require the Web Agent API
-      if (!apiAvailable) {
-        addAssistantMessage("Web Agent API is not available. Please install Harbor.");
-        return;
-      }
-      
-      // Initialize session if needed
-      if (!chatSession) {
-        console.log('[BYOC Debug] No chat session, initializing...');
-        const success = await initChatSession();
-        if (!success) {
-          addAssistantMessage("Unable to start AI assistant. Please check permissions.");
-          return;
-        }
-      }
-      
-      isProcessing = true;
-      chatbotSend.disabled = true;
-      chatbotInput.value = '';
-      
-      addUserMessage(text);
-      addTypingIndicator();
-      
+
+    async function openChat() {
+      hideChatError();
+
       try {
-        // Use window.ai session for streaming response
-        let responseText = '';
-        let tokenCount = 0;
-        
-        console.log('[BYOC Debug] Starting promptStreaming...', { sessionType: typeof chatSession });
-        
-        // Stream the response
-        for await (const token of chatSession.promptStreaming(text)) {
-          responseText += token;
-          tokenCount++;
-          if (tokenCount % 10 === 0) {
-            console.log('[BYOC Debug] Received tokens:', tokenCount, 'total length:', responseText.length);
-          }
-        }
-        
-        console.log('[BYOC Debug] Streaming complete', { tokenCount, responseLength: responseText.length });
-        
-        removeTypingIndicator();
-        
-        // Check if response mentions adding to cart
-        const toolsUsed = [];
-        const lowerResponse = responseText.toLowerCase();
-        const lowerText = text.toLowerCase();
-        
-        // Simple cart handling - detect add to cart requests
-        if (lowerText.includes('add') && lowerText.includes('cart')) {
-          // Find which product they want to add
-          for (const product of Object.values(PRODUCTS)) {
-            const productWords = product.name.toLowerCase().split(' ');
-            if (productWords.some(word => lowerText.includes(word))) {
-              if (product.inStock) {
-                cart.push(product);
-                toolsUsed.push({ name: 'add_to_cart', args: { productId: product.id } });
-                // Update cart display
-                const cartNav = document.querySelector('.shop-nav a:last-child');
-                if (cartNav) cartNav.textContent = `Cart (${cart.length})`;
-              }
-              break;
-            }
-          }
-        }
-        
-        addAssistantMessage(responseText, toolsUsed);
-        
-      } catch (err) {
-        console.error('[BYOC Debug] sendMessage error:', {
-          message: err?.message,
-          code: err?.code,
-          name: err?.name,
-          stack: err?.stack,
+        await window.agent.chat.open({
+          systemPrompt: 'You are Acme Shop\'s shopping assistant. Help the person find products on this page, compare them, and answer questions about price, rating and availability. Only talk about what\'s shown on the page; say so if something isn\'t listed here.',
+          style: { accentColor: '#ff9900', position: 'right' },
         });
-        console.error('[BYOC Demo] Error:', err);
-        removeTypingIndicator();
-        
-        // Handle specific errors
-        if (err.code === 'ERR_PERMISSION_DENIED') {
-          addAssistantMessage("Permission denied. Allow text generation for this site in Harbor's sidebar, or approve Harbor's prompt when it asks.");
-        } else if (err.code === 'ERR_BLOCKED_BY_POLICY') {
-          addAssistantMessage("Harbor's policy doesn't allow this site to use the AI model.");
-        } else if (err.code === 'ERR_QUARANTINED') {
-          addAssistantMessage("Harbor has paused AI access for this site.");
-        } else if (err.code === 'ERR_FEATURE_DISABLED') {
-          addAssistantMessage("Text generation is disabled. Please enable it in Harbor's sidebar.");
-        } else if (err.code === 'ERR_SESSION_NOT_FOUND') {
-          console.log('[BYOC Debug] Session not found, resetting chatSession');
-          chatSession = null;
-          addAssistantMessage("Session expired. Please try sending your message again.");
-        } else if (err.code === 'ERR_MODEL_FAILED') {
-          addAssistantMessage(`AI model error: ${err.message || 'Unknown error'}. Please check your LLM configuration.`);
+      } catch (err) {
+        console.error('[BYOC Demo] agent.chat.open() failed:', err);
+
+        if (err?.code === 'ERR_PERMISSION_DENIED') {
+          showChatError("You didn't allow Acme Shop to open a chat. Allow chat:open for this site in Harbor's sidebar to try again.");
+        } else if (err?.code === 'ERR_BLOCKED_BY_POLICY') {
+          showChatError("Harbor's policy doesn't allow this site to open a chat.");
+        } else if (err?.code === 'ERR_QUARANTINED') {
+          showChatError('Harbor has paused access for this site.');
         } else {
-          addAssistantMessage(`Error: ${err.message || 'Unknown error'}. Please try again.`);
-        }
-        
-        // Reset session on error so we can try again
-        chatSession = null;
-      }
-      
-      isProcessing = false;
-      chatbotSend.disabled = false;
-    }
-
-    // =============================================================================
-    // BYOC: Web Agent API Integration (uses ONLY window.ai / window.agent)
-    // =============================================================================
-    
-    // Session for the embedded chat
-    let chatSession = null;
-    
-    async function initChatSession() {
-      console.log('[BYOC Debug] initChatSession called');
-      console.log('[BYOC Debug] window.ai available:', !!window.ai);
-      console.log('[BYOC Debug] window.agent available:', !!window.agent);
-      
-      if (!window.ai) {
-        console.log('[Acme Shop] window.ai not available');
-        return false;
-      }
-      
-      try {
-        console.log('[BYOC Debug] Requesting permissions...');
-        // Request permission for text generation
-        const permResult = await window.agent.requestPermissions({
-          scopes: ['model:prompt'],
-          reason: 'Connect your AI assistant to help you shop at Acme Shop'
-        });
-        
-        console.log('[BYOC Debug] Permission result:', permResult);
-        
-        if (!permResult.granted) {
-          console.log('[Acme Shop] Permission denied');
-          return false;
-        }
-        
-        const systemPrompt = `You are the user's personal AI assistant, currently connected to Acme Shop.
-You can help them find products, answer questions about items, and manage their cart on this site.
-
-Available products in our catalog:
-${Object.values(PRODUCTS).map(p => `- ${p.name} (ID: ${p.id}): $${p.price} - ${p.description} (${p.inStock ? 'In Stock' : 'Out of Stock'})`).join('\n')}
-
-When customers ask about products:
-- Use the product details above to answer questions
-- Recommend products based on their needs
-- Be helpful and friendly
-
-Current cart: ${cart.length === 0 ? 'Empty' : cart.map(p => p.name).join(', ')} (Total: $${cart.reduce((sum, p) => sum + p.price, 0).toFixed(2)})
-
-Keep responses concise and helpful.`;
-        
-        console.log('[BYOC Debug] Creating text session with prompt length:', systemPrompt.length);
-        
-        // Create a text session with our system prompt
-        chatSession = await window.ai.createTextSession({
-          systemPrompt,
-        });
-        
-        console.log('[BYOC Debug] Chat session created:', chatSession);
-        console.log('[Acme Shop] Chat session created');
-        return true;
-      } catch (err) {
-        console.error('[BYOC Debug] Failed to create session - error details:', {
-          message: err?.message,
-          name: err?.name,
-          stack: err?.stack,
-        });
-        console.error('[Acme Shop] Failed to create session:', err);
-        return false;
-      }
-    }
-    
-    async function openBrowserChatbot() {
-      // Initialize session if needed
-      if (!chatSession) {
-        const success = await initChatSession();
-        if (!success) {
-          addAssistantMessage("Unable to start AI assistant. Please check that Harbor is installed and has permissions enabled.");
-          return;
+          showChatError(`Couldn't open the chat: ${err?.message || 'unknown error'}.`);
         }
       }
-      
-      // Open the embedded chatbot UI
-      openChatbot();
     }
 
     // =============================================================================
     // Event Listeners
     // =============================================================================
-    
-    // Chat FAB click - opens embedded chatbot powered by the Web Agent API
-    chatFab.addEventListener('click', async () => {
+
+    chatFab.addEventListener('click', () => {
       if (!apiAvailable) {
-        console.log('[BYOC Demo] API not available, cannot open chat');
+        console.log('[BYOC Demo] agent.chat.open not available, cannot open chat');
         return;
       }
-      await openBrowserChatbot();
-    });
-
-    // Permission buttons (for simulated modal - kept for visual demo)
-    permDeny.addEventListener('click', () => handlePermissionChoice('deny'));
-    permOnce.addEventListener('click', () => handlePermissionChoice('once'));
-    permAllow.addEventListener('click', () => handlePermissionChoice('allow'));
-
-    // Chatbot close
-    chatbotClose.addEventListener('click', closeChatbot);
-
-    // Send message
-    chatbotSend.addEventListener('click', sendMessage);
-    chatbotInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-      }
-    });
-
-    // Auto-resize input
-    chatbotInput.addEventListener('input', () => {
-      chatbotInput.style.height = 'auto';
-      chatbotInput.style.height = Math.min(chatbotInput.scrollHeight, 100) + 'px';
+      openChat();
     });
 
     // =============================================================================
     // Initialize
     // =============================================================================
-    
-    async function init() {
-      await checkApiAvailability();
-      
+
+    function init() {
+      checkApiAvailability();
+
       console.log('[BYOC Demo] Initialized');
-      console.log('  Web Agent API Available:', apiAvailable);
+      console.log('  agent.chat.open available:', apiAvailable);
       if (apiAvailable) {
-        console.log('  Features: window.ai (text generation), window.agent (permissions)');
-        console.log('');
-        console.log('This demo uses ONLY the Web Agent API:');
-        console.log('  - window.ai.createTextSession() for chat');
-        console.log('  - window.agent.requestPermissions() for permissions');
-        console.log('');
-        console.log('Click the chat button to start chatting with the AI assistant.');
+        console.log('  This page calls only window.agent.chat.open() — no chat UI of its own.');
       } else {
-        console.log('');
-        console.log('Web Agent API not available.');
-        console.log('Install Harbor to try this demo.');
+        console.log('  Install Harbor (or another Web Agent API implementer) to try this demo.');
       }
     }
 
     // Wait for DOM and potential extension injection
-    // Use longer timeout to ensure extension has injected window.ai and window.agent
+    // Use a short delay to ensure the extension has injected window.agent
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => setTimeout(init, 300));
     } else {
@@ -1589,4 +667,3 @@ Keep responses concise and helpful.`;
   </script>
 </body>
 </html>
-

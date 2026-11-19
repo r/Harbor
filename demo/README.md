@@ -20,7 +20,7 @@ These demos are published via GitHub Pages at: **https://[your-org].github.io/ha
 | **Email Chat** | Chat with your email using Gmail MCP tools | `/demo/web-agents/email-chat/` |
 | **Time Agent** | Simple MCP time tool demo | `/demo/web-agents/time-agent/` |
 | **Page Chat Bookmarklet** | Bookmarklet to chat about any page | `/demo/web-agents/bookmarklet/` |
-| **Bring Your Own Chatbot** | Website-provided MCP servers demo | `/demo/web-agents/bring-your-chatbot/` |
+| **Bring Your Own Chatbot** | A shop page that opens Harbor's chat with one `agent.chat.open()` call, no chat UI of its own | `/demo/web-agents/bring-your-chatbot/` |
 | **Basic Actions** | Practice click, fill, and select | `/demo/web-agent-control/basic-actions/` |
 | **Multi-step Form** | Form validation and step navigation | `/demo/web-agent-control/multi-step-form/` |
 | **Research Agent** | Multi-tab search and synthesis | `/demo/web-agent-control/research-agent/` |
@@ -70,14 +70,16 @@ You can also launch the demos directly from the Harbor extension sidebar:
 
 ## Bring Your Own Chatbot Demo
 
-The "Bring Your Own Chatbot" (BYOC) demo shows how websites integrate with the user's own AI chatbot:
+The "Bring Your Own Chatbot" (BYOC) demo shows a site that doesn't want to build its own chat
+UI: it calls `agent.chat.open({ systemPrompt, style })`, and Harbor opens the chat surface on
+the page instead, running on the person's own model. The page writes no chat UI of its own.
 
-1. **Website-Provided Tools**: Instead of websites embedding their own AI, they provide MCP servers that the user's chatbot can access
-2. **User Control**: The user's own chatbot (with their preferences, history, and privacy settings) handles the AI interactions
-3. **Permission Flow**: Users explicitly grant permission for websites to register MCP servers
-4. **Graceful Degradation**: Works without the Web Agent API by falling back to a simulated mode
+1. **One call, no chat UI**: The page's only chat-related code is the `agent.chat.open()` call
+2. **User Control**: Harbor's chat runs on the person's own model, with their own permissions
+3. **Permission Flow**: Harbor asks for `chat:open` when the chat opens, and for `model:prompt` on the first message
+4. **Graceful Degradation**: The chat button is hidden, with an explanatory banner, when `agent.chat.open` isn't available
 
-`agent.mcp.register()`, `agent.mcp.unregister()`, `agent.mcp.discover()`, and `agent.chat.{canOpen, open, close}` are implemented in Harbor. See [`web-agents/bring-your-chatbot/README.md`](web-agents/bring-your-chatbot/README.md) for the full demo and `docs/WEB_AGENTS_API.md` for the API reference.
+See [`web-agents/bring-your-chatbot/README.md`](web-agents/bring-your-chatbot/README.md) for the full demo and `docs/WEB_AGENTS_API.md` for the API reference.
 
 ## Email Chat Demo
 
