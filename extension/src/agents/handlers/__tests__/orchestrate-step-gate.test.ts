@@ -9,16 +9,28 @@ import type { PolicyResource } from '../../../policy/engine';
 // does: a cross-origin target needs `agent.delegate.crossOrigin` (prompting as
 // agents:crossOrigin), a same-origin one needs `agent.invoke`, and both carry
 // the target agent as the resource. The checks run through the real
-// requireAction and PolicyEngine; only the prompt window is replaced.
+// requireAction and PolicyEngine. The prompt window is replaced, and so is
+// the origin-grant lookup, which records each check and answers from `granted`.
 
 const prompts: Array<{ origin: string; scopes: string[] }> = [];
 let promptAnswer: (scopes: string[]) => boolean = () => true;
+// How many prompt windows were open at once, at most.
+let openPrompts = 0;
+let mostOpenPrompts = 0;
 vi.mock('../../../policy/permissions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../policy/permissions')>()),
   showPermissionPrompt: vi.fn(async (origin: string, scopes: string[]) => {
     prompts.push({ origin, scopes });
-    const granted = promptAnswer(scopes);
-    return granted ? { granted, grantType: 'granted-once' as const } : { granted, explicitDeny: true };
+    openPrompts += 1;
+    mostOpenPrompts = Math.max(mostOpenPrompts, openPrompts);
+    try {
+      // A real prompt waits for the person; let other checks run meanwhile.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const granted = promptAnswer(scopes);
+      return granted ? { granted, grantType: 'granted-once' as const } : { granted, explicitDeny: true };
+    } finally {
+      openPrompts -= 1;
+    }
   }),
   grantPermissions: vi.fn(async () => {}),
 }));
@@ -80,6 +92,8 @@ beforeEach(async () => {
   prompts.length = 0;
   delivered.length = 0;
   promptAnswer = () => true;
+  openPrompts = 0;
+  mostOpenPrompts = 0;
   // The orchestrator may register and orchestrate; nothing else is granted.
   granted = (action) => action === 'agent.register' || action === 'agent.invoke';
   setOriginGrantResolver((_origin, action, resource) => {
@@ -235,6 +249,23 @@ describe('parallel checks each task target', () => {
     expect(prompts).toHaveLength(2);
     expect(delivered.sort()).toEqual([sameOriginAgent, crossOriginAgent].sort());
   });
+
+  it('asks about one target at a time, never stacking prompts', async () => {
+    const thirdCrossOriginAgent = target(OTHER, 'remote3');
+    await call(handleOrchestrateParallel, 'agents.orchestrate.parallel', {
+      config: {
+        tasks: [
+          { agentId: crossOriginAgent, task: 'a' },
+          { agentId: secondCrossOriginAgent, task: 'b' },
+          { agentId: thirdCrossOriginAgent, task: 'c' },
+        ],
+        combineStrategy: 'array',
+      },
+    });
+
+    expect(prompts).toHaveLength(3);
+    expect(mostOpenPrompts).toBe(1);
+  });
 });
 
 describe('a check that throws refuses only its own step', () => {
@@ -259,6 +290,30 @@ describe('a check that throws refuses only its own step', () => {
     expect(result.result.taskResults[0]?.result).toBe('local:a');
     expect(result.result.taskResults[1]?.error).toBe('prompt window failed');
     expect(delivered).toEqual([sameOriginAgent]);
+  });
+
+  it('still checks and runs the later tasks after one task\'s check throws', async () => {
+    const thirdCrossOriginAgent = target(OTHER, 'remote3');
+    promptAnswer = () => {
+      if (prompts.length === 1) throw new Error('prompt window failed');
+      return true;
+    };
+    const responses = await call(handleOrchestrateParallel, 'agents.orchestrate.parallel', {
+      config: {
+        tasks: [
+          { agentId: crossOriginAgent, task: 'a' },
+          { agentId: secondCrossOriginAgent, task: 'b' },
+          { agentId: thirdCrossOriginAgent, task: 'c' },
+        ],
+        combineStrategy: 'array',
+      },
+    });
+
+    const result = (responses[0] as { result: { taskResults: Array<{ success: boolean; error?: string }> } }).result;
+    expect(result.taskResults.map((r) => r.success)).toEqual([false, true, true]);
+    expect(result.taskResults[0]?.error).toBe('prompt window failed');
+    expect(prompts).toHaveLength(3);
+    expect(delivered.sort()).toEqual([secondCrossOriginAgent, thirdCrossOriginAgent].sort());
   });
 });
 
