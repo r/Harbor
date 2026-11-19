@@ -8,12 +8,10 @@ import {
 } from '../engine';
 import { Policy } from '../store';
 import { compileRule, type Rule } from '../rules';
-import { Tokens } from '../tokens';
 import { LabelSet } from '../labels';
 
 beforeEach(() => {
   Policy.__reset();
-  Tokens.__reset();
   setOriginGrantResolver(() => null);
   setWatchdogResolver(() => ({ status: 'normal' }));
 });
@@ -174,48 +172,6 @@ describe('Tier 4: watchdog', () => {
 });
 
 // =============================================================================
-// Tier 5: capability tokens
-// =============================================================================
-
-describe('Tier 5: capability tokens', () => {
-  it('passes when the token authorizes the action', async () => {
-    const t = Tokens.mint({
-      sessionId: 's',
-      origin: 'https://example.com',
-      allowedActions: ['tool.list'],
-      acceptedLabels: [],
-    });
-    const decision = await evaluate({ ...baseReq, tokenId: t.id, action: 'tool.list' });
-    expect(decision.effect).toBe('allow');
-  });
-
-  it('denies when the token does not authorize the action', async () => {
-    const t = Tokens.mint({
-      sessionId: 's',
-      origin: 'https://example.com',
-      allowedActions: ['model.prompt.local'],
-      acceptedLabels: [],
-    });
-    const decision = await evaluate({ ...baseReq, tokenId: t.id, action: 'tool.list' });
-    expect(decision.effect).toBe('deny');
-    expect(decision.tier).toBe(5);
-    expect(decision.errorCode).toBe('ERR_TOKEN_NOT_FOR_ORIGIN');
-  });
-
-  it('denies on token bound to a different origin', async () => {
-    const t = Tokens.mint({
-      sessionId: 's',
-      origin: 'https://other.com',
-      allowedActions: ['tool.list'],
-      acceptedLabels: [],
-    });
-    const decision = await evaluate({ ...baseReq, tokenId: t.id });
-    expect(decision.effect).toBe('deny');
-    expect(decision.tier).toBe(5);
-  });
-});
-
-// =============================================================================
 // Tier 6 + 7: policy rules
 // =============================================================================
 
@@ -252,6 +208,24 @@ describe('Tier 6+7: policy rules', () => {
     });
     expect(decision.effect).toBe('preview');
     expect(decision.rule?.id).toBe('preview-github');
+  });
+
+  it('a stored rule with the removed `attenuate` effect prompts, as it always did', async () => {
+    // Tokens are gone, so there's nothing left to attenuate. A rule saved
+    // with this effect before the removal must still behave the way
+    // requireAction treated it: it prompted, so it keeps prompting.
+    loadRules([
+      {
+        id: 'legacy-attenuate',
+        effect: 'attenuate' as unknown as Rule['effect'],
+        principal: { origin: '*' },
+        action: 'tool.list',
+        source: 'user',
+      },
+    ]);
+    const decision = await evaluate({ ...baseReq, action: 'tool.list' });
+    expect(decision.effect).toBe('ask');
+    expect(decision.rule?.id).toBe('legacy-attenuate');
   });
 });
 

@@ -34,8 +34,6 @@ export interface RequireActionOptions {
   resource?: PolicyResource;
   /** Labels carried on the input (from prior reads). */
   inputLabels?: LabelSet;
-  /** Capability token id, if the handler is operating inside a session. */
-  tokenId?: string;
   /**
    * If the engine returns `ask` or `preview`, fall back to the legacy
    * prompt with this scope. When omitted, we derive a default from the
@@ -52,7 +50,7 @@ export interface RequireActionOptions {
    * or the Tier 9 default), proceed without a Harbor prompt and record the
    * upstream consent in the audit log. `deny` is still enforced, and so are
    * the asks that consent can't stand in for: a watchdog restriction and a
-   * policy rule that says ask, preview or attenuate. Those prompt as usual.
+   * policy rule that says ask or preview. Those prompt as usual.
    *
    * Used for page calls, which the page API gates against Harbor's own
    * origin-grant store (`permissions.check`) before this second,
@@ -81,7 +79,6 @@ export async function requireAction(
     action,
     resource: options.resource,
     inputLabels: options.inputLabels,
-    tokenId: options.tokenId,
     reason: options.reason,
     correlationId: ctx.id,
     tabId: ctx.tabId,
@@ -110,7 +107,7 @@ export async function requireAction(
 
   if (proceedsOnUpstreamConsent) return true;
 
-  // ask | preview | attenuate — surface the prompt via the existing flow.
+  // ask | preview — surface the prompt via the existing flow.
   // We use the typed action's primary legacy scope unless the caller
   // overrides via options.promptAsScope.
   const scopeForPrompt = options.promptAsScope ?? primaryLegacyScope(action);

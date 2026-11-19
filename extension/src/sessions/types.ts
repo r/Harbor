@@ -124,13 +124,6 @@ export interface AgentSession {
 
   /** Usage statistics */
   usage: SessionUsage;
-
-  /**
-   * Capability token id, if the session has been minted one. The handler
-   * threads this through requireAction so the engine's Tier 5 token
-   * check authorizes the action.
-   */
-  tokenId?: string;
 }
 
 /**
@@ -224,8 +217,6 @@ export interface SessionSummary {
   type: SessionType;
   origin: string;
   status: SessionStatus;
-  /** Capability token id, if one is bound to this session. */
-  tokenId?: string;
   name?: string;
   createdAt: number;
   lastActiveAt: number;

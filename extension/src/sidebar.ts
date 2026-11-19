@@ -1388,7 +1388,7 @@ type AuditRecordView = {
   timestamp: number;
   origin: string;
   action: string;
-  effect: 'allow' | 'ask' | 'preview' | 'deny' | 'attenuate';
+  effect: 'allow' | 'ask' | 'preview' | 'deny';
   tier: number;
   source: string;
   rule?: { id: string };
@@ -1420,7 +1420,6 @@ function effectBadge(effect: string): string {
     ask: '#ca8a04',
     preview: '#0891b2',
     deny: '#dc2626',
-    attenuate: '#7c3aed',
   };
   const c = colorMap[effect] ?? '#6b7280';
   return `<span style="background:${c};color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(effect)}</span>`;
@@ -2226,7 +2225,6 @@ type SessionSummary = {
   type: 'implicit' | 'explicit';
   origin: string;
   status: 'active' | 'suspended' | 'terminated';
-  tokenId?: string;
   name?: string;
   createdAt: number;
   lastActiveAt: number;

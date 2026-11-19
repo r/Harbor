@@ -2,7 +2,7 @@
  * Typed Policy Rules
  *
  * The PolicyEngine evaluates each request against an ordered list of rules.
- * A rule has an `effect` (allow / ask / deny / preview / attenuate), a
+ * A rule has an `effect` (allow / ask / deny / preview), a
  * `principal` (who is asking), an `action` or set of actions, an optional
  * `resource` predicate, and an optional `context` predicate.
  *
@@ -34,10 +34,12 @@ import type { DataLabel } from './labels';
  *   - `preview`: show the user a diff of what's about to happen, then ask.
  *     Used for write/destructive actions where seeing the change matters
  *     more than seeing the request.
- *   - `attenuate`: allow, but downgrade the session's capability token
- *     (e.g. drop a label, shorten TTL, reduce budget).
+ *
+ * A rule stored with the old `attenuate` effect (capability tokens have
+ * been removed) is treated by the engine as `ask`, the prompt it always
+ * produced.
  */
-export type RuleEffect = 'allow' | 'ask' | 'deny' | 'preview' | 'attenuate';
+export type RuleEffect = 'allow' | 'ask' | 'deny' | 'preview';
 
 // =============================================================================
 // Principals, resources, contexts

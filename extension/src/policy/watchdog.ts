@@ -124,7 +124,7 @@ class Watchdog {
   /**
    * Engine resolver. Called on every gated decision.
    */
-  resolve: WatchdogResolver = (origin, action, _context) => {
+  resolve: WatchdogResolver = (origin, action) => {
     return this.evaluateOrigin(origin, action);
   };
 

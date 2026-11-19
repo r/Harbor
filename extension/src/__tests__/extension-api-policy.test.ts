@@ -164,7 +164,11 @@ describe('safety asks the upstream origin-grant consent does not cover', () => {
   });
 
   it.each(['ask', 'preview', 'attenuate'] as const)('prompts on a policy %s rule', async (effect) => {
-    loadRules([{ id: `r-${effect}`, effect, principal: { origin: '*' }, action: 'tool.call' }]);
+    // 'attenuate' is a removed effect; a rule stored with it still prompts,
+    // same as 'ask' and 'preview'. Cast since it predates the type change.
+    loadRules([
+      { id: `r-${effect}`, effect: effect as unknown as Rule['effect'], principal: { origin: '*' }, action: 'tool.call' },
+    ]);
     vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: false } as never);
     expect((await callTool_()).ok).toBe(false);
     expect(showPermissionPrompt).toHaveBeenCalledTimes(1);

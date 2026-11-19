@@ -5,12 +5,11 @@
  * This test wires the modules together and walks the path a real
  * page-side `agent.requestCapabilities()` call would take:
  *
- *   1. Mint a capability token by creating an explicit session.
+ *   1. Create an explicit session.
  *   2. Run a typed-action request through the PolicyEngine.
  *   3. Confirm the audit log records the decision.
  *   4. Replay the decision using the simulator and confirm it produces
  *      a result.
- *   5. Confirm session termination revokes the token.
  */
 
 import { describe, expect, it, beforeEach } from 'vitest';
@@ -23,13 +22,11 @@ import {
 } from '../policy/engine';
 import { Policy } from '../policy/store';
 import { compileRule, type Rule } from '../policy/rules';
-import { Tokens } from '../policy/tokens';
 import { Audit } from '../policy/audit';
 import { simulate, replay } from '../policy/simulator';
 
 beforeEach(() => {
   Policy.__reset();
-  Tokens.__reset();
   Audit.__reset();
   setOriginGrantResolver(() => null);
   setWatchdogResolver(() => ({ status: 'normal' }));
@@ -51,12 +48,7 @@ describe('permission flow integration', () => {
     });
     expect(created.success).toBe(true);
     const sessionId = created.sessionId!;
-
-    // The token should exist and be valid.
-    const session = SessionRegistry.getSession(sessionId);
-    expect(session?.tokenId).toBeDefined();
-    const token = Tokens.get(session!.tokenId!);
-    expect(token).toBeDefined();
+    expect(SessionRegistry.getSession(sessionId)).toBeDefined();
 
     // Run a request that the typed-action defaults allow (tool.list is
     // metadata-only, defaults to allow at Tier 9).
@@ -107,20 +99,5 @@ describe('permission flow integration', () => {
     expect(result.decision.effect).toBeDefined();
     // simulate() must not pollute the audit log.
     expect(Audit.list().length).toBe(0);
-  });
-
-  it('revokes the capability token when a session terminates', () => {
-    const origin = 'https://ttl.example';
-    const created = SessionRegistry.createExplicitSession(origin, {
-      capabilities: { llm: {}, tools: [], browser: ['read'] },
-    });
-    const sessionId = created.sessionId!;
-    const tokenId = SessionRegistry.getSession(sessionId)!.tokenId!;
-
-    expect(Tokens.get(tokenId)?.revoked).not.toBe(true);
-
-    SessionRegistry.terminateSession(sessionId, origin);
-
-    expect(Tokens.get(tokenId)?.revoked).toBe(true);
   });
 });
