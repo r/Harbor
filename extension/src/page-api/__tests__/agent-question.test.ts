@@ -131,19 +131,21 @@ describe('askAgentQuestion', () => {
       await expect(promise).resolves.toEqual({ outcome: 'selected', optionId: 'allow' });
     });
 
-    it('ignores an answer for an unknown (or already-settled) id', async () => {
+    it('tells its own page an unknown or already-settled id is no longer waiting, with no effect', async () => {
       const promise = askAgentQuestion(REQUEST, new AbortController().signal);
       await vi.waitFor(() => expect(createSpy).toHaveBeenCalled());
       await flush();
       const id = openedUrl().searchParams.get('id')!;
 
-      expect(send({ type: 'agent_question_answer', id: 'not-a-real-id', optionId: 'allow' }, pageSender('not-a-real-id'))).toBeUndefined();
+      expect(send({ type: 'agent_question_answer', id: 'not-a-real-id', optionId: 'allow' }, pageSender('not-a-real-id'))).toEqual({ ok: false });
 
       expect(send({ type: 'agent_question_answer', id, optionId: 'reject' }, pageSender(id))).toEqual({ ok: true });
       await expect(promise).resolves.toEqual({ outcome: 'selected', optionId: 'reject' });
 
-      // Answering the same id again, now that it's settled, is also ignored.
-      expect(send({ type: 'agent_question_answer', id, optionId: 'allow' }, pageSender(id))).toBeUndefined();
+      // Answering the same id again, now that it's settled, changes nothing;
+      // the page is told so it can say the question is no longer waiting.
+      expect(send({ type: 'agent_question_answer', id, optionId: 'allow' }, pageSender(id))).toEqual({ ok: false });
+      await expect(promise).resolves.toEqual({ outcome: 'selected', optionId: 'reject' });
     });
 
     it('ignores an optionId the agent never offered', async () => {

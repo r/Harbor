@@ -158,13 +158,29 @@ function renderOptions(options: AgentQuestionOption[]): void {
     const btn = document.createElement('button');
     btn.className = `btn ${buttonClass(option.kind)}`;
     btn.textContent = option.name;
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       for (const b of container.querySelectorAll('button')) (b as HTMLButtonElement).disabled = true;
-      browserAPI.runtime.sendMessage({ type: 'agent_question_answer', id, optionId: option.optionId });
+      let response: { ok?: boolean } | undefined;
+      try {
+        response = await browserAPI.runtime.sendMessage({ type: 'agent_question_answer', id, optionId: option.optionId });
+      } catch {
+        response = undefined;
+      }
+      // On success the background closes this window. Otherwise the question
+      // was already answered, timed out or withdrawn by the agent.
+      if (!response?.ok) showError('This question is no longer waiting for an answer.');
     });
     container.appendChild(btn);
   }
+  // Start keyboard focus on a reject option, so Enter never approves by accident.
+  const firstReject = options.findIndex((o) => !o.kind.startsWith('allow'));
+  if (firstReject >= 0) (container.children[firstReject] as HTMLButtonElement | undefined)?.focus();
 }
+
+// Escape closes the window, which the background treats as the agent's reject option.
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') window.close();
+});
 
 async function load(): Promise<void> {
   if (!id) {

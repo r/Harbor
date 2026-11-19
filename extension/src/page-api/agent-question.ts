@@ -198,7 +198,12 @@ function handleAgentQuestionGet(id: unknown, sendResponse: (response: unknown) =
  */
 function handleAgentQuestionAnswer(id: unknown, optionId: unknown, sendResponse: (response: unknown) => void): void {
   const q = typeof id === 'string' ? pending.get(id) : undefined;
-  if (!q) return;
+  if (!q) {
+    // Already answered, timed out or withdrawn. Tell this question's own
+    // page so it doesn't sit there with disabled buttons.
+    sendResponse({ ok: false });
+    return;
+  }
   if (typeof optionId !== 'string' || !q.request.options.some((o) => o.optionId === optionId)) return;
   finish(id as string, { outcome: 'selected', optionId });
   sendResponse({ ok: true });
