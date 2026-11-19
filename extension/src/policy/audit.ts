@@ -41,6 +41,7 @@ export interface AuditRecord {
     tool?: string;
     host?: string;
     path?: string;
+    agentOrigin?: string;
   };
   /** Final effect. */
   effect: PolicyDecision['effect'];
@@ -116,6 +117,7 @@ class AuditLog {
             tool: req.resource.tool,
             host: req.resource.host,
             path: req.resource.path,
+            agentOrigin: req.resource.agentOrigin,
           }
         : undefined,
       effect: decision.effect,

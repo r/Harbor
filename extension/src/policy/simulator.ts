@@ -108,6 +108,7 @@ export async function replay(
       tool: record.resource?.tool,
       host: record.resource?.host,
       path: record.resource?.path,
+      agentOrigin: record.resource?.agentOrigin,
       ...modifications.resource,
     },
     inputLabels: modifications.inputLabels

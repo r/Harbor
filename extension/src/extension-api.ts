@@ -453,6 +453,19 @@ function readPermissionOrigin(p: Record<string, unknown>): string | null {
   return typeof p.origin === 'string' && p.origin ? p.origin : null;
 }
 
+/**
+ * A bare site origin (scheme, host, port), as agents are registered under.
+ * No commas: the prompt carries the sites as a comma-separated list.
+ */
+function isSiteOrigin(value: unknown): value is string {
+  if (typeof value !== 'string' || value.includes(',')) return false;
+  try {
+    return new URL(value).origin === value;
+  } catch {
+    return false;
+  }
+}
+
 function readTabId(p: Record<string, unknown>): number | undefined {
   return typeof p.tabId === 'number' ? p.tabId : undefined;
 }
@@ -465,7 +478,7 @@ async function handlePermissionsCheck(payload: unknown): Promise<ExtensionApiRes
   }
   try {
     const status = await getPermissionStatus(origin, readTabId(p));
-    return success({ ...status, allowedTools: status.allowedTools ?? [] });
+    return success({ ...status, allowedTools: status.allowedTools ?? [], agentOrigins: status.agentOrigins ?? [] });
   } catch (e) {
     return failure(e);
   }
@@ -477,9 +490,15 @@ async function handlePermissionsRequest(payload: unknown): Promise<ExtensionApiR
   if (!origin) {
     return failure('permissions.request requires the calling page\'s origin');
   }
-  const { scopes, reason, tools } = p;
+  const { scopes, reason, tools, agentOrigins } = p;
   if (!Array.isArray(scopes) || scopes.length === 0 || !scopes.every(s => typeof s === 'string' && KNOWN_SCOPES.has(s))) {
     return failure('permissions.request requires a non-empty list of known scopes');
+  }
+  if (agentOrigins !== undefined && (!Array.isArray(agentOrigins) || !agentOrigins.every(isSiteOrigin))) {
+    return failure('permissions.request: agentOrigins must be a list of site origins, such as "https://example.com"');
+  }
+  if (scopes.includes('agents:crossOrigin') && (!Array.isArray(agentOrigins) || agentOrigins.length === 0)) {
+    return failure('permissions.request: agents:crossOrigin needs the target sites in agentOrigins');
   }
   if (reason !== undefined && typeof reason !== 'string') {
     return failure('permissions.request: reason must be a string');
@@ -494,10 +513,11 @@ async function handlePermissionsRequest(payload: unknown): Promise<ExtensionApiR
         scopes: scopes as PermissionScope[],
         reason: reason as string | undefined,
         tools: tools as string[] | undefined,
+        agentOrigins: agentOrigins as string[] | undefined,
       },
       readTabId(p),
     );
-    return success({ ...result, allowedTools: result.allowedTools ?? [] });
+    return success({ ...result, allowedTools: result.allowedTools ?? [], agentOrigins: result.agentOrigins ?? [] });
   } catch (e) {
     return failure(e);
   }

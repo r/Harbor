@@ -42,6 +42,8 @@ interface StoredOriginPermissions {
   origin: string;
   scopes: Record<string, StoredPermission>;
   allowedTools: string[];
+  /** `agents:crossOrigin` grants, one per target site. */
+  agentOrigins?: Record<string, StoredPermission>;
 }
 
 // =============================================================================
@@ -126,6 +128,8 @@ function isStoredGrantLive(stored: StoredPermission, now: number, tabId?: number
  *
  * For `tool.call`, this also requires the specific tool to be in the
  * origin's `allowedTools` list — the legacy semantics carries through.
+ * For `agent.delegate.crossOrigin`, only the grant for the target site
+ * (`resource.agentOrigin`) counts.
  */
 export async function lookupOriginGrant(
   origin: string,
@@ -140,6 +144,20 @@ export async function lookupOriginGrant(
   if (!stored) return null;
 
   const now = Date.now();
+
+  // Reaching another site's agents is granted per target site
+  // (`resource.agentOrigin`). An old site-wide `agents:crossOrigin` entry in
+  // `scopes` grants nothing, and a request with no target site gets no grant.
+  if (action === 'agent.delegate.crossOrigin') {
+    const target = resource?.agentOrigin;
+    const entry = target ? stored.agentOrigins?.[target] : undefined;
+    if (!entry) return null;
+    if (entry.grant === 'denied') return { effect: 'deny' };
+    if (isStoredGrantLive(entry, now, tabId)) {
+      return { effect: 'allow', persistence: entry.grant === 'granted-always' ? 'always' : 'once' };
+    }
+    return null;
+  }
 
   // Tool-call short-circuit: if the tool isn't in the allowlist, we don't
   // grant regardless of the umbrella `mcp:tools.call` scope.

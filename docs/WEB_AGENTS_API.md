@@ -307,6 +307,7 @@ if (result.granted) {
 | `scopes` | `string[]` | Required. Permission scopes to request |
 | `reason` | `string` | Optional. Explanation shown in the permission prompt |
 | `tools` | `string[]` | Optional. Specific tools to add to the allowlist |
+| `agentOrigins` | `string[]` | Required with `agents:crossOrigin`. The sites whose agents you want to reach, such as `"https://example.com"` |
 
 **Response:**
 
@@ -315,6 +316,7 @@ interface PermissionGrantResult {
   granted: boolean;              // true if ALL requested scopes were granted
   scopes: Record<PermissionScope, PermissionGrant>;  // Status per scope
   allowedTools: string[];        // Tools the site may call; empty means none
+  agentOrigins: string[];        // Sites whose agents the site may reach; empty means none
 }
 ```
 
@@ -335,6 +337,24 @@ interface PermissionGrantResult {
 | `browser:tabs.create` | 🔴 High | Open tabs on any site and close them; read them only while they show your own origin's pages |
 | `chat:open` | 🟢 Low | Open the chat sidebar |
 | `web:fetch` | 🔴 High | Fetch URLs bypassing CORS |
+| `agents:crossOrigin` | 🔴 High | Call, message and discover agents on the named other sites |
+
+#### Agents on Other Sites
+
+`agents:crossOrigin` is granted one site at a time. Allowing your page to reach agents on `https://b.example` lets it call, message and discover agents registered by `https://b.example`, and no other site. Each site's grant has its own duration: "Allow once" for one site doesn't extend another site's grant.
+
+Ask up front by naming the sites:
+
+```javascript
+const result = await window.agent.requestPermissions({
+  scopes: ['agents:crossOrigin'],
+  agentOrigins: ['https://b.example'],
+  reason: 'Hand research tasks to your notes agent',
+});
+console.log(result.agentOrigins); // ['https://b.example']
+```
+
+A request for `agents:crossOrigin` without `agentOrigins` fails. If you don't ask up front, calling or messaging an agent on a site you have no grant for shows a prompt that names that site.
 
 #### Tool Allowlisting
 
@@ -923,7 +943,7 @@ const { agents, total } = await window.agent.agents.discover({
   capabilities: ['search'],
   tags: ['research'],
   includeSameOrigin: true,
-  includeCrossOrigin: false
+  includeCrossOrigin: false  // true lists agents only on sites you hold an agents:crossOrigin grant for
 });
 
 console.log(`Found ${total} agents`);
@@ -980,7 +1000,7 @@ await window.agent.agents.unsubscribe('research-complete');
 
 #### Orchestration Patterns
 
-An orchestration call needs `agents:invoke`. Harbor then checks each step's agent just before that step runs, the same way it checks a direct `invoke`. An agent on another origin needs `agents:crossOrigin`, so the user may be asked partway through a pipeline. A route checks only the agent it picks. If the user refuses a step, a pipeline stops there. In a parallel run, only that task fails.
+An orchestration call needs `agents:invoke`. Harbor then checks each step's agent just before that step runs, the same way it checks a direct `invoke`. An agent on another origin needs an `agents:crossOrigin` grant for that agent's site, so the user may be asked partway through a pipeline. A route checks only the agent it picks. If the user refuses a step, a pipeline stops there. In a parallel run, only that task fails.
 
 ```javascript
 // Pipeline: Execute agents sequentially

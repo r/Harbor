@@ -57,8 +57,13 @@ export interface PolicyResource {
   tool?: string;
   /** Tool risk tags from the manifest. */
   toolTags?: readonly string[];
-  /** Hostname / origin of the destination. */
+  /** Hostname / origin of the destination. Classified for sensitivity. */
   host?: string;
+  /**
+   * The site (origin) of the agent an `agent.delegate.crossOrigin` call
+   * reaches. Keys the per-site grant; not classified as a destination.
+   */
+  agentOrigin?: string;
   /** Path on the destination. */
   path?: string;
   /** Element descriptor for browser.read.element / write.interact. */

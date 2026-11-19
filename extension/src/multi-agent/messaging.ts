@@ -24,7 +24,6 @@ import {
   recordInvocationMade,
   recordInvocationReceived,
 } from './registry';
-import { checkPermissions } from '../policy/permissions';
 
 // Message handlers registered by agents
 type MessageHandler = (message: AgentMessage) => void;
@@ -113,13 +112,13 @@ export function unsubscribeFromAllEvents(agentId: AgentId): void {
 // =============================================================================
 
 /**
- * Send a message from one agent to another.
+ * Send a message from one agent to another. No permission check here: the
+ * caller (`handleAgentsSend`) checks a cross-origin recipient's site first.
  */
 export async function sendMessage(
   fromAgentId: AgentId,
   toAgentId: AgentId,
   payload: unknown,
-  fromOrigin: string,
 ): Promise<{ delivered: boolean; error?: string }> {
   const fromAgent = getAgent(fromAgentId);
   const toAgent = getAgent(toAgentId);
@@ -135,14 +134,6 @@ export async function sendMessage(
   // Check if recipient accepts messages
   if (!toAgent.acceptsMessages) {
     return { delivered: false, error: 'Recipient does not accept messages' };
-  }
-
-  // Check cross-origin permission
-  if (fromAgent.origin !== toAgent.origin) {
-    const check = await checkPermissions(fromOrigin, ['agents:crossOrigin']);
-    if (!check.granted) {
-      return { delivered: false, error: 'Cross-origin messaging requires agents:crossOrigin permission' };
-    }
   }
 
   const message: AgentMessage = {
@@ -253,55 +244,6 @@ export async function invokeAgent(
       executionTime: Date.now() - startTime,
     };
   }
-}
-
-/**
- * Broadcast an event to all subscribed agents.
- */
-export function broadcastEvent(
-  sourceAgentId: AgentId,
-  eventType: string,
-  data: unknown,
-): { delivered: number; failed: number } {
-  const subscribers = eventSubscriptions.get(eventType);
-  if (!subscribers || subscribers.size === 0) {
-    return { delivered: 0, failed: 0 };
-  }
-
-  const event: AgentEvent = {
-    type: eventType,
-    data,
-    source: sourceAgentId,
-    timestamp: Date.now(),
-  };
-
-  let delivered = 0;
-  let failed = 0;
-
-  for (const subscriberId of subscribers) {
-    // Don't send to self
-    if (subscriberId === sourceAgentId) continue;
-
-    const handler = messageHandlers.get(subscriberId);
-    if (handler) {
-      try {
-        const message: AgentMessage = {
-          id: generateMessageId(),
-          from: sourceAgentId,
-          to: subscriberId,
-          type: 'event',
-          payload: event,
-          timestamp: Date.now(),
-        };
-        handler(message);
-        delivered++;
-      } catch {
-        failed++;
-      }
-    }
-  }
-
-  return { delivered, failed };
 }
 
 // =============================================================================

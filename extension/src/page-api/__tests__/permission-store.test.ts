@@ -73,6 +73,27 @@ describe("requests go through Harbor's prompt", () => {
     expect(call![1]).toMatchObject({ origin: ORIGIN, tabId: 4, reason: 'Summarize' });
     expect(mocks.harborRequest.mock.calls.some(([type]) => type === 'system.syncPermissions')).toBe(false);
   });
+
+  it('refuses agents:crossOrigin without target sites as an invalid request', async () => {
+    const response = await handleRequestPermissions(ctx('agent.requestPermissions', { scopes: ['agents:crossOrigin'] }));
+    expect(response).toMatchObject({ ok: false, error: { code: 'ERR_INVALID_REQUEST' } });
+    expect(mocks.harborRequest.mock.calls.some(([type]) => type === 'permissions.request')).toBe(false);
+  });
+
+  it('forwards the target sites of an agents:crossOrigin request', async () => {
+    mocks.harborRequest.mockResolvedValue({
+      granted: true,
+      scopes: { 'agents:crossOrigin': 'granted-once' },
+      allowedTools: [],
+      agentOrigins: ['https://b.example'],
+    });
+    const response = await handleRequestPermissions(
+      ctx('agent.requestPermissions', { scopes: ['agents:crossOrigin'], agentOrigins: ['https://b.example'] }),
+    );
+    const call = mocks.harborRequest.mock.calls.find(([type]) => type === 'permissions.request');
+    expect(call![1]).toMatchObject({ agentOrigins: ['https://b.example'] });
+    expect(response).toMatchObject({ ok: true, result: { agentOrigins: ['https://b.example'] } });
+  });
 });
 
 describe('a request asks only for the scopes the page named', () => {

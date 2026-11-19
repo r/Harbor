@@ -90,7 +90,7 @@ The typed namespace is organized by what the action actually does:
 | `network.egress.same_origin` | HTTP(S) fetch to the same origin as the requester | Bounded data flow |
 | `network.egress.cross_origin` | HTTP(S) fetch to a different origin | Possible exfiltration channel |
 | `agent.delegate` | Invoke another registered agent | Capability passing |
-| `agent.delegate.crossOrigin` | Invoke an agent in a different origin | Authority crossing trust boundaries |
+| `agent.delegate.crossOrigin` | Invoke or message an agent in a different origin; granted per target site | Authority crossing trust boundaries |
 | `agent.delegate.remote` | Invoke a remote A2A agent | Authority leaving the machine |
 
 Every action carries metadata:
