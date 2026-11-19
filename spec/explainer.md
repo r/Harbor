@@ -1191,9 +1191,9 @@ agent.browser.activeTab.readability(): Promise<ActiveTabReadability>
 - `ERR_INTERNAL` — Content extraction failed
 
 **Content Extraction:**
-- Removes scripts, styles, navigation, ads, and non-content elements
-- Attempts to find main content area (article, main, [role="main"])
-- Collapses whitespace and limits output to 50,000 characters
+- Reads the main content area (`main`, `article`, `[role="main"]`, ...), or the whole body if there is none
+- Uses the rendered text, so scripts, styles and hidden elements are left out
+- Keeps line breaks, collapses other whitespace, and limits output to 50,000 characters
 
 **Example:**
 ```javascript

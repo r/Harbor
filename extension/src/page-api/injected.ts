@@ -682,13 +682,11 @@ function createAgentSessionObject(
 // =============================================================================
 
 // Browser API types
+/** What readability() resolves to: the page's URL, title and main text. */
 interface ReadabilityContent {
+  url: string;
   title: string;
-  content: string;
-  textContent: string;
-  excerpt: string;
-  byline: string | null;
-  siteName: string | null;
+  text: string;
 }
 
 interface BrowserElement {
@@ -706,7 +704,7 @@ function createBrowserApi() {
   return Object.freeze({
     activeTab: Object.freeze({
       /**
-       * Get readable content from the current page using readability parser.
+       * Get the active tab's URL, title and main text.
        */
       readability: FEATURE_FLAGS.browserInteraction || FEATURE_FLAGS.browserControl
         ? async function(): Promise<ReadabilityContent> {
@@ -839,13 +837,7 @@ function createBrowserApi() {
           /**
            * Extract readable content from a tab this origin created.
            */
-          async readability(tabId: number): Promise<{
-            title: string;
-            url: string;
-            content: string;
-            text: string;
-            length: number;
-          }> {
+          async readability(tabId: number): Promise<ReadabilityContent> {
             return sendRequest('agent.browser.tab.readability', { tabId });
           },
 
