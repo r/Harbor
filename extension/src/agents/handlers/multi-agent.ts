@@ -12,7 +12,7 @@ import type {
   Supervisor,
   SupervisorTask,
 } from '../../multi-agent/types';
-import { log, requireAction } from './helpers';
+import { log, requireAction, checkAction } from './helpers';
 import { checkPermissions } from '../../policy/permissions';
 import { browserAPI } from '../../browser-compat';
 import {
@@ -38,6 +38,7 @@ import {
   executeParallel,
   executeRouter,
   executeSupervisor,
+  type StepGate,
 } from '../../multi-agent/orchestration';
 import {
   connectRemoteAgent,
@@ -301,7 +302,6 @@ export async function handleAgentsInvoke(
       timeout: payload.timeout,
     },
     fromAgentId,
-    ctx.origin,
     traceId,
   );
   
@@ -516,6 +516,33 @@ export function handleAgentsUnregisterInvocationHandler(
 // =============================================================================
 
 /**
+ * The per-step check for an orchestration started by this request. Each
+ * target is checked the way `handleAgentsInvoke` checks a direct invoke:
+ * `agent.delegate.crossOrigin` for another origin's agent,
+ * `agent.invoke` for one on the caller's own origin, scoped to that agent.
+ *
+ * Checks run one at a time, in the order the steps ask, so parallel tasks
+ * and supervisor workers never stack prompts and each answer is in place
+ * before the next target is checked.
+ */
+function orchestrationStepGate(ctx: RequestContext, label: string): StepGate {
+  let queue: Promise<unknown> = Promise.resolve();
+  return (targetAgentId) => {
+    const check = queue.then(() => {
+      const targetAgent = getAgent(targetAgentId);
+      const isCrossOrigin = targetAgent !== undefined && targetAgent.origin !== ctx.origin;
+      return checkAction(ctx, isCrossOrigin ? 'agent.delegate.crossOrigin' : 'agent.invoke', {
+        promptAsScope: isCrossOrigin ? 'agents:crossOrigin' : 'agents:invoke',
+        resource: targetAgent ? { server: targetAgent.id } : undefined,
+        reason: `${label}: invoke agent ${targetAgentId}`,
+      });
+    });
+    queue = check.catch(() => undefined);
+    return check.then((denial) => (denial ? { code: denial.code, message: denial.message } : null));
+  };
+}
+
+/**
  * Handle agents.orchestrate.pipeline - Execute a pipeline of agents.
  */
 export async function handleOrchestratePipeline(
@@ -556,7 +583,7 @@ export async function handleOrchestratePipeline(
     })),
   };
 
-  const result = await executePipeline(pipeline, payload.initialInput, agentId, ctx.origin);
+  const result = await executePipeline(pipeline, payload.initialInput, agentId, orchestrationStepGate(ctx, 'Pipeline'));
   // The page API promises { success, result, stepResults }; Harbor calls the result finalOutput.
   sender.sendResponse({ id: ctx.id, ok: true, result: { ...result, result: result.finalOutput } });
 }
@@ -606,7 +633,7 @@ export async function handleOrchestrateParallel(
     return;
   }
 
-  const result = await executeParallel(execution, agentId, ctx.origin);
+  const result = await executeParallel(execution, agentId, orchestrationStepGate(ctx, 'Parallel'));
   // Web Agents API / Margin expect { success, results, combined }; Harbor returns taskResults + combinedOutput.
   sender.sendResponse({
     id: ctx.id,
@@ -657,7 +684,7 @@ export async function handleOrchestrateRoute(
     defaultAgentId: payload.config.defaultAgentId,
   };
 
-  const result = await executeRouter(router, payload.input, payload.task, agentId, ctx.origin);
+  const result = await executeRouter(router, payload.input, payload.task, agentId, orchestrationStepGate(ctx, 'Route'));
   // The page API promises the chosen agent's invocation response ({ success, result?, error? });
   // the routing details stay alongside it.
   sender.sendResponse({ id: ctx.id, ok: true, result: { ...result, ...result.invocationResult } });
@@ -686,7 +713,7 @@ export async function handleOrchestrateSupervisor(
     return;
   }
 
-  const result = await executeSupervisor(payload.supervisor, payload.tasks, agentId, ctx.origin);
+  const result = await executeSupervisor(payload.supervisor, payload.tasks, agentId, orchestrationStepGate(ctx, 'Supervisor'));
   sender.sendResponse({ id: ctx.id, ok: true, result });
 }
 

@@ -8,7 +8,7 @@
  * `deny` the handler emits a structured error response.
  */
 
-import type { PermissionScope } from '../types';
+import type { ApiErrorCode, PermissionScope } from '../types';
 import type { RequestContext, ResponseSender } from './router-types';
 import { evaluate, type PolicyResource, type PolicyDecision } from '../../policy/engine';
 import type { TypedAction } from '../../policy/actions';
@@ -59,6 +59,13 @@ export interface RequireActionOptions {
   upstreamConsent?: 'origin-grant';
 }
 
+/** A permission refusal, in the shape a handler sends as its error. */
+export interface ActionDenial {
+  code: ApiErrorCode;
+  message: string;
+  details: Record<string, unknown>;
+}
+
 /**
  * The single chokepoint the rest of the codebase calls. Returns `true` if
  * the action is allowed (either by the engine or after a successful
@@ -72,6 +79,23 @@ export async function requireAction(
   action: TypedAction,
   options: RequireActionOptions = {},
 ): Promise<boolean> {
+  const denial = await checkAction(ctx, action, options);
+  if (!denial) return true;
+  sender.sendResponse({ id: ctx.id, ok: false, error: denial });
+  return false;
+}
+
+/**
+ * The same check as `requireAction`, for a handler that runs several gated
+ * steps inside one request. Returns `null` when the action may proceed, or
+ * the refusal, without sending anything, so the handler can report it as
+ * that step's failure.
+ */
+export async function checkAction(
+  ctx: RequestContext,
+  action: TypedAction,
+  options: RequireActionOptions = {},
+): Promise<ActionDenial | null> {
   log('requireAction', { origin: ctx.origin, action, options });
 
   const request = {
@@ -99,13 +123,13 @@ export async function requireAction(
 
   log('requireAction decision', decision);
 
-  if (decision.effect === 'allow') return true;
+  if (decision.effect === 'allow') return null;
 
   if (decision.effect === 'deny') {
-    return sendDeny(ctx, sender, decision);
+    return denialFor(decision);
   }
 
-  if (proceedsOnUpstreamConsent) return true;
+  if (proceedsOnUpstreamConsent) return null;
 
   // ask | preview — surface the prompt via the existing flow.
   // We use the typed action's primary legacy scope unless the caller
@@ -113,7 +137,7 @@ export async function requireAction(
   const scopeForPrompt = options.promptAsScope ?? primaryLegacyScope(action);
   if (!scopeForPrompt) {
     // No legacy mapping; treat as deny since we can't prompt yet.
-    return sendDeny(ctx, sender, decision);
+    return denialFor(decision);
   }
 
   const promptResult = await showPermissionPrompt(
@@ -131,27 +155,22 @@ export async function requireAction(
       ctx.tabId,
       promptResult.allowedTools,
     );
-    return true;
+    return null;
   }
 
   // User dismissed or denied.
-  sender.sendResponse({
-    id: ctx.id,
-    ok: false,
-    error: {
-      code: 'ERR_PERMISSION_DENIED',
-      message: promptResult.explicitDeny
-        ? `User denied ${action}.`
-        : `Permission "${action}" required.`,
-      details: {
-        action,
-        tier: decision.tier,
-        source: decision.source,
-        reason: decision.reason,
-      },
+  return {
+    code: 'ERR_PERMISSION_DENIED',
+    message: promptResult.explicitDeny
+      ? `User denied ${action}.`
+      : `Permission "${action}" required.`,
+    details: {
+      action,
+      tier: decision.tier,
+      source: decision.source,
+      reason: decision.reason,
     },
-  });
-  return false;
+  };
 }
 
 /**
@@ -171,25 +190,16 @@ function upstreamConsentCovers(decision: PolicyDecision): boolean {
   return true;
 }
 
-function sendDeny(
-  ctx: RequestContext,
-  sender: ResponseSender,
-  decision: PolicyDecision,
-): false {
-  sender.sendResponse({
-    id: ctx.id,
-    ok: false,
-    error: {
-      code: decision.errorCode ?? 'ERR_PERMISSION_DENIED',
-      message: decision.reason,
-      details: {
-        tier: decision.tier,
-        source: decision.source,
-        rule: decision.rule,
-      },
+function denialFor(decision: PolicyDecision): ActionDenial {
+  return {
+    code: decision.errorCode ?? 'ERR_PERMISSION_DENIED',
+    message: decision.reason,
+    details: {
+      tier: decision.tier,
+      source: decision.source,
+      rule: decision.rule,
     },
-  });
-  return false;
+  };
 }
 
 // =============================================================================

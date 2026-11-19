@@ -7,6 +7,11 @@
  * - Pipeline: Sequential execution through multiple agents
  * - Parallel: Concurrent execution across multiple agents
  * - Router: Conditional routing to different agents
+ * - Supervisor: A worker pool that assigns tasks to agents
+ *
+ * Every pattern checks each target agent with the caller's StepGate just
+ * before invoking it, so a route checks only the agent it selected and a
+ * pipeline stops at the first step the user refuses.
  */
 
 import type {
@@ -26,6 +31,28 @@ import type {
 } from './types';
 import { invokeAgent } from './messaging';
 import { getAgent } from './registry';
+
+/**
+ * Checks whether the invoker may invoke this target agent. Resolves to
+ * `null` to proceed, or to the refusal, which becomes that step's error.
+ */
+export type StepGate = (
+  targetAgentId: AgentId,
+) => Promise<NonNullable<AgentInvocationResponse['error']> | null>;
+
+/** Run the gate for the request's target, then invoke it if allowed. */
+async function invokeChecked(
+  request: AgentInvocationRequest,
+  invokerAgentId: AgentId,
+  gate: StepGate,
+): Promise<AgentInvocationResponse> {
+  const startTime = Date.now();
+  const refusal = await gate(request.agentId);
+  if (refusal) {
+    return { success: false, error: refusal, executionTime: Date.now() - startTime };
+  }
+  return invokeAgent(request, invokerAgentId);
+}
 
 // =============================================================================
 // Pipeline Execution
@@ -64,7 +91,7 @@ export async function executePipeline(
   pipeline: Pipeline,
   initialInput: unknown,
   invokerAgentId: AgentId,
-  invokerOrigin: string,
+  gate: StepGate,
 ): Promise<PipelineResult> {
   const startTime = Date.now();
   const stepResults: PipelineStepResult[] = [];
@@ -84,7 +111,7 @@ export async function executePipeline(
     };
 
     // Invoke the agent
-    const response = await invokeAgent(request, invokerAgentId, invokerOrigin);
+    const response = await invokeChecked(request, invokerAgentId, gate);
 
     const stepResult: PipelineStepResult = {
       stepId: step.id,
@@ -187,7 +214,7 @@ export interface ParallelResult {
 export async function executeParallel(
   execution: ParallelExecution,
   invokerAgentId: AgentId,
-  invokerOrigin: string,
+  gate: StepGate,
 ): Promise<ParallelResult> {
   const startTime = Date.now();
   const tasks = Array.isArray(execution.tasks) ? execution.tasks : [];
@@ -202,7 +229,7 @@ export async function executeParallel(
       input: task.input,
     };
 
-    const response = await invokeAgent(request, invokerAgentId, invokerOrigin);
+    const response = await invokeChecked(request, invokerAgentId, gate);
 
     return {
       agentId: task.agentId,
@@ -274,7 +301,7 @@ export async function executeRouter(
   input: unknown,
   task: string,
   invokerAgentId: AgentId,
-  invokerOrigin: string,
+  gate: StepGate,
 ): Promise<RouterResult> {
   let selectedAgentId: AgentId | undefined;
   let matchedCondition: string | null = null;
@@ -313,7 +340,7 @@ export async function executeRouter(
     input,
   };
 
-  const result = await invokeAgent(request, invokerAgentId, invokerOrigin);
+  const result = await invokeChecked(request, invokerAgentId, gate);
 
   return {
     routerId: router.id,
@@ -395,7 +422,7 @@ export async function executeSupervisor(
   supervisor: Supervisor,
   tasks: SupervisorTask[],
   invokerAgentId: AgentId,
-  invokerOrigin: string,
+  gate: StepGate,
 ): Promise<SupervisorResult> {
   const startTime = Date.now();
   const results: SupervisorTaskResult[] = [];
@@ -487,7 +514,7 @@ export async function executeSupervisor(
           input: task.input,
         };
 
-        const response = await invokeAgent(request, invokerAgentId, invokerOrigin);
+        const response = await invokeChecked(request, invokerAgentId, gate);
 
         // Mark worker as not busy
         state.busyCount--;
