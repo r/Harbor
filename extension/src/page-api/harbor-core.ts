@@ -104,23 +104,35 @@ const REQUEST_TIMEOUT_MS = 30_000;
 export async function harborRequest<T = unknown>(
   type: string,
   payload?: unknown,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<T> {
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  // Aborts when the caller gives up (the page's own request timed out, or
+  // an agent.run was cancelled) or when this request times out. Harbor's
+  // policy check can wait on a prompt for longer than either; a call given
+  // up on by then isn't performed (see routeExtensionApiMessage).
+  const controller = new AbortController();
+  const onCallerAbort = () => controller.abort();
+  if (options.signal?.aborted) controller.abort();
+  else options.signal?.addEventListener('abort', onCallerAbort, { once: true });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs}ms`)), timeoutMs);
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`Request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
   });
   try {
-    return await Promise.race([dispatch<T>(type, payload), timeout]);
+    return await Promise.race([dispatch<T>(type, payload, controller.signal), timeout]);
   } finally {
     clearTimeout(timer);
+    options.signal?.removeEventListener('abort', onCallerAbort);
   }
 }
 
-async function dispatch<T>(type: string, payload: unknown): Promise<T> {
+async function dispatch<T>(type: string, payload: unknown, signal: AbortSignal): Promise<T> {
   if (isExtensionApiType(type)) {
-    const response = await routeExtensionApiMessage({ type, payload }, PAGE_API_SENDER);
+    const response = await routeExtensionApiMessage({ type, payload }, PAGE_API_SENDER, { signal });
     if (!response.ok) throw createError(response.error ?? 'Unknown error from Harbor', response.code);
     return response.result as T;
   }
@@ -150,18 +162,26 @@ export function harborStreamRequest(
   type: string,
   payload?: unknown,
   requestId?: string,
+  signal?: AbortSignal,
 ): { stream: AsyncIterable<StreamEvent>; cancel: () => void } {
   if (type !== 'llm.chatStream') {
     throw createError(`harborStreamRequest: unsupported streaming type "${type}"`);
   }
 
-  const generator = streamLlmChat(payload, requestId);
+  // Aborts on cancel() or the caller's signal, so a prompt the page stopped
+  // waiting for during Harbor's policy check never reaches the model.
+  const controller = new AbortController();
+  if (signal?.aborted) controller.abort();
+  else signal?.addEventListener('abort', () => controller.abort(), { once: true });
+
+  const generator = streamLlmChat(payload, requestId, controller.signal);
   const stream: AsyncIterable<StreamEvent> = {
     [Symbol.asyncIterator]() {
       return generator as unknown as AsyncIterator<StreamEvent>;
     },
   };
   const cancel = () => {
+    controller.abort();
     void generator.return(undefined);
   };
   return { stream, cancel };

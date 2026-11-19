@@ -116,7 +116,7 @@ async function handleSessionPromptStreaming(
       messages,
       model: session.options.model,
       temperature: session.options.temperature,
-    }, ctx.id);
+    }, ctx.id, signal);
 
     let fullContent = '';
 
@@ -194,7 +194,7 @@ async function handleAgentRun(
       const toolsResult = await harborRequest<{ tools: typeof tools }>('mcp.listTools', {
         origin: ctx.origin,
         tabId: ctx.tabId,
-      });
+      }, { signal });
       tools = toolsResult.tools || [];
 
       // Offer only the tools the site was granted. No allowlist means no tools.

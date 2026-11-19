@@ -128,12 +128,12 @@ describe('agent.run receiving boundary', () => {
       done: true,
       event: { type: 'error', error: { code: 'ERR_AGENT_FAILED', message: 'tool host crashed' } },
     }));
-    expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
+    expect(mocks.harborRequest.mock.calls.map(([method]) => method)).not.toContain('llm.chat');
   });
 
   it('runs when enabled and explicitly permitted', async () => {
     await run();
-    expect(mocks.harborRequest).toHaveBeenCalledWith('llm.chat', expect.anything());
+    expect(mocks.harborRequest).toHaveBeenCalledWith('llm.chat', expect.anything(), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ done: true, event: { type: 'done' } }));
   });
   it('uses normalized content as the text contract across the Harbor boundary', async () => {
@@ -182,7 +182,7 @@ describe('agent.run receiving boundary', () => {
       }
     });
     await receive({ id: 'tool-run', type: 'agent.run', origin: 'https://example.test', payload: { task: 'What time is it?', maxToolCalls: 1 } });
-    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.callTool', expect.anything());
+    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.callTool', expect.anything(), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
       event: { type: 'token', token: JSON.stringify({ type: 'final', output: 'Noon' }) },
     }));
@@ -219,6 +219,6 @@ describe('window.ai session promptStreaming()', () => {
     await receive({ id: 'stream-1', type: 'session.promptStreaming', origin: 'https://example.test',
       payload: { sessionId: 's1', input: 'Hi' } });
     expect(mocks.harborStreamRequest).toHaveBeenCalledWith('llm.chatStream',
-      expect.objectContaining({ origin: 'https://example.test', tabId: 1 }), 'stream-1');
+      expect.objectContaining({ origin: 'https://example.test', tabId: 1 }), 'stream-1', expect.any(AbortSignal));
   });
 });

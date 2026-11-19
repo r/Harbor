@@ -78,7 +78,7 @@ describe('prompting an explicit session', () => {
       messages: [{ role: 'system', content: 'Be terse' }, { role: 'user', content: 'Hi' }],
       model: 'ollama:test',
       temperature: 0.2,
-    });
+    }, expect.anything());
   });
 
   it('keeps conversation history across prompts', async () => {
@@ -94,7 +94,7 @@ describe('prompting an explicit session', () => {
     const sessionId = await createExplicit();
     const res = await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }, 'https://evil.test'));
     expect(res).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
-    expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
+    expect(mocks.harborRequest.mock.calls.map(([method]) => method)).not.toContain('llm.chat');
   });
 
   it('refuses a terminated session', async () => {
@@ -102,7 +102,7 @@ describe('prompting an explicit session', () => {
     await handleSessionsTerminate(ctx('agent.sessions.terminate', { sessionId }));
     const res = await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }));
     expect(res).toMatchObject({ ok: false, error: { code: 'ERR_SESSION_NOT_FOUND' } });
-    expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
+    expect(mocks.harborRequest.mock.calls.map(([method]) => method)).not.toContain('llm.chat');
   });
 
   it('refuses a session Harbor no longer has (expired)', async () => {
@@ -110,7 +110,7 @@ describe('prompting an explicit session', () => {
     harborSessions.get(sessionId)!.terminated = true;
     const res = await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }));
     expect(res).toMatchObject({ ok: false, error: { code: 'ERR_SESSION_NOT_FOUND' } });
-    expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
+    expect(mocks.harborRequest.mock.calls.map(([method]) => method)).not.toContain('llm.chat');
   });
 
   it('tells Harbor about each prompt', async () => {
@@ -139,14 +139,14 @@ describe('prompting an explicit session', () => {
     mocks.hasPermission.mockImplementation(async (_origin: string, scope: string) => scope !== 'model:prompt');
     const res = await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }));
     expect(res).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
-    expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
+    expect(mocks.harborRequest.mock.calls.map(([method]) => method)).not.toContain('llm.chat');
   });
 
   it('refuses a session created without the llm capability', async () => {
     const sessionId = await createExplicit({ tools: ['time/now'] });
     const res = await handleSessionPrompt(ctx('session.prompt', { sessionId, input: 'Hi' }));
     expect(res).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
-    expect(mocks.harborRequest).not.toHaveBeenCalledWith('llm.chat', expect.anything());
+    expect(mocks.harborRequest.mock.calls.map(([method]) => method)).not.toContain('llm.chat');
   });
 });
 
@@ -156,7 +156,7 @@ describe('creating an explicit session', () => {
     expect(mocks.harborRequest).toHaveBeenCalledWith('session.create', expect.objectContaining({
       origin: ORIGIN,
       allowedTools: ['time/now'],
-    }));
+    }), expect.anything());
   });
 });
 

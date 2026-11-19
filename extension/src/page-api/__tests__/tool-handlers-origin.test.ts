@@ -18,7 +18,7 @@ describe('agent.tools.* forward the page origin to Harbor', () => {
   it('agent.tools.list', async () => {
     mocks.harborRequest.mockResolvedValue({ tools: [] });
     await handleToolsList(ctx('agent.tools.list', {}));
-    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.listTools', { origin: 'https://page.example', tabId: 4 });
+    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.listTools', { origin: 'https://page.example', tabId: 4 }, expect.anything());
   });
 
   it('agent.tools.call, including the lookup for an unqualified tool name', async () => {
@@ -28,6 +28,6 @@ describe('agent.tools.* forward the page origin to Harbor', () => {
     for (const [, payload] of mocks.harborRequest.mock.calls) {
       expect(payload).toMatchObject({ origin: 'https://page.example', tabId: 4 });
     }
-    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.callTool', expect.objectContaining({ serverId: 'clock', toolName: 'now' }));
+    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.callTool', expect.objectContaining({ serverId: 'clock', toolName: 'now' }), expect.anything());
   });
 });

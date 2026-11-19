@@ -97,7 +97,7 @@ describe('agent.run cancellation at the background port boundary', () => {
     // No further llm.chat call after the abort — neither for the tool
     // call's turn nor any later one.
     expect(chatCalls).toBe(1);
-    expect(mocks.harborRequest).not.toHaveBeenCalledWith('mcp.callTool', expect.anything());
+    expect(mocks.harborRequest.mock.calls.map(([method]) => method)).not.toContain('mcp.callTool');
 
     const terminal = postMessage.mock.calls.map(([m]) => m).filter((m) => m.id === 'abort-run' && m.done);
     expect(terminal).toHaveLength(1);
