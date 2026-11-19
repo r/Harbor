@@ -6,6 +6,7 @@ mod llm;
 mod mcp;
 mod native_messaging;
 mod oauth;
+mod paths;
 mod rpc;
 
 use std::env;

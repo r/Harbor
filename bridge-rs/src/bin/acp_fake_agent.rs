@@ -31,6 +31,8 @@
 //!   started is still running.
 //! - `"env"`: writes `{"env": {...}}` with every variable in its own
 //!   environment, so a test can check what the bridge passed it.
+//! - `"cwd"`: writes `{"cwd": "<path>"}` with its actual current working
+//!   directory, so a test can check what the bridge spawned it with.
 //! - `"exit"` with `"code": N`: exits immediately with code N.
 
 use std::io::{self, BufRead, Write};
@@ -84,6 +86,15 @@ fn main() {
                         })
                         .collect();
                     let payload = serde_json::json!({ "env": vars });
+                    let _ = writeln!(stdout, "{}", serde_json::to_string(&payload).unwrap());
+                    let _ = stdout.flush();
+                    continue;
+                }
+                "cwd" => {
+                    let cwd = std::env::current_dir()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    let payload = serde_json::json!({ "cwd": cwd });
                     let _ = writeln!(stdout, "{}", serde_json::to_string(&payload).unwrap());
                     let _ = stdout.flush();
                     continue;

@@ -252,11 +252,12 @@ Agents are configured in `acp.json`, next to the LLM config (`~/Library/Applicat
 | Method | What it does |
 |--------|--------------|
 | `acp.list_agents` | Lists configured agents by `id` and `name`. Commands and environment aren't returned. |
-| `acp.open { agentId }` | Starts the agent and streams its output: an `open` event with a `channel`, a `message` event per line the agent prints, and an `exit` event when it stops. |
+| `acp.open { agentId, workspace }` | Starts the agent and streams its output: an `open` event with a `channel` and the agent's working directory (`cwd`), a `message` event per line the agent prints, and an `exit` event when it stops. |
 | `acp.send { channel, message }` | Writes one JSON object to the agent's stdin, in the order received. |
 | `acp.close { channel }` | Kills the agent and everything it started. |
 
 - The bridge only runs commands from `acp.json`, never one named in a message, and never through a shell.
+- `workspace` is required alongside `agentId`: a non-empty string of at most 2048 bytes, normally the site's origin (e.g. `https://example.com`). The bridge never uses it as a path - only its lowercase hex SHA-256 - so `../`, slashes, a NUL byte, etc. in it can't escape the directory it names. Each agent gets `<harbor data dir>/acp/workspaces/<hash of workspace>` as its working directory (`current_dir`), created (mode `0700` on unix) the first time that site opens an agent and reused - not wiped - on every open after that. The canonical path is returned as `cwd` on the `open` event.
 - Each agent runs in its own process group, so closing it also stops anything it started (for example `npx` and the `node` process under it).
 - When the extension disconnects, the bridge stops every agent it started and exits.
 - Limits: 8 agents at once; 4 MiB per `acp.send`; 64 queued messages or 16 MiB per agent, after which `acp.send` is rejected rather than waiting; output lines over 900 KiB are dropped with an error event. Output lines that aren't valid JSON or UTF-8 are dropped and logged.

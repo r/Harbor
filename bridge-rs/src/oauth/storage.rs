@@ -44,17 +44,28 @@ impl TokenStore {
         }
     }
     
-    /// Get the path to the token file.
+    /// Get the path to the token file. Errors (rather than falling back to
+    /// the current directory) if there's no home directory to find
+    /// `~/.harbor` under - restoring the behavior from before this used the
+    /// shared `paths::harbor_dir` helper, since silently writing OAuth
+    /// tokens under the bridge's current directory would be worse than
+    /// failing.
     fn get_token_path() -> Result<PathBuf, String> {
-        let home = dirs::home_dir().ok_or("Could not find home directory")?;
-        let harbor_dir = home.join(".harbor");
-        
+        Self::get_token_path_in(crate::paths::harbor_dir())
+    }
+
+    /// `get_token_path`, taking the harbor dir explicitly so the "no home
+    /// directory" error is testable without relying on environment/global
+    /// state.
+    fn get_token_path_in(harbor_dir: Option<PathBuf>) -> Result<PathBuf, String> {
+        let harbor_dir = harbor_dir.ok_or("Could not find home directory")?;
+
         // Create directory if it doesn't exist
         if !harbor_dir.exists() {
             fs::create_dir_all(&harbor_dir)
                 .map_err(|e| format!("Failed to create .harbor directory: {}", e))?;
         }
-        
+
         Ok(harbor_dir.join(TOKEN_FILE_NAME))
     }
     
@@ -186,6 +197,12 @@ mod tests {
     fn test_token_store_new() {
         let store = TokenStore::new();
         assert!(store.tokens.is_empty());
+    }
+
+    #[test]
+    fn get_token_path_errors_without_a_home_directory() {
+        let err = TokenStore::get_token_path_in(None).unwrap_err();
+        assert_eq!(err, "Could not find home directory");
     }
     
     #[test]
