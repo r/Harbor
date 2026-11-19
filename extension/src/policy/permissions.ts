@@ -6,7 +6,8 @@
 
 import { browserAPI } from '../browser-compat';
 import { resolveConsentAgentName } from './agent-consent';
-import { currentBackendTag, effectiveGrantForBackend, withBackendAllow, withUniversalDeny, type BackendTag } from './backend-grant';
+import { currentBackendTag, effectiveGrantForBackend, isBackendScopedScope, withBackendAllow, withUniversalDeny, type BackendTag } from './backend-grant';
+import { onceGrantLive, withEarlierTabs } from './once-grants';
 import type {
   PermissionScope,
   PermissionGrant,
@@ -42,18 +43,39 @@ async function getAllOriginPermissions(): Promise<Record<string, StoredOriginPer
   return (result[PERMISSIONS_STORAGE_KEY] || {}) as Record<string, StoredOriginPermissions>;
 }
 
+/**
+ * Writes to the grant store run one at a time. Each one loads the whole
+ * record, changes it and saves it, so two writes at once (two tabs answering
+ * one prompt, say) would otherwise both load the old record and the second
+ * save would drop the first's change.
+ */
+let storeWrites: Promise<unknown> = Promise.resolve();
+function oneWriteAtATime<T>(write: () => Promise<T>): Promise<T> {
+  const run = storeWrites.then(write, write);
+  storeWrites = run.catch(() => undefined);
+  return run;
+}
+
 // =============================================================================
 // Grant Checking
 // =============================================================================
 
 /**
  * `scope` and `currentBackend` are optional so every existing call site
- * that doesn't care about backend-scoping (nothing outside this file
- * currently calls this with them) keeps working — but every call site
- * inside this file now passes both, since `model:prompt`/`model:tools` are
- * reachable from any of them. Delegates to `backend-grant.ts`'s
- * `effectiveGrantForBackend`, the one place that knows a deny is
- * universal but an allow is per-backend (maintainer decision, 2026-11-19).
+ * that doesn't care about backend-scoping (`isToolAllowed`'s
+ * `mcp:tools.call` check, `liveAgentOrigins`) keeps working — but every
+ * call site elsewhere in this file now passes both, since
+ * `model:prompt`/`model:tools` are reachable from any of them.
+ *
+ * Only a backend-scoped scope (`model:prompt`/`model:tools`) actually
+ * delegates to `backend-grant.ts`'s `effectiveGrantForBackend`, the one
+ * place that knows a deny is universal but an allow is per-backend
+ * (maintainer decision, 2026-11-19). Every other scope — including a call
+ * with no `scope`/`currentBackend` at all — reads the flat stored entry
+ * directly, through `onceGrantLive`: each tab that answered a merged
+ * "Allow once" (several requests, or several tabs, folded into one
+ * prompt — see `withEarlierTabs`) keeps its own clock, the same way
+ * `agents:crossOrigin`'s own per-target-site entries do.
  */
 function getEffectiveGrant(
   stored: StoredPermission | undefined,
@@ -61,12 +83,44 @@ function getEffectiveGrant(
   scope?: PermissionScope,
   currentBackend?: BackendTag,
 ): PermissionGrant {
-  if (scope && currentBackend) {
+  if (scope && currentBackend && isBackendScopedScope(scope)) {
     return effectiveGrantForBackend(stored, scope, currentBackend, Date.now(), tabId);
   }
-  // No scope/backend given: the old flat-grant behaviour, for isToolAllowed's
-  // mcp:tools.call check below (never backend-scoped).
-  return effectiveGrantForBackend(stored, 'mcp:tools.call', 'builtin', Date.now(), tabId);
+  if (!stored) {
+    return 'not-granted';
+  }
+  if (stored.grant === 'denied') {
+    return 'denied';
+  }
+  if (stored.grant === 'granted-always') {
+    return 'granted-always';
+  }
+  if (stored.grant === 'granted-once') {
+    // Not expired for this tab: each tab that answered has its own clock.
+    return onceGrantLive(stored, Date.now(), tabId) ? 'granted-once' : 'not-granted';
+  }
+  return 'not-granted';
+}
+
+/**
+ * The sites whose agents the origin may reach now, and the strongest of
+ * those grants, which is what `agents:crossOrigin` shows as. The scope has no
+ * site-wide grant; an old site-wide entry in `scopes` is ignored.
+ */
+function liveAgentOrigins(
+  stored: StoredOriginPermissions | null,
+  tabId?: number,
+): { origins: string[]; grant: PermissionGrant } {
+  const origins: string[] = [];
+  let grant: PermissionGrant = 'not-granted';
+  for (const [target, permission] of Object.entries(stored?.agentOrigins ?? {})) {
+    const effective = getEffectiveGrant(permission, tabId);
+    if (effective === 'granted-always' || effective === 'granted-once') {
+      origins.push(target);
+      if (effective === 'granted-always' || grant === 'not-granted') grant = effective;
+    }
+  }
+  return { origins, grant };
 }
 
 // =============================================================================
@@ -114,12 +168,28 @@ export async function getPermissionStatus(origin: string, tabId?: number): Promi
       scopes[scope] = getEffectiveGrant(stored.scopes[scope], tabId, scope, currentBackend);
     }
   }
+  const agentOrigins = liveAgentOrigins(stored, tabId);
+  scopes['agents:crossOrigin'] = agentOrigins.grant;
 
   return {
     origin,
     scopes,
     allowedTools: stored?.allowedTools,
+    agentOrigins: agentOrigins.origins,
   };
+}
+
+/**
+ * Whether the origin may reach agents on `targetOrigin` right now. This is
+ * the per-site check behind `agents:crossOrigin`.
+ */
+export async function isAgentOriginAllowed(
+  origin: string,
+  targetOrigin: string,
+  tabId?: number,
+): Promise<boolean> {
+  const stored = await loadOriginPermissions(origin);
+  return liveAgentOrigins(stored, tabId).origins.includes(targetOrigin);
 }
 
 /**
@@ -184,15 +254,16 @@ export async function isToolAllowed(origin: string, toolName: string): Promise<b
  * switch *while the prompt was open* can't make the allow land on the
  * wrong backend.
  */
-export async function grantPermissions(
+async function grantPermissionsNow(
   origin: string,
   scopes: PermissionScope[],
   grantType: 'granted-once' | 'granted-always',
   tabId?: number,
   allowedTools?: string[],
   backendOverride?: BackendTag,
+  agentOrigins?: string[],
 ): Promise<PermissionGrantResult> {
-  console.log('[Permissions] grantPermissions:', { origin, scopes, grantType, tabId, allowedTools });
+  console.log('[Permissions] grantPermissions:', { origin, scopes, grantType, tabId, allowedTools, backendOverride, agentOrigins });
 
   let stored = await loadOriginPermissions(origin);
 
@@ -207,15 +278,32 @@ export async function grantPermissions(
   const now = Date.now();
   // For a backend-scoped scope (model:prompt/model:tools), the new allow
   // is added under this backend without disturbing any other backend's own
-  // allow (withBackendAllow); every other scope keeps the old flat shape.
+  // allow (withBackendAllow). Every other scope keeps the old flat shape,
+  // merged across tabs the same way agents:crossOrigin grants are below
+  // (each tab that answered keeps its own clock — withEarlierTabs).
   const backend = backendOverride ?? await currentBackendTag();
   const expiresAt = grantType === 'granted-once' ? now + ONCE_GRANT_DURATION_MS : undefined;
   const grantTabId = grantType === 'granted-once' ? tabId : undefined;
+  const grantEntry = (): StoredPermission => ({
+    grant: grantType,
+    grantedAt: now,
+    expiresAt,
+    tabId: grantTabId,
+  });
 
   for (const scope of scopes) {
-    stored.scopes[scope] = withBackendAllow(stored.scopes[scope], scope, backend, grantType, now, {
-      expiresAt, tabId: grantTabId,
-    });
+    // agents:crossOrigin is granted per target site below, never site-wide.
+    if (scope === 'agents:crossOrigin') continue;
+    stored.scopes[scope] = isBackendScopedScope(scope)
+      ? withBackendAllow(stored.scopes[scope], scope, backend, grantType, now, { expiresAt, tabId: grantTabId })
+      : withEarlierTabs(stored.scopes[scope], grantEntry(), now);
+  }
+
+  if (scopes.includes('agents:crossOrigin') && agentOrigins && agentOrigins.length > 0) {
+    stored.agentOrigins = { ...stored.agentOrigins };
+    for (const target of agentOrigins) {
+      stored.agentOrigins[target] = withEarlierTabs(stored.agentOrigins[target], grantEntry(), now);
+    }
   }
 
   // Merge allowed tools
@@ -237,20 +325,24 @@ export async function grantPermissions(
   for (const scope of Object.keys(stored.scopes) as PermissionScope[]) {
     resultScopes[scope] = getEffectiveGrant(stored.scopes[scope], tabId, scope, backend);
   }
+  const reachable = liveAgentOrigins(stored, tabId);
+  resultScopes['agents:crossOrigin'] = reachable.grant;
 
   return {
     granted: true,
     scopes: resultScopes,
     allowedTools: stored.allowedTools,
+    agentOrigins: reachable.origins,
   };
 }
 
 /**
  * Deny permissions for an origin.
  */
-export async function denyPermissions(
+async function denyPermissionsNow(
   origin: string,
   scopes: PermissionScope[],
+  agentOrigins?: string[],
 ): Promise<PermissionGrantResult> {
   let stored = await loadOriginPermissions(origin);
 
@@ -265,10 +357,18 @@ export async function denyPermissions(
   const now = Date.now();
 
   for (const scope of scopes) {
+    // Like grants, an agents:crossOrigin refusal is kept per target site.
+    if (scope === 'agents:crossOrigin') continue;
     // A deny is universal (maintainer decision, 2026-11-19): it applies
     // under every backend, and clears every backend's own allow for this
     // scope — withUniversalDeny never carries a backend or an `allows` map.
     stored.scopes[scope] = withUniversalDeny(now);
+  }
+  if (scopes.includes('agents:crossOrigin') && agentOrigins && agentOrigins.length > 0) {
+    stored.agentOrigins = { ...stored.agentOrigins };
+    for (const target of agentOrigins) {
+      stored.agentOrigins[target] = { grant: 'denied', grantedAt: now };
+    }
   }
 
   await saveOriginPermissions(stored);
@@ -292,7 +392,7 @@ export async function denyPermissions(
 /**
  * Revoke all permissions for an origin.
  */
-export async function revokePermissions(origin: string): Promise<void> {
+async function revokePermissionsNow(origin: string): Promise<void> {
   const result = await browserAPI.storage.local.get(PERMISSIONS_STORAGE_KEY);
   const allPermissions = (result[PERMISSIONS_STORAGE_KEY] || {}) as Record<string, StoredOriginPermissions>;
   delete allPermissions[origin];
@@ -302,12 +402,18 @@ export async function revokePermissions(origin: string): Promise<void> {
 /**
  * Clean up expired once-grants.
  */
-export async function cleanupExpiredGrants(): Promise<void> {
+async function cleanupExpiredGrantsNow(): Promise<void> {
   const allPermissions = await getAllOriginPermissions();
   const now = Date.now();
   let changed = false;
 
-  for (const [origin, stored] of Object.entries(allPermissions)) {
+  for (const stored of Object.values(allPermissions)) {
+    for (const [target, permission] of Object.entries(stored.agentOrigins ?? {})) {
+      if (permission.grant === 'granted-once' && permission.expiresAt && permission.expiresAt < now) {
+        delete stored.agentOrigins![target];
+        changed = true;
+      }
+    }
     for (const [scope, permission] of Object.entries(stored.scopes)) {
       if (permission.grant === 'granted-once' && permission.expiresAt && permission.expiresAt < now) {
         (stored.scopes as Record<string, StoredPermission>)[scope] = {
@@ -414,17 +520,27 @@ export async function listAllPermissions(): Promise<PermissionStatus[]> {
       }
     }
 
+    // Shown across tabs, like the scopes above.
+    const reachable = liveAgentOrigins(stored);
+    scopes['agents:crossOrigin'] = reachable.grant;
+    const deniedAgentOrigins = Object.entries(stored.agentOrigins ?? {})
+      .filter(([, permission]) => permission.grant === 'denied')
+      .map(([site]) => site);
+
     // Only include origins with at least one non-default grant — either
-    // the flat per-scope grant, or a backend-scoped allow living only in
-    // `backendAllows`.
+    // the flat per-scope grant, a backend-scoped allow living only in
+    // `backendAllows`, or a live/denied cross-origin agent grant.
     const hasGrants = Object.values(scopes).some(g => g !== 'not-granted') ||
-      (backendAllows !== undefined && Object.keys(backendAllows).length > 0);
+      (backendAllows !== undefined && Object.keys(backendAllows).length > 0) ||
+      deniedAgentOrigins.length > 0;
     if (hasGrants) {
       result.push({
         origin,
         scopes,
         backendAllows,
         allowedTools: stored.allowedTools,
+        agentOrigins: reachable.origins,
+        deniedAgentOrigins,
       });
     }
   }
@@ -436,13 +552,17 @@ export async function listAllPermissions(): Promise<PermissionStatus[]> {
 // Permission Prompt (at most one popup per origin; reuse for same site)
 // =============================================================================
 
-type PromptResolve = (result: {
+export interface PermissionPromptResult {
   granted: boolean;
   grantType?: 'granted-once' | 'granted-always';
   allowedTools?: string[];
+  /** The target sites granted for `agents:crossOrigin`: only sites the prompt showed. */
+  agentOrigins?: string[];
   explicitDeny?: boolean;
   backendTag?: BackendTag;
-}) => void;
+}
+
+type PromptResolve = (result: PermissionPromptResult) => void;
 
 let promptWindowId: number | null = null;
 /** Which origin the current prompt is for; we never show more than one popup per site. */
@@ -450,6 +570,8 @@ let promptOrigin: string | null = null;
 /** Merged state for the current prompt (updated when same origin requests again). */
 let promptScopes: PermissionScope[] = [];
 let promptTools: string[] = [];
+/** Target sites the current prompt asks about for agents:crossOrigin. */
+let promptAgentOrigins: string[] = [];
 let promptReason: string | undefined;
 let promptSessionContext: SessionPromptContext | undefined;
 let pendingPromptResolvers: PromptResolve[] = [];
@@ -542,6 +664,7 @@ function buildPromptUrl(opts: {
   scopes: PermissionScope[];
   reason?: string;
   tools?: string[];
+  agentOrigins?: string[];
   sessionContext?: SessionPromptContext;
   agentName?: string | null;
   backendTag: BackendTag;
@@ -565,6 +688,9 @@ function buildPromptUrl(opts: {
   if (opts.tools && opts.tools.length > 0) {
     params.set('tools', opts.tools.join(','));
   }
+  if (opts.agentOrigins && opts.agentOrigins.length > 0) {
+    params.set('agentOrigins', opts.agentOrigins.join(','));
+  }
   if (opts.sessionContext) {
     if (opts.sessionContext.name) params.set('sessionName', opts.sessionContext.name);
     if (opts.sessionContext.type) params.set('sessionType', opts.sessionContext.type);
@@ -584,6 +710,7 @@ function clearPromptState(): void {
   promptOrigin = null;
   promptScopes = [];
   promptTools = [];
+  promptAgentOrigins = [];
   promptReason = undefined;
   promptSessionContext = undefined;
   promptBackendTag = undefined;
@@ -595,7 +722,12 @@ function clearPromptState(): void {
 }
 
 /**
- * Show permission prompt to user. At most one popup per origin; same-site requests reuse/update the existing popup.
+ * Show permission prompt to user. At most one popup per origin; same-site
+ * requests reuse/update the existing popup.
+ *
+ * `agentOrigins` names the target sites an `agents:crossOrigin` request is
+ * for. A merged prompt lists every site its requests asked about, and the
+ * answer grants only sites the prompt showed.
  */
 export async function showPermissionPrompt(
   origin: string,
@@ -603,17 +735,12 @@ export async function showPermissionPrompt(
   reason?: string,
   requestedTools?: string[],
   sessionContext?: SessionPromptContext,
+  agentOrigins?: string[],
   // Aborts when *this* call's own page has given up — see
   // registerPromptResolver. Optional: callers with nothing of their own to
   // watch (none today) simply never discard early.
   signal?: AbortSignal,
-): Promise<{
-  granted: boolean;
-  grantType?: 'granted-once' | 'granted-always';
-  allowedTools?: string[];
-  explicitDeny?: boolean;
-  backendTag?: BackendTag;
-}> {
+): Promise<PermissionPromptResult> {
   console.log('[Permissions] showPermissionPrompt called:', { origin, scopes, hasSessionContext: !!sessionContext });
 
   // Resolved once per call, from the same snapshot: null (agentName) /
@@ -629,6 +756,7 @@ export async function showPermissionPrompt(
   if (promptOrigin === origin) {
     promptScopes = [...new Set([...promptScopes, ...scopes])];
     promptTools = [...new Set([...promptTools, ...(requestedTools || [])])];
+    promptAgentOrigins = [...new Set([...promptAgentOrigins, ...(agentOrigins || [])])];
     if (reason) promptReason = reason;
     if (sessionContext) promptSessionContext = sessionContext;
     // Re-recorded on every merge, same as the URL itself is rebuilt below
@@ -642,6 +770,7 @@ export async function showPermissionPrompt(
       scopes: promptScopes,
       reason: promptReason,
       tools: promptTools,
+      agentOrigins: promptAgentOrigins,
       sessionContext: promptSessionContext,
       agentName,
       backendTag,
@@ -662,7 +791,7 @@ export async function showPermissionPrompt(
     }
 
     if (promptOrigin === origin) {
-      return new Promise<{ granted: boolean; grantType?: 'granted-once' | 'granted-always'; allowedTools?: string[]; explicitDeny?: boolean; backendTag?: BackendTag }>((resolve) => {
+      return new Promise<PermissionPromptResult>((resolve) => {
         registerPromptResolver(resolve, signal);
       });
     }
@@ -681,6 +810,7 @@ export async function showPermissionPrompt(
   promptOrigin = origin;
   promptScopes = [...scopes];
   promptTools = requestedTools ? [...requestedTools] : [];
+  promptAgentOrigins = agentOrigins ? [...new Set(agentOrigins)] : [];
   promptReason = reason;
   promptSessionContext = sessionContext;
   promptBackendTag = backendTag;
@@ -690,6 +820,7 @@ export async function showPermissionPrompt(
     scopes: promptScopes,
     reason: promptReason,
     tools: promptTools,
+    agentOrigins: promptAgentOrigins,
     sessionContext: promptSessionContext,
     agentName,
     backendTag,
@@ -737,19 +868,21 @@ export async function showPermissionPrompt(
  * which backend a grant lands on than its buttons' own `granted`/
  * `grantType`/`allowedTools`/`explicitDeny` choices.
  */
-export function handlePermissionPromptResponse(response: {
-  granted: boolean;
-  grantType?: 'granted-once' | 'granted-always';
-  allowedTools?: string[];
-  explicitDeny?: boolean;
-  backendTag?: BackendTag;
-}): void {
+export function handlePermissionPromptResponse(response: PermissionPromptResult): void {
   console.log('[Permissions] handlePermissionPromptResponse:', response);
+  // Grant only target sites this prompt asked about: the page echoes the
+  // sites it displayed, and a site merged in after it rendered isn't granted.
+  const shown = new Set(promptAgentOrigins);
+  const answer: PermissionPromptResult = {
+    ...response,
+    agentOrigins: (response.agentOrigins ?? []).filter((site) => shown.has(site)),
+  };
+  if (!answer.granted || answer.agentOrigins?.length === 0) delete answer.agentOrigins;
   const resolvers = pendingPromptResolvers;
   const resolvedBackendTag = promptBackendTag;
   pendingPromptResolvers = [];
   for (const r of resolvers) {
-    r({ ...response, backendTag: resolvedBackendTag });
+    r({ ...answer, backendTag: resolvedBackendTag });
   }
   if (promptWindowId !== null) {
     browserAPI.windows.remove(promptWindowId).catch(() => {});
@@ -758,6 +891,7 @@ export function handlePermissionPromptResponse(response: {
   promptOrigin = null;
   promptScopes = [];
   promptTools = [];
+  promptAgentOrigins = [];
   promptReason = undefined;
   promptSessionContext = undefined;
   promptBackendTag = undefined;
@@ -790,20 +924,36 @@ export async function requestPermissions(
 ): Promise<PermissionGrantResult> {
   const { scopes, reason, tools } = options;
 
-  // First check current status
-  const check = await checkPermissions(origin, scopes, tabId);
+  // agents:crossOrigin is granted per target site, so a request for it has
+  // to say which sites. The other scopes are checked as before.
+  const wantsAgentOrigins = scopes.includes('agents:crossOrigin');
+  const agentOrigins = [...new Set(options.agentOrigins ?? [])];
+  if (wantsAgentOrigins && agentOrigins.length === 0) {
+    throw new Error('agents:crossOrigin needs the target sites in agentOrigins');
+  }
+  const otherScopes = scopes.filter((scope) => scope !== 'agents:crossOrigin');
 
-  // If any scope is explicitly denied, return immediately (no re-prompt)
-  if (check.deniedScopes.length > 0) {
+  // First check current status
+  const check = await checkPermissions(origin, otherScopes, tabId);
+  const stored = await loadOriginPermissions(origin);
+  const deniedTargets = wantsAgentOrigins
+    ? agentOrigins.filter((site) => stored?.agentOrigins?.[site]?.grant === 'denied')
+    : [];
+  const reachable = liveAgentOrigins(stored, tabId).origins;
+  const missingTargets = wantsAgentOrigins ? agentOrigins.filter((site) => !reachable.includes(site)) : [];
+
+  // If any scope or site is explicitly denied, return immediately (no re-prompt)
+  if (check.deniedScopes.length > 0 || deniedTargets.length > 0) {
     const status = await getPermissionStatus(origin, tabId);
     return {
       granted: false,
       scopes: status.scopes,
+      agentOrigins: status.agentOrigins,
     };
   }
 
   // If all scopes granted, return success
-  if (check.granted) {
+  if (check.granted && missingTargets.length === 0) {
     const status = await getPermissionStatus(origin, tabId);
 
     // Check tool allowlist if mcp:tools.call is requested
@@ -811,7 +961,7 @@ export async function requestPermissions(
       const missingTools = tools.filter((t) => !status.allowedTools?.includes(t));
       if (missingTools.length > 0) {
         // Need to prompt for additional tools
-        const promptResult = await showPermissionPrompt(origin, ['mcp:tools.call'], reason, missingTools, undefined, signal);
+        const promptResult = await showPermissionPrompt(origin, ['mcp:tools.call'], reason, missingTools, undefined, undefined, signal);
         if (promptResult.granted && promptResult.grantType) {
           return grantPermissions(origin, [], promptResult.grantType, tabId, promptResult.allowedTools, promptResult.backendTag);
         }
@@ -822,27 +972,55 @@ export async function requestPermissions(
       granted: true,
       scopes: status.scopes,
       allowedTools: status.allowedTools,
+      agentOrigins: status.agentOrigins,
     };
   }
 
   // Need to prompt user
-  const promptResult = await showPermissionPrompt(origin, check.missingScopes, reason, tools, undefined, signal);
+  const askScopes: PermissionScope[] = [
+    ...check.missingScopes,
+    ...(missingTargets.length > 0 ? ['agents:crossOrigin' as const] : []),
+  ];
+  const promptResult = await showPermissionPrompt(
+    origin,
+    askScopes,
+    reason,
+    tools,
+    undefined,
+    missingTargets.length > 0 ? missingTargets : undefined,
+    signal,
+  );
 
   if (promptResult.granted && promptResult.grantType) {
     // promptResult.backendTag is the backend the prompt itself named (the
     // one selected when it was shown), not whatever is selected right now
     // — a switch while the popup was open must not change which backend
     // the resulting allow lands on (item 3, docs/ACP_BACKEND_DESIGN.md).
-    return grantPermissions(origin, check.missingScopes, promptResult.grantType, tabId, promptResult.allowedTools, promptResult.backendTag);
+    const result = await grantPermissions(
+      origin,
+      askScopes,
+      promptResult.grantType,
+      tabId,
+      promptResult.allowedTools,
+      promptResult.backendTag,
+      // Only sites this request asked about: a merged prompt may have shown
+      // other requests' sites, which those requests grant for their own tabs.
+      (promptResult.agentOrigins ?? []).filter((site) => missingTargets.includes(site)),
+    );
+    // Granted only if every site asked for is now reachable.
+    const now = new Set(result.agentOrigins ?? []);
+    const sitesAskedFor = wantsAgentOrigins ? agentOrigins : [];
+    return { ...result, granted: sitesAskedFor.every((site) => now.has(site)) };
   } else if (promptResult.explicitDeny) {
     // Only store denial if user explicitly clicked deny (not just dismissed or window failed)
-    return denyPermissions(origin, check.missingScopes);
+    return denyPermissions(origin, askScopes, missingTargets);
   } else {
     // User dismissed or window failed to open - don't store denial, just return not-granted
     const status = await getPermissionStatus(origin, tabId);
     return {
       granted: false,
       scopes: status.scopes,
+      agentOrigins: status.agentOrigins,
     };
   }
 }
@@ -949,8 +1127,8 @@ export const SCOPE_DESCRIPTIONS: Record<PermissionScope, { title: string; descri
     risk: 'medium',
   },
   'agents:crossOrigin': {
-    title: 'Cross-origin agent access',
-    description: 'Communicate with agents from different websites.',
+    title: 'Use agents on other sites',
+    description: 'Call, message and see the agents registered by the sites listed below, and no others. Those agents act with their own site\'s data and tools.',
     risk: 'high',
   },
   'agents:remote': {
@@ -1083,4 +1261,45 @@ export async function validateSessionCapabilities(
     valid: invalid.length === 0,
     invalidCapabilities: invalid,
   };
+}
+
+// =============================================================================
+// Grant store writers (serialized; see oneWriteAtATime)
+// =============================================================================
+
+/**
+ * Grant permissions for an origin, and for `agents:crossOrigin` the named
+ * target sites. `backendOverride`, when given, is the backend to stamp a
+ * backend-scoped allow (model:prompt/model:tools) for — see
+ * `grantPermissionsNow`.
+ */
+export function grantPermissions(
+  origin: string,
+  scopes: PermissionScope[],
+  grantType: 'granted-once' | 'granted-always',
+  tabId?: number,
+  allowedTools?: string[],
+  backendOverride?: BackendTag,
+  agentOrigins?: string[],
+): Promise<PermissionGrantResult> {
+  return oneWriteAtATime(() => grantPermissionsNow(origin, scopes, grantType, tabId, allowedTools, backendOverride, agentOrigins));
+}
+
+/** Store a refusal for an origin, and for `agents:crossOrigin` the named target sites. */
+export function denyPermissions(
+  origin: string,
+  scopes: PermissionScope[],
+  agentOrigins?: string[],
+): Promise<PermissionGrantResult> {
+  return oneWriteAtATime(() => denyPermissionsNow(origin, scopes, agentOrigins));
+}
+
+/** Revoke all permissions for an origin. */
+export function revokePermissions(origin: string): Promise<void> {
+  return oneWriteAtATime(() => revokePermissionsNow(origin));
+}
+
+/** Clean up expired once-grants. */
+export function cleanupExpiredGrants(): Promise<void> {
+  return oneWriteAtATime(() => cleanupExpiredGrantsNow());
 }

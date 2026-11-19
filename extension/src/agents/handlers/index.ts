@@ -32,6 +32,7 @@ export {
   handleAgentsInvoke,
   handleAgentsSend,
   handleAgentsSubscribe,
+  handleAgentsBroadcast,
   handleAgentsUnsubscribe,
   handleAgentsRegisterMessageHandler,
   handleAgentsUnregisterMessageHandler,

@@ -7,7 +7,8 @@
  * - Agents are ephemeral: tied to page lifecycle, destroyed on reload
  * - Each agent has a unique ID generated at registration
  * - Agents can be discovered by other agents (with permission)
- * - Cross-origin discovery requires agents:crossOrigin permission
+ * - Cross-origin discovery lists only agents on sites the querying origin
+ *   holds an agents:crossOrigin grant for
  */
 
 import { browserAPI } from '../browser-compat';
@@ -33,13 +34,13 @@ const agentsByTab = new Map<number, Set<AgentId>>();
 const agentUsage = new Map<AgentId, AgentUsage>();
 
 // Agent ID counter
-let agentIdCounter = 0;
 
 /**
  * Generate a unique agent ID
  */
 function generateAgentId(): AgentId {
-  return `agent-${Date.now()}-${++agentIdCounter}`;
+  // Random, so a page can't guess a live agent id on another site.
+  return `agent-${crypto.randomUUID()}`;
 }
 
 /**
@@ -241,7 +242,8 @@ export function discoverAgents(
     includeSameOrigin?: boolean;
     includeCrossOrigin?: boolean;
   },
-  allowCrossOrigin: boolean,
+  /** Whether the querying origin may reach agents on this other site. */
+  canReachSite: (site: string) => boolean,
 ): AgentSummary[] {
   const results: AgentSummary[] = [];
 
@@ -252,7 +254,7 @@ export function discoverAgents(
     // Check origin permissions
     const sameOrigin = agent.origin === queryOrigin;
     
-    if (!sameOrigin && !allowCrossOrigin) {
+    if (!sameOrigin && !canReachSite(agent.origin)) {
       continue;
     }
 

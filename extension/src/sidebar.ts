@@ -1613,6 +1613,8 @@ type PermissionStatusEntry = {
   // listAllPermissions (policy/permissions.ts).
   backendAllows?: Record<string, Record<string, string>>;
   allowedTools?: string[];
+  agentOrigins?: string[];
+  deniedAgentOrigins?: string[];
 };
 
 /** "built-in" for the built-in model, or the bare agent id for `acp:<agentId>` — used only for this list's own badges, not the consent prompt's own (real) agent-name lookup. */
@@ -1700,6 +1702,22 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
       `;
     }
 
+    let agentSitesHtml = '';
+    if ((perm.agentOrigins?.length ?? 0) > 0 || (perm.deniedAgentOrigins?.length ?? 0) > 0) {
+      const siteBadges = [
+        ...(perm.agentOrigins ?? []).map((site) => `<span class="permission-tool-badge">${escapeHtml(site)}</span>`),
+        ...(perm.deniedAgentOrigins ?? []).map(
+          (site) => `<span class="permission-scope-badge denied">${escapeHtml(site)} ✕</span>`,
+        ),
+      ].join('');
+      agentSitesHtml = `
+        <div class="permission-tools-section">
+          <div class="permission-tools-title">Agents on these sites</div>
+          <div class="permission-tools-list">${siteBadges}</div>
+        </div>
+      `;
+    }
+
     return `
       <div class="permission-origin-item" data-origin="${escapeHtml(perm.origin)}">
         <div class="permission-origin-header">
@@ -1709,6 +1727,7 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
           ${scopeBadges || '<span style="color: var(--color-text-muted); font-size: 11px;">No scopes</span>'}
         </div>
         ${toolsHtml}
+        ${agentSitesHtml}
         <div class="permission-actions">
           <button class="btn btn-sm btn-danger revoke-permissions-btn" data-origin="${escapeHtml(perm.origin)}">Revoke All</button>
         </div>

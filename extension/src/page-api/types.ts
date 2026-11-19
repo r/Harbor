@@ -26,7 +26,8 @@ export type PermissionScope =
   | 'agents:register'           // Register this page as an agent
   | 'agents:discover'           // Discover other agents
   | 'agents:invoke'             // Invoke other agents
-  | 'agents:message';           // Send messages / broadcasts to other agents
+  | 'agents:message'            // Send messages / broadcasts to other agents
+  | 'agents:crossOrigin';       // Reach agents on named other sites (agentOrigins)
 
 export type PermissionGrantType =
   | 'granted-once'     // Valid for 10 minutes, tab-scoped
@@ -50,6 +51,7 @@ export interface RequestPermissionsOptions {
   scopes: PermissionScope[];
   reason?: string;
   toolAllowlist?: string[];  // For mcp:tools.call
+  agentOrigins?: string[];   // For agents:crossOrigin: the sites, e.g. "https://example.com"
 }
 
 export interface PermissionResult {

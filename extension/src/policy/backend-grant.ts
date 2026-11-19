@@ -28,6 +28,7 @@
 import type { PermissionGrant, PermissionScope } from '../agents/types';
 import { readAgentBackendSetting } from '../page-api/agent-backend-setting';
 import { browserAPI } from '../browser-compat';
+import { onceGrantLive, withEarlierTabs } from './once-grants';
 
 /** `'builtin'`, or `acp:<agentId>` for a configured ACP agent. */
 export type BackendTag = string;
@@ -73,6 +74,8 @@ export interface BackendAllowEntry {
   grantedAt: number;
   expiresAt?: number;
   tabId?: number;
+  /** For 'granted-once' answered by several tabs under this one backend: tab id (or `*`) to its expiry. */
+  tabs?: Record<string, number>;
 }
 
 /**
@@ -94,19 +97,19 @@ export interface StoredPermissionLike {
 
 /**
  * `'granted-always'` never expires and is never scoped to one tab — only
- * `'granted-once'` is (docs/PERMISSIONS.md). Matches the pre-existing
- * `isGrantValid`/`isStoredGrantLive` behaviour both permissions.ts and
- * origin-grants.ts had before they delegated here.
+ * `'granted-once'` is (docs/PERMISSIONS.md). For `'granted-once'`, delegates
+ * to `once-grants.ts`'s `onceGrantLive`: each tab that answered keeps its
+ * own clock, the same as every other scope's "Allow once" (see
+ * `withBackendAllow` below) — `onceGrantLive` reads both the single-tab
+ * legacy shape (`tabId`/`expiresAt`) and a merged multi-tab one (`tabs`).
  */
 function isLiveEntry(
-  entry: { grant: 'granted-once' | 'granted-always'; expiresAt?: number; tabId?: number },
+  entry: { grant: 'granted-once' | 'granted-always'; expiresAt?: number; tabId?: number; tabs?: Record<string, number> },
   now: number,
   tabId?: number,
 ): boolean {
   if (entry.grant === 'granted-always') return true;
-  if (entry.expiresAt && now > entry.expiresAt) return false;
-  if (entry.tabId !== undefined && tabId !== undefined && entry.tabId !== tabId) return false;
-  return true;
+  return onceGrantLive(entry, now, tabId);
 }
 
 /**
@@ -167,6 +170,12 @@ export function effectiveGrantForBackend(
  * find neither the (now-cleared) flat field nor an `allows` entry of its
  * own. A deny, or an already-expired/never-granted flat entry, has
  * nothing worth migrating.
+ *
+ * A fresh "Allow once" for `backendTag` is merged with that *same*
+ * backend's own still-live entry (`withEarlierTabs`), so a second tab
+ * answering for the same backend keeps the first tab's own clock running
+ * too — the same per-tab behaviour every other scope's "Allow once" gets.
+ * Another backend's own entry in `allows` is never touched by this.
  */
 export function withBackendAllow(
   existing: StoredPermissionLike | undefined,
@@ -191,7 +200,8 @@ export function withBackendAllow(
     }
   }
 
-  allows[backendTag] = { grant, grantedAt: now, expiresAt: options.expiresAt, tabId: options.tabId };
+  const fresh: BackendAllowEntry = { grant, grantedAt: now, expiresAt: options.expiresAt, tabId: options.tabId };
+  allows[backendTag] = withEarlierTabs(allows[backendTag], fresh, now);
   return { grant: 'not-granted', grantedAt: now, allows };
 }
 

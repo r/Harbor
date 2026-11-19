@@ -108,12 +108,14 @@ export async function replay(
       tool: record.resource?.tool,
       host: record.resource?.host,
       path: record.resource?.path,
+      agentOrigin: record.resource?.agentOrigin,
       ...modifications.resource,
     },
     inputLabels: modifications.inputLabels
       ? new LabelSet(modifications.inputLabels)
       : new LabelSet(record.labelsIn as DataLabel[]),
     isSubagent: modifications.isSubagent ?? record.isSubagent,
+    classifyHost: record.classifyHost,
     correlationId: 'simulator-replay',
   };
 

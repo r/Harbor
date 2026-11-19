@@ -242,7 +242,7 @@ export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse 
       messages,
       model: session.options.model,
       temperature: session.options.temperature,
-    });
+    }, { signal: ctx.signal });
     
     // Add assistant response to history
     session.history.push({ role: 'assistant', content: result.content });

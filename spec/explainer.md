@@ -888,7 +888,7 @@ interface AgentCapabilitiesReport {
     discover: boolean;       // Can discover agents (Extension 3)
     invoke: boolean;         // Can invoke agents (Extension 3)
     message: boolean;        // Can message agents (Extension 3)
-    crossOrigin: boolean;    // Can cross-origin communicate (Extension 3)
+    crossOrigin: boolean;    // Can reach agents on at least one other site (Extension 3)
     remote: boolean;         // Can connect to remote agents (Extension 3)
   };
   
@@ -951,6 +951,7 @@ agent.requestPermissions(options: {
   scopes: PermissionScope[];
   reason?: string;
   tools?: string[];
+  agentOrigins?: string[];
 }): Promise<PermissionGrantResult>
 ```
 
@@ -961,6 +962,7 @@ agent.requestPermissions(options: {
 | `scopes` | `PermissionScope[]` | Array of permission scopes to request |
 | `reason` | `string` | Human-readable explanation shown in prompt |
 | `tools` | `string[]` | Specific tools to request (for `mcp:tools.call`) |
+| `agentOrigins` | `string[]` | The sites whose agents to reach. Required with `agents:crossOrigin`, which is granted per site |
 
 **Returns:**
 ```typescript
@@ -1191,9 +1193,9 @@ agent.browser.activeTab.readability(): Promise<ActiveTabReadability>
 - `ERR_INTERNAL` — Content extraction failed
 
 **Content Extraction:**
-- Removes scripts, styles, navigation, ads, and non-content elements
-- Attempts to find main content area (article, main, [role="main"])
-- Collapses whitespace and limits output to 50,000 characters
+- Reads the main content area (`main`, `article`, `[role="main"]`, ...), or the whole body if there is none
+- Uses the rendered text, so scripts, styles and hidden elements are left out
+- Keeps line breaks, collapses other whitespace, and limits output to 50,000 characters
 
 **Example:**
 ```javascript
@@ -2310,6 +2312,8 @@ Websites can declare MCP server availability via HTML `<link>` elements:
 | `agent.chat.canOpen()` | Check if chat UI is available |
 | `agent.chat.open(options)` | Open browser chat UI with config |
 | `agent.chat.close(chatId?)` | Close the chat UI |
+
+The chat belongs to the implementer, not the page: Harbor shows a chat panel on the page, and a native host could use its own chat surface. Messages sent from it are still the page's prompts, because the page set the system prompt and tools. They're checked under the page's origin and need `model:prompt`.
 
 ### Example
 

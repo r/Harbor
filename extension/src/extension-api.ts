@@ -9,6 +9,7 @@
  */
 
 import { bridgeChat, type BridgeChatRequest } from './llm/chat';
+import { modelForPrompt } from './llm/prompt-model';
 import { browserAPI } from './browser-compat';
 import { bridgeRequest, bridgeStreamRequest, getBridgeConnectionState, checkBridgeHealth } from './llm/bridge-client';
 import { listServersWithStatus, callTool, startServer, stopServer, listTools } from './mcp/host';
@@ -452,6 +453,19 @@ function readPermissionOrigin(p: Record<string, unknown>): string | null {
   return typeof p.origin === 'string' && p.origin ? p.origin : null;
 }
 
+/**
+ * A bare site origin (scheme, host, port), as agents are registered under.
+ * No commas: the prompt carries the sites as a comma-separated list.
+ */
+function isSiteOrigin(value: unknown): value is string {
+  if (typeof value !== 'string' || value.includes(',')) return false;
+  try {
+    return new URL(value).origin === value;
+  } catch {
+    return false;
+  }
+}
+
 function readTabId(p: Record<string, unknown>): number | undefined {
   return typeof p.tabId === 'number' ? p.tabId : undefined;
 }
@@ -464,7 +478,7 @@ async function handlePermissionsCheck(payload: unknown): Promise<ExtensionApiRes
   }
   try {
     const status = await getPermissionStatus(origin, readTabId(p));
-    return success({ ...status, allowedTools: status.allowedTools ?? [] });
+    return success({ ...status, allowedTools: status.allowedTools ?? [], agentOrigins: status.agentOrigins ?? [] });
   } catch (e) {
     return failure(e);
   }
@@ -476,9 +490,15 @@ async function handlePermissionsRequest(payload: unknown, signal?: AbortSignal):
   if (!origin) {
     return failure('permissions.request requires the calling page\'s origin');
   }
-  const { scopes, reason, tools } = p;
+  const { scopes, reason, tools, agentOrigins } = p;
   if (!Array.isArray(scopes) || scopes.length === 0 || !scopes.every(s => typeof s === 'string' && KNOWN_SCOPES.has(s))) {
     return failure('permissions.request requires a non-empty list of known scopes');
+  }
+  if (agentOrigins !== undefined && (!Array.isArray(agentOrigins) || !agentOrigins.every(isSiteOrigin))) {
+    return failure('permissions.request: agentOrigins must be a list of site origins, such as "https://example.com"');
+  }
+  if (scopes.includes('agents:crossOrigin') && (!Array.isArray(agentOrigins) || agentOrigins.length === 0)) {
+    return failure('permissions.request: agents:crossOrigin needs the target sites in agentOrigins');
   }
   if (reason !== undefined && typeof reason !== 'string') {
     return failure('permissions.request: reason must be a string');
@@ -493,11 +513,12 @@ async function handlePermissionsRequest(payload: unknown, signal?: AbortSignal):
         scopes: scopes as PermissionScope[],
         reason: reason as string | undefined,
         tools: tools as string[] | undefined,
+        agentOrigins: agentOrigins as string[] | undefined,
       },
       readTabId(p),
       signal,
     );
-    return success({ ...result, allowedTools: result.allowedTools ?? [] });
+    return success({ ...result, allowedTools: result.allowedTools ?? [], agentOrigins: result.agentOrigins ?? [] });
   } catch (e) {
     return failure(e);
   }
@@ -743,21 +764,6 @@ const BROWSER_CAPABILITY_ACTIONS: Record<'read' | 'interact' | 'screenshot', Typ
   screenshot: 'browser.read.screenshot',
 };
 
-/**
- * The model a prompt will run on. A prompt that names no model (or names
- * "default") runs on the bridge's default, which `llm.get_config` reports
- * as the bridge resolves it for chat. Returns undefined when that's unknown.
- */
-async function modelForPrompt(model: unknown): Promise<string | undefined> {
-  if (typeof model === 'string' && model && model !== 'default') return model;
-  try {
-    const config = await bridgeRequest<{ default_model?: string | null }>('llm.get_config');
-    return config.default_model ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 async function promptCheck(model: unknown): Promise<PageCheck> {
   return { action: promptActionForModel(await modelForPrompt(model)) };
 }
@@ -806,13 +812,60 @@ async function gatePageCall(
     return failure(`${type} requires the calling page's origin`);
   }
 
-  const ctx: RequestContext = {
-    id: requestId ?? crypto.randomUUID(),
-    type: type as RequestContext['type'],
-    payload,
-    origin: p.origin,
-    tabId: typeof p.tabId === 'number' ? p.tabId : undefined,
+  return runPageChecks(
+    {
+      id: requestId ?? crypto.randomUUID(),
+      type: type as RequestContext['type'],
+      payload,
+      origin: p.origin,
+      tabId: typeof p.tabId === 'number' ? p.tabId : undefined,
+    },
+    await checksFor(p),
+  );
+}
+
+/**
+ * The same gate for a page call the page API serves itself (browser and tab
+ * actions), which never passes through this router. The page API has
+ * already checked the site's grant, so this audits the call and enforces
+ * deny, a watchdog restriction and a rule that asks, without a second
+ * prompt in normal use. Returns `null` when the call may proceed.
+ */
+export async function gatePageAction(
+  call: { id: string; type: string; origin: string; tabId?: number },
+  action: TypedAction,
+  resource?: PolicyResource,
+  options: { pageFetch?: boolean } = {},
+): Promise<{ code: string; message: string } | null> {
+  if (!call.origin) {
+    return { code: ErrorCodes.PERMISSION_DENIED, message: `${call.type} requires the calling page's origin` };
+  }
+  const refusal = await runPageChecks(
+    {
+      id: call.id,
+      type: call.type as RequestContext['type'],
+      payload: undefined,
+      origin: call.origin,
+      tabId: call.tabId,
+    },
+    [{ action, resource }],
+    // A page opening, navigating to or fetching a sensitive domain isn't
+    // moving data there it didn't already have, so the host is recorded and
+    // matched by rules but not classified.
+    { classifyHost: false, pageFetch: options.pageFetch },
+  );
+  if (!refusal) return null;
+  return {
+    code: refusal.code ?? ErrorCodes.PERMISSION_DENIED,
+    message: refusal.error ?? 'Permission denied',
   };
+}
+
+async function runPageChecks(
+  ctx: RequestContext,
+  checks: PageCheck[],
+  options: { classifyHost?: boolean; pageFetch?: boolean } = {},
+): Promise<ExtensionApiResponse | null> {
   let denied: ExtensionApiResponse | null = null;
   const sender: ResponseSender = {
     // Keep the policy engine's code (ERR_QUARANTINED, ERR_BLOCKED_BY_POLICY,
@@ -827,14 +880,25 @@ async function gatePageCall(
     sendStreamEvent: () => {},
   };
 
-  for (const check of await checksFor(p)) {
+  for (const check of checks) {
     const allowed = await requireAction(ctx, sender, check.action, {
+      ...options,
       resource: check.resource,
       upstreamConsent: 'origin-grant',
     });
     if (!allowed) return denied ?? failure('Permission denied');
   }
   return null;
+}
+
+/**
+ * The caller stopped waiting while the policy check ran (a prompt can stay
+ * open longer than the page's request timeout). The call isn't performed,
+ * even if the person then allowed it, so the page never sees an error for
+ * a call that went on to happen.
+ */
+function abandoned(): ExtensionApiResponse {
+  return { ...failure('The page stopped waiting for this call'), code: ErrorCodes.ABORTED };
 }
 
 // =============================================================================
@@ -848,16 +912,20 @@ async function gatePageCall(
 export async function routeExtensionApiMessage(
   message: ExtensionApiRequest,
   sender: { id?: string; url?: string; tab?: { id?: number } },
-  // Forwarded only to 'permissions.request' today — the one call here that
-  // keeps a consent prompt open past this function's own return, so the
-  // page's own timeout/abort needs a way to reach it (see
+  // `options.signal` aborts when the caller gave up — either its own
+  // timeout/abort, or harbor-core.ts's own request timer running out
+  // (see harborRequest). Checked below before the gate and before every
+  // handler that can wait on a prompt, and forwarded on to
+  // 'permissions.request' specifically — the one call here that keeps a
+  // consent prompt open past this function's own return, so the page's
+  // own giving-up needs a way to reach it (see
   // page-api/handlers/permission-handlers.ts and
-  // policy/permissions.ts's showPermissionPrompt). Every other case below
-  // ignores it.
-  signal?: AbortSignal,
+  // policy/permissions.ts's showPermissionPrompt).
+  options: { signal?: AbortSignal } = {},
 ): Promise<ExtensionApiResponse> {
   const { type, payload } = message;
-  
+  const { signal } = options;
+
   log(`Request from ${sender.id}: ${type}`);
 
   // A session's tool call holds a budget slot before the policy gate, so a
@@ -870,6 +938,7 @@ export async function routeExtensionApiMessage(
     try {
       const gateFailure = await gatePageCall(type, payload);
       if (gateFailure) return gateFailure;
+      if (options.signal?.aborted) return abandoned();
       return await handleMcpCallTool(payload, held.slot);
     } finally {
       held.slot?.release();
@@ -878,6 +947,7 @@ export async function routeExtensionApiMessage(
 
   const gateFailure = await gatePageCall(type as MessageType, payload);
   if (gateFailure) return gateFailure;
+  if (options.signal?.aborted) return abandoned();
 
   switch (type as MessageType) {
     // LLM Operations
@@ -1089,7 +1159,11 @@ export type ChatStreamEvent = {
  * `gatePageCall` exactly as a non-streaming call does, so the policy gate
  * and audit log see the same decision either way.
  */
-export async function* streamLlmChat(payload: unknown, requestId?: string): AsyncGenerator<ChatStreamEvent> {
+export async function* streamLlmChat(
+  payload: unknown,
+  requestId?: string,
+  signal?: AbortSignal,
+): AsyncGenerator<ChatStreamEvent> {
   const { messages, model, max_tokens, temperature, system, tools } = (payload || {}) as {
     messages?: Array<{ role: string; content: string }>;
     model?: string;
@@ -1110,10 +1184,18 @@ export async function* streamLlmChat(payload: unknown, requestId?: string): Asyn
     yield { type: 'error', error: { code: gateFailure.code, message: gateFailure.error ?? 'Permission denied' } };
     return;
   }
+  if (signal?.aborted) {
+    const { code, error } = abandoned();
+    yield { type: 'error', error: { code, message: error ?? '' } };
+    return;
+  }
 
   try {
     let tokenCount = 0;
-    for await (const event of bridgeStreamRequest('llm.chat_stream', { messages, model, max_tokens, temperature, system_prompt: system, tools })) {
+    // The signal also stops the model mid-response when the page stops
+    // reading (see bridgeStreamRequest).
+    for await (const event of bridgeStreamRequest('llm.chat_stream', { messages, model, max_tokens, temperature, system_prompt: system, tools }, signal)) {
+      if (signal?.aborted) break;
       if (event.type === 'token') tokenCount++;
       yield event;
       if (event.type === 'done' || event.type === 'error') {

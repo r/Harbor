@@ -20,6 +20,12 @@ export interface RequestContext {
   tabId?: number;
   /** Firefox container ID - used to open new tabs in the same container as the parent */
   cookieStoreId?: string;
+  /**
+   * Aborts when the caller stops waiting (a page's request timed out, or
+   * Harbor's own request timer ran out). `requireAction` refuses a call
+   * whose signal aborted while its policy check ran.
+   */
+  signal?: AbortSignal;
 }
 
 /**

@@ -20,7 +20,12 @@ export type ApiErrorCode =
   | 'ERR_NOT_IMPLEMENTED'
   | 'ERR_SESSION_NOT_FOUND'
   | 'ERR_TIMEOUT'
+  // The caller stopped waiting while Harbor's policy check ran.
+  | 'ERR_ABORTED'
   | 'ERR_INTERNAL'
+  | 'ERR_INVALID_REQUEST'
+  // Multi-agent: the caller hasn't registered as an agent.
+  | 'ERR_NOT_REGISTERED'
   // Typed-permission decisions surface these.
   | 'ERR_BLOCKED_BY_POLICY'
   | 'ERR_LABEL_FLOW_BLOCKED'
@@ -95,6 +100,8 @@ export interface PermissionGrantResult {
   granted: boolean;
   scopes: Record<PermissionScope, PermissionGrant>;
   allowedTools?: string[];
+  /** Sites whose agents the origin may currently reach (`agents:crossOrigin`). */
+  agentOrigins?: string[];
 }
 
 export interface PermissionStatus {
@@ -114,12 +121,18 @@ export interface PermissionStatus {
    */
   backendAllows?: Partial<Record<PermissionScope, Record<string, PermissionGrant>>>;
   allowedTools?: string[];
+  /** Sites whose agents the origin may currently reach (`agents:crossOrigin`). */
+  agentOrigins?: string[];
+  /** Sites the person refused agents:crossOrigin for (sidebar display). */
+  deniedAgentOrigins?: string[];
 }
 
 export interface RequestPermissionsOptions {
   scopes: PermissionScope[];
   reason?: string;
   tools?: string[];
+  /** The sites `agents:crossOrigin` is asked for. Required with that scope. */
+  agentOrigins?: string[];
 }
 
 export interface StoredPermission {
@@ -127,6 +140,8 @@ export interface StoredPermission {
   grantedAt: number;
   expiresAt?: number; // For 'granted-once'
   tabId?: number; // For 'granted-once'
+  /** For 'granted-once' answered by several tabs: tab id (or `*`) to its expiry. */
+  tabs?: Record<string, number>;
   /**
    * Round 2's single-backend field for `model:prompt`/`model:tools`: which
    * backend ('builtin' or `acp:<agentId>`) a *flat* grant was given for.
@@ -148,6 +163,12 @@ export interface StoredOriginPermissions {
   origin: string;
   scopes: Record<PermissionScope, StoredPermission>;
   allowedTools: string[];
+  /**
+   * `agents:crossOrigin` grants, one per target site, each with its own
+   * duration and tab. The scope has no site-wide entry: an old one in
+   * `scopes` is ignored.
+   */
+  agentOrigins?: Record<string, StoredPermission>;
 }
 
 // =============================================================================
@@ -583,6 +604,7 @@ export type MessageType =
   | 'agents.invoke'
   | 'agents.send'
   | 'agents.subscribe'
+  | 'agents.broadcast'
   | 'agents.unsubscribe'
   | 'agents.registerMessageHandler'
   | 'agents.unregisterMessageHandler'

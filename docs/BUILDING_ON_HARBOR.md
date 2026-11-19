@@ -14,7 +14,7 @@ If you're just looking for the API reference, read [`WEB_AGENTS_API.md`](./WEB_A
 |---|---|---|
 | An AI feature inside a single web app | `WEB_AGENTS_API.md` § *window.ai* and § *Tools* | `BUILDING_ON_WEB_AGENTS_API.md` |
 | A site-specific assistant ("BYOC") | `WEB_AGENTS_API.md` § *MCP* and § *Chat* | `demo/web-agents/bring-your-chatbot/` |
-| An autonomous agent that uses tools | `WEB_AGENTS_API.md` § *Autonomous Agent* and § *Sessions* | `demo/web-agents/chat-poc/` |
+| An autonomous agent that uses tools | `WEB_AGENTS_API.md` § *Autonomous Agent* and § *Sessions* | `demo/web-agents/getting-started/` |
 | A multi-agent workflow (page-bound, today) | `WEB_AGENTS_API.md` § *Multi-Agent* | `demo/multi-web-agent/research-writer/` |
 | A page that can drive itself or a spawned tab | `WEB_AGENTS_API.md` § *Browser APIs* | `demo/web-agent-control/` |
 | A background "Hermes-style" assistant | This doc, § *Hermes pattern* | `AGENTIC_BROWSER_ROADMAP.md` Phase C |
@@ -203,12 +203,12 @@ If you want to ship an agent browser today, do 2a as the demo, and lobby for Pha
 
 ## Pattern 3 — A site-specific assistant (BYOC, ships today)
 
-This one is *complete*. See `demo/web-agents/bring-your-chatbot/` for the working example.
+See `demo/web-agents/bring-your-chatbot/` for the working example. Messages sent from the chat are the page's prompts, so the site needs `model:prompt` as well as `chat:open`. Harbor's chat doesn't call the `tools` listed here yet; replies come from the model alone.
 
 ```javascript
 // On shop.example
 await window.agent.requestPermissions({
-  scopes: ['mcp:servers.register', 'chat:open'],
+  scopes: ['mcp:servers.register', 'chat:open', 'model:prompt'],
   reason: 'Connect our shop tools to your assistant'
 });
 

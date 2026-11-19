@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../harbor-core', () => ({
+  forgetAgentsInTab: vi.fn(),
   harborRequest: vi.fn(async () => ({ bridgeReady: true })),
   harborStreamRequest: vi.fn(),
   acpOpenStream: (agentId: string, workspace: string) => mocks.bridge.current!.acpOpenStream(agentId, workspace),

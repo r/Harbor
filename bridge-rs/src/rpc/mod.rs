@@ -135,6 +135,9 @@ fn register_llm_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
   handlers.insert("llm.health", |_| Box::pin(llm::health()));
   handlers.insert("llm.list_models", |_| Box::pin(llm::list_models()));
   handlers.insert("llm.chat", |p| Box::pin(llm::chat(p)));
+  // Stops a running `llm.chat_stream` (a streaming method, handled in
+  // `native_messaging::handle_streaming_rpc`) by its request id.
+  handlers.insert("llm.cancel_stream", |p| Box::pin(llm::cancel_stream(p)));
   handlers.insert("llm.list_providers", |_| Box::pin(llm::list_providers()));
   handlers.insert("llm.list_provider_types", |_| Box::pin(llm::list_provider_types()));
   handlers.insert("llm.check_provider", |p| Box::pin(llm::check_provider_status(p)));

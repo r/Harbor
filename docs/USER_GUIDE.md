@@ -277,7 +277,7 @@ rm -rf ~/.harbor
 
 ## Next Steps
 
-- Try the [Chat POC Demo](../demo/web-agents/chat-poc/) to see the full API in action
+- Try the [Getting Started demo](../demo/web-agents/getting-started/) for a walkthrough of the API, and [Bring Your Own Chatbot](../demo/web-agents/bring-your-chatbot/) to see a page open your agent's chat
 - Read the [Developer Guide](DEVELOPER_GUIDE.md) to build apps with Harbor
 - Explore the [MCP Servers](../mcp-servers/) for examples and templates
 

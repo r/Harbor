@@ -21,7 +21,8 @@ type PermissionScope =
   | 'agents:register'
   | 'agents:discover'
   | 'agents:invoke'
-  | 'agents:message';
+  | 'agents:message'
+  | 'agents:crossOrigin';
 
 type PermissionGrant = 'granted-once' | 'granted-always' | 'denied' | 'not-granted';
 
@@ -216,6 +217,8 @@ declare global {
         scopes: PermissionScope[];
         reason?: string;
         tools?: string[];
+        /** Required with agents:crossOrigin: the sites whose agents to reach. */
+        agentOrigins?: string[];
       }): Promise<PermissionGrantResult>;
       permissions: { list(): Promise<PermissionStatus> };
       tools: {

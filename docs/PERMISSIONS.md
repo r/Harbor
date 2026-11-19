@@ -91,7 +91,7 @@ The typed namespace is organized by what the action actually does:
 | `network.egress.same_origin` | HTTP(S) fetch to the same origin as the requester | Bounded data flow |
 | `network.egress.cross_origin` | HTTP(S) fetch to a different origin | Possible exfiltration channel |
 | `agent.delegate` | Invoke another registered agent | Capability passing |
-| `agent.delegate.crossOrigin` | Invoke an agent in a different origin | Authority crossing trust boundaries |
+| `agent.delegate.crossOrigin` | Invoke or message an agent in a different origin; granted per target site | Authority crossing trust boundaries |
 | `agent.delegate.remote` | Invoke a remote A2A agent | Authority leaving the machine |
 
 Every action carries metadata:
@@ -294,7 +294,7 @@ normal
 |---|---|
 | 20 tool calls | flagged |
 | 60 tool calls | restricted |
-| 5 cross-origin egresses | restricted |
+| 5 cross-origin egresses (a page's own `fetch` isn't counted) | restricted |
 | 3 distinct sensitive labels (no window) | restricted |
 | 3 label-flow blocks | quarantined |
 | 5 consecutive denials (no window) | quarantined |
@@ -325,6 +325,26 @@ Every PolicyEngine decision — whether it prompted, auto-allowed, denied, or do
 Harbor injects the page API (`window.ai`, `window.agent`, `navigator.modelContext`) itself, from `extension/src/page-api/`. A page's calls arrive over a port from Harbor's own content script, and Harbor takes the page's origin and tab from the browser's record of that port (`port.sender`), never from the message. The page API calls the rest of Harbor in-process through `page-api/harbor-core.ts`. Harbor runs each model and tool call through the PolicyEngine under that origin: `llm.chat`, `llm.chatStream`, `mcp.listTools`, `mcp.callTool`, and `session.create` (one check per requested capability). An `agent.run` therefore appears in the audit log as its tool listing, each model prompt and each tool call, in order. A prompt is classified as local or remote by the model it will run on. A prompt that names no model, as every `agent.run` prompt does, runs on the bridge's default model and is classified by that model. If the default model is unknown, the prompt counts as remote. A call without an origin is rejected.
 
 When the person has selected an ACP agent (`harbor_agent_backend`; docs/ACP_BACKEND_DESIGN.md), a prompt runs on that agent instead of Harbor's own model, and is classified as `model.prompt.agent` rather than any `model.prompt.remote.*` action — `page-api/harbor-core.ts`'s `requireAgentPromptAction` runs the same `requireAction` gate right before every `session/prompt`, on both `agent.run` and a `window.ai` text session's own prompt loop, in addition to the pre-existing `model:prompt` origin-grant check. A denial there ends the run or turn with `ERR_PERMISSION_DENIED`, and is still recorded in the audit log under `model.prompt.agent` like any other decision.
+
+Browser and tab calls go through the same check, after the page API has checked the site's grant:
+
+| Page call | Typed action | Resource host |
+| --- | --- | --- |
+| `activeTab.click`, `fill`, `select`, `scroll` | `browser.write.interact` | the calling page |
+| `activeTab.screenshot` | `browser.read.screenshot` | the calling page |
+| `activeTab.getElements` | `browser.read.element` | the calling page |
+| `activeTab.readability` | `browser.read.activeTab` | the calling page |
+| `navigate` | `browser.write.navigate` | the destination |
+| `fetch` | `network.egress.same_origin` or `network.egress.cross_origin` | the destination |
+| `tabs.list` | `browser.read.tabs` | the calling page |
+| `tabs.create` | `browser.write.tabsCreate` | the new tab's URL |
+| `tabs.close`, and reading a tab the site opened (`readability`, `getHtml`) | `browser.write.tabsCreate` | the calling page |
+
+`waitForLoad` on a tab the site opened isn't audited: it only reports load status. A `fetch` to this device or a private network is refused before the check, so it isn't audited either.
+
+The host is recorded in the audit log, and a policy rule can match it (for example, deny `network.egress.cross_origin` to one host). Harbor doesn't classify these hosts as sensitive, though: a page opening, navigating to or fetching a bank or a document site isn't moving data there that it didn't already have, so these calls are never refused at the information-flow tier. A page's own `fetch` also doesn't count toward the watchdog's cross-origin egress limit, because a site can already call `fetch` freely from its page. A `fetch` redirected to another origin is checked again at its final URL: if that's refused, the page gets the refusal instead of the response (the request itself has already been sent).
+
+If a rule or the watchdog makes Harbor ask before a page call (a browser call, a model prompt, a tool call, creating a session, a call to or from another agent, or opening the chat), and the page gives up waiting (its request times out after 30 seconds — or, for `agent.requestPermissions()`, 5 minutes — or it cancels an `agent.run` or a stream), the call isn't performed even if the person then allows it.
 
 Harbor holds the only store of per-origin grants and the only consent prompt. The page API checks Harbor's store (`permissions.check`) before each page call, and `agent.requestPermissions()` goes to Harbor's prompt (`permissions.request`). So a site revoked in Harbor's sidebar is refused on its next call. That includes work the site started while it still held the grant: every prompt on an open text session (`window.ai` or `agent.sessions.create`), and every model turn of a running `agent.run`, re-checks `model:prompt`. Revoking the site, or a one-time grant expiring, stops the next one. This holds in Safari too: its build injects the same page API.
 
@@ -568,6 +588,7 @@ These are the policy engine's codes, and Harbor reports them as is wherever its 
 - `agent.tools.call()` and a session's `callTool()` throw them.
 - A `window.ai` text session's `prompt()` throws them, and `promptStreaming()` ends with them, when the session runs on Harbor's own model.
 - `agent.run()` ends with them as its `error` event when its tool list is refused, or, on Harbor's own model, a model call.
+- `agent.browser.*` calls (page interaction, screenshots, reading the page, navigation, `fetch` and the tab calls) throw them.
 
 When the person has chosen an ACP agent to answer, prompts go to that agent rather than through Harbor's policy engine, so its failures use the ACP codes (`ERR_AGENT_FAILED`, `ERR_AGENT_BUSY`, `ERR_AGENT_REFUSED`, `ERR_AGENT_LIMIT`). `agent.run()`'s tool list is still checked by the policy engine on either backend.
 

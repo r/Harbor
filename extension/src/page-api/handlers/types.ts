@@ -27,11 +27,12 @@ export interface RequestContext {
   /**
    * Aborts if the page's own request times out, or it posts an explicit
    * abort for this request id (background.ts's port listener sets this for
-   * every request). Most handlers don't need it; the ones that keep
-   * background work running past a single request/response round trip
-   * (the ACP backend's `ai.createTextSession`/`session.prompt`) read it so
-   * a page-side timeout cancels that work too, instead of leaving it
-   * running.
+   * every request). Handlers pass it on their calls into the rest of Harbor
+   * so a call the page stopped waiting for during Harbor's policy check
+   * isn't performed. Handlers that keep background work running past a
+   * single request/response round trip (the ACP backend's
+   * `ai.createTextSession`/`session.prompt`) also read it so a page-side
+   * timeout cancels that work, instead of leaving it running.
    */
   signal?: AbortSignal;
 }

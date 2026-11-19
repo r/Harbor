@@ -116,3 +116,35 @@ describe('requireAction', () => {
     await resultPromise;
   });
 });
+
+describe('requireAction when the caller has stopped waiting', () => {
+  const aborted = () => {
+    const c = new AbortController();
+    c.abort();
+    return c.signal;
+  };
+  const expectAbandoned = (result: boolean, calls: unknown[]) => {
+    expect(result).toBe(false);
+    expect(calls).toEqual([expect.objectContaining({ ok: false, error: expect.objectContaining({ code: 'ERR_ABORTED' }) })]);
+  };
+
+  it('refuses an allowed call', async () => {
+    const { sender: s, calls } = sender();
+    expectAbandoned(await requireAction(ctx({ signal: aborted() }), s, 'tool.list'), calls);
+  });
+
+  it('refuses a call that would proceed on upstream consent', async () => {
+    const { sender: s, calls } = sender();
+    const result = await requireAction(ctx({ signal: aborted() }), s, 'tool.call', {
+      resource: { server: 'github', tool: 'create_pr' },
+      upstreamConsent: 'origin-grant',
+    });
+    expectAbandoned(result, calls);
+  });
+
+  it('still lets a call through when its signal has not aborted', async () => {
+    const { sender: s, calls } = sender();
+    expect(await requireAction(ctx({ signal: new AbortController().signal }), s, 'tool.list')).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+});

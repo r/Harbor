@@ -8,7 +8,7 @@
  * `deny` the handler emits a structured error response.
  */
 
-import type { PermissionScope } from '../types';
+import type { ApiErrorCode, PermissionScope } from '../types';
 import type { RequestContext, ResponseSender } from './router-types';
 import { evaluate, type PolicyResource, type PolicyDecision } from '../../policy/engine';
 import type { TypedAction } from '../../policy/actions';
@@ -57,14 +57,31 @@ export interface RequireActionOptions {
    * typed-action check runs.
    */
   upstreamConsent?: 'origin-grant';
+  /** Record and match `resource.host` without classifying it (see PolicyRequest.classifyHost). */
+  classifyHost?: boolean;
+  /** Mark the audit record as a page's own fetch (see AuditRecord.pageFetch). */
+  pageFetch?: boolean;
+  /**
+   * Never show a prompt: an ask or preview is a refusal. For a check with no
+   * one to ask about, such as one site among a broadcast's recipients.
+   */
+  noPrompt?: boolean;
+}
+
+/** A permission refusal, in the shape a handler sends as its error. */
+export interface ActionDenial {
+  code: ApiErrorCode;
+  message: string;
+  details?: Record<string, unknown>;
 }
 
 /**
  * The single chokepoint the rest of the codebase calls. Returns `true` if
  * the action is allowed (either by the engine or after a successful
  * prompt). Returns `false` and sends an error response when the action is
- * denied. Either way, after `requireAction` returns the handler's
- * obligation regarding permissioning is complete.
+ * denied, or when the caller stopped waiting before it could proceed.
+ * Either way, after `requireAction` returns the handler's obligation
+ * regarding permissioning is complete.
  */
 export async function requireAction(
   ctx: RequestContext,
@@ -72,6 +89,23 @@ export async function requireAction(
   action: TypedAction,
   options: RequireActionOptions = {},
 ): Promise<boolean> {
+  const denial = await checkAction(ctx, action, options);
+  if (!denial) return true;
+  sender.sendResponse({ id: ctx.id, ok: false, error: denial });
+  return false;
+}
+
+/**
+ * The same check as `requireAction`, for a handler that runs several gated
+ * steps inside one request. Returns `null` when the action may proceed, or
+ * the refusal, without sending anything, so the handler can report it as
+ * that step's failure.
+ */
+export async function checkAction(
+  ctx: RequestContext,
+  action: TypedAction,
+  options: RequireActionOptions = {},
+): Promise<ActionDenial | null> {
   log('requireAction', { origin: ctx.origin, action, options });
 
   const request = {
@@ -82,6 +116,7 @@ export async function requireAction(
     reason: options.reason,
     correlationId: ctx.id,
     tabId: ctx.tabId,
+    classifyHost: options.classifyHost,
   };
   const decision = await evaluate(request);
   const proceedsOnUpstreamConsent =
@@ -94,18 +129,27 @@ export async function requireAction(
   Audit.record(
     request,
     decision,
-    proceedsOnUpstreamConsent ? { consent: options.upstreamConsent } : {},
+    {
+      ...(proceedsOnUpstreamConsent ? { consent: options.upstreamConsent } : {}),
+      ...(options.pageFetch ? { pageFetch: true as const } : {}),
+    },
   );
 
   log('requireAction decision', decision);
 
-  if (decision.effect === 'allow') return true;
+  // The caller may have stopped waiting while the check ran (a prompt can
+  // stay open longer than a page's request timeout). Such a call isn't
+  // performed, even if the person then allowed it.
+  const proceed = (): ActionDenial | null => (ctx.signal?.aborted ? ABANDONED : null);
+
+  if (decision.effect === 'allow') return proceed();
 
   if (decision.effect === 'deny') {
-    return sendDeny(ctx, sender, decision);
+    return denialFor(decision);
   }
 
-  if (proceedsOnUpstreamConsent) return true;
+  if (proceedsOnUpstreamConsent) return proceed();
+  if (options.noPrompt) return denialFor(decision);
 
   // ask | preview — surface the prompt via the existing flow.
   // We use the typed action's primary legacy scope unless the caller
@@ -113,46 +157,58 @@ export async function requireAction(
   const scopeForPrompt = options.promptAsScope ?? primaryLegacyScope(action);
   if (!scopeForPrompt) {
     // No legacy mapping; treat as deny since we can't prompt yet.
-    return sendDeny(ctx, sender, decision);
+    return denialFor(decision);
   }
 
-  const promptResult = await showPermissionPrompt(
-    ctx.origin,
-    [scopeForPrompt],
-    options.reason ?? decision.reason,
-    options.resource?.tool ? [options.resource.tool] : undefined,
-  );
+  // agents:crossOrigin is granted per target site, so the prompt names the
+  // site and a grant must cover it. With no target site there is nothing the
+  // person could allow.
+  const targetSite = scopeForPrompt === 'agents:crossOrigin' ? options.resource?.agentOrigin : undefined;
+  if (scopeForPrompt === 'agents:crossOrigin' && !targetSite) {
+    return denialFor(decision);
+  }
 
-  if (promptResult.granted && promptResult.grantType) {
+  const promptReason = options.reason ?? decision.reason;
+  const promptTools = options.resource?.tool ? [options.resource.tool] : undefined;
+  const promptResult = targetSite
+    ? await showPermissionPrompt(ctx.origin, [scopeForPrompt], promptReason, promptTools, undefined, [targetSite])
+    : await showPermissionPrompt(ctx.origin, [scopeForPrompt], promptReason, promptTools);
+
+  const coversTarget = !targetSite || (promptResult.agentOrigins ?? []).includes(targetSite);
+  if (promptResult.granted && promptResult.grantType && coversTarget) {
     await grantPermissions(
       ctx.origin,
       [scopeForPrompt],
       promptResult.grantType,
       ctx.tabId,
       promptResult.allowedTools,
+      // The backend the prompt itself named (model:prompt/model:tools
+      // only; ignored for every other scope) — see
+      // policy/permissions.ts's requestPermissions.
+      promptResult.backendTag,
+      // Only the site this call asked about: a merged prompt may have shown
+      // other sites, which their own callers grant for their own tabs.
+      targetSite ? [targetSite] : promptResult.agentOrigins,
     );
-    return true;
+    return proceed();
   }
 
   // User dismissed or denied.
-  sender.sendResponse({
-    id: ctx.id,
-    ok: false,
-    error: {
-      code: 'ERR_PERMISSION_DENIED',
-      message: promptResult.explicitDeny
-        ? `User denied ${action}.`
-        : `Permission "${action}" required.`,
-      details: {
-        action,
-        tier: decision.tier,
-        source: decision.source,
-        reason: decision.reason,
-      },
+  return {
+    code: 'ERR_PERMISSION_DENIED',
+    message: promptResult.explicitDeny
+      ? `User denied ${action}.`
+      : `Permission "${action}" required.`,
+    details: {
+      action,
+      tier: decision.tier,
+      source: decision.source,
+      reason: decision.reason,
     },
-  });
-  return false;
+  };
 }
+
+const ABANDONED: ActionDenial = { code: 'ERR_ABORTED', message: 'The page stopped waiting for this call' };
 
 /**
  * Whether consent obtained upstream can stand in for this verdict. It can
@@ -171,25 +227,17 @@ function upstreamConsentCovers(decision: PolicyDecision): boolean {
   return true;
 }
 
-function sendDeny(
-  ctx: RequestContext,
-  sender: ResponseSender,
-  decision: PolicyDecision,
-): false {
-  sender.sendResponse({
-    id: ctx.id,
-    ok: false,
-    error: {
-      code: decision.errorCode ?? 'ERR_PERMISSION_DENIED',
-      message: decision.reason,
-      details: {
-        tier: decision.tier,
-        source: decision.source,
-        rule: decision.rule,
-      },
+
+function denialFor(decision: PolicyDecision): ActionDenial {
+  return {
+    code: decision.errorCode ?? 'ERR_PERMISSION_DENIED',
+    message: decision.reason,
+    details: {
+      tier: decision.tier,
+      source: decision.source,
+      rule: decision.rule,
     },
-  });
-  return false;
+  };
 }
 
 // =============================================================================

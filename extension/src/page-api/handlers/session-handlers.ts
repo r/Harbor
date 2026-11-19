@@ -55,7 +55,7 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
       tabId: ctx.tabId,
       options,
       allowedTools,
-    });
+    }, { signal: ctx.signal });
 
     if (!result.sessionId) {
       return errorResponse(ctx.id, 'ERR_INTERNAL', 'Harbor did not create a session');

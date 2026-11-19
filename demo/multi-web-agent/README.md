@@ -41,7 +41,7 @@ Demos for multi-agent coordination and A2A communication.
 - `agents:discover` - Discover agents
 - `agents:invoke` - Invoke agents
 - `agents:message` - Send messages
-- `agents:crossOrigin` - Cross-origin communication
+- `agents:crossOrigin` - Reach agents on named other sites (pass `agentOrigins`)
 - `agents:remote` - Connect to remote agents
 
 ## Coming Soon

@@ -75,6 +75,7 @@ const origin = params.get('origin') || 'Unknown';
 const scopesParam = params.get('scopes') || '';
 const reason = params.get('reason') || '';
 const toolsParam = params.get('tools') || '';
+const agentOriginsParam = params.get('agentOrigins') || '';
 const sessionName = params.get('sessionName') || '';
 const sessionType = params.get('sessionType') || '';
 const requestedLLM = params.get('llm') === 'true';
@@ -94,6 +95,7 @@ const backendTag = params.get('backendTag') || undefined;
 
 const scopes = scopesParam.split(',').filter(Boolean) as PermissionScope[];
 const tools = toolsParam.split(',').filter(Boolean);
+const agentOrigins = agentOriginsParam.split(',').filter(Boolean);
 
 // Render origin
 const originEl = document.getElementById('origin');
@@ -196,6 +198,25 @@ if (tools.length > 0) {
   }
 }
 
+// Render the sites whose agents this grant would reach
+if (agentOrigins.length > 0) {
+  const sitesSection = document.getElementById('agent-sites-section');
+  const sitesList = document.getElementById('agent-sites-list');
+  if (sitesSection && sitesList) {
+    sitesSection.style.display = 'block';
+    for (const site of agentOrigins) {
+      // Site origins come from the page, so build the row without innerHTML.
+      const item = document.createElement('div');
+      item.className = 'tool-item';
+      const label = document.createElement('span');
+      label.className = 'tool-name';
+      label.textContent = site;
+      item.append(label);
+      sitesList.appendChild(item);
+    }
+  }
+}
+
 // Handle deny button
 const btnDeny = document.getElementById('btn-deny');
 btnDeny?.addEventListener('click', () => {
@@ -223,6 +244,8 @@ btnAllow?.addEventListener('click', () => {
     grantType,
     allowedTools: selectedTools.length > 0 ? selectedTools : undefined,
     backendTag,
+    // Exactly the sites shown above; Harbor grants no site this page didn't show.
+    agentOrigins: agentOrigins.length > 0 ? agentOrigins : undefined,
   });
 });
 
@@ -231,6 +254,7 @@ function sendResponse(response: {
   granted: boolean;
   grantType?: 'granted-once' | 'granted-always';
   allowedTools?: string[];
+  agentOrigins?: string[];
   explicitDeny?: boolean;
   backendTag?: string;
 }): void {

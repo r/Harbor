@@ -12,6 +12,7 @@ import type { TransportResponse } from '../../types';
 vi.mock('../helpers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../helpers')>()),
   requireAction: vi.fn(async () => true),
+  checkAction: vi.fn(async () => null),
 }));
 
 // Record what Harbor would deliver to each target agent instead of

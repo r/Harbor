@@ -122,7 +122,8 @@ type PermissionScope =
   | 'agents:register'
   | 'agents:discover'
   | 'agents:invoke'
-  | 'agents:message';
+  | 'agents:message'
+  | 'agents:crossOrigin';
 
 type PermissionGrant = 'granted-once' | 'granted-always' | 'denied' | 'not-granted';
 
@@ -130,12 +131,16 @@ interface PermissionGrantResult {
   granted: boolean;
   scopes: Record<PermissionScope, PermissionGrant>;
   allowedTools?: string[];
+  /** Sites whose agents this page may reach (agents:crossOrigin). */
+  agentOrigins?: string[];
 }
 
 interface PermissionStatus {
   origin: string;
   scopes: Record<PermissionScope, PermissionGrant>;
   allowedTools?: string[];
+  /** Sites whose agents this page may reach (agents:crossOrigin). */
+  agentOrigins?: string[];
 }
 
 interface TextSessionOptions {
@@ -696,13 +701,11 @@ function createAgentSessionObject(
 // =============================================================================
 
 // Browser API types
+/** What readability() resolves to: the page's URL, title and main text. */
 interface ReadabilityContent {
+  url: string;
   title: string;
-  content: string;
-  textContent: string;
-  excerpt: string;
-  byline: string | null;
-  siteName: string | null;
+  text: string;
 }
 
 interface BrowserElement {
@@ -720,7 +723,7 @@ function createBrowserApi() {
   return Object.freeze({
     activeTab: Object.freeze({
       /**
-       * Get readable content from the current page using readability parser.
+       * Get the active tab's URL, title and main text.
        */
       readability: FEATURE_FLAGS.browserInteraction || FEATURE_FLAGS.browserControl
         ? async function(): Promise<ReadabilityContent> {
@@ -853,13 +856,7 @@ function createBrowserApi() {
           /**
            * Extract readable content from a tab this origin created.
            */
-          async readability(tabId: number): Promise<{
-            title: string;
-            url: string;
-            content: string;
-            text: string;
-            length: number;
-          }> {
+          async readability(tabId: number): Promise<ReadabilityContent> {
             return sendRequest('agent.browser.tab.readability', { tabId });
           },
 
@@ -1319,6 +1316,8 @@ const agentApi = Object.freeze({
     scopes: PermissionScope[];
     reason?: string;
     tools?: string[];
+    /** Required with agents:crossOrigin: the sites, e.g. "https://example.com". */
+    agentOrigins?: string[];
   }): Promise<PermissionGrantResult> {
     return sendRequest<PermissionGrantResult>('agent.requestPermissions', options);
   },
@@ -1398,7 +1397,7 @@ const agentApi = Object.freeze({
         'browser:activeTab.read', 'browser:activeTab.interact', 'browser:activeTab.screenshot',
         'browser:tabs.create', 'browser:tabs.read', 'browser:navigate',
         'web:fetch', 'chat:open',
-        'agents:register', 'agents:discover', 'agents:invoke', 'agents:message',
+        'agents:register', 'agents:discover', 'agents:invoke', 'agents:message', 'agents:crossOrigin',
       ],
     };
   },

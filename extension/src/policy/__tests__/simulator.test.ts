@@ -124,3 +124,23 @@ describe('replay', () => {
     await expect(replay('aud_doesnotexist')).rejects.toThrow(/no audit record/);
   });
 });
+
+describe('replay of a call whose host was not classified', () => {
+  it('leaves the host unclassified, as the live decision did', async () => {
+    // A page's browser call records its host without classifying it, so a
+    // sensitive host (a bank) doesn't label the call or refuse it.
+    const req = {
+      origin: 'https://page.example',
+      action: 'network.egress.cross_origin' as const,
+      resource: { host: 'chase.com' },
+      classifyHost: false,
+    };
+    const live = await evaluate(req);
+    const record = Audit.record(req, live, { pageFetch: true });
+    const result = await replay(record.id);
+    expect(result.decision.effect).toBe(live.effect);
+    expect(result.decision.outputLabels.toArray()).toEqual(live.outputLabels.toArray());
+    expect(result.diff?.effectChanged).toBeUndefined();
+    expect(result.diff?.labelsAdded).toEqual([]);
+  });
+});

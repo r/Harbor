@@ -35,7 +35,7 @@ describe('a page giving up while its own prompt is open', () => {
     const remove = vi.spyOn(chrome.windows, 'remove').mockResolvedValue(undefined as never);
     const controller = new AbortController();
 
-    const result = showPermissionPrompt(ORIGIN, ['model:prompt'], undefined, undefined, undefined, controller.signal);
+    const result = showPermissionPrompt(ORIGIN, ['model:prompt'], undefined, undefined, undefined, undefined, controller.signal);
     await vi.waitFor(() => expect(create).toHaveBeenCalled());
 
     controller.abort();
@@ -80,7 +80,7 @@ describe('a page giving up while its own prompt is open', () => {
     // A second caller for the same origin merges into the same popup
     // (permissions.ts's own "reuse" behavior) and then gives up.
     const givingUp = new AbortController();
-    const second = showPermissionPrompt(ORIGIN, ['model:tools'], undefined, undefined, undefined, givingUp.signal);
+    const second = showPermissionPrompt(ORIGIN, ['model:tools'], undefined, undefined, undefined, undefined, givingUp.signal);
     givingUp.abort();
 
     await expect(second).resolves.toEqual({ granted: false });

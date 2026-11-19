@@ -24,7 +24,6 @@ import {
   recordInvocationMade,
   recordInvocationReceived,
 } from './registry';
-import { checkPermissions } from '../policy/permissions';
 
 // Message handlers registered by agents
 type MessageHandler = (message: AgentMessage) => void;
@@ -113,13 +112,13 @@ export function unsubscribeFromAllEvents(agentId: AgentId): void {
 // =============================================================================
 
 /**
- * Send a message from one agent to another.
+ * Send a message from one agent to another. No permission check here: the
+ * caller (`handleAgentsSend`) checks a cross-origin recipient's site first.
  */
 export async function sendMessage(
   fromAgentId: AgentId,
   toAgentId: AgentId,
   payload: unknown,
-  fromOrigin: string,
 ): Promise<{ delivered: boolean; error?: string }> {
   const fromAgent = getAgent(fromAgentId);
   const toAgent = getAgent(toAgentId);
@@ -135,14 +134,6 @@ export async function sendMessage(
   // Check if recipient accepts messages
   if (!toAgent.acceptsMessages) {
     return { delivered: false, error: 'Recipient does not accept messages' };
-  }
-
-  // Check cross-origin permission
-  if (fromAgent.origin !== toAgent.origin) {
-    const check = await checkPermissions(fromOrigin, ['agents:crossOrigin']);
-    if (!check.granted) {
-      return { delivered: false, error: 'Cross-origin messaging requires agents:crossOrigin permission' };
-    }
   }
 
   const message: AgentMessage = {
@@ -171,11 +162,14 @@ export async function sendMessage(
 
 /**
  * Invoke another agent with a task.
+ *
+ * This does not check permission. Every caller checks the target first:
+ * `handleAgentsInvoke` for a direct invoke, and the orchestration step gate
+ * for pipeline, parallel, route and supervisor steps.
  */
 export async function invokeAgent(
   request: AgentInvocationRequest,
   fromAgentId: AgentId,
-  fromOrigin: string,
   traceId?: string,
 ): Promise<AgentInvocationResponse> {
   const trace = traceId || 'no-trace';
@@ -208,18 +202,6 @@ export async function invokeAgent(
       error: { code: 'ERR_NOT_ACCEPTED', message: 'Target agent does not accept invocations' },
       executionTime: Date.now() - startTime,
     };
-  }
-
-  // Check cross-origin permission
-  if (fromAgent.origin !== toAgent.origin) {
-    const check = await checkPermissions(fromOrigin, ['agents:crossOrigin']);
-    if (!check.granted) {
-      return {
-        success: false,
-        error: { code: 'ERR_PERMISSION_DENIED', message: 'Cross-origin invocation requires agents:crossOrigin permission' },
-        executionTime: Date.now() - startTime,
-      };
-    }
   }
 
   const handler = invocationHandlers.get(request.agentId);
@@ -264,13 +246,20 @@ export async function invokeAgent(
   }
 }
 
+// =============================================================================
+// Cleanup
+// =============================================================================
+
 /**
- * Broadcast an event to all subscribed agents.
+ * Deliver an event to every agent subscribed to `eventType` whose site
+ * `canReachSite` accepts. No permission check here beyond that filter: the
+ * caller (`handleAgentsBroadcast`) decides which sites the sender may reach.
  */
 export function broadcastEvent(
   sourceAgentId: AgentId,
   eventType: string,
   data: unknown,
+  canReachSite: (site: string) => boolean,
 ): { delivered: number; failed: number } {
   const subscribers = eventSubscriptions.get(eventType);
   if (!subscribers || subscribers.size === 0) {
@@ -288,34 +277,29 @@ export function broadcastEvent(
   let failed = 0;
 
   for (const subscriberId of subscribers) {
-    // Don't send to self
     if (subscriberId === sourceAgentId) continue;
+    const subscriber = getAgent(subscriberId);
+    if (!subscriber || !canReachSite(subscriber.origin)) continue;
 
     const handler = messageHandlers.get(subscriberId);
-    if (handler) {
-      try {
-        const message: AgentMessage = {
-          id: generateMessageId(),
-          from: sourceAgentId,
-          to: subscriberId,
-          type: 'event',
-          payload: event,
-          timestamp: Date.now(),
-        };
-        handler(message);
-        delivered++;
-      } catch {
-        failed++;
-      }
+    if (!handler) continue;
+    try {
+      handler({
+        id: generateMessageId(),
+        from: sourceAgentId,
+        to: subscriberId,
+        type: 'broadcast',
+        payload: { type: event.type, data: event.data, source: event.source },
+        timestamp: Date.now(),
+      });
+      delivered++;
+    } catch {
+      failed++;
     }
   }
 
   return { delivered, failed };
 }
-
-// =============================================================================
-// Cleanup
-// =============================================================================
 
 /**
  * Clean up all handlers for an agent.

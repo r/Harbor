@@ -41,6 +41,7 @@ export interface AuditRecord {
     tool?: string;
     host?: string;
     path?: string;
+    agentOrigin?: string;
   };
   /** Final effect. */
   effect: PolicyDecision['effect'];
@@ -69,10 +70,18 @@ export interface AuditRecord {
    * (`permissions.check`) before this typed-action check runs.
    */
   consent?: 'origin-grant';
+  /**
+   * Set on a page's own `agent.browser.fetch`. The watchdog doesn't count it
+   * as cross-origin egress: a site can already fetch freely from its page.
+   */
+  pageFetch?: true;
+  /** Set when the decision didn't classify `resource.host` (PolicyRequest.classifyHost). */
+  classifyHost?: false;
 }
 
 export interface AuditExtra {
   consent?: AuditRecord['consent'];
+  pageFetch?: AuditRecord['pageFetch'];
 }
 
 // =============================================================================
@@ -108,6 +117,7 @@ class AuditLog {
             tool: req.resource.tool,
             host: req.resource.host,
             path: req.resource.path,
+            agentOrigin: req.resource.agentOrigin,
           }
         : undefined,
       effect: decision.effect,
@@ -121,6 +131,8 @@ class AuditLog {
       trace: decision.trace,
       correlationId: req.correlationId,
       ...(extra.consent ? { consent: extra.consent } : {}),
+      ...(extra.pageFetch ? { pageFetch: true as const } : {}),
+      ...(req.classifyHost === false ? { classifyHost: false as const } : {}),
     };
 
     this.buffer.push(record);
