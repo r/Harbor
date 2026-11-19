@@ -290,28 +290,40 @@ export async function handleLanguageModelCapabilities(ctx: RequestContext): Hand
   }
 }
 
+/** The calling page, which Harbor's policy check needs on every page call. */
+function pageCall(ctx: RequestContext): { origin: string; tabId?: number } {
+  return { origin: ctx.origin, tabId: ctx.tabId };
+}
+
 export async function handleProvidersList(ctx: RequestContext): HandlerResponse {
   if (!await hasPermission(ctx.origin, 'model:list', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission model:list required');
   }
 
   try {
-    const result = await harborRequest<{ providers: unknown[] }>('llm.listProviders');
+    const result = await harborRequest<{ providers: unknown[] }>('llm.listProviders', pageCall(ctx), { signal: ctx.signal });
     return successResponse(ctx.id, result.providers);
   } catch (e) {
     return errorResponse(
       ctx.id,
-      'ERR_INTERNAL',
+      policyRefusalCode(e) ?? 'ERR_INTERNAL',
       e instanceof Error ? e.message : 'Failed to list providers'
     );
   }
 }
 
 export async function handleProvidersGetActive(ctx: RequestContext): HandlerResponse {
+  if (!(await hasPermission(ctx.origin, 'model:list', ctx.tabId))) {
+    return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission model:list required');
+  }
+
   try {
-    const result = await harborRequest<{ default_model?: string }>('llm.getActiveProvider');
+    const result = await harborRequest<{ default_model?: string }>('llm.getActiveProvider', pageCall(ctx), { signal: ctx.signal });
     return successResponse(ctx.id, { provider: null, model: result.default_model || null });
-  } catch {
+  } catch (e) {
+    // A refusal is reported; any other failure means no model is known.
+    const refused = policyRefusalCode(e);
+    if (refused) return errorResponse(ctx.id, refused, e instanceof Error ? e.message : 'Permission denied');
     return successResponse(ctx.id, { provider: null, model: null });
   }
 }
@@ -324,13 +336,13 @@ export async function handleProvidersListConfiguredModels(ctx: RequestContext): 
 
   try {
     const result = await harborRequest<{ models: Array<{ name: string; model_id: string; is_default?: boolean }> }>(
-      'llm.listConfiguredModels'
+      'llm.listConfiguredModels', pageCall(ctx), { signal: ctx.signal },
     );
     return successResponse(ctx.id, result.models ?? []);
   } catch (e) {
     return errorResponse(
       ctx.id,
-      'ERR_INTERNAL',
+      policyRefusalCode(e) ?? 'ERR_INTERNAL',
       e instanceof Error ? e.message : 'Failed to list configured models'
     );
   }
@@ -344,13 +356,13 @@ export async function handleProvidersGetConfiguredModelsMetadata(ctx: RequestCon
 
   try {
     const result = await harborRequest<{ metadata: Array<{ model_id: string; is_local: boolean }> }>(
-      'llm.getConfiguredModelsMetadata'
+      'llm.getConfiguredModelsMetadata', pageCall(ctx), { signal: ctx.signal },
     );
     return successResponse(ctx.id, result.metadata ?? []);
   } catch (e) {
     return errorResponse(
       ctx.id,
-      'ERR_INTERNAL',
+      policyRefusalCode(e) ?? 'ERR_INTERNAL',
       e instanceof Error ? e.message : 'Failed to get configured models metadata'
     );
   }
