@@ -76,14 +76,9 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
   }
 
   // A call made through a session counts against that session's tool budget.
-  // Harbor's registry checks that the session is alive and belongs to this
-  // origin, and refuses once `limits.maxToolCalls` is spent. Recording before
-  // the call means a refused call never runs.
-  if (sessionId !== undefined) {
-    const refusal = await recordSessionToolCall(ctx.origin, sessionId, tool);
-    if (refusal) return errorResponse(ctx.id, refusal.code, refusal.message);
-  }
-
+  // Harbor checks that the session is alive and belongs to this origin, and
+  // counts the call only once its policy gate allows it, so a call the policy
+  // engine refuses doesn't spend the budget. A call past the budget never runs.
   try {
     const result = await harborRequest<{ result: unknown }>('mcp.callTool', {
       origin: ctx.origin,
@@ -91,14 +86,22 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
       serverId,
       toolName,
       args: args || {},
+      ...(sessionId !== undefined ? { sessionId } : {}),
     });
     return successResponse(ctx.id, result.result);
   } catch (e) {
-    return errorResponse(
-      ctx.id,
-      'ERR_TOOL_FAILED',
-      e instanceof Error ? e.message : 'Tool call failed'
-    );
+    const message = e instanceof Error ? e.message : 'Tool call failed';
+    if (sessionId !== undefined) {
+      if (message === BUDGET_EXCEEDED_MESSAGE) {
+        return errorResponse(ctx.id, ErrorCodes.BUDGET_EXCEEDED, 'Session tool call budget exceeded');
+      }
+      // Not found, terminated, expired, or another origin's session: all look
+      // the same to the page.
+      if (HARBOR_SESSION_GONE.test(message)) {
+        return errorResponse(ctx.id, ErrorCodes.SESSION_NOT_FOUND, 'Session not found');
+      }
+    }
+    return errorResponse(ctx.id, 'ERR_TOOL_FAILED', message);
   }
 }
 
@@ -109,28 +112,3 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
 /** Harbor's refusal when a session's `limits.maxToolCalls` is spent. */
 const BUDGET_EXCEEDED_MESSAGE = 'Tool call budget exceeded';
 
-/**
- * Count one tool call against a session's budget. Returns the error to send
- * the page if Harbor refuses it, or null if the call may run.
- */
-async function recordSessionToolCall(
-  origin: string,
-  sessionId: string,
-  toolName: string,
-): Promise<{ code: string; message: string } | null> {
-  try {
-    await harborRequest('session.recordUsage', { sessionId, origin, type: 'tool', detail: { toolName } });
-    return null;
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    if (message === BUDGET_EXCEEDED_MESSAGE) {
-      return { code: ErrorCodes.BUDGET_EXCEEDED, message: 'Session tool call budget exceeded' };
-    }
-    // Not found, terminated, expired, or another origin's session: all look
-    // the same to the page. Anything else is Harbor failing, and still refuses.
-    if (HARBOR_SESSION_GONE.test(message)) {
-      return { code: ErrorCodes.SESSION_NOT_FOUND, message: 'Session not found' };
-    }
-    return { code: ErrorCodes.INTERNAL, message: 'Could not check the session tool budget' };
-  }
-}

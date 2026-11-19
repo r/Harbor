@@ -263,6 +263,12 @@ async function handleMcpCallTool(payload: unknown): Promise<ExtensionApiResponse
     return failure('Missing serverId or toolName');
   }
 
+  // The policy gate has allowed this call, so it now counts against its
+  // session's budget. Checking and counting happen in one synchronous step,
+  // so parallel calls can't all pass the check before any is counted.
+  const budgetRefusal = sessionToolBudgetRefusal(payload, { spend: true });
+  if (budgetRefusal) return budgetRefusal;
+
   try {
     const result = await callTool(serverId, toolName, args || {});
     if (!result.ok) {
@@ -273,6 +279,48 @@ async function handleMcpCallTool(payload: unknown): Promise<ExtensionApiResponse
     return failure(e);
   }
 }
+
+/**
+ * A page's `session.callTool()` reaches `mcp.callTool` with the session's id.
+ * Returns the failure to send back if the session can't take another call
+ * (gone, another origin's, or its `maxToolCalls` spent), or null if it can.
+ * With `spend`, an allowed call is also counted. Runs synchronously: there
+ * is no await between the check and the count.
+ *
+ * The failure messages are the ones the page API maps to
+ * `ERR_BUDGET_EXCEEDED` and `ERR_SESSION_NOT_FOUND`.
+ */
+function sessionToolBudgetRefusal(
+  payload: unknown,
+  { spend }: { spend: boolean },
+): ExtensionApiResponse | null {
+  const { sessionId, origin, serverId, toolName } = (payload || {}) as {
+    sessionId?: unknown;
+    origin?: unknown;
+    serverId?: unknown;
+    toolName?: unknown;
+  };
+  if (sessionId === undefined) return null;
+  if (typeof sessionId !== 'string' || typeof origin !== 'string') {
+    return failure('Session not found');
+  }
+  try {
+    SessionRegistry.getValidatedSession(sessionId, origin);
+  } catch (e) {
+    return failure(e);
+  }
+  if (!spend) {
+    return SessionRegistry.getRemainingToolBudget(sessionId) === 0
+      ? failure(TOOL_BUDGET_EXCEEDED)
+      : null;
+  }
+  const tool = `${String(serverId)}/${String(toolName)}`;
+  if (!SessionRegistry.recordToolCall(sessionId, tool)) return failure(TOOL_BUDGET_EXCEEDED);
+  SessionRegistry.touchSession(sessionId);
+  return null;
+}
+
+const TOOL_BUDGET_EXCEEDED = 'Tool call budget exceeded';
 
 async function handleMcpStartServer(payload: unknown): Promise<ExtensionApiResponse> {
   const { serverId } = payload as { serverId?: string };
@@ -559,13 +607,14 @@ async function handleSessionTerminate(payload: unknown): Promise<ExtensionApiRes
 }
 
 /**
- * Record usage for a session (prompt, tool call, etc.).
+ * Record usage for a session: a prompt or a browser access. Tool calls are
+ * counted by `mcp.callTool`, after its policy gate.
  */
 async function handleSessionRecordUsage(payload: unknown): Promise<ExtensionApiResponse> {
   const { sessionId, origin, type, detail } = payload as {
     sessionId?: string;
     origin?: string;
-    type?: 'prompt' | 'tool' | 'browser';
+    type?: 'prompt' | 'browser';
     detail?: unknown;
   };
 
@@ -585,16 +634,6 @@ async function handleSessionRecordUsage(payload: unknown): Promise<ExtensionApiR
         };
         if (userMessage && assistantMessage) {
           SessionRegistry.recordPrompt(sessionId, userMessage, assistantMessage);
-        }
-        break;
-      }
-      case 'tool': {
-        const { toolName } = detail as { toolName?: string };
-        if (toolName) {
-          const allowed = SessionRegistry.recordToolCall(sessionId, toolName);
-          if (!allowed) {
-            return failure('Tool call budget exceeded');
-          }
         }
         break;
       }
@@ -776,6 +815,15 @@ export async function routeExtensionApiMessage(
   const { type, payload } = message;
   
   log(`Request from ${sender.id}: ${type}`);
+
+  // A session call whose budget is already spent is refused before the
+  // policy gate, so it isn't audited as allowed and never prompts. The
+  // budget is only spent once the gate allows the call (handleMcpCallTool),
+  // so a call the policy engine refuses doesn't count.
+  if (type === 'mcp.callTool') {
+    const budgetRefusal = sessionToolBudgetRefusal(payload, { spend: false });
+    if (budgetRefusal) return budgetRefusal;
+  }
 
   const gateFailure = await gatePageCall(type as MessageType, payload);
   if (gateFailure) return gateFailure;

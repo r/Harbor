@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A session's `maxToolCalls` budget is no longer spent on `session.callTool()` calls that Harbor's policy engine refuses, such as a call a deny rule blocks or one whose prompt the person declines. Harbor counts a call only once its policy check allows it. A call past the budget is refused before any prompt.
 - Harbor no longer writes what a page sends to the browser console: prompts, system prompts, `agent.run` tasks, tasks passed between agents, URLs a page opens or registers, a page's reason for a permission request, and model replies. Logs keep the request type, IDs, origin and sizes. The debug listener that logged every message reaching Harbor's background is gone.
 - `agent.requestPermissions()` asks for exactly the scopes the page names. A request for `model:prompt`, `mcp:tools.call` or `browser:tabs.create` no longer also asks for `agents:register` and `agents:invoke`. Pages that register or invoke agents must request those scopes themselves; if they don't, Harbor asks when they call the agent API.
 - A site that has been granted `agents:invoke` or `agents:message` is no longer asked again on every `agent.agents.invoke()` or message call. The grant now covers later calls. Calling another agent on this device changes nothing by itself, and that agent's own actions are still checked.
