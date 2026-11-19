@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { agent as buildAgentApp, AGENT_METHODS, type AgentApp, type StopReason } from '@agentclientprotocol/sdk';
 
-// A maintainer decision for HBR-82: a site may have at most
+// A maintainer decision: a site may have at most
 // PER_SITE_AGENT_LIMIT (2) live ACP agents at once, counting a
 // `window.agent.run` while it's running and a `window.ai` text session for
 // its whole life together. A createTextSession or agent.run over the cap

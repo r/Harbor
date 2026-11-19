@@ -4,7 +4,7 @@
  * Counts live ACP agent processes per site origin — a `window.agent.run`
  * while it's running, and a `window.ai` text session for its whole life,
  * together — and refuses a new one past the cap with `ERR_AGENT_BUSY`,
- * before `acp.open` is ever called (a maintainer decision for HBR-82; see
+ * before `acp.open` is ever called (a maintainer decision; see
  * docs/ACP_BACKEND_DESIGN.md sections 2 and 3). A no-dependency leaf
  * module, so both acp-backend.ts (agent.run) and acp-text-session.ts
  * (text sessions) can import it directly without pulling either backend

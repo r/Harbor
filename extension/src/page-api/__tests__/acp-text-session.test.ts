@@ -5,7 +5,7 @@ import { agent as buildAgentApp, AGENT_METHODS, CLIENT_METHODS, type AgentApp, t
 // session.prompt / session.promptStreaming, session.destroy) run on the
 // user's own ACP agent when `harbor_agent_backend` names one, instead of
 // Harbor's built-in llm.chat — see docs/ACP_BACKEND_DESIGN.md section 2 and
-// the HBR-82 brief. These drive ai-handlers.ts's handlers directly for
+// the window.ai mapping in that section. These drive ai-handlers.ts's handlers directly for
 // create/prompt/destroy (as session-prompt-origin.test.ts and
 // explicit-session-streaming.test.ts already do for this file), and the
 // real background.ts port listener for session.promptStreaming, a tab
