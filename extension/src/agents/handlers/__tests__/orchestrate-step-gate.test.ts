@@ -237,7 +237,55 @@ describe('parallel checks each task target', () => {
   });
 });
 
+describe('a check that throws refuses only its own step', () => {
+  it('keeps the other parallel results when one task\'s check throws', async () => {
+    promptAnswer = () => {
+      throw new Error('prompt window failed');
+    };
+    const responses = await call(handleOrchestrateParallel, 'agents.orchestrate.parallel', {
+      config: {
+        tasks: [
+          { agentId: sameOriginAgent, task: 'a' },
+          { agentId: crossOriginAgent, task: 'b' },
+        ],
+        combineStrategy: 'array',
+      },
+    });
+
+    expect(responses).toHaveLength(1);
+    const result = (responses[0] as { ok: boolean; result: { taskResults: Array<{ success: boolean; result?: unknown; error?: string }> } });
+    expect(result.ok).toBe(true);
+    expect(result.result.taskResults.map((r) => r.success)).toEqual([true, false]);
+    expect(result.result.taskResults[0]?.result).toBe('local:a');
+    expect(result.result.taskResults[1]?.error).toBe('prompt window failed');
+    expect(delivered).toEqual([sameOriginAgent]);
+  });
+});
+
 describe('supervisor checks each worker it assigns', () => {
+  it('checks the next worker again when a refused task is reassigned', async () => {
+    promptAnswer = () => false;
+    const responses = await call(handleOrchestrateSupervisor, 'agents.orchestrate.supervisor', {
+      supervisor: {
+        id: 's',
+        name: 's',
+        workers: [crossOriginAgent, sameOriginAgent],
+        assignmentStrategy: 'round-robin',
+        retry: { maxAttempts: 1, reassignOnFailure: true },
+      },
+      tasks: [{ id: 't1', task: 'x' }],
+    });
+
+    const result = (responses[0] as { result: { success: boolean; results: Array<{ workerId: string; attempts: number }> } }).result;
+    expect(result.success).toBe(true);
+    expect(result.results[0]).toMatchObject({ workerId: sameOriginAgent, attempts: 2 });
+    expect(stepChecks()).toEqual([
+      { action: 'agent.delegate.crossOrigin', server: crossOriginAgent },
+      { action: 'agent.invoke', server: sameOriginAgent },
+    ]);
+    expect(delivered).toEqual([sameOriginAgent]);
+  });
+
   it('does not invoke a cross-origin worker the user denies', async () => {
     promptAnswer = () => false;
     const responses = await call(handleOrchestrateSupervisor, 'agents.orchestrate.supervisor', {

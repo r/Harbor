@@ -39,7 +39,7 @@ The Web Agent API ships as one browser extension (Harbor) plus a Rust bridge. Th
 | Multi-agent registration | `agent.agents.{register, discover, list, getInfo, unregister}` | `agents:register` / `agents:discover` | `multiAgent` (OFF) | ✅ |
 | Multi-agent invocation + messaging | `agent.agents.{invoke, send, onMessage, onInvoke}` | `agents:invoke` / `agents:message` | `multiAgent` (OFF) | ✅ |
 | Multi-agent events | `agent.agents.{subscribe, unsubscribe, broadcast}` | `agents:message` | `multiAgent` (OFF) | ✅ |
-| Multi-agent orchestration | `agent.agents.orchestrate.{pipeline, parallel, route}` | `agents:invoke` | `multiAgent` (OFF) | ✅ |
+| Multi-agent orchestration | `agent.agents.orchestrate.{pipeline, parallel, route}` | `agents:invoke`, plus `agents:crossOrigin` for each step on another origin | `multiAgent` (OFF) | ✅ |
 
 ### Architecture
 

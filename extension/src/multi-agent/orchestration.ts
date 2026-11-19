@@ -47,7 +47,17 @@ async function invokeChecked(
   gate: StepGate,
 ): Promise<AgentInvocationResponse> {
   const startTime = Date.now();
-  const refusal = await gate(request.agentId);
+  let refusal: Awaited<ReturnType<StepGate>>;
+  try {
+    refusal = await gate(request.agentId);
+  } catch (error) {
+    // A check that fails to complete refuses this step only, so one
+    // task's error can't discard a parallel run's other results.
+    refusal = {
+      code: 'ERR_INTERNAL',
+      message: error instanceof Error ? error.message : 'Permission check failed',
+    };
+  }
   if (refusal) {
     return { success: false, error: refusal, executionTime: Date.now() - startTime };
   }
