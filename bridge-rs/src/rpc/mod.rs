@@ -150,6 +150,7 @@ fn register_llm_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
   handlers.insert("llm.set_default_model", |p| Box::pin(llm::set_default_model(p)));
   handlers.insert("llm.list_configured_models", |_| Box::pin(llm::list_configured_models()));
   handlers.insert("llm.get_configured_models_metadata", |_| Box::pin(llm::get_configured_models_metadata()));
+  handlers.insert("llm.model_locality", |p| Box::pin(llm::model_locality(p)));
   handlers.insert("llm.add_configured_model", |p| Box::pin(llm::add_configured_model(p)));
   handlers.insert("llm.remove_configured_model", |p| Box::pin(llm::remove_configured_model(p)));
   handlers.insert("llm.set_configured_model_default", |p| {

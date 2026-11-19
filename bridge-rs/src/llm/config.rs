@@ -32,6 +32,14 @@ fn default_true() -> bool {
     true
 }
 
+/// Provider types that run on this machine: their prompts never leave it.
+const LOCAL_PROVIDER_TYPES: [&str; 4] = ["ollama", "llamafile", "lmstudio", "apple"];
+
+/// Whether a provider type runs on this machine.
+pub fn is_local_provider_type(provider_type: &str) -> bool {
+    LOCAL_PROVIDER_TYPES.contains(&provider_type)
+}
+
 impl ProviderInstance {
     /// Create a new provider instance with auto-generated ID
     pub fn new(provider_type: &str, name: &str) -> Self {
@@ -414,12 +422,26 @@ impl LlmConfig {
             return false;
         };
         if let Some(instance) = self.resolve_provider(provider) {
-            instance.enabled && (matches!(instance.provider_type.as_str(), "ollama" | "llamafile" | "lmstudio" | "apple")
+            instance.enabled && (is_local_provider_type(&instance.provider_type)
                 || instance.api_key.as_ref().is_some_and(|key| !key.trim().is_empty()))
         } else {
-            matches!(provider, "ollama" | "llamafile" | "lmstudio" | "apple")
-                && self.get_instances_by_type(provider).is_empty()
+            is_local_provider_type(provider) && self.get_instances_by_type(provider).is_empty()
         }
+    }
+
+    /// Whether a model runs on this machine. The part of its ID before the
+    /// first `:` names a provider instance (resolved to its type) or a
+    /// provider type. Anything else, including an ID with no provider,
+    /// counts as not local.
+    pub fn is_local_model(&self, model_id: &str) -> bool {
+        let Some((provider, _)) = model_id.split_once(':') else {
+            return false;
+        };
+        let provider_type = self
+            .get_instance(provider)
+            .map(|instance| instance.provider_type.as_str())
+            .unwrap_or(provider);
+        is_local_provider_type(provider_type)
     }
 
     /// Model ID to use when a request doesn't name one: the legacy

@@ -831,13 +831,16 @@ fn configured_model_rows(cfg: &LlmConfig, apple_available: bool) -> Vec<serde_js
     models
 }
 
-/// Provider prefixes that are considered local (no API key, run on this machine).
-const LOCAL_PROVIDER_PREFIXES: [&str; 3] = ["ollama:", "llamafile:", "apple:"];
-
-fn is_local_model(model_id: &str) -> bool {
-    LOCAL_PROVIDER_PREFIXES
-        .iter()
-        .any(|prefix| model_id.starts_with(prefix))
+/// `llm.model_locality { model }` -> `{ is_local }`: whether a model runs on
+/// this machine, by its provider (a named instance resolves to its type).
+/// The extension uses this to tell local prompts from remote ones.
+pub async fn model_locality(params: serde_json::Value) -> Result<serde_json::Value, RpcError> {
+    let model = params
+        .get("model")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| RpcError::invalid_params("llm.model_locality needs a model"))?;
+    let cfg = get_config().unwrap_or_default();
+    Ok(serde_json::json!({ "is_local": cfg.is_local_model(model) }))
 }
 
 /// Return metadata for each configured model (e.g. local vs remote).
@@ -848,7 +851,7 @@ pub async fn get_configured_models_metadata() -> Result<serde_json::Value, RpcEr
         .iter()
         .map(|model| {
             let model_id = model["model_id"].as_str().unwrap_or_default();
-            serde_json::json!({ "model_id": model_id, "is_local": is_local_model(model_id) })
+            serde_json::json!({ "model_id": model_id, "is_local": cfg.is_local_model(model_id) })
         })
         .collect();
     Ok(serde_json::json!({ "metadata": metadata }))
@@ -1282,8 +1285,8 @@ mod message_tests {
 
     #[test]
     fn apple_system_model_is_local() {
-        assert!(is_local_model("apple:system"));
-        assert!(!is_local_model("openai:gpt-4o"));
+        assert!(config::LlmConfig::default().is_local_model("apple:system"));
+        assert!(!config::LlmConfig::default().is_local_model("openai:gpt-4o"));
     }
 
     #[test]
