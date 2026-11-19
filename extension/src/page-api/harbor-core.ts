@@ -29,7 +29,8 @@ export interface StreamEvent {
   token?: string;
   finish_reason?: string;
   model?: string;
-  error?: { code: number; message: string };
+  /** A number from the bridge; a string when Harbor's policy gate refused the call. */
+  error?: { code?: number | string; message: string };
 }
 
 /**
@@ -54,9 +55,9 @@ function isExtensionApiType(type: string): boolean {
   return EXTENSION_API_PREFIXES.some((prefix) => type.startsWith(prefix));
 }
 
-function createError(message: string): Error & { code?: string } {
+function createError(message: string, code?: string): Error & { code?: string } {
   const error = new Error(message) as Error & { code?: string };
-  error.code = ErrorCodes.INTERNAL;
+  error.code = code ?? ErrorCodes.INTERNAL;
   return error;
 }
 
@@ -93,7 +94,7 @@ export async function harborRequest<T = unknown>(
 async function dispatch<T>(type: string, payload: unknown): Promise<T> {
   if (isExtensionApiType(type)) {
     const response = await routeExtensionApiMessage({ type, payload }, PAGE_API_SENDER);
-    if (!response.ok) throw createError(response.error ?? 'Unknown error from Harbor');
+    if (!response.ok) throw createError(response.error ?? 'Unknown error from Harbor', response.code);
     return response.result as T;
   }
 

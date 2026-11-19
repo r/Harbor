@@ -1412,7 +1412,11 @@
         
         // Handle specific errors
         if (err.code === 'ERR_PERMISSION_DENIED') {
-          addAssistantMessage("Permission denied. Please allow text generation in Harbor's sidebar.");
+          addAssistantMessage("Permission denied. Allow text generation for this site in Harbor's sidebar, or approve Harbor's prompt when it asks.");
+        } else if (err.code === 'ERR_BLOCKED_BY_POLICY') {
+          addAssistantMessage("Harbor's policy doesn't allow this site to use the AI model.");
+        } else if (err.code === 'ERR_QUARANTINED') {
+          addAssistantMessage("Harbor has paused AI access for this site.");
         } else if (err.code === 'ERR_FEATURE_DISABLED') {
           addAssistantMessage("Text generation is disabled. Please enable it in Harbor's sidebar.");
         } else if (err.code === 'ERR_SESSION_NOT_FOUND') {

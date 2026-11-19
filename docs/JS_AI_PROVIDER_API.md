@@ -1123,6 +1123,9 @@ interface ApiError {
 type ApiErrorCode =
   | 'ERR_NOT_INSTALLED'        // Extension not installed
   | 'ERR_PERMISSION_DENIED'    // User denied permission
+  | 'ERR_BLOCKED_BY_POLICY'    // A policy rule denied the call
+  | 'ERR_QUARANTINED'          // Harbor has quarantined the site
+  | 'ERR_LABEL_FLOW_BLOCKED'   // Reserved; not produced on page calls yet
   | 'ERR_USER_GESTURE_REQUIRED'// Needs user interaction (click)
   | 'ERR_SCOPE_REQUIRED'       // Missing required permission scope
   | 'ERR_TOOL_NOT_ALLOWED'     // Tool not in allowlist

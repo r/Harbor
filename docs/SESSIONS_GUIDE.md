@@ -141,7 +141,7 @@ Explicit sessions have **requested capabilities** bounded by the origin's permis
 - **LLM**: Allowed if requested and origin has `model:prompt`
 - **Tools**: Only the allowlisted tools that the origin can access
 - **Browser**: Only the requested browser capabilities
-- **Limits**: `ttlMinutes` ends the session when it runs out. `maxToolCalls` caps the session's `callTool()` calls: once it's spent, `callTool()` fails with `ERR_BUDGET_EXCEEDED` and the tool doesn't run. A call refused by the page-side permission or allowlist check doesn't count; one refused by the policy engine does.
+- **Limits**: `ttlMinutes` ends the session when it runs out. `maxToolCalls` caps the session's `callTool()` calls: once it's spent, `callTool()` fails with `ERR_BUDGET_EXCEEDED` and the tool doesn't run. A refused call doesn't count, whether the page-side permission or allowlist check refuses it or the policy engine does (a deny rule, or a prompt the person declines). A call whose tool runs and fails does count. A call holds its budget slot while Harbor checks it, so while one call waits on a permission prompt, a parallel call that needs the same last slot fails with `ERR_BUDGET_EXCEEDED` instead of prompting too.
 
 ### Permissions
 

@@ -515,8 +515,10 @@ extension code.
 4. **Sessions.** Every active agent session is origin-bound state:
    the capabilities it asked for, its limits (`maxToolCalls`, TTL),
    its history, and its usage. The engine checks origin grants, not
-   sessions; `SessionRegistry.recordToolCall` enforces a session's tool
-   budget in the background.
+   sessions; `SessionRegistry` enforces a session's tool budget in the
+   background, holding a slot while a call is checked
+   (`reserveToolCall`) and counting it once the call is allowed
+   (`commitToolCall`).
 5. **Audit + simulator.** Every decision lands in
    `extension/src/policy/audit.ts` and shows up in the sidebar's
    Activity panel, with a "Why?" trace. The decision simulator
@@ -972,7 +974,10 @@ All APIs use consistent error codes:
 | Code | Description |
 |------|-------------|
 | `ERR_NOT_INSTALLED` | Extension not installed |
-| `ERR_PERMISSION_DENIED` | User denied permission |
+| `ERR_PERMISSION_DENIED` | User denied permission, or declined Harbor's prompt for this call |
+| `ERR_BLOCKED_BY_POLICY` | A policy rule denied the call |
+| `ERR_QUARANTINED` | Harbor has quarantined the site |
+| `ERR_LABEL_FLOW_BLOCKED` | Reserved for data-label flow checks; not produced on page calls yet |
 | `ERR_USER_GESTURE_REQUIRED` | Needs user interaction (click) |
 | `ERR_SCOPE_REQUIRED` | Missing required permission scope |
 | `ERR_TOOL_NOT_ALLOWED` | Tool not in allowlist |
