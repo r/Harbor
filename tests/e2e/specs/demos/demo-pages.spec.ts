@@ -7,38 +7,6 @@
 
 import { test, expect } from '../../fixtures/index.js';
 
-test.describe('Chat PoC Demo', () => {
-  test('demo page loads', async ({ browserContext, demoServer }) => {
-    const page = await browserContext.newPage();
-    await page.goto(`${demoServer.url}/web-agents/chat-poc/`);
-    await page.waitForLoadState('domcontentloaded');
-    
-    // Verify the page loaded
-    const body = page.locator('body');
-    await expect(body).toBeVisible();
-    
-    // At minimum, the page should have loaded without errors
-    const title = await page.title();
-    expect(title).toBeTruthy();
-  });
-
-  test.skip('demo has access to window.ai API (requires extension)', async ({ extensionContext, demoServer }) => {
-    // This test requires the extension to be loaded to inject window.ai
-    const page = await extensionContext.newPage();
-    await page.goto(`${demoServer.url}/web-agents/chat-poc/`);
-    await page.waitForLoadState('domcontentloaded');
-    
-    // Wait for the Web Agents API to inject window.ai
-    await page.waitForTimeout(2000);
-    
-    const hasAI = await page.evaluate(() => {
-      return typeof (window as any).ai !== 'undefined';
-    });
-    
-    expect(hasAI).toBe(true);
-  });
-});
-
 test.describe('Getting Started Demo', () => {
   test('demo page loads', async ({ browserContext, demoServer }) => {
     const page = await browserContext.newPage();
@@ -69,5 +37,17 @@ test.describe('Time Agent Demo', () => {
     
     const body = page.locator('body');
     await expect(body).toBeVisible();
+  });
+});
+
+test.describe('Bring Your Own Chatbot Demo', () => {
+  test('demo page loads with its chat button', async ({ browserContext, demoServer }) => {
+    const page = await browserContext.newPage();
+    await page.goto(`${demoServer.url}/web-agents/bring-your-chatbot/`);
+    await page.waitForLoadState('domcontentloaded');
+
+    await expect(page.locator('body')).toBeVisible();
+    // The page's only chat UI is the button that calls agent.chat.open().
+    await expect(page.locator('#chat-button')).toHaveCount(1);
   });
 });

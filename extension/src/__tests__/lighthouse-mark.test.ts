@@ -17,7 +17,6 @@ const BADGES = [
   'extension/src/permission-prompt.html',
   'extension/src/directory.html',
   'extension/src/page-chat.ts',
-  'demo/web-agents/chat-poc/index.html',
 ];
 
 describe('lighthouse mark', () => {
