@@ -128,6 +128,19 @@ describe('broadcasts reach only sites the sender may reach', () => {
   });
 });
 
+describe('a broadcast', () => {
+  it('never comes back to the agent that sent it', async () => {
+    await pageAgent(A);
+    await call(handleAgentsSubscribe, A, 'agents.subscribe', { eventType: 'news' });
+    tabMessages.length = 0;
+
+    const response = await call(handleAgentsBroadcast, A, 'agents.broadcast', { eventType: 'news', data: 1 });
+
+    expect((response as { result: { delivered: number } }).result.delivered).toBe(0);
+    expect(tabMessages).toEqual([]);
+  });
+});
+
 describe('a shared "Allow once" answer', () => {
   it('grants each caller only the site it asked about', async () => {
     await pageAgent(A);
