@@ -12,6 +12,7 @@ import { agent as buildAgentApp, AGENT_METHODS, CLIENT_METHODS, type AgentApp, t
 
 const mocks = vi.hoisted(() => ({
   hasPermission: vi.fn(),
+  askAgentQuestion: vi.fn(),
   bridge: { current: null as null | ReturnType<typeof import('./support/fake-acp-bridge').createFakeAcpBridge> },
 }));
 
@@ -21,9 +22,21 @@ vi.mock('../harbor-core', () => ({
   acpSend: (channel: string, message: unknown) => mocks.bridge.current!.acpSend(channel, message),
   acpClose: (channel: string) => mocks.bridge.current!.acpClose(channel),
 }));
+// The dialog itself (the popup window, its message validation, the
+// liveness timeout, window-closed handling) is covered on its own, without
+// a fake agent, in agent-question.test.ts. Here the whole module is mocked
+// at this seam so these tests can drive what it resolves with — and when —
+// and check only that AcpAgentBackend wires it correctly: the exact request
+// it's handed, the signal that cancels it, and the outcome it sends back to
+// the agent unchanged.
+vi.mock('../agent-question', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../agent-question')>()),
+  askAgentQuestion: mocks.askAgentQuestion,
+}));
 
 import { createFakeAcpBridge } from './support/fake-acp-bridge';
-import { AcpAgentBackend, ACP_RUN_TIMEOUT_MS, answerPermissionRequest } from '../acp-backend';
+import { AcpAgentBackend, ACP_RUN_TIMEOUT_MS, answerPermissionRequest, combineAbortSignals } from '../acp-backend';
+import { AGENT_QUESTION_TIMEOUT_MS } from '../agent-question';
 import type { AgentRunRequest } from '../agent-backend';
 import type { StreamToken } from '../types';
 
@@ -37,7 +50,7 @@ interface FakeAgentOptions {
   initializeResponse?: { protocolVersion: number };
   onSessionNew?: (params: unknown) => void;
   onSessionCancel?: (params: unknown) => void;
-  onPrompt: (ctx: { params: { sessionId: string; prompt: unknown }; client: { notify: (method: string, params: unknown) => Promise<void>; request: (method: string, params: unknown) => Promise<unknown> } }) => Promise<{ stopReason: StopReason }>;
+  onPrompt: (ctx: { params: { sessionId: string; prompt: unknown }; client: { notify: (method: string, params: unknown) => Promise<void>; request: (method: string, params: unknown, options?: { cancellationSignal?: AbortSignal; stopWaitingOnCancel?: boolean }) => Promise<unknown> } }) => Promise<{ stopReason: StopReason }>;
 }
 
 function buildFakeAgent(opts: FakeAgentOptions): AgentApp {
@@ -94,10 +107,12 @@ function tokenEvents(events: StreamToken[]): Array<{ type: string } & Record<str
 beforeEach(() => {
   mocks.hasPermission.mockReset();
   mocks.hasPermission.mockResolvedValue(true);
+  mocks.askAgentQuestion.mockReset();
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('AcpAgentBackend', () => {
@@ -384,39 +399,106 @@ describe('AcpAgentBackend', () => {
     });
   });
 
-  describe('permission requests', () => {
-    it('answers with the reject_once option when one is offered', async () => {
+  describe('permission requests: relayed to askAgentQuestion, the agent gets its answer back unchanged', () => {
+    /** Spies on chrome.windows so these tests can assert a real window opened and closed, even though askAgentQuestion itself is mocked: the mock performs the window calls itself, standing in for the real module's behaviour, while this suite drives *what* it resolves with and *when*. */
+    function mockDialogWithWindow() {
+      const createSpy = vi.spyOn(chrome.windows, 'create');
+      const removeSpy = vi.spyOn(chrome.windows, 'remove');
+      let settle: ((outcome: unknown) => void) | null = null;
+      mocks.askAgentQuestion.mockImplementation(async (_request: unknown, signal: AbortSignal) => {
+        if (signal.aborted) return { outcome: 'cancelled' }; // matches the real module: never opens a window for an already-aborted signal
+        const win = await chrome.windows.create({ url: 'chrome-extension://harbor-test/agent-question.html?id=test' }) as { id: number };
+        return new Promise((resolve) => {
+          const onAbort = () => { settle = null; chrome.windows.remove(win.id); resolve({ outcome: 'cancelled' }); };
+          signal.addEventListener('abort', onAbort);
+          settle = (outcome) => {
+            signal.removeEventListener('abort', onAbort);
+            chrome.windows.remove(win.id);
+            resolve(outcome);
+          };
+        });
+      });
+      return { createSpy, removeSpy, answerWith: (outcome: unknown) => settle?.(outcome) };
+    }
+
+    it('passes the origin, agent id, tool call and options through unchanged, in the agent’s own order', async () => {
+      const { answerWith } = mockDialogWithWindow();
+      registerFakeAgent({
+        onPrompt: async (ctx) => {
+          void ctx.client.request(CLIENT_METHODS.session_request_permission, {
+            sessionId: ctx.params.sessionId,
+            toolCall: {
+              toolCallId: 'tc-1', title: 'Delete file', kind: 'delete',
+              rawInput: { path: '/tmp/a.txt' }, locations: [{ path: '/tmp/a.txt', line: 3 }],
+            },
+            options: [
+              { optionId: 'always', name: 'Always Allow', kind: 'allow_always' },
+              { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+              { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
+            ],
+          });
+          await vi.waitFor(() => expect(mocks.askAgentQuestion).toHaveBeenCalled());
+          answerWith({ outcome: 'selected', optionId: 'allow' });
+          return { stopReason: 'end_turn' };
+        },
+      });
+      const backend = new AcpAgentBackend(AGENT_ID);
+      await collect(backend, baseRequest({ origin: 'https://site.example' }));
+
+      expect(mocks.askAgentQuestion).toHaveBeenCalledTimes(1);
+      const [request] = mocks.askAgentQuestion.mock.calls[0];
+      expect(request).toEqual({
+        origin: 'https://site.example',
+        agentName: AGENT_ID,
+        toolCall: { title: 'Delete file', kind: 'delete', rawInput: { path: '/tmp/a.txt' }, locations: [{ path: '/tmp/a.txt', line: 3 }] },
+        options: [
+          { optionId: 'always', name: 'Always Allow', kind: 'allow_always' },
+          { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+          { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
+        ],
+      });
+    });
+
+    it('opens a window for the question, and sends the person’s selected option back to the agent unchanged, closing the window', async () => {
+      const { createSpy, removeSpy, answerWith } = mockDialogWithWindow();
       let outcome: unknown;
       registerFakeAgent({
         onPrompt: async (ctx) => {
-          outcome = await ctx.client.request(CLIENT_METHODS.session_request_permission, {
+          const resultPromise = ctx.client.request(CLIENT_METHODS.session_request_permission, {
             sessionId: ctx.params.sessionId,
-            toolCall: { toolCallId: 'tc-1' },
+            toolCall: { toolCallId: 'tc-1', title: 'Run command' },
             options: [
               { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
               { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
             ],
           });
+          await vi.waitFor(() => expect(createSpy).toHaveBeenCalled());
+          expect(removeSpy).not.toHaveBeenCalled();
+          answerWith({ outcome: 'selected', optionId: 'reject' });
+          outcome = await resultPromise;
           return { stopReason: 'end_turn' };
         },
       });
       const backend = new AcpAgentBackend(AGENT_ID);
       await collect(backend, baseRequest());
+
       expect(outcome).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } });
+      expect(removeSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('answers cancelled when no reject_once option is offered', async () => {
+    it('a cancelled outcome from the dialog (window closed, or the agent offered no reject option) is sent back unchanged', async () => {
+      const { answerWith } = mockDialogWithWindow();
       let outcome: unknown;
       registerFakeAgent({
         onPrompt: async (ctx) => {
-          outcome = await ctx.client.request(CLIENT_METHODS.session_request_permission, {
+          const resultPromise = ctx.client.request(CLIENT_METHODS.session_request_permission, {
             sessionId: ctx.params.sessionId,
-            toolCall: { toolCallId: 'tc-1' },
-            options: [
-              { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
-              { optionId: 'always', name: 'Always allow', kind: 'allow_always' },
-            ],
+            toolCall: { toolCallId: 'tc-1', title: 'Run command' },
+            options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
           });
+          await vi.waitFor(() => expect(mocks.askAgentQuestion).toHaveBeenCalled());
+          answerWith({ outcome: 'cancelled' });
+          outcome = await resultPromise;
           return { stopReason: 'end_turn' };
         },
       });
@@ -425,6 +507,253 @@ describe('AcpAgentBackend', () => {
       expect(outcome).toEqual({ outcome: { outcome: 'cancelled' } });
     });
 
+    it('passes the run’s own cancellation signal to the dialog, which answers cancelled and closes its window once the run is cancelled while the question is open', async () => {
+      // A live round trip for this is impractical to engineer
+      // deterministically: aborting also tears down the ACP connection
+      // itself (the same `requestAbort.abort()` that cancels the dialog's
+      // signal also stops the backend waiting on `session/prompt`'s
+      // response), so whether the agent's `session_request_permission`
+      // call ever observes a reply is a race, not a contract. What *is*
+      // guaranteed, and what this asserts: the backend hands the dialog
+      // the exact signal that its own cancellation fires, so the dialog
+      // (the mock standing in for it here) answers and closes its window
+      // without needing anything else from the backend.
+      const { removeSpy } = mockDialogWithWindow();
+      registerFakeAgent({
+        onPrompt: async (ctx) => {
+          void ctx.client.request(CLIENT_METHODS.session_request_permission, {
+            sessionId: ctx.params.sessionId,
+            toolCall: { toolCallId: 'tc-1', title: 'Run command' },
+            options: [{ optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
+          }).catch(() => { /* the connection tearing down on abort may reject this; not what's under test */ });
+          await vi.waitFor(() => expect(mocks.askAgentQuestion).toHaveBeenCalled());
+          return new Promise(() => { /* the run's own abort ends this turn, not a response here */ });
+        },
+      });
+      const backend = new AcpAgentBackend(AGENT_ID);
+      const controller = new AbortController();
+      const events: StreamToken[] = [];
+      const runPromise = backend.run(baseRequest(), (e) => events.push(e), controller.signal);
+
+      await vi.waitFor(() => expect(mocks.askAgentQuestion).toHaveBeenCalled());
+      const [, dialogSignal] = mocks.askAgentQuestion.mock.calls[0];
+      controller.abort();
+      await runPromise;
+
+      expect(dialogSignal.aborted).toBe(true);
+      await vi.waitFor(() => expect(removeSpy).toHaveBeenCalledTimes(1));
+      expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_ABORTED' } });
+    });
+
+    it('a dialog that takes a while to resolve (its own liveness timeout) does not trip the run’s own 10-minute timeout', async () => {
+      vi.useFakeTimers();
+      mocks.askAgentQuestion.mockImplementation(() => new Promise((resolve) => {
+        setTimeout(() => resolve({ outcome: 'selected', optionId: 'reject' }), AGENT_QUESTION_TIMEOUT_MS);
+      }));
+      let outcome: unknown;
+      registerFakeAgent({
+        onPrompt: async (ctx) => {
+          outcome = await ctx.client.request(CLIENT_METHODS.session_request_permission, {
+            sessionId: ctx.params.sessionId,
+            toolCall: { toolCallId: 'tc-1', title: 'Run command' },
+            options: [{ optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
+          });
+          return { stopReason: 'end_turn' };
+        },
+      });
+      const backend = new AcpAgentBackend(AGENT_ID);
+      const events: StreamToken[] = [];
+      const runPromise = backend.run(baseRequest(), (e) => events.push(e), new AbortController().signal);
+
+      await vi.waitFor(() => expect(mocks.askAgentQuestion).toHaveBeenCalled(), { timeout: 2000 });
+      await vi.advanceTimersByTimeAsync(AGENT_QUESTION_TIMEOUT_MS);
+      await runPromise;
+
+      expect(outcome).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } });
+      expect(events.at(-1)).toEqual({ type: 'done' }); // not ERR_TIMEOUT: the dialog answered well within 10 minutes
+    });
+
+    describe('closing the dialog when the run ends for reasons other than Harbor’s own cancellation', () => {
+      // Bug this guards against: the dialog used to get only `requestAbort.signal`
+      // (Harbor's own cancellation — page abort, revoked grant, the run's own
+      // timeout). The agent's own `session/request_permission` is answered by
+      // *Harbor*, so none of those three fire just because the agent's run
+      // ends on its own: end_turn with the question still open, the agent
+      // erroring out of session/prompt, or the agent withdrawing the request
+      // with `$/cancel_request`. Without also combining in `ctx.signal` (the
+      // SDK's per-request signal, aborted on `$/cancel_request` or the
+      // connection closing) and the run's own terminal event, the window used
+      // to stay open — answering nothing — for up to the 5-minute liveness
+      // timeout.
+
+      it('end_turn while the question is still open closes the dialog (cancelled)', async () => {
+        const { removeSpy } = mockDialogWithWindow();
+        let resolvePrompt: ((r: { stopReason: StopReason }) => void) | null = null;
+        let outcome: unknown;
+        registerFakeAgent({
+          onPrompt: async (ctx) => {
+            ctx.client.request(CLIENT_METHODS.session_request_permission, {
+              sessionId: ctx.params.sessionId,
+              toolCall: { toolCallId: 'tc-1', title: 'Run command' },
+              options: [{ optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
+            }).then((r) => { outcome = r; }).catch(() => { /* not expected here */ });
+            return new Promise((resolve) => { resolvePrompt = resolve; });
+          },
+        });
+        const backend = new AcpAgentBackend(AGENT_ID);
+        const events: StreamToken[] = [];
+        const runPromise = backend.run(baseRequest(), (e) => events.push(e), new AbortController().signal);
+
+        await vi.waitFor(() => expect(mocks.askAgentQuestion).toHaveBeenCalled());
+        resolvePrompt!({ stopReason: 'end_turn' });
+        await runPromise;
+
+        await vi.waitFor(() => expect(removeSpy).toHaveBeenCalledTimes(1));
+        expect(outcome).toEqual({ outcome: { outcome: 'cancelled' } });
+        expect(events.at(-1)).toEqual({ type: 'done' });
+      });
+
+      it('the agent erroring out of session/prompt while the question is still open closes the dialog (cancelled)', async () => {
+        const { removeSpy } = mockDialogWithWindow();
+        let rejectPrompt: ((e: Error) => void) | null = null;
+        registerFakeAgent({
+          onPrompt: async (ctx) => {
+            void ctx.client.request(CLIENT_METHODS.session_request_permission, {
+              sessionId: ctx.params.sessionId,
+              toolCall: { toolCallId: 'tc-1', title: 'Run command' },
+              options: [{ optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
+            }).catch(() => { /* the connection tearing down may reject this; not what's under test */ });
+            return new Promise((_resolve, reject) => { rejectPrompt = reject; });
+          },
+        });
+        const backend = new AcpAgentBackend(AGENT_ID);
+        const events: StreamToken[] = [];
+        const runPromise = backend.run(baseRequest(), (e) => events.push(e), new AbortController().signal);
+
+        await vi.waitFor(() => expect(mocks.askAgentQuestion).toHaveBeenCalled());
+        rejectPrompt!(new Error('agent crashed'));
+        await runPromise;
+
+        await vi.waitFor(() => expect(removeSpy).toHaveBeenCalledTimes(1));
+        expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_AGENT_FAILED' } });
+      });
+
+      it('the agent withdrawing its own request ($/cancel_request) while session/prompt is still pending closes the dialog, via ctx.signal specifically', async () => {
+        // Isolates ctx.signal: session/prompt itself never resolves in this
+        // test, so neither `requestAbort` (Harbor's own cancellation) nor
+        // `runEnded` (the run's terminal event) ever fires — only the SDK's
+        // per-request signal does, from the agent's own `$/cancel_request`.
+        const { removeSpy } = mockDialogWithWindow();
+        let outcome: unknown;
+        registerFakeAgent({
+          onPrompt: async (ctx) => {
+            const withdrawn = new AbortController();
+            ctx.client.request(CLIENT_METHODS.session_request_permission, {
+              sessionId: ctx.params.sessionId,
+              toolCall: { toolCallId: 'tc-1', title: 'Run command' },
+              options: [{ optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
+            }, { cancellationSignal: withdrawn.signal }).then((r) => { outcome = r; }).catch((e) => { outcome = e; });
+            await vi.waitFor(() => expect(mocks.askAgentQuestion).toHaveBeenCalled());
+            withdrawn.abort(); // the agent withdraws its own permission request
+            return new Promise(() => { /* session/prompt itself stays pending */ });
+          },
+        });
+        const backend = new AcpAgentBackend(AGENT_ID);
+        const controller = new AbortController();
+        const runPromise = backend.run(baseRequest(), () => {}, controller.signal);
+
+        await vi.waitFor(() => expect(removeSpy).toHaveBeenCalledTimes(1));
+        expect(outcome).toEqual({ outcome: { outcome: 'cancelled' } });
+
+        controller.abort(); // session/prompt never resolves on its own in this test; clean up
+        await runPromise;
+      });
+
+      it('a request_permission that arrives once the run is already terminal gets a combined signal that is already aborted, so the dialog never opens a window', async () => {
+        // A live round trip that reliably lands a request *after* Harbor's
+        // side has already marked the run terminal is impractical to
+        // engineer deterministically: both the prompt's own response and
+        // any further message from the agent travel the same async
+        // pipeline, so there's no ordering guarantee to hang a test on (as
+        // with the pre-existing "already cancelled" case below). What *is*
+        // guaranteed, and what this tests directly: `combineAbortSignals`
+        // produces an already-aborted signal the instant any input already
+        // is (see the describe block below) — which is exactly the state
+        // `runEnded.signal` is in once the run is terminal — and
+        // `askAgentQuestion` never opens a window for an already-aborted
+        // signal (see agent-question.test.ts). Composed, a handler built
+        // after the terminal event can only ever answer `cancelled` without
+        // a dialog, whatever mock is standing in for askAgentQuestion here.
+        const { createSpy } = mockDialogWithWindow();
+        const alreadyAborted = new AbortController();
+        alreadyAborted.abort();
+        const combined = combineAbortSignals([new AbortController().signal, alreadyAborted.signal]);
+        expect(combined.aborted).toBe(true);
+
+        await expect(answerPermissionRequest(() => false, {
+          origin: 'https://example.test', agentName: 'test-agent',
+          toolCall: { title: 'Run command' },
+          options: [{ optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
+        }, combined)).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+        expect(createSpy).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('combineAbortSignals', () => {
+    it('does not abort while none of the inputs have', () => {
+      const a = new AbortController();
+      const b = new AbortController();
+      expect(combineAbortSignals([a.signal, b.signal]).aborted).toBe(false);
+    });
+
+    it('aborts once any one input aborts, using the platform AbortSignal.any when available', () => {
+      const a = new AbortController();
+      const b = new AbortController();
+      const combined = combineAbortSignals([a.signal, b.signal]);
+      b.abort();
+      expect(combined.aborted).toBe(true);
+    });
+
+    it('is already aborted when any input already is, without waiting for a later event', () => {
+      const a = new AbortController();
+      const alreadyAborted = new AbortController();
+      alreadyAborted.abort();
+      expect(combineAbortSignals([a.signal, alreadyAborted.signal]).aborted).toBe(true);
+    });
+
+    describe('the manual fallback (AbortSignal.any unavailable)', () => {
+      let realAny: typeof AbortSignal.any;
+      beforeEach(() => {
+        realAny = AbortSignal.any;
+        // @ts-expect-error - simulating a target without AbortSignal.any
+        delete AbortSignal.any;
+      });
+      afterEach(() => {
+        AbortSignal.any = realAny;
+      });
+
+      it('does not abort while none of the inputs have', () => {
+        const a = new AbortController();
+        const b = new AbortController();
+        expect(combineAbortSignals([a.signal, b.signal]).aborted).toBe(false);
+      });
+
+      it('aborts once any one input aborts', () => {
+        const a = new AbortController();
+        const b = new AbortController();
+        const combined = combineAbortSignals([a.signal, b.signal]);
+        b.abort();
+        expect(combined.aborted).toBe(true);
+      });
+
+      it('is already aborted when any input already is', () => {
+        const a = new AbortController();
+        const alreadyAborted = new AbortController();
+        alreadyAborted.abort();
+        expect(combineAbortSignals([a.signal, alreadyAborted.signal]).aborted).toBe(true);
+      });
+    });
   });
 
   // A live round trip for "cancelled already, what does a permission
@@ -435,23 +764,30 @@ describe('AcpAgentBackend', () => {
   // either races the teardown or just hangs. `answerPermissionRequest` is
   // the guard itself, pulled out so it's testable without that race.
   describe('answerPermissionRequest (the session/request_permission guard)', () => {
-    const rejectOnce = { optionId: 'reject', kind: 'reject_once' };
-    const allowOnce = { optionId: 'allow', kind: 'allow_once' };
+    const request = {
+      origin: 'https://example.test',
+      agentName: 'test-agent',
+      toolCall: { title: 'Run command' },
+      options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
+    };
 
-    it('answers cancelled once the run is cancelled, even when reject_once is offered', () => {
-      expect(answerPermissionRequest(true, [allowOnce, rejectOnce])).toEqual({ outcome: { outcome: 'cancelled' } });
+    it('answers cancelled once the run is already cancelled, and never opens the dialog at all', async () => {
+      const signal = new AbortController().signal;
+      await expect(answerPermissionRequest(() => true, request, signal)).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+      expect(mocks.askAgentQuestion).not.toHaveBeenCalled();
     });
 
-    it('answers cancelled once the run is cancelled, even with no options at all', () => {
-      expect(answerPermissionRequest(true, [])).toEqual({ outcome: { outcome: 'cancelled' } });
+    it('relays the dialog’s outcome unchanged when the run is not cancelled', async () => {
+      mocks.askAgentQuestion.mockResolvedValue({ outcome: 'selected', optionId: 'allow' });
+      const signal = new AbortController().signal;
+      await expect(answerPermissionRequest(() => false, request, signal)).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
+      expect(mocks.askAgentQuestion).toHaveBeenCalledWith(request, signal);
     });
 
-    it('answers the reject_once option when the run is not cancelled', () => {
-      expect(answerPermissionRequest(false, [allowOnce, rejectOnce])).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } });
-    });
-
-    it('answers cancelled when the run is not cancelled but no reject_once option is offered', () => {
-      expect(answerPermissionRequest(false, [allowOnce])).toEqual({ outcome: { outcome: 'cancelled' } });
+    it('relays a cancelled outcome from the dialog unchanged too', async () => {
+      mocks.askAgentQuestion.mockResolvedValue({ outcome: 'cancelled' });
+      await expect(answerPermissionRequest(() => false, request, new AbortController().signal))
+        .resolves.toEqual({ outcome: { outcome: 'cancelled' } });
     });
   });
 

@@ -29,6 +29,7 @@ const entryPoints = [
   'src/background.ts',
   'src/page-chat.ts',
   'src/permission-prompt.ts',
+  'src/agent-question.ts',
   'src/directory.ts',
   'src/sidebar.ts',
   'src/js-runtime/worker-loader.ts',
@@ -78,6 +79,7 @@ async function copyStatic() {
   await copyFile('src/directory.html', `${outDir}/directory.html`);
   await copyFile('src/sidebar.html', `${outDir}/sidebar.html`);
   await copyFile('src/permission-prompt.html', `${outDir}/permission-prompt.html`);
+  await copyFile('src/agent-question.html', `${outDir}/agent-question.html`);
   await copyFile('src/design-tokens.css', `${outDir}/design-tokens.css`);
   await copyFile('src/js-runtime/sandbox.html', `${outDir}/js-runtime/sandbox.html`).catch(() => {});
   await copyFile('src/js-runtime/builtin-echo-worker.js', `${outDir}/js-runtime/builtin-echo-worker.js`);
