@@ -6,7 +6,8 @@
  */
 
 import { browserAPI } from './browser-compat';
-import { SCOPE_DESCRIPTIONS } from './policy/permissions';
+import { consentScopeDescription } from './policy/agent-consent-copy';
+import { buildScopeItem } from './scope-item';
 import { escapeHtml } from './html-escape';
 import type { PermissionScope } from './agents/types';
 
@@ -79,6 +80,17 @@ const sessionType = params.get('sessionType') || '';
 const requestedLLM = params.get('llm') === 'true';
 const requestedTools = params.get('toolsCount') || '0';
 const requestedBrowser = params.get('browser') || '';
+// Set only when the person has selected an ACP agent — permissions.ts
+// resolves it once per prompt via resolveConsentAgentName(). Absent with
+// no agent selected, so the switch below leaves the built-in wording for
+// model:prompt/model:tools untouched.
+const agentName = params.get('agent') || null;
+// The backend selected when this prompt was shown — echoed back verbatim
+// in the response below, never re-read live: if the person switches
+// backends while this popup is still open, the grant must land on the
+// backend this prompt actually named, not whatever is selected by the
+// time they answer (item 3, docs/ACP_BACKEND_DESIGN.md).
+const backendTag = params.get('backendTag') || undefined;
 
 const scopes = scopesParam.split(',').filter(Boolean) as PermissionScope[];
 const tools = toolsParam.split(',').filter(Boolean);
@@ -141,31 +153,12 @@ if (scopesList) {
     scopesList.appendChild(empty);
   } else {
     for (const scope of scopes) {
-      const info = SCOPE_DESCRIPTIONS[scope];
+      const info = consentScopeDescription(scope, agentName);
       const icon = SCOPE_ICONS[scope] || '🔐';
-      
-      const item = document.createElement('div');
-      item.className = 'scope-item';
-      
-      if (info) {
-        item.innerHTML = `
-          <div class="scope-header">
-            <span class="scope-icon">${icon}</span>
-            <span class="scope-title">${info.title}</span>
-            <span class="risk-badge risk-${info.risk}">${info.risk}</span>
-          </div>
-          <div class="scope-description">${info.description}</div>
-        `;
-      } else {
-        // Fallback for unknown scopes
-        item.innerHTML = `
-          <div class="scope-header">
-            <span class="scope-icon">${icon}</span>
-            <span class="scope-title">${escapeHtml(scope)}</span>
-          </div>
-          <div class="scope-description">Access to ${escapeHtml(scope)}</div>
-        `;
-      }
+
+      const item = info
+        ? buildScopeItem(icon, info.title, info.description, info.risk)
+        : buildScopeItem(icon, scope, `Access to ${scope}`); // fallback for unknown scopes
       scopesList.appendChild(item);
     }
   }
@@ -200,7 +193,7 @@ if (tools.length > 0) {
 // Handle deny button
 const btnDeny = document.getElementById('btn-deny');
 btnDeny?.addEventListener('click', () => {
-  sendResponse({ granted: false, explicitDeny: true });
+  sendResponse({ granted: false, explicitDeny: true, backendTag });
 });
 
 // Handle allow button
@@ -223,6 +216,7 @@ btnAllow?.addEventListener('click', () => {
     granted: true,
     grantType,
     allowedTools: selectedTools.length > 0 ? selectedTools : undefined,
+    backendTag,
   });
 });
 
@@ -232,6 +226,7 @@ function sendResponse(response: {
   grantType?: 'granted-once' | 'granted-always';
   allowedTools?: string[];
   explicitDeny?: boolean;
+  backendTag?: string;
 }): void {
   console.log('[Permission Prompt] Sending response:', response);
   browserAPI.runtime.sendMessage({

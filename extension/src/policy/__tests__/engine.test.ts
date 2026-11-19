@@ -299,6 +299,58 @@ describe('Tier 8: per-origin grants', () => {
 });
 
 // =============================================================================
+// model.prompt.agent — a prompt sent to the person's own ACP agent, not to
+// Harbor's own model. Modeled on model.prompt.remote.firstParty: the same
+// effect, the same default (docs/ACP_BACKEND_DESIGN.md, Decisions).
+// =============================================================================
+
+describe('model.prompt.agent', () => {
+  it('defaults to ask, exactly like model.prompt.remote.firstParty', async () => {
+    const decision = await evaluate({ origin: 'https://example.com', action: 'model.prompt.agent' });
+    expect(decision.effect).toBe('ask');
+    expect(decision.tier).toBe(9);
+  });
+
+  it('a policy rule can deny it on its own, apart from any remote-model rule', async () => {
+    loadRules([
+      { id: 'deny-agent-prompt', effect: 'deny', principal: { origin: '*' }, action: 'model.prompt.agent', source: 'user' },
+    ]);
+    const decision = await evaluate({ origin: 'https://example.com', action: 'model.prompt.agent' });
+    expect(decision.effect).toBe('deny');
+    expect(decision.errorCode).toBe('ERR_BLOCKED_BY_POLICY');
+
+    // A sibling action is untouched by that rule.
+    const other = await evaluate({ origin: 'https://example.com', action: 'model.prompt.remote.firstParty' });
+    expect(other.effect).not.toBe('deny');
+  });
+
+  it('an origin grant for model:prompt (Tier 8) allows it, the same grant agent.run and session.prompt already rely on', async () => {
+    setOriginGrantResolver((_origin, action) =>
+      action === 'model.prompt.agent' ? { effect: 'allow', persistence: 'always' } : null);
+    const decision = await evaluate({ origin: 'https://example.com', action: 'model.prompt.agent' });
+    expect(decision.effect).toBe('allow');
+    expect(decision.tier).toBe(8);
+  });
+
+  it('accepts confidential input but not credentials, like model.prompt.remote.firstParty', async () => {
+    const okay = await evaluate({
+      origin: 'https://example.com',
+      action: 'model.prompt.agent',
+      inputLabels: new LabelSet(['confidential']),
+    });
+    expect(okay.errorCode).not.toBe('ERR_LABEL_FLOW_BLOCKED');
+
+    const blocked = await evaluate({
+      origin: 'https://example.com',
+      action: 'model.prompt.agent',
+      inputLabels: new LabelSet(['credentials']),
+    });
+    expect(blocked.effect).toBe('deny');
+    expect(blocked.errorCode).toBe('ERR_LABEL_FLOW_BLOCKED');
+  });
+});
+
+// =============================================================================
 // Tier 9: defaults
 // =============================================================================
 

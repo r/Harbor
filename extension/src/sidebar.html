@@ -1166,6 +1166,74 @@
       </div>
     </div>
 
+    <!-- Agent Panel: Harbor built-in vs. the person's own ACP agent -->
+    <div class="panel" id="agent-panel">
+      <div class="panel-header" id="agent-panel-header">
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon" id="agent-panel-toggle">&#9660;</span>
+          <div class="panel-title">Agent</div>
+        </div>
+        <div class="panel-header-right">
+          <span id="agent-check-status" class="status-text"></span>
+        </div>
+      </div>
+      <div class="panel-body" id="agent-panel-body">
+        <div class="section-hint">
+          Harbor starts agents without your shell environment. Give your agent's tools their keys in the agent's own settings.
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="agent-backend-select">Run sites on</label>
+          <select class="form-input" id="agent-backend-select">
+            <option value="">Harbor (built-in model)</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" id="agent-check-btn" style="margin-top: var(--space-2);" disabled>Check</button>
+        </div>
+
+        <div class="section-label">Configured agents</div>
+        <div id="configured-agents" class="configured-models-list"></div>
+
+        <div class="add-model-section">
+          <button class="btn btn-secondary btn-sm" id="add-agent-btn" disabled>+ Add agent</button>
+        </div>
+
+        <!-- Add/Edit Agent Form (hidden by default) -->
+        <div id="agent-form" class="api-key-config" style="display: none;">
+          <div class="api-key-header">
+            <span id="agent-form-title">Add agent</span>
+            <button class="btn btn-ghost btn-sm" id="agent-form-cancel" type="button">&times;</button>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Preset</label>
+            <div id="agent-preset-buttons" class="form-actions">
+              <button class="btn btn-secondary btn-sm" id="agent-preset-goose" data-preset="goose" type="button">goose</button>
+              <button class="btn btn-secondary btn-sm" id="agent-preset-claude-code" data-preset="claude-code" type="button">Claude Code</button>
+              <button class="btn btn-secondary btn-sm" id="agent-preset-codex" data-preset="codex" type="button">Codex</button>
+              <button class="btn btn-secondary btn-sm" id="agent-preset-custom" data-preset="custom" type="button">Custom</button>
+            </div>
+            <div class="form-hint" id="agent-preset-docs-hint" style="display: none;"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="agent-form-name">Name</label>
+            <input type="text" class="form-input" id="agent-form-name" placeholder="goose" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="agent-form-command">Command</label>
+            <input type="text" class="form-input" id="agent-form-command" placeholder="goose" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="agent-form-args">Arguments (one per line)</label>
+            <textarea class="form-input" id="agent-form-args" rows="3" placeholder="acp"></textarea>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-secondary btn-sm" id="agent-form-check" disabled>Check</button>
+            <button class="btn btn-primary btn-sm" id="agent-form-save" style="flex: 1;" disabled>Save</button>
+          </div>
+          <div class="form-hint" id="agent-form-check-result"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- OAuth App Credentials Panel -->
     <div class="panel" id="oauth-panel">
       <div class="panel-header" id="oauth-panel-header">

@@ -25,6 +25,7 @@ import {
 
 import { acpSend, type AcpBridgeEvent } from './harbor-core';
 import { askAgentQuestion, type AgentQuestionOutcome, type AgentQuestionOption, type AgentQuestionToolCall } from './agent-question';
+import { BACKEND_CHANGED_REASON } from './acp-backend-generation';
 import { ErrorCodes, type StreamToken } from './types';
 
 /**
@@ -35,8 +36,14 @@ import { ErrorCodes, type StreamToken } from './types';
  */
 export const ACP_TURN_TIMEOUT_MS = 10 * 60 * 1000;
 
-/** Why a backend sent `session/cancel` — decides the error a `cancelled` stopReason (or a request the backend gave up waiting on) maps to. */
-export type CancelReason = 'aborted' | 'permission-denied' | 'timeout';
+/**
+ * Why a backend sent `session/cancel` — decides the error a `cancelled`
+ * stopReason (or a request the backend gave up waiting on) maps to.
+ * `'backend-changed'` is acp-backend.ts's own: the person switched
+ * `harbor_agent_backend` while this run was still going on the old agent
+ * (page-api/acp-backend-generation.ts).
+ */
+export type CancelReason = 'aborted' | 'permission-denied' | 'timeout' | 'backend-changed';
 
 export function cancelReasonEvent(reason: CancelReason): StreamToken {
   switch (reason) {
@@ -46,7 +53,20 @@ export function cancelReasonEvent(reason: CancelReason): StreamToken {
       return { type: 'error', error: { code: ErrorCodes.PERMISSION_DENIED, message: 'Permission model:prompt required' } };
     case 'timeout':
       return { type: 'error', error: { code: ErrorCodes.TIMEOUT, message: 'Agent run timed out' } };
+    case 'backend-changed':
+      return { type: 'error', error: { code: ErrorCodes.AGENT_FAILED, message: 'The agent was changed.' } };
   }
+}
+
+/**
+ * Tells an ordinary page/tab abort apart from a backend switch, for a
+ * signal an abort-listener was told to treat uniformly as `'aborted'`
+ * before this existed — acp-backend.ts combines each run's own page-abort
+ * signal with `acpBackendChangeSignal()` (page-api/background.ts), so the
+ * same listener now has to report the right one of the two.
+ */
+export function cancelReasonForSignal(signal: AbortSignal): CancelReason {
+  return signal.reason === BACKEND_CHANGED_REASON ? 'backend-changed' : 'aborted';
 }
 
 export function agentFailedEvent(message: string): StreamToken {

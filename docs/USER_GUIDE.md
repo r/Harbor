@@ -29,6 +29,10 @@ Follow **[the canonical Quickstart](../QUICKSTART.md)** for requirements, instal
 
 Once setup is verified, continue here for everyday use and server management.
 
+### Bring your own agent (optional)
+
+The sidebar's **Agent** panel, next to LLM Providers, lets you run sites on an agent you already use instead of Harbor's built-in model: pick a preset (goose, Claude Code, Codex) or add a custom command line, then select it under "Run sites on." Harbor starts the agent without your shell environment, so give its tools their own keys in the agent's own settings — each preset links to where. Press "Check" to confirm the agent starts and speaks the protocol before relying on it. A site still asks for the same permissions either way; selecting an agent only changes who answers.
+
 ### Install Your First MCP Server
 
 MCP servers give the AI tools like file access, memory, or web search.

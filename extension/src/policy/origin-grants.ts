@@ -22,8 +22,10 @@
  */
 
 import { browserAPI } from '../browser-compat';
+import { currentBackendTag, effectiveGrantForBackend } from './backend-grant';
 import type { TypedAction } from './actions';
 import type { OriginGrantOutcome, OriginGrantResolver, PolicyResource } from './engine';
+import type { PermissionScope } from '../agents/types';
 
 // =============================================================================
 // Storage shape (matches the legacy `permissions.ts` layout)
@@ -36,6 +38,9 @@ interface StoredPermission {
   grantedAt: number;
   expiresAt?: number;
   tabId?: number;
+  /** See agents/types.ts's StoredPermission and policy/backend-grant.ts. */
+  backend?: string;
+  allows?: Record<string, { grant: 'granted-once' | 'granted-always'; grantedAt: number; expiresAt?: number; tabId?: number }>;
 }
 
 interface StoredOriginPermissions {
@@ -66,6 +71,7 @@ const TYPED_TO_LEGACY: Partial<Record<TypedAction, readonly string[]>> = {
   'model.prompt.local': ['model:prompt'],
   'model.prompt.remote.firstParty': ['model:prompt'],
   'model.prompt.remote.thirdParty': ['model:prompt'],
+  'model.prompt.agent': ['model:prompt'],
 
   'tool.list': ['mcp:tools.list'],
   'tool.call': ['mcp:tools.call'],
@@ -107,17 +113,6 @@ async function loadOriginPermissions(origin: string): Promise<StoredOriginPermis
   }
 }
 
-function isStoredGrantLive(stored: StoredPermission, now: number, tabId?: number): boolean {
-  if (stored.grant === 'granted-always') return true;
-  if (stored.grant === 'granted-once') {
-    if (stored.expiresAt && now > stored.expiresAt) return false;
-    // "Allow once" covers only the tab that granted it (as isGrantValid in permissions.ts).
-    if (stored.tabId !== undefined && tabId !== undefined && stored.tabId !== tabId) return false;
-    return true;
-  }
-  return false;
-}
-
 /**
  * The engine's Tier 8 resolver. Returns:
  *   - { effect: 'allow', persistence } when any mapped legacy scope is granted
@@ -156,17 +151,28 @@ export async function lookupOriginGrant(
   let sawDeny = false;
   let sawAllow = false;
   let persistence: 'always' | 'once' = 'once';
+  // Computed once, even when `legacy` has no backend-scoped scope at all —
+  // cheap (one storage read already cached by readAgentBackendSetting's
+  // own call), and keeping it outside the loop means every scope is judged
+  // against the same snapshot of "current backend".
+  const currentBackend = await currentBackendTag();
 
   for (const scope of legacy) {
     const entry = stored.scopes[scope];
     if (!entry) continue;
-    if (entry.grant === 'denied') {
+    // Delegates entirely to backend-grant.ts's effectiveGrantForBackend:
+    // a universal deny on a model:prompt/model:tools entry applies
+    // whatever the current backend is; an allow applies only when it was
+    // recorded for this backend (maintainer decision, 2026-11-19). Every
+    // other scope is the old flat, backend-agnostic behaviour.
+    const effective = effectiveGrantForBackend(entry, scope as PermissionScope, currentBackend, now, tabId);
+    if (effective === 'denied') {
       sawDeny = true;
       continue;
     }
-    if (isStoredGrantLive(entry, now, tabId)) {
+    if (effective === 'granted-always' || effective === 'granted-once') {
       sawAllow = true;
-      if (entry.grant === 'granted-always') persistence = 'always';
+      if (effective === 'granted-always') persistence = 'always';
     }
   }
 

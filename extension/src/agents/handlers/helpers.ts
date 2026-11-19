@@ -212,6 +212,7 @@ function primaryLegacyScope(action: TypedAction): PermissionScope | null {
     case 'model.prompt.local':
     case 'model.prompt.remote.firstParty':
     case 'model.prompt.remote.thirdParty':
+    case 'model.prompt.agent':
       return 'model:prompt';
 
     case 'tool.list':

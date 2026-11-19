@@ -33,7 +33,7 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk';
 
-import { acpClose, acpOpenStream, type AcpBridgeEvent } from './harbor-core';
+import { acpClose, acpOpenStream, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
 import { hasPermission } from './handlers';
 import { PER_SITE_AGENT_LIMIT, tryAcquireAgentSlot, releaseAgentSlot } from './acp-agent-limits';
 import type { StreamToken } from './types';
@@ -46,6 +46,7 @@ import {
   buildPathScrubber,
   buildPromptBlocks,
   cancelReasonEvent,
+  cancelReasonForSignal,
   agentFailedEvent,
   combineAbortSignals,
   initializeAcpSession,
@@ -96,7 +97,7 @@ export class AcpAgentBackend implements AgentBackend {
 
     try {
       if (aborted) {
-        emit(cancelReasonEvent('aborted'));
+        emit(cancelReasonEvent(cancelReasonForSignal(signal)));
         return;
       }
 
@@ -106,7 +107,10 @@ export class AcpAgentBackend implements AgentBackend {
         // channel did get opened, `openAcpChannel` already reported it
         // through `onChannelKnown` above, so the `finally` below still
         // closes it; either way, this never reaches initialize/prompt.
-        emit(cancelReasonEvent('aborted'));
+        // `signal` may have aborted because the page/tab gave up, or
+        // because the person switched backends mid-run — report whichever
+        // it actually was.
+        emit(cancelReasonEvent(cancelReasonForSignal(signal)));
         return;
       }
       if (opened.kind === 'failed') {
@@ -181,7 +185,12 @@ export class AcpAgentBackend implements AgentBackend {
 
     let connectionCtx: ClientContext | undefined;
 
-    const onPageAbort = () => triggerCancel('aborted', connectionCtx);
+    // `signal` may abort because the page/tab gave up (an ordinary
+    // ERR_ABORTED), or because the person switched `harbor_agent_backend`
+    // while this run was still going on the old agent (background.ts
+    // combines the two) — cancelReasonForSignal tells them apart so the
+    // right one reaches the page.
+    const onPageAbort = () => triggerCancel(cancelReasonForSignal(signal), connectionCtx);
     signal.addEventListener('abort', onPageAbort);
     // An abort landing between `openAcpChannel` resolving (this method's
     // caller already has a channel and a cwd) and this listener being
@@ -189,7 +198,7 @@ export class AcpAgentBackend implements AgentBackend {
     // else re-checks `signal` before the connection starts, so a run that
     // raced exactly that window would run to completion, or sit until the
     // 10-minute timeout, instead of ending right away.
-    if (signal.aborted) triggerCancel('aborted', connectionCtx);
+    if (signal.aborted) triggerCancel(cancelReasonForSignal(signal), connectionCtx);
     const timeoutHandle = setTimeout(() => triggerCancel('timeout', connectionCtx), ACP_RUN_TIMEOUT_MS);
 
     function emitStopReason(stopReason: StopReason): void {
@@ -297,6 +306,16 @@ export class AcpAgentBackend implements AgentBackend {
         // be revoked during `initialize`/`session/new`, and this is the
         // last check before the agent does anything on the page's behalf.
         if (!await hasPermission(origin, 'model:prompt', tabId)) {
+          triggerCancel('permission-denied', ctx);
+          send(cancelReasonEvent('permission-denied'));
+          return;
+        }
+
+        // The typed-action policy gate (model.prompt.agent): reaches the
+        // rule engine and the audit log, exactly as a prompt to Harbor's
+        // own model does — in addition to, not instead of, the origin-grant
+        // check just above.
+        if (!await requireAgentPromptAction(origin, tabId)) {
           triggerCancel('permission-denied', ctx);
           send(cancelReasonEvent('permission-denied'));
           return;

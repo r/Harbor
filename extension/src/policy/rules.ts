@@ -352,7 +352,8 @@ export function findFirstMatchingRule(
  *   - `Read(*)`                         → any read effect
  *   - `Read(host)`                      → any read scoped to host
  *   - `Egress(local|same_origin|cross_origin|first_party|third_party)`
- *   - `Prompt(local|first_party|third_party)`
+ *   - `Prompt(local|first_party|third_party|agent)`
+ *   - `Prompt(*)`                        → every kind of prompt, including `agent`
  *   - `Browser.Write(*)`                → any browser write effect
  *
  * The DSL is intentionally restrictive — anything more complex should be
@@ -471,11 +472,22 @@ function parsePromptDSL(id: string, effect: RuleEffect, principal: Principal, ar
   if (arg === 'third_party') {
     return { id, effect, principal, action: 'model.prompt.remote.thirdParty' };
   }
+  if (arg === 'agent') {
+    return { id, effect, principal, action: 'model.prompt.agent' };
+  }
+  // `Prompt(*)`, or any argument that isn't one of the above, covers every
+  // kind of prompt — including one sent to the person's own ACP agent, so
+  // a blanket "deny every prompt" rule actually covers it too.
   return {
     id,
     effect,
     principal,
-    action: ['model.prompt.local', 'model.prompt.remote.firstParty', 'model.prompt.remote.thirdParty'],
+    action: [
+      'model.prompt.local',
+      'model.prompt.remote.firstParty',
+      'model.prompt.remote.thirdParty',
+      'model.prompt.agent',
+    ],
   };
 }
 

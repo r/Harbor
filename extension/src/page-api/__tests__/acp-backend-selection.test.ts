@@ -20,6 +20,10 @@ vi.mock('../harbor-core', () => ({
   acpOpenStream: (agentId: string, workspace: string) => mocks.bridge.current!.acpOpenStream(agentId, workspace),
   acpSend: (channel: string, message: unknown) => mocks.bridge.current!.acpSend(channel, message),
   acpClose: (channel: string) => mocks.bridge.current!.acpClose(channel),
+  // The model.prompt.agent policy gate itself is covered, driven through
+  // the real port and the real policy engine, in
+  // acp-model-prompt-agent-policy.test.ts.
+  requireAgentPromptAction: async () => true,
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../policy/feature-flags')>()),

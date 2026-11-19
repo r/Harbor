@@ -161,6 +161,19 @@ export const TYPED_ACTIONS = {
     acceptsLabels: [],
     defaultTTL: 'one_call',
   },
+  'model.prompt.agent': {
+    title: 'Prompt the person\'s own agent',
+    description: 'Run a prompt against the agent the person connected over ACP, instead of a model Harbor talks to directly. The agent decides how to answer, including which of its own tools it uses.',
+    // Modeled on model.prompt.remote.firstParty: it's the user's own
+    // configured destination, just reached over ACP instead of Harbor's
+    // own model call (docs/ACP_BACKEND_DESIGN.md, Decisions).
+    effect: 'egress',
+    locality: 'network_first_party',
+    reversible: null,
+    defaultDataLabels: [],
+    acceptsLabels: ['confidential'],
+    defaultTTL: 'session',
+  },
 
   // ---------------------------------------------------------------------------
   // tool.* — MCP tool surface

@@ -44,7 +44,7 @@ import {
   type ClientContext,
 } from '@agentclientprotocol/sdk';
 
-import { acpClose, acpOpenStream } from './harbor-core';
+import { acpClose, acpOpenStream, isModelPromptGrantedForAgent, requireAgentPromptAction } from './harbor-core';
 import { hasPermission } from './handlers/permission-handlers';
 import { PER_SITE_AGENT_LIMIT, tryAcquireAgentSlot, releaseAgentSlot } from './acp-agent-limits';
 import type { StreamToken } from './types';
@@ -368,6 +368,28 @@ export class AcpTextSession {
     if (pageSignal?.aborted) turn.triggerCancel('aborted');
 
     try {
+      // Defence in depth: this session's own agentId is fixed for its
+      // whole life, so this judges the grant against *that* backend, not
+      // a live read of whatever's currently selected — which a backend
+      // switch should have already destroyed this session over
+      // (page-api/background.ts), but checking again here costs little
+      // and catches the gap if one somehow survives it.
+      if (!await isModelPromptGrantedForAgent(this.origin, this.agentId, this.tabId)) {
+        turn.terminalSent = true;
+        turn.runEnded.abort();
+        return { ok: false, error: cancelReasonEvent('permission-denied') };
+      }
+
+      // The typed-action policy gate (model.prompt.agent): reaches the rule
+      // engine and the audit log, exactly as a prompt to Harbor's own model
+      // does — in addition to, not instead of, resolveTextSession's own
+      // model:prompt origin-grant check before this turn was ever queued.
+      if (!await requireAgentPromptAction(this.origin, this.tabId)) {
+        turn.terminalSent = true;
+        turn.runEnded.abort();
+        return { ok: false, error: cancelReasonEvent('permission-denied') };
+      }
+
       const prompt = buildPromptBlocks(this.origin, input, this.firstPromptSent ? undefined : this.systemPrompt);
       // Set before the request settles, not after: the systemPrompt was
       // included in *this* prompt's blocks regardless of how the turn ends,
@@ -409,8 +431,9 @@ export class AcpTextSession {
 // =============================================================================
 
 import {
-  registerAcpTextSession, unregisterAcpTextSession, acpTextSessionIdsForTab,
-  registerPendingOpen, setPendingOpenAbort, clearPendingOpen, isPendingOpenCancelled, cancelPendingOpensForTab,
+  registerAcpTextSession, unregisterAcpTextSession, acpTextSessionIdsForTab, allAcpTextSessionIds,
+  registerPendingOpen, setPendingOpenAbort, clearPendingOpen, isPendingOpenCancelled,
+  cancelPendingOpensForTab, cancelAllPendingOpens,
 } from './acp-text-session-registry';
 export { isAcpTextSession } from './acp-text-session-registry';
 
@@ -515,6 +538,33 @@ export async function cleanupAcpTextSessionsForTab(
 ): Promise<void> {
   cancelPendingOpensForTab(tabId);
   const sessionIds = acpTextSessionIdsForTab(tabId);
+  await Promise.all(sessionIds.map(async (sessionId) => {
+    const session = sessions.get(sessionId);
+    sessions.delete(sessionId);
+    unregisterAcpTextSession(sessionId);
+    onForgotten(sessionId);
+    await session?.destroy().catch(() => { /* best-effort */ });
+  }));
+}
+
+/**
+ * Destroys every live ACP-backed text session, on every tab — not just
+ * one — for a `harbor_agent_backend` switch (page-api/background.ts's
+ * `storage.onChanged` listener): an open session outlives the switch
+ * otherwise, and a prompt worded for whatever the page thinks it's
+ * talking to would silently reach the newly-selected agent instead. Also
+ * cancels any session still opening. The same cleanup
+ * `cleanupAcpTextSessionsForTab`/`destroyAcpTextSession` do, so a later
+ * `session.prompt` on one of these gets the same `ERR_SESSION_NOT_FOUND`
+ * ("Session not found") an explicit `session.destroy` already produces —
+ * `onForgotten` removes ai-handlers.ts's own `TextSessionState` entry too,
+ * not just this module's live connection.
+ */
+export async function destroyAllAcpTextSessions(
+  onForgotten: (sessionId: string) => void,
+): Promise<void> {
+  cancelAllPendingOpens();
+  const sessionIds = allAcpTextSessionIds();
   await Promise.all(sessionIds.map(async (sessionId) => {
     const session = sessions.get(sessionId);
     sessions.delete(sessionId);

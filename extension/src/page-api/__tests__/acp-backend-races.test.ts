@@ -19,6 +19,7 @@ vi.mock('../harbor-core', () => ({
   },
   acpSend: (c: string, m: unknown) => mocks.bridge.current!.acpSend(c, m),
   acpClose: (c: string) => mocks.bridge.current!.acpClose(c),
+  requireAgentPromptAction: async () => true,
 }));
 
 import { createFakeAcpBridge } from './support/fake-acp-bridge';

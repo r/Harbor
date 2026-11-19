@@ -96,4 +96,23 @@ describe('requireAction', () => {
     const response = calls[0] as { error: { code: string } };
     expect(response.error.code).toBe('ERR_QUARANTINED');
   });
+
+  // model.prompt.agent's own entry in primaryLegacyScope (helpers.ts): if it
+  // were missing, an "ask" decision with no caller-supplied promptAsScope
+  // would have no legacy scope to prompt with, and requireAction would deny
+  // instead of opening the native prompt at all — windows.create would
+  // never be called.
+  it('prompts with the model:prompt scope for model.prompt.agent, with no promptAsScope override', async () => {
+    const create = vi.spyOn(chrome.windows, 'create').mockResolvedValue({ id: 1 } as never);
+    const { sender: s } = sender();
+    const resultPromise = requireAction(ctx(), s, 'model.prompt.agent');
+    await vi.waitFor(() => expect(create).toHaveBeenCalled());
+
+    const url = new URL((create.mock.calls[0][0] as { url: string }).url);
+    expect(url.searchParams.get('scopes')).toBe('model:prompt');
+
+    const { handlePermissionPromptResponse } = await import('../../../policy/permissions');
+    handlePermissionPromptResponse({ granted: true, grantType: 'granted-once' });
+    await resultPromise;
+  });
 });

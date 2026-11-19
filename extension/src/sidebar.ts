@@ -4,6 +4,14 @@ export {};
 import { browserAPI } from './browser-compat';
 import { configuredModelActions, modelsAvailableToAdd, type ConfiguredModel } from './sidebar-models';
 import { getFeatureFlags, setFeatureFlags, type FeatureFlags } from './page-api/policy/feature-flags';
+import {
+  AGENT_PRESETS,
+  agentFromForm,
+  type AgentPresetId,
+  type ConfiguredAgent,
+} from './sidebar-agents';
+import { AgentPanelController, type AgentBackendIO } from './sidebar-agent-controller';
+import { AgentFormState } from './agent-form-state';
 
 type SecretDecl = { name: string; label: string; type?: 'text' | 'password' };
 
@@ -324,6 +332,7 @@ async function checkBridgeStatus(): Promise<void> {
       Promise.all([
         loadServers().catch(e => console.error('[Sidebar] Failed to load servers:', e)),
         loadLlmProviders().catch(e => console.error('[Sidebar] Failed to load LLM providers:', e)),
+        loadAgentSettings().catch(e => console.error('[Sidebar] Failed to load agent settings:', e)),
         loadPermissions().catch(e => console.error('[Sidebar] Failed to load permissions:', e)),
         loadSessions().catch(e => console.error('[Sidebar] Failed to load sessions:', e)),
       ]);
@@ -1223,6 +1232,324 @@ addModelBtn.addEventListener('click', async () => {
 // Don't call loadLlmProviders() here - it causes a race condition
 
 // =============================================================================
+// Agent Panel: Harbor (built-in) vs. the person's own ACP agent
+// (docs/ACP_BACKEND_DESIGN.md sections 4 and 5)
+// =============================================================================
+
+const agentPanelHeader = document.getElementById('agent-panel-header') as HTMLDivElement;
+const agentPanelToggle = document.getElementById('agent-panel-toggle') as HTMLSpanElement;
+const agentPanelBody = document.getElementById('agent-panel-body') as HTMLDivElement;
+const agentCheckStatus = document.getElementById('agent-check-status') as HTMLSpanElement;
+const agentBackendSelect = document.getElementById('agent-backend-select') as HTMLSelectElement;
+const agentCheckBtn = document.getElementById('agent-check-btn') as HTMLButtonElement;
+const configuredAgentsEl = document.getElementById('configured-agents') as HTMLDivElement;
+const addAgentBtn = document.getElementById('add-agent-btn') as HTMLButtonElement;
+const agentForm = document.getElementById('agent-form') as HTMLDivElement;
+const agentFormTitle = document.getElementById('agent-form-title') as HTMLSpanElement;
+const agentFormCancel = document.getElementById('agent-form-cancel') as HTMLButtonElement;
+const agentFormName = document.getElementById('agent-form-name') as HTMLInputElement;
+const agentFormCommand = document.getElementById('agent-form-command') as HTMLInputElement;
+const agentFormArgs = document.getElementById('agent-form-args') as HTMLTextAreaElement;
+const agentFormSave = document.getElementById('agent-form-save') as HTMLButtonElement;
+const agentFormCheck = document.getElementById('agent-form-check') as HTMLButtonElement;
+const agentFormCheckResult = document.getElementById('agent-form-check-result') as HTMLDivElement;
+const agentPresetDocsHint = document.getElementById('agent-preset-docs-hint') as HTMLDivElement;
+
+setupPanelToggle(agentPanelHeader, agentPanelToggle, agentPanelBody);
+
+async function sendMessage<T = { ok: boolean; error?: string } & Record<string, unknown>>(
+  type: string,
+  payload: Record<string, unknown> = {},
+): Promise<T> {
+  return browserAPI.runtime.sendMessage({ type, ...payload }) as Promise<T>;
+}
+
+const agentBackendIO: AgentBackendIO = {
+  getAgents: () => sendMessage('acp_get_agents'),
+  saveAgents: (agents) => sendMessage('acp_save_agents', { agents }),
+  getBackend: () => sendMessage('agent_backend_get'),
+  setBackend: (setting) => sendMessage('agent_backend_set', { setting }),
+};
+const agentPanel = new AgentPanelController(agentBackendIO);
+
+let agentFormPreset: AgentPresetId | 'custom' | null = null;
+/** Which agent (if any) the Add/Edit form is currently editing — Save/Check use this to decide whether to update that agent in place or add a new one. */
+const agentFormState = new AgentFormState();
+/** Agent ids currently being checked — disables that row's Check button (and the top one/form Check button, when it's the selected agent) so a person can't start a second check for the same agent from the UI either; the backend (acp-agent-check.ts) also dedupes. */
+const checkingAgentIds = new Set<string>();
+
+/**
+ * Add/Save/Check all need a confirmed, current agent list first — never
+ * act on one that hasn't loaded, which could make a save look like it's
+ * wiping every other agent. Only the controls that aren't rebuilt by
+ * `renderConfiguredAgents()`/`renderAgentBackendOptions()` on every
+ * change: those two already bake `agentPanel.isLoaded` (and, for Check,
+ * `checkingAgentIds`) into each button they create, so toggling them here
+ * too would wrongly re-enable a Check button for an agent still being
+ * checked.
+ */
+function setAgentControlsEnabled(enabled: boolean): void {
+  addAgentBtn.disabled = !enabled;
+  agentFormSave.disabled = !enabled;
+  agentFormCheck.disabled = !enabled;
+}
+
+function renderAgentBackendOptions(): void {
+  const selectedId = agentPanel.currentSelection;
+  agentBackendSelect.innerHTML = '<option value="">Harbor (built-in model)</option>';
+  for (const agent of agentPanel.currentAgents) {
+    const option = document.createElement('option');
+    option.value = agent.id;
+    option.textContent = agent.name;
+    agentBackendSelect.appendChild(option);
+  }
+  agentBackendSelect.value = selectedId ?? '';
+  agentCheckBtn.disabled = !agentPanel.isLoaded || !selectedId;
+}
+
+function renderConfiguredAgents(): void {
+  configuredAgentsEl.innerHTML = '';
+  if (agentPanel.currentAgents.length === 0) {
+    configuredAgentsEl.innerHTML = '<div class="no-models">No agents configured yet.</div>';
+    return;
+  }
+  for (const agent of agentPanel.currentAgents) {
+    const el = document.createElement('div');
+    el.className = 'configured-model';
+    const commandLine = document.createElement('div');
+    commandLine.className = 'configured-model-id';
+    commandLine.textContent = `${agent.command} ${agent.args.join(' ')}`.trim();
+    const nameLine = document.createElement('div');
+    nameLine.className = 'configured-model-name';
+    nameLine.textContent = agent.name;
+    const info = document.createElement('div');
+    info.className = 'configured-model-info';
+    info.append(nameLine, commandLine);
+
+    const actions = document.createElement('div');
+    actions.className = 'configured-model-actions';
+    const checkBtn = document.createElement('button');
+    checkBtn.className = 'btn btn-ghost btn-sm';
+    checkBtn.title = 'Check';
+    checkBtn.textContent = '⚡';
+    checkBtn.disabled = !agentPanel.isLoaded || checkingAgentIds.has(agent.id);
+    checkBtn.addEventListener('click', () => runAgentCheck(agent, agentCheckStatus, checkBtn));
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-ghost btn-sm';
+    editBtn.title = 'Edit';
+    editBtn.textContent = '✎';
+    editBtn.disabled = !agentPanel.isLoaded;
+    editBtn.addEventListener('click', () => openAgentForm(agent));
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn btn-ghost btn-sm';
+    removeBtn.title = 'Remove';
+    removeBtn.textContent = '✕';
+    removeBtn.disabled = !agentPanel.isLoaded;
+    removeBtn.addEventListener('click', () => removeAgent(agent.id));
+    actions.append(checkBtn, editBtn, removeBtn);
+
+    el.append(info, actions);
+    configuredAgentsEl.appendChild(el);
+  }
+}
+
+async function loadAgentSettings(): Promise<void> {
+  try {
+    const result = await agentPanel.load();
+    if (!result.ok) {
+      console.error('[Sidebar] Failed to load agent settings:', result.error);
+      setAgentControlsEnabled(false);
+      return;
+    }
+    renderAgentBackendOptions();
+    renderConfiguredAgents();
+    setAgentControlsEnabled(true);
+  } catch (err) {
+    console.error('[Sidebar] Failed to load agent settings:', err);
+    setAgentControlsEnabled(false);
+  }
+}
+
+/**
+ * Runs the "Check" flow for one agent and shows the result in `target`.
+ * `button`, when given, is disabled for this agent's own duration — on top
+ * of the backend's own per-agent dedupe (acp-agent-check.ts), so the
+ * person can't start a second check for the same agent from the UI either.
+ */
+async function runAgentCheck(agent: ConfiguredAgent, target: HTMLElement, button?: HTMLButtonElement): Promise<void> {
+  if (checkingAgentIds.has(agent.id)) return;
+  checkingAgentIds.add(agent.id);
+  if (button) button.disabled = true;
+  target.textContent = 'Checking…';
+  try {
+    const result = await sendMessage<{ ok: boolean; message?: string; error?: string }>('acp_check_agent', {
+      agentId: agent.id, name: agent.name, command: agent.command,
+    });
+    target.textContent = result.ok ? (result.message ?? 'Ready') : (result.error ?? 'Check failed');
+  } catch (err) {
+    target.textContent = err instanceof Error ? err.message : 'Check failed';
+  } finally {
+    checkingAgentIds.delete(agent.id);
+    if (button) button.disabled = !agentPanel.isLoaded;
+  }
+}
+
+agentBackendSelect.addEventListener('change', async () => {
+  const agentId = agentBackendSelect.value || null;
+  const result = await agentPanel.selectBackend(agentId);
+  if (!result.ok) {
+    showToast(`Failed to switch agent: ${result.error}`, 'error');
+    renderAgentBackendOptions(); // restore the select to the last known-good value
+    return;
+  }
+  agentCheckBtn.disabled = !agentPanel.isLoaded || !agentId;
+  if (agentId) {
+    const agent = agentPanel.currentAgents.find((a) => a.id === agentId);
+    if (agent) await runAgentCheck(agent, agentCheckStatus);
+  } else {
+    agentCheckStatus.textContent = '';
+  }
+});
+
+agentCheckBtn.addEventListener('click', async () => {
+  const agentId = agentPanel.currentSelection;
+  if (!agentId) {
+    agentCheckStatus.textContent = 'Select an agent to check';
+    return;
+  }
+  const agent = agentPanel.currentAgents.find((a) => a.id === agentId);
+  if (agent) await runAgentCheck(agent, agentCheckStatus, agentCheckBtn);
+});
+
+function presetDocsHintText(preset: AgentPresetId): string {
+  return `Give ${AGENT_PRESETS[preset].name}'s tools their keys in its own settings: ${AGENT_PRESETS[preset].docsUrl}`;
+}
+
+function resetAgentForm(): void {
+  agentFormPreset = null;
+  agentFormState.reset();
+  agentFormName.value = '';
+  agentFormCommand.value = '';
+  agentFormArgs.value = '';
+  agentFormCheckResult.textContent = '';
+  agentPresetDocsHint.style.display = 'none';
+}
+
+function openAgentForm(agent?: ConfiguredAgent): void {
+  resetAgentForm();
+  if (agent) {
+    agentFormState.reset(agent);
+    agentFormTitle.textContent = 'Edit agent';
+    agentFormName.value = agent.name;
+    agentFormCommand.value = agent.command;
+    agentFormArgs.value = agent.args.join('\n');
+  } else {
+    agentFormTitle.textContent = 'Add agent';
+  }
+  agentForm.style.display = 'block';
+}
+
+agentFormCancel.addEventListener('click', () => {
+  agentForm.style.display = 'none';
+});
+
+addAgentBtn.addEventListener('click', () => openAgentForm());
+
+for (const preset of Object.keys(AGENT_PRESETS) as AgentPresetId[]) {
+  document.getElementById(`agent-preset-${preset}`)?.addEventListener('click', async () => {
+    agentFormPreset = preset;
+    const p = AGENT_PRESETS[preset];
+    agentFormName.value = p.name;
+    // Resolved into the *visible* command field right away — Save later
+    // reads this field as-is, so what's saved is always what's shown,
+    // including any further edit the person makes to it.
+    agentFormCommand.value = p.command;
+    agentFormArgs.value = p.args.join('\n');
+    agentPresetDocsHint.textContent = presetDocsHintText(preset);
+    agentPresetDocsHint.style.display = 'block';
+
+    try {
+      const resolveResponse = await sendMessage<{ ok: boolean; path?: string | null }>('acp_resolve_command', { name: p.command });
+      // Only overwrite the field if the person hasn't already changed it
+      // away from the preset's own bare command while this was in flight.
+      if (resolveResponse.ok && resolveResponse.path && agentFormCommand.value === p.command) {
+        agentFormCommand.value = resolveResponse.path;
+      }
+    } catch {
+      // Keep the bare command; acp.open can still try it on PATH.
+    }
+  });
+}
+document.getElementById('agent-preset-custom')?.addEventListener('click', () => {
+  agentFormPreset = 'custom';
+  agentPresetDocsHint.style.display = 'none';
+});
+
+/** The agent record Save/Check actually send: exactly the form's current fields, round-tripping any extra field (env) an edited agent carried. */
+function agentFromCurrentForm(): ConfiguredAgent {
+  const id = agentFormState.idFor(agentPanel.currentAgents, agentFormName.value || agentFormCommand.value);
+  return agentFromForm(agentFormState.editingOriginal, id, agentFormName.value, agentFormCommand.value, agentFormArgs.value);
+}
+
+agentFormSave.addEventListener('click', async () => {
+  agentFormSave.disabled = true;
+  try {
+    const agent = agentFromCurrentForm();
+    const result = await agentPanel.saveAgent(agent);
+    if (!result.ok) {
+      showToast(`Failed to save agent: ${result.error}`, 'error');
+      return;
+    }
+    renderAgentBackendOptions();
+    renderConfiguredAgents();
+    showToast(`Saved "${agent.name}"`, 'success');
+    agentForm.style.display = 'none';
+  } finally {
+    agentFormSave.disabled = false;
+  }
+});
+
+agentFormCheck.addEventListener('click', async () => {
+  const agent = agentFromCurrentForm();
+  if (checkingAgentIds.has(agent.id)) return;
+  agentFormCheck.disabled = true;
+  try {
+    // acp.open only starts an already-configured agent, so Check saves the
+    // form's current agent first, the same as pressing Save would.
+    const result = await agentPanel.saveAgent(agent);
+    if (!result.ok) {
+      agentFormCheckResult.textContent = result.error;
+      return;
+    }
+    // The form now edits the agent Check just saved — a later Save on the
+    // same form must update it in place, not add a duplicate under a
+    // freshly generated id (agent-form-state.ts).
+    agentFormState.trackSaved(agent);
+    renderAgentBackendOptions();
+    renderConfiguredAgents();
+    await runAgentCheck(agent, agentFormCheckResult);
+  } catch (err) {
+    agentFormCheckResult.textContent = err instanceof Error ? err.message : 'Check failed';
+  } finally {
+    agentFormCheck.disabled = false;
+  }
+});
+
+async function removeAgent(id: string): Promise<void> {
+  const result = await agentPanel.removeAgent(id);
+  if (!result.ok) {
+    showToast(`Failed to remove agent: ${result.error}`, 'error');
+    return;
+  }
+  renderAgentBackendOptions();
+  renderConfiguredAgents();
+  if (result.selectionCleared) agentCheckStatus.textContent = '';
+  showToast('Agent removed');
+}
+
+void loadAgentSettings();
+
+// =============================================================================
 // Permissions Panel
 // =============================================================================
 
@@ -1234,8 +1561,18 @@ const refreshPermissionsBtn = document.getElementById('refresh-permissions-btn')
 type PermissionStatusEntry = {
   origin: string;
   scopes: Record<string, string>;
+  // model:prompt/model:tools can each hold a separate allow per backend
+  // (policy/backend-grant.ts) — invisible in `scopes` above once this
+  // exists, since the flat field reads 'not-granted' in that case. See
+  // listAllPermissions (policy/permissions.ts).
+  backendAllows?: Record<string, Record<string, string>>;
   allowedTools?: string[];
 };
+
+/** "built-in" for the built-in model, or the bare agent id for `acp:<agentId>` — used only for this list's own badges, not the consent prompt's own (real) agent-name lookup. */
+function backendTagLabel(tag: string): string {
+  return tag === 'builtin' ? 'built-in' : tag.replace(/^acp:/, '');
+}
 
 async function loadPermissions(): Promise<void> {
   try {
@@ -1274,6 +1611,19 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
       .filter(([, status]) => status === 'denied')
       .map(([scope]) => scope);
 
+    // Per-backend allows (model:prompt/model:tools) aren't in `perm.scopes`
+    // at all once they exist there — each gets its own badge, labelled by
+    // backend, e.g. "Prompt (goose)" / "Prompt (built-in)".
+    const backendAllowBadges = Object.entries(perm.backendAllows ?? {}).flatMap(([scope, allows]) =>
+      Object.entries(allows).map(([backendTag, status]) => {
+        const label = scope.split(':')[1] || scope;
+        const isOnce = status === 'granted-once';
+        const badgeClass = isOnce ? 'permission-scope-badge temporary' : 'permission-scope-badge';
+        const suffix = isOnce ? ' <span class="permission-temp-label">⏱</span>' : '';
+        return `<span class="${badgeClass}">${escapeHtml(label)} (${escapeHtml(backendTagLabel(backendTag))})${suffix}</span>`;
+      })
+    );
+
     const scopeBadges = [
       ...grantedScopes.map(({ scope, status }) => {
         const label = scope.split(':')[1] || scope;
@@ -1282,6 +1632,7 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
         const suffix = isOnce ? ' <span class="permission-temp-label">⏱</span>' : '';
         return `<span class="${badgeClass}">${escapeHtml(label)}${suffix}</span>`;
       }),
+      ...backendAllowBadges,
       ...deniedScopes.map((scope) => {
         const label = scope.split(':')[1] || scope;
         return `<span class="permission-scope-badge denied">${escapeHtml(label)} ✕</span>`;
