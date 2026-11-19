@@ -20,7 +20,7 @@ describe('llmPanelCollapsedForAgent', () => {
 describe('llmPanelNoteForAgent', () => {
   it('shows the note while an agent is selected', () => {
     expect(llmPanelNoteForAgent(true)).toBe(LLM_PANEL_AGENT_NOTE);
-    expect(LLM_PANEL_AGENT_NOTE).toContain('agent.sessions');
+    expect(LLM_PANEL_AGENT_NOTE).toContain("Harbor's own chat");
     expect(LLM_PANEL_AGENT_NOTE.toLowerCase()).toContain("harbor's own chat");
   });
 
