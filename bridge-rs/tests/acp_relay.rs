@@ -32,6 +32,22 @@ const FAKE_AGENT_BIN: &str = env!("CARGO_BIN_EXE_acp_fake_agent");
 /// to link against), so it's restated here; keep the two in sync.
 const MAX_LIVE_AGENTS: usize = 8;
 
+/// A plausible `workspace` (site origin) for tests that don't care which
+/// one they get, just that `acp.open` accepts something valid.
+const WORKSPACE: &str = "https://example.com";
+
+/// Lowercase hex SHA-256 of `workspace`, mirroring `acp::workspace_hash` in
+/// `src/acp/mod.rs` (see the `MAX_LIVE_AGENTS` comment above for why this
+/// crate restates rather than `use`s bridge internals). `sha2` is already a
+/// direct dependency of `harbor-bridge` (see `src/oauth/flow.rs`), so this
+/// doesn't add one just for the test.
+fn workspace_hash(workspace: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(workspace.as_bytes());
+    hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect()
+}
+
 // =============================================================================
 // Native messaging framing (mirrors native_messaging.rs's read/write_message)
 // =============================================================================
@@ -220,22 +236,38 @@ impl Bridge {
         assert!(ready.is_some(), "bridge never reported ready");
     }
 
-    /// Sends `acp.open` and waits for the first stream event (`"open"` or a
-    /// fatal `"error"`) on `req_id`.
-    fn open_raw(&mut self, agent_id: &str, req_id: &str) -> Value {
+    /// Sends `acp.open` with an explicit `params` object and waits for the
+    /// first stream event (`"open"` or a fatal `"error"`) on `req_id`. Used
+    /// directly only by tests exercising `workspace` validation; everything
+    /// else goes through `open_raw`/`open`.
+    fn open_raw_params(&mut self, req_id: &str, params: Value) -> Value {
         self.send(json!({
-            "type": "rpc", "id": req_id, "method": "acp.open",
-            "params": { "agentId": agent_id },
+            "type": "rpc", "id": req_id, "method": "acp.open", "params": params,
         }));
         self.wait_for(|m| is_any_stream(m, req_id), Duration::from_secs(5))
             .unwrap_or_else(|| panic!("no stream event for acp.open (id {})", req_id))
     }
 
+    /// Sends `acp.open` and waits for the first stream event (`"open"` or a
+    /// fatal `"error"`) on `req_id`.
+    fn open_raw(&mut self, agent_id: &str, workspace: &str, req_id: &str) -> Value {
+        self.open_raw_params(req_id, json!({ "agentId": agent_id, "workspace": workspace }))
+    }
+
     /// `open_raw`, asserting success, returning the channel id.
-    fn open(&mut self, agent_id: &str, req_id: &str) -> String {
-        let event = self.open_raw(agent_id, req_id);
+    fn open(&mut self, agent_id: &str, workspace: &str, req_id: &str) -> String {
+        let (channel, _cwd) = self.open_with_cwd(agent_id, workspace, req_id);
+        channel
+    }
+
+    /// `open_raw`, asserting success, returning the channel id and the
+    /// `cwd` the bridge reported for it.
+    fn open_with_cwd(&mut self, agent_id: &str, workspace: &str, req_id: &str) -> (String, String) {
+        let event = self.open_raw(agent_id, workspace, req_id);
         assert_eq!(event["event"]["type"], "open", "unexpected open event: {:?}", event);
-        event["event"]["channel"].as_str().unwrap().to_string()
+        let channel = event["event"]["channel"].as_str().unwrap().to_string();
+        let cwd = event["event"]["cwd"].as_str().unwrap().to_string();
+        (channel, cwd)
     }
 
     /// Sends a plain (non-streaming) RPC and waits for its `rpc_response`.
@@ -310,7 +342,7 @@ fn list_agents_over_native_messaging_hides_commands() {
 fn open_rejects_unknown_and_missing_agent_id() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
 
-    let unknown = bridge.open_raw("nope", "O1");
+    let unknown = bridge.open_raw("nope", WORKSPACE, "O1");
     assert_eq!(unknown["event"]["type"], "error");
     assert_eq!(unknown["event"]["fatal"], true);
 
@@ -327,7 +359,7 @@ fn open_rejects_unknown_and_missing_agent_id() {
 #[test]
 fn open_and_relay_both_directions() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let channel = bridge.open("fake", "O1");
+    let channel = bridge.open("fake", WORKSPACE, "O1");
 
     let send_resp = bridge.rpc("S1", "acp.send", json!({ "channel": channel, "message": { "hello": "world" } }));
     assert_eq!(send_resp["result"]["ok"], true);
@@ -350,7 +382,7 @@ fn open_and_relay_both_directions() {
 #[test]
 fn non_json_stdout_is_dropped_not_forwarded() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let channel = bridge.open("fake", "O1");
+    let channel = bridge.open("fake", WORKSPACE, "O1");
 
     bridge.rpc("S0", "acp.send", json!({ "channel": channel, "message": { "__test_cmd": "garbage" } }));
     bridge.rpc("S1", "acp.send", json!({ "channel": channel, "message": { "marker": "after-garbage" } }));
@@ -371,7 +403,7 @@ fn non_json_stdout_is_dropped_not_forwarded() {
 #[test]
 fn invalid_utf8_stdout_is_dropped_and_relay_continues() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let channel = bridge.open("fake", "O1");
+    let channel = bridge.open("fake", WORKSPACE, "O1");
 
     bridge.rpc("S0", "acp.send", json!({ "channel": channel, "message": { "__test_cmd": "badutf8" } }));
     let after = bridge.rpc("S1", "acp.send", json!({ "channel": channel, "message": { "after": "bad" } }));
@@ -397,7 +429,7 @@ fn invalid_utf8_stdout_is_dropped_and_relay_continues() {
 #[test]
 fn invalid_utf8_and_flooding_stderr_does_not_break_the_relay() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let channel = bridge.open("fake", "O1");
+    let channel = bridge.open("fake", WORKSPACE, "O1");
 
     bridge.rpc("S0", "acp.send", json!({ "channel": channel, "message": { "__test_cmd": "stderrbad" } }));
     let flood_resp = bridge.rpc("S1", "acp.send", json!({ "channel": channel, "message": { "__test_cmd": "stderrflood" } }));
@@ -415,7 +447,7 @@ fn invalid_utf8_and_flooding_stderr_does_not_break_the_relay() {
 #[test]
 fn oversized_stdout_line_is_dropped_with_error_event() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let channel = bridge.open("fake", "O1");
+    let channel = bridge.open("fake", WORKSPACE, "O1");
 
     bridge.rpc(
         "B",
@@ -448,7 +480,7 @@ fn oversized_stdout_line_is_dropped_with_error_event() {
 #[test]
 fn acp_send_preserves_fifo_order() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let channel = bridge.open("fake", "O1");
+    let channel = bridge.open("fake", WORKSPACE, "O1");
 
     const N: u64 = 200;
     for i in 0..N {
@@ -475,7 +507,7 @@ fn acp_send_preserves_fifo_order() {
 #[test]
 fn close_kills_the_process() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let channel = bridge.open("fake", "O1");
+    let channel = bridge.open("fake", WORKSPACE, "O1");
 
     let close_resp = bridge.close(&channel);
     assert_eq!(close_resp["result"]["ok"], true);
@@ -496,7 +528,7 @@ fn close_kills_the_process() {
 #[test]
 fn close_kills_the_whole_process_group_including_grandchildren() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let channel = bridge.open("fake", "O1");
+    let channel = bridge.open("fake", WORKSPACE, "O1");
 
     bridge.rpc("S", "acp.send", json!({ "channel": channel, "message": { "__test_cmd": "spawn_grandchild" } }));
     let spawned = bridge
@@ -529,7 +561,7 @@ fn close_kills_the_whole_process_group_including_grandchildren() {
 #[test]
 fn disconnect_terminates_the_bridge_without_external_signal() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let _channel = bridge.open("fake", "O1");
+    let _channel = bridge.open("fake", WORKSPACE, "O1");
 
     bridge.close_stdin();
     let status = bridge.wait_exit(Duration::from_secs(5));
@@ -545,10 +577,10 @@ fn opening_beyond_the_cap_is_rejected() {
 
     let mut channels = Vec::new();
     for i in 0..MAX_LIVE_AGENTS {
-        channels.push(bridge.open("fake", &format!("O{}", i)));
+        channels.push(bridge.open("fake", WORKSPACE, &format!("O{}", i)));
     }
 
-    let rejected = bridge.open_raw("fake", "Ocap");
+    let rejected = bridge.open_raw("fake", WORKSPACE, "Ocap");
     assert_eq!(rejected["event"]["type"], "error");
     assert_eq!(rejected["event"]["fatal"], true);
 
@@ -558,7 +590,7 @@ fn opening_beyond_the_cap_is_rejected() {
 #[test]
 fn send_validation_errors() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let channel = bridge.open("fake", "O1");
+    let channel = bridge.open("fake", WORKSPACE, "O1");
 
     let non_object = bridge.rpc("V0", "acp.send", json!({ "channel": channel, "message": "not-an-object" }));
     assert_eq!(non_object["error"]["code"], -32602);
@@ -586,8 +618,8 @@ fn send_validation_errors() {
 #[test]
 fn acp_send_rejects_when_queue_is_full_without_blocking_the_bridge() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let ch1 = bridge.open("fake", "O1");
-    let ch2 = bridge.open("fake", "O2");
+    let ch1 = bridge.open("fake", WORKSPACE, "O1");
+    let ch2 = bridge.open("fake", WORKSPACE, "O2");
 
     let stop_resp = bridge.rpc("STOP", "acp.send", json!({ "channel": ch1, "message": { "__test_cmd": "stopreading" } }));
     assert_eq!(stop_resp["result"]["ok"], true);
@@ -656,7 +688,7 @@ fn acp_send_rejects_when_queue_is_full_without_blocking_the_bridge() {
 #[test]
 fn natural_exit_kills_a_backgrounded_process_the_agent_spawned() {
     let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
-    let channel = bridge.open("fake", "O1");
+    let channel = bridge.open("fake", WORKSPACE, "O1");
 
     let send_resp = bridge.rpc(
         "S",
@@ -730,7 +762,7 @@ fn agent_gets_only_allowlisted_env_plus_its_config_env() {
             ("TMPDIR", "/tmp/hbr100-tmpdir/"),
         ],
     );
-    let channel = bridge.open("fake", "O1");
+    let channel = bridge.open("fake", WORKSPACE, "O1");
     bridge.rpc("S1", "acp.send", json!({ "channel": channel, "message": { "__test_cmd": "env" } }));
     let reply = bridge
         .wait_for(|m| is_stream_event(m, "O1", "message"), Duration::from_secs(5))
@@ -768,5 +800,127 @@ fn agent_gets_only_allowlisted_env_plus_its_config_env() {
     assert!(env.contains_key("PATH"), "agent needs PATH");
 
     bridge.close(&channel);
+    bridge.shutdown();
+}
+
+// =============================================================================
+// Per-site workspace directories
+// =============================================================================
+
+#[test]
+fn open_event_reports_cwd_under_the_workspace_hash() {
+    let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
+    let (channel, cwd) = bridge.open_with_cwd("fake", WORKSPACE, "O1");
+
+    let expected = bridge
+        ._home
+        .join(".harbor")
+        .join("acp")
+        .join("workspaces")
+        .join(workspace_hash(WORKSPACE))
+        .canonicalize()
+        .expect("workspace dir must exist after open");
+    assert_eq!(Path::new(&cwd), expected, "cwd {} did not match the expected workspace dir", cwd);
+
+    bridge.close(&channel);
+    bridge.shutdown();
+}
+
+#[test]
+fn fake_agent_actually_runs_in_the_reported_cwd() {
+    let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
+    let (channel, cwd) = bridge.open_with_cwd("fake", WORKSPACE, "O1");
+
+    bridge.rpc("S1", "acp.send", json!({ "channel": channel, "message": { "__test_cmd": "cwd" } }));
+    let reply = bridge
+        .wait_for(|m| is_stream_event(m, "O1", "message"), Duration::from_secs(5))
+        .expect("cwd reply from the agent");
+    let agent_cwd = reply["event"]["message"]["cwd"].as_str().expect("agent reported its cwd");
+    assert_eq!(agent_cwd, cwd, "agent's actual working directory must match the open event's cwd");
+
+    bridge.close(&channel);
+    bridge.shutdown();
+}
+
+#[test]
+fn different_workspaces_get_different_dirs_same_workspace_is_stable() {
+    let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
+
+    let (ch_a1, cwd_a1) = bridge.open_with_cwd("fake", "https://a.example", "O1");
+    bridge.close(&ch_a1);
+    bridge.wait_for(|m| is_stream_event(m, "O1", "exit"), Duration::from_secs(5));
+
+    let (ch_b, cwd_b) = bridge.open_with_cwd("fake", "https://b.example", "O2");
+    assert_ne!(cwd_a1, cwd_b, "different workspaces must get different working directories");
+    bridge.close(&ch_b);
+    bridge.wait_for(|m| is_stream_event(m, "O2", "exit"), Duration::from_secs(5));
+
+    // Reopening the first workspace (a fresh agent process, same site) must
+    // land in the same directory as before - it must persist, not be wiped.
+    let (ch_a2, cwd_a2) = bridge.open_with_cwd("fake", "https://a.example", "O3");
+    assert_eq!(cwd_a1, cwd_a2, "the same workspace must get the same directory across opens");
+
+    bridge.close(&ch_a2);
+    bridge.shutdown();
+}
+
+#[test]
+fn malicious_workspace_strings_cannot_escape_the_workspaces_dir() {
+    let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
+
+    let malicious = ["../../etc", "a/b", "evil\u{0}name", "../../../../../../root"];
+    for (i, workspace) in malicious.iter().enumerate() {
+        let req_id = format!("O{}", i);
+        let (channel, cwd) = bridge.open_with_cwd("fake", workspace, &req_id);
+        let cwd_path = PathBuf::from(&cwd);
+
+        assert!(
+            cwd_path.components().any(|c| c.as_os_str() == "workspaces"),
+            "cwd {:?} for workspace {:?} must be inside a workspaces/ directory",
+            cwd,
+            workspace,
+        );
+        assert!(
+            !cwd_path.components().any(|c| c.as_os_str() == ".."),
+            "cwd {:?} for workspace {:?} must not contain a literal '..' component",
+            cwd,
+            workspace,
+        );
+        assert_eq!(
+            cwd_path.file_name().and_then(|n| n.to_str()),
+            Some(workspace_hash(workspace).as_str()),
+            "cwd {:?} for workspace {:?} must be named after its hash, not the raw string",
+            cwd,
+            workspace,
+        );
+
+        bridge.close(&channel);
+        bridge.wait_for(|m| is_stream_event(m, &req_id, "exit"), Duration::from_secs(5));
+    }
+
+    bridge.shutdown();
+}
+
+#[test]
+fn open_rejects_missing_empty_or_oversized_workspace() {
+    let mut bridge = Bridge::spawn(json!([fake_agent("fake")]));
+
+    let missing = bridge.open_raw_params("M1", json!({ "agentId": "fake" }));
+    assert_eq!(missing["event"]["type"], "error");
+    assert_eq!(missing["event"]["fatal"], true);
+
+    let empty = bridge.open_raw_params("M2", json!({ "agentId": "fake", "workspace": "" }));
+    assert_eq!(empty["event"]["type"], "error");
+    assert_eq!(empty["event"]["fatal"], true);
+
+    let huge = "x".repeat(2049);
+    let oversized = bridge.open_raw_params("M3", json!({ "agentId": "fake", "workspace": huge }));
+    assert_eq!(oversized["event"]["type"], "error");
+    assert_eq!(oversized["event"]["fatal"], true);
+
+    let not_a_string = bridge.open_raw_params("M4", json!({ "agentId": "fake", "workspace": 123 }));
+    assert_eq!(not_a_string["event"]["type"], "error");
+    assert_eq!(not_a_string["event"]["fatal"], true);
+
     bridge.shutdown();
 }

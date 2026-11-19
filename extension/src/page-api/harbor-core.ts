@@ -16,6 +16,7 @@
  */
 import { routeExtensionApiMessage, streamLlmChat } from '../extension-api';
 import { routeAgentMessage } from '../agents/background-router';
+import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
 
@@ -136,4 +137,111 @@ export function harborStreamRequest(
     void generator.return(undefined);
   };
   return { stream, cancel };
+}
+
+// =============================================================================
+// ACP bridge access (for the ACP agent backend — see page-api/acp-backend.ts)
+// =============================================================================
+
+/**
+ * One event from `acp.open`'s stream, as documented in bridge-rs/README.md
+ * "ACP agents": `open` once, carrying the channel and (per the parallel
+ * bridge unit) the session's working directory; then one `message` per
+ * line the agent's process prints, already parsed as JSON; then `exit`
+ * when the process ends. A `fatal` error means the agent never started
+ * (no channel exists); any other `error` is a recoverable per-line failure
+ * and more `message`/`exit` events can still follow it.
+ */
+export type AcpBridgeEvent =
+  | { type: 'open'; channel: string; cwd?: string }
+  | { type: 'message'; message: unknown }
+  | { type: 'exit'; code: number | null }
+  | { type: 'error'; fatal?: boolean; message: string };
+
+/**
+ * Opens a channel to a bridge-configured ACP agent. `workspace` is the
+ * site origin the run is for; the bridge/parallel unit turns it into the
+ * session's `cwd`, reported back on the `open` event.
+ *
+ * Unlike `harborStreamRequest`, this has no 30-second timeout: an agent
+ * turn can take minutes, so the caller (the ACP backend) owns its own
+ * overall run timeout.
+ */
+export function acpOpenStream(
+  agentId: string,
+  workspace: string,
+): { stream: AsyncGenerator<AcpBridgeEvent>; cancel: () => void } {
+  const eventQueue: AcpBridgeEvent[] = [];
+  let resolveWaiting: ((event: AcpBridgeEvent | null) => void) | null = null;
+  let finished = false;
+  let failure: Error | null = null;
+
+  const { cancel, done } = rpcStreamRequest(
+    'acp.open',
+    { agentId, workspace },
+    (event: unknown) => {
+      const e = event as AcpBridgeEvent;
+      if (resolveWaiting) {
+        const resolve = resolveWaiting;
+        resolveWaiting = null;
+        resolve(e);
+      } else {
+        eventQueue.push(e);
+      }
+    },
+  );
+
+  done
+    .then(() => {
+      finished = true;
+      resolveWaiting?.(null);
+      resolveWaiting = null;
+    })
+    .catch((e: unknown) => {
+      finished = true;
+      failure = e instanceof Error ? e : new Error(String(e));
+      resolveWaiting?.(null);
+      resolveWaiting = null;
+    });
+
+  async function* generate(): AsyncGenerator<AcpBridgeEvent> {
+    try {
+      while (true) {
+        if (eventQueue.length > 0) {
+          yield eventQueue.shift()!;
+          continue;
+        }
+        if (finished) {
+          if (failure) throw failure;
+          return;
+        }
+        const event = await new Promise<AcpBridgeEvent | null>((resolve) => {
+          resolveWaiting = resolve;
+        });
+        if (event === null) {
+          if (failure) throw failure;
+          return;
+        }
+        yield event;
+      }
+    } finally {
+      cancel();
+    }
+  }
+
+  return { stream: generate(), cancel };
+}
+
+/** Writes one JSON-RPC message to the agent's stdin via `acp.send`. */
+export async function acpSend(channel: string, message: unknown): Promise<void> {
+  await rpcRequest('acp.send', { channel, message });
+}
+
+/**
+ * Kills the agent process. Best-effort from the caller's point of view —
+ * the ACP backend calls this on every exit path and doesn't let a failure
+ * here mask the run's real outcome.
+ */
+export async function acpClose(channel: string): Promise<void> {
+  await rpcRequest('acp.close', { channel });
 }

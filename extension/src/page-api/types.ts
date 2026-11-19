@@ -349,6 +349,8 @@ export const ErrorCodes = {
   INTERNAL: 'ERR_INTERNAL',
   AGENT_NOT_FOUND: 'ERR_AGENT_NOT_FOUND',
   AGENT_NOT_ACCEPTING: 'ERR_AGENT_NOT_ACCEPTING',
+  AGENT_REFUSED: 'ERR_AGENT_REFUSED',
+  AGENT_LIMIT: 'ERR_AGENT_LIMIT',
 } as const;
 
 // =============================================================================
