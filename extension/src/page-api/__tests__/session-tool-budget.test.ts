@@ -81,6 +81,13 @@ async function loadRules(rules: Array<Record<string, unknown>>) {
   Policy.__setForTesting(rules.map(r => compileRule({ source: 'user', ...r } as never)));
 }
 
+/** A policy refusal is neither of Harbor's session refusals. */
+function expectPolicyRefusal(reply: Reply) {
+  expect(reply.ok).toBe(false);
+  expect(reply.error?.code).not.toBe('ERR_BUDGET_EXCEEDED');
+  expect(reply.error?.code).not.toBe('ERR_SESSION_NOT_FOUND');
+}
+
 async function clearRules() {
   const { Policy } = await import('../../policy/store');
   Policy.__reset();
@@ -190,7 +197,7 @@ describe('a session tool budget', () => {
 
     await loadRules([{ id: 'no-tools', effect: 'deny', principal: { origin: '*' }, action: 'tool.call' }]);
     const refused = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
-    expect(refused.ok).toBe(false);
+    expectPolicyRefusal(refused);
     expect(host.callTool).not.toHaveBeenCalled();
 
     await clearRules();
@@ -207,7 +214,7 @@ describe('a session tool budget', () => {
     await loadRules([{ id: 'ask-tools', effect: 'ask', principal: { origin: '*' }, action: 'tool.call' }]);
     vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: false } as never);
     const refused = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
-    expect(refused.ok).toBe(false);
+    expectPolicyRefusal(refused);
     expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
     expect(host.callTool).not.toHaveBeenCalled();
 
@@ -265,4 +272,33 @@ describe('a session tool budget', () => {
       expect(reply.error).toEqual({ code: 'ERR_TOOL_FAILED', message: toolError });
     },
   );
+
+  it('does not spend the budget on a call refused because the origin is quarantined', async () => {
+    const { Watchdog } = await import('../../policy/watchdog');
+    const { setWatchdogResolver } = await import('../../policy/engine');
+    setWatchdogResolver(Watchdog.resolve);
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+
+    Watchdog.quarantine(ORIGIN, 'test');
+    const refused = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expectPolicyRefusal(refused);
+    expect(host.callTool).not.toHaveBeenCalled();
+
+    Watchdog.reset(ORIGIN);
+    const allowed = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(allowed.ok, allowed.error?.message).toBe(true);
+    expect(host.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a call against a terminated session, without running it', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 5);
+
+    const terminated = await request('agent.sessions.terminate', { sessionId });
+    expect(terminated.ok, terminated.error?.message).toBe(true);
+    const reply = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
+    expect(host.callTool).not.toHaveBeenCalled();
+  });
 });
