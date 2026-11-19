@@ -439,19 +439,6 @@ class SessionRegistryImpl {
     }
   }
 
-  /**
-   * Get remaining tool call budget for a session.
-   */
-  getRemainingToolBudget(sessionId: string): number | undefined {
-    const session = this.sessions.get(sessionId);
-    if (!session) return undefined;
-
-    const limit = session.capabilities.limits?.maxToolCalls;
-    if (limit === undefined) return undefined;
-
-    return Math.max(0, limit - session.usage.toolCallCount);
-  }
-
   // ===========================================================================
   // Event System
   // ===========================================================================

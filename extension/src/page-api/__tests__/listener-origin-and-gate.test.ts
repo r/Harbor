@@ -48,7 +48,6 @@ vi.mock('../../sessions', () => ({
     reserveToolCall: vi.fn(() => true),
     releaseToolCall: vi.fn(),
     commitToolCall: vi.fn(),
-    getRemainingToolBudget: vi.fn(() => undefined),
     touchSession: vi.fn(),
   },
 }));

@@ -798,7 +798,6 @@ import type {
   SessionCapabilities,
   AgentSession,
 } from '../sessions/types';
-import { SessionRegistry } from '../sessions/registry';
 
 /**
  * Check if a session has the required capability, validating against origin permissions.
@@ -859,96 +858,6 @@ export async function checkSessionCapability(
   }
 
   return { allowed: true };
-}
-
-/**
- * Check if a session can call a specific tool, validating against both
- * session capabilities and origin permissions.
- */
-export async function checkSessionToolAccess(
-  session: AgentSession,
-  toolName: string,
-  tabId?: number,
-): Promise<{ allowed: boolean; reason?: string }> {
-  // First check session capability
-  if (!session.capabilities.tools.allowed) {
-    return { allowed: false, reason: 'Session does not have tool access' };
-  }
-
-  // Check if tool is in session's allowed list
-  if (!session.capabilities.tools.allowedTools.includes(toolName)) {
-    return { allowed: false, reason: `Tool "${toolName}" not in session's allowed tools` };
-  }
-
-  // Check origin permission
-  const originAllowed = await isToolAllowed(session.origin, toolName);
-  if (!originAllowed) {
-    return { allowed: false, reason: `Origin does not have permission for tool "${toolName}"` };
-  }
-
-  // Check if session has exceeded tool budget
-  const budget = SessionRegistry.getRemainingToolBudget(session.sessionId);
-  if (budget !== undefined && budget <= 0) {
-    return { allowed: false, reason: 'Session tool budget exceeded' };
-  }
-
-  return { allowed: true };
-}
-
-/**
- * Request permissions for a session's capabilities.
- * Shows permission prompt if needed, bounded by what the session requests.
- */
-export async function requestSessionPermissions(
-  session: AgentSession,
-  tabId?: number,
-): Promise<PermissionGrantResult> {
-  const requiredScopes: PermissionScope[] = [];
-
-  // Determine required scopes from session capabilities
-  if (session.capabilities.llm.allowed) {
-    requiredScopes.push('model:prompt');
-  }
-  if (session.capabilities.tools.allowed) {
-    requiredScopes.push('mcp:tools.call');
-    if (session.capabilities.tools.allowedTools.length > 0) {
-      requiredScopes.push('mcp:tools.list');
-    }
-  }
-  if (session.capabilities.browser.readActiveTab) {
-    requiredScopes.push('browser:activeTab.read');
-  }
-  if (session.capabilities.browser.interact) {
-    requiredScopes.push('browser:activeTab.interact');
-  }
-  if (session.capabilities.browser.screenshot) {
-    requiredScopes.push('browser:activeTab.screenshot');
-  }
-
-  if (requiredScopes.length === 0) {
-    // No permissions needed
-    return {
-      granted: true,
-      scopes: {} as Record<PermissionScope, PermissionGrant>,
-    };
-  }
-
-  // Build reason string
-  const reason = session.reason ||
-    (session.name ? `Session "${session.name}" requests access` : undefined);
-
-  // Request permissions through the standard flow
-  return requestPermissions(
-    session.origin,
-    {
-      scopes: requiredScopes,
-      reason,
-      tools: session.capabilities.tools.allowedTools.length > 0
-        ? session.capabilities.tools.allowedTools
-        : undefined,
-    },
-    tabId,
-  );
 }
 
 /**
