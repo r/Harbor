@@ -256,6 +256,6 @@ export async function acpClose(channel: string): Promise<void> {
  * The page in a tab has gone (it navigated, reloaded or closed): forget the
  * agents it registered, so nothing more is delivered to that tab for them.
  */
-export function forgetAgentsInTab(tabId: number): void {
-  forgetTabAgents(tabId);
+export function forgetAgentsInTab(tabId: number, registeredBefore?: number): void {
+  forgetTabAgents(tabId, registeredBefore);
 }

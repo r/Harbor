@@ -149,6 +149,26 @@ describe('a broadcast', () => {
   });
 });
 
+describe('a broadcast asks no one', () => {
+  it('skips a granted site a rule says to ask about, without prompting', async () => {
+    await pageAgent(B);
+    await call(handleAgentsSubscribe, B, 'agents.subscribe', { eventType: 'news' });
+    await pageAgent(A);
+    await grantPermissions(A, ['agents:crossOrigin'], 'granted-always', undefined, undefined, [B]);
+    const { compileRule } = await import('../../../policy/rules');
+    Policy.__setForTesting([
+      compileRule({ id: 'ask-cross', effect: 'ask', principal: { origin: '*' }, action: 'agent.delegate.crossOrigin', source: 'user' }),
+    ]);
+    tabMessages.length = 0;
+
+    const response = await call(handleAgentsBroadcast, A, 'agents.broadcast', { eventType: 'news', data: 1 });
+
+    expect((response as { result: { delivered: number } }).result.delivered).toBe(0);
+    expect(prompts).toEqual([]);
+    expect(tabMessages).toEqual([]);
+  });
+});
+
 describe('a shared "Allow once" answer', () => {
   it('grants each caller only the site it asked about', async () => {
     await pageAgent(A);

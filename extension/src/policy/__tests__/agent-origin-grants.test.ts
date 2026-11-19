@@ -116,6 +116,17 @@ describe('per-site grants', () => {
     expect(await allowed(B, 7)).toBe(false);
   });
 
+  it('keeps a deny and a grant written at the same moment', async () => {
+    await Promise.all([
+      permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, [C]),
+      permissions.denyPermissions(A, ['agents:crossOrigin'], [B]),
+    ]);
+
+    expect(await allowed(C)).toBe(true);
+    const listed = (await permissions.listAllPermissions()).find((p) => p.origin === A);
+    expect(listed?.deniedAgentOrigins).toEqual([B]);
+  });
+
   it('lists a site whose only entry is a denied site', async () => {
     await permissions.denyPermissions(A, ['agents:crossOrigin'], [B]);
 

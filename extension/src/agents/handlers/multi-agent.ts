@@ -23,7 +23,6 @@ import {
   getAgentUsage,
   discoverAgents,
   listAllAgents,
-  cleanupTabAgents,
 } from '../../multi-agent/registry';
 import {
   sendMessage as sendAgentMessage,
@@ -502,18 +501,21 @@ async function forwardToAgentTab(tabId: number, agentOrigin: string, message: un
 }
 
 /**
- * Forget every agent a tab registered, once the page in it has gone (it
- * navigated, reloaded or closed): its handlers, subscriptions and
- * registration, so nothing more is delivered to that tab for it.
+ * Forget the agents a tab registered, once the page in it has gone (it
+ * navigated, reloaded or closed): their handlers, subscriptions and
+ * registration, so nothing more is delivered to that tab for them.
+ *
+ * `registeredBefore` spares agents a newer page in the tab registered, when
+ * the old page's disconnect arrives after the new page has started.
  */
-export function forgetTabAgents(tabId: number): void {
+export function forgetTabAgents(tabId: number, registeredBefore = Infinity): void {
   for (const agent of listAllAgents()) {
-    if (agent.tabId !== tabId) continue;
+    if (agent.tabId !== tabId || agent.registeredAt >= registeredBefore) continue;
     cleanupAgentHandlers(agent.id);
     invocationHandlers.delete(agent.id);
     if (originAgents.get(agent.origin) === agent.id) originAgents.delete(agent.origin);
+    unregisterAgent(agent.id, agent.origin);
   }
-  cleanupTabAgents(tabId);
 }
 
 /**

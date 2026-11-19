@@ -47,6 +47,17 @@ describe('registering a page agent', () => {
   });
 });
 
+describe('a failed message setup', () => {
+  it('does not fail a registration Harbor completed', async () => {
+    harborRequest.mockImplementation(async (type: string) => {
+      if (type === 'agents.registerMessageHandler') throw new Error('bridge hiccup');
+      return { id: 'agent-1', name: 'B', capabilities: [], tags: [], acceptsInvocations: false, acceptsMessages: true };
+    });
+    const response = await handleAgentsRegister(ctx('agent.agents.register', { name: 'B', acceptsMessages: true }));
+    expect(response).toMatchObject({ ok: true, result: { id: 'agent-1' } });
+  });
+});
+
 describe('a refusal keeps its code', () => {
   const refusal = () => Object.assign(new Error('User denied agent.delegate.crossOrigin.'), { code: 'ERR_PERMISSION_DENIED' });
 

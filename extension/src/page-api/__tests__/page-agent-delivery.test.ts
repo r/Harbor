@@ -196,6 +196,28 @@ describe('messages between page agents', () => {
   });
 });
 
+describe('a reloaded page', () => {
+  it('keeps the new page\'s agent when the old page\'s connection closes late', async () => {
+    const oldPage = connectPort('https://a.example/page', 1);
+    const tabB = connectPort('https://b.example/page', 2);
+    const oldAgent = await register(oldPage, 'old');
+    await register(tabB, 'b');
+    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, ['https://a.example']);
+    // The tab reloads: the new page connects and registers before the old
+    // page's connection reports that it closed.
+    await new Promise((r) => setTimeout(r, 2));
+    const newPage = connectPort('https://a.example/page', 1);
+    const newAgent = await register(newPage, 'new');
+    oldPage.disconnect();
+
+    const toNew = await request(tabB, 'agent.agents.send', { agentId: newAgent, payload: 'hi' });
+    const toOld = await request(tabB, 'agent.agents.send', { agentId: oldAgent, payload: 'hi' });
+
+    expect((toNew.result as { delivered: boolean }).delivered).toBe(true);
+    expect((toOld.result as { delivered: boolean }).delivered).toBe(false);
+  });
+});
+
 describe('broadcasts between page agents', () => {
   it('reach a subscriber on another tab of the same site, whichever tab registered last', async () => {
     const tab1 = connectPort('https://a.example/one', 1);

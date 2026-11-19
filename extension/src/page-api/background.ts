@@ -263,11 +263,19 @@ export function initializePageApi(): void {
   });
 
   // Port connection handler: the page-facing transport.
+  // Each page connection, numbered, and the latest one in each tab with when
+  // it connected: a reloaded page's old connection can close after the new one opens.
+  let pageConnections = 0;
+  const latestTabConnection = new Map<number, { connection: number; at: number }>();
+
   browserAPI.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     if (port.name !== PORT_NAME) return;
 
     const origin = originFromSender(port.sender);
     const tabId = port.sender?.tab?.id;
+    // Which page connection this is, in its tab (see the disconnect below).
+    const connection = ++pageConnections;
+    if (tabId !== undefined) latestTabConnection.set(tabId, { connection, at: Date.now() });
     const cookieStoreId = (port.sender?.tab as (chrome.tabs.Tab & { cookieStoreId?: string }) | undefined)?.cookieStoreId;
 
     // One AbortController per in-flight request on this port, keyed by
@@ -348,7 +356,14 @@ export function initializePageApi(): void {
       // The page's agents go with it, so nothing more is delivered to this
       // tab for them once it shows another page. Only the top frame runs the
       // page API.
-      if (tabId !== undefined && (port.sender?.frameId ?? 0) === 0) forgetAgentsInTab(tabId);
+      if (tabId !== undefined && (port.sender?.frameId ?? 0) === 0) {
+        // If a newer page in this tab has connected already, spare the
+        // agents it registered: only this page's agents go.
+        const latest = latestTabConnection.get(tabId);
+        const newerPageSince = latest && latest.connection !== connection ? latest.at : undefined;
+        if (newerPageSince === undefined) latestTabConnection.delete(tabId);
+        forgetAgentsInTab(tabId, newerPageSince);
+      }
     });
   });
 
