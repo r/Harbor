@@ -15,6 +15,7 @@ import { harborRequest, harborStreamRequest } from './harbor-core';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
 import { type AgentBackend } from './agent-backend';
 import { selectAgentBackend } from './agent-backend-selection';
+import { isAcpTextSession, promptStreamingAcpTextSession, cleanupAcpTextSessionsForTab } from './acp-text-session';
 import type { TransportStreamEvent } from './types';
 
 import {
@@ -26,6 +27,7 @@ import {
   // AI utilities
   resolveTextSession,
   recordExplicitPrompt,
+  forgetTextSession,
   // Tab utilities
   restoreSpawnedTabs,
   handleTabRemoved,
@@ -63,6 +65,7 @@ function originFromSender(sender: chrome.runtime.Port['sender']): string {
 async function handleSessionPromptStreaming(
   ctx: RequestContext,
   sendEvent: (event: TransportStreamEvent) => void,
+  signal: AbortSignal,
 ): Promise<void> {
   const { sessionId, input } = ctx.payload as { sessionId: string; input: string };
 
@@ -72,6 +75,30 @@ async function handleSessionPromptStreaming(
     return;
   }
   const { session } = resolved;
+
+  if (isAcpTextSession(sessionId)) {
+    try {
+      // `signal` aborts when the page breaks its for-await loop
+      // (injected.ts's createStreamIterable.return(), relayed as
+      // {type:'abort', id} on the port) or the port disconnects — either
+      // way this turn gets `session/cancel`, not left running.
+      const result = await promptStreamingAcpTextSession(sessionId, input, (chunk) => {
+        sendEvent({ id: ctx.id, event: { type: 'token', token: chunk } });
+      }, signal);
+      if (result.ok) {
+        sendEvent({ id: ctx.id, event: { type: 'done' }, done: true });
+      } else {
+        sendEvent({ id: ctx.id, event: result.error, done: true });
+      }
+    } catch (e) {
+      sendEvent({
+        id: ctx.id,
+        event: { type: 'error', error: { code: 'ERR_AGENT_FAILED', message: e instanceof Error ? e.message : 'Agent run failed' } },
+        done: true,
+      });
+    }
+    return;
+  }
 
   try {
     session.history.push({ role: 'user', content: input });
@@ -225,6 +252,10 @@ export function initializePageApi(): void {
 
     handleTabRemoved(tabId);
     cleanupAgentsForTab(tabId);
+    // Cancels any turn in progress and kills the agent process for every
+    // ACP-backed window.ai text session this tab opened — a no-op when it
+    // opened none.
+    await cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
   });
 
   // Port connection handler: the page-facing transport.
@@ -235,10 +266,15 @@ export function initializePageApi(): void {
     const tabId = port.sender?.tab?.id;
     const cookieStoreId = (port.sender?.tab as (chrome.tabs.Tab & { cookieStoreId?: string }) | undefined)?.cookieStoreId;
 
-    // One AbortController per in-flight agent.run on this port, keyed by
-    // request id. The content script posts {type:'abort', id} when the page
-    // breaks its for-await loop (injected.ts's createStreamIterable.return());
-    // the port disconnecting (tab closed or navigated) aborts every run
+    // One AbortController per in-flight request on this port, keyed by
+    // request id — not just agent.run/session.promptStreaming: a page's own
+    // client-side request timeout (injected.ts) now also posts
+    // {type:'abort', id} for ai.createTextSession and session.prompt, on
+    // the ACP backend, so the agent starting or a turn running doesn't
+    // outlive a page that's already given up waiting. The content script
+    // also posts {type:'abort', id} when the page breaks a streaming
+    // for-await loop (injected.ts's createStreamIterable.return()); the
+    // port disconnecting (tab closed or navigated) aborts every request
     // still in flight on it.
     const runControllers = new Map<string, AbortController>();
 
@@ -251,6 +287,9 @@ export function initializePageApi(): void {
         return;
       }
 
+      const controller = new AbortController();
+      runControllers.set(message.id, controller);
+
       const ctx: RequestContext = {
         id: message.id,
         type: message.type,
@@ -261,42 +300,47 @@ export function initializePageApi(): void {
         origin,
         tabId,
         cookieStoreId,
+        signal: controller.signal,
       };
 
-      if (ctx.type === 'session.promptStreaming') {
-        const sendEvent = (event: TransportStreamEvent) => {
-          try { port.postMessage(event); } catch { /* Port disconnected */ }
-        };
-        await handleSessionPromptStreaming(ctx, sendEvent);
-        return;
-      }
-
-      if (ctx.type === 'agent.run') {
-        const sendEvent = (event: TransportStreamEvent) => {
-          try { port.postMessage(event); } catch { /* Port disconnected */ }
-        };
-        const controller = new AbortController();
-        runControllers.set(ctx.id, controller);
-        try {
-          await handleAgentRun(ctx, sendEvent, controller.signal);
-        } finally {
-          // A page may reuse an id; only remove the controller this run added.
-          if (runControllers.get(ctx.id) === controller) runControllers.delete(ctx.id);
-        }
-        return;
-      }
-
-      const response = await routeMessage(ctx);
       try {
-        port.postMessage(response);
-      } catch {
-        /* Port disconnected */
+        if (ctx.type === 'session.promptStreaming') {
+          const sendEvent = (event: TransportStreamEvent) => {
+            try { port.postMessage(event); } catch { /* Port disconnected */ }
+          };
+          await handleSessionPromptStreaming(ctx, sendEvent, controller.signal);
+          return;
+        }
+
+        if (ctx.type === 'agent.run') {
+          const sendEvent = (event: TransportStreamEvent) => {
+            try { port.postMessage(event); } catch { /* Port disconnected */ }
+          };
+          await handleAgentRun(ctx, sendEvent, controller.signal);
+          return;
+        }
+
+        const response = await routeMessage(ctx);
+        try {
+          port.postMessage(response);
+        } catch {
+          /* Port disconnected */
+        }
+      } finally {
+        // A page may reuse an id; only remove the controller this call added.
+        if (runControllers.get(message.id) === controller) runControllers.delete(message.id);
       }
     });
 
     port.onDisconnect?.addListener(() => {
       for (const controller of runControllers.values()) controller.abort();
       runControllers.clear();
+      // The page navigated or reloaded (a new port connects for the new
+      // page) or the tab closed outright — either way, every ACP-backed
+      // text session this port's page opened must end, not just the ones
+      // tabs.onRemoved also catches: a same-tab navigation disconnects this
+      // port without ever firing tabs.onRemoved.
+      if (tabId !== undefined) void cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
     });
   });
 

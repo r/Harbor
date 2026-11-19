@@ -24,6 +24,16 @@ export interface RequestContext {
   tabId?: number;
   /** Firefox container ID - used to open new tabs in the same container */
   cookieStoreId?: string;
+  /**
+   * Aborts if the page's own request times out, or it posts an explicit
+   * abort for this request id (background.ts's port listener sets this for
+   * every request). Most handlers don't need it; the ones that keep
+   * background work running past a single request/response round trip
+   * (the ACP backend's `ai.createTextSession`/`session.prompt`) read it so
+   * a page-side timeout cancels that work too, instead of leaving it
+   * running.
+   */
+  signal?: AbortSignal;
 }
 
 /**

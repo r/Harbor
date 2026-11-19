@@ -21,6 +21,7 @@ import {
   handleProvidersGetConfiguredModelsMetadata,
   resolveTextSession,
   recordExplicitPrompt,
+  forgetTextSession,
 } from './ai-handlers';
 
 import {
@@ -245,7 +246,7 @@ export {
 };
 
 // AI utilities
-export { resolveTextSession, recordExplicitPrompt };
+export { resolveTextSession, recordExplicitPrompt, forgetTextSession };
 
 // Tab utilities
 export {

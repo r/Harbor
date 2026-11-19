@@ -1072,11 +1072,12 @@ try {
 | `ERR_AGENT_NOT_FOUND` | Agent not registered |
 | `ERR_AGENT_NOT_ACCEPTING` | Agent not accepting invocations |
 | `ERR_TIMEOUT` | Request timed out |
-| `ERR_ABORTED` | The page aborted an `agent.run`, or its tab closed |
+| `ERR_ABORTED` | The page aborted an `agent.run` or a `window.ai` prompt, its tab closed, or its port disconnected |
 | `ERR_INTERNAL` | Internal error |
-| `ERR_AGENT_FAILED` | The agent loop running `agent.run` failed — a model call, or (on the ACP backend) a transport failure, an agent exit before it answered, or a JSON-RPC error |
+| `ERR_AGENT_FAILED` | The agent loop running `agent.run`, or a `window.ai` text session on the ACP backend, failed — a model call, or (on the ACP backend) a transport failure, an agent exit before it answered, or a JSON-RPC error |
 | `ERR_AGENT_REFUSED` | An ACP agent's turn ended with `stopReason: "refusal"` |
 | `ERR_AGENT_LIMIT` | An ACP agent's turn ended with `stopReason: "max_tokens"` or `"max_turn_requests"` |
+| `ERR_AGENT_BUSY` | Too many ACP agents are already running: this site's own cap (2 at once, counting `agent.run` and `window.ai` text sessions together), or the person's bridge-wide limit |
 
 ---
 
