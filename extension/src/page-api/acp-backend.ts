@@ -65,6 +65,29 @@ function agentFailedEvent(message: string): StreamToken {
 }
 
 /**
+ * Answers one `session/request_permission`. Harbor never passes an
+ * agent-native "always" through, and once the run is already cancelled
+ * (`cancelled` is true before this is even asked — see the guard below),
+ * every request gets `cancelled` too, whatever options it offers: a
+ * request that's still in flight when Harbor gives up must not approve
+ * anything on the page's behalf.
+ *
+ * A pure function, not a method, so the guard is testable on its own
+ * without needing a live round trip through a real connection, which
+ * normally tears down at almost the same moment `cancelled` becomes true.
+ */
+export function answerPermissionRequest(
+  cancelled: boolean,
+  options: ReadonlyArray<{ optionId: string; kind: string }>,
+): { outcome: { outcome: 'cancelled' } | { outcome: 'selected'; optionId: string } } {
+  if (cancelled) return { outcome: { outcome: 'cancelled' } };
+  const rejectOnce = options.find((o) => o.kind === 'reject_once');
+  return rejectOnce
+    ? { outcome: { outcome: 'selected', optionId: rejectOnce.optionId } }
+    : { outcome: { outcome: 'cancelled' } };
+}
+
+/**
  * Wraps the bridge's acp.open event stream as the ACP SDK's bidirectional
  * `Stream`: the agent's parsed JSON-RPC messages become the readable side,
  * and every message the SDK writes is relayed with `acp.send`. Resolves
@@ -295,13 +318,8 @@ export class AcpAgentBackend implements AgentBackend {
       }
     });
 
-    app.onRequest(CLIENT_METHODS.session_request_permission, async (ctx) => {
-      if (cancelReason) return { outcome: { outcome: 'cancelled' } };
-      const rejectOnce = ctx.params.options.find((o) => o.kind === 'reject_once');
-      return rejectOnce
-        ? { outcome: { outcome: 'selected', optionId: rejectOnce.optionId } }
-        : { outcome: { outcome: 'cancelled' } };
-    });
+    app.onRequest(CLIENT_METHODS.session_request_permission, async (ctx) =>
+      answerPermissionRequest(cancelReason !== null, ctx.params.options));
 
     const stream = bridgeToSdkStream(channel, bridgeEvents);
 
