@@ -90,13 +90,13 @@ beforeAll(async () => {
 
 function stubGlobals() {
   vi.stubGlobal('fetch', fetchMock);
-  vi.stubGlobal('chrome', {
-    storage: { local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) } },
-    tabs,
-    runtime: { id: 'harbor@test' },
-  });
+  const storage = { local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) } };
+  const runtime = { id: 'harbor@test', sendMessage: vi.fn(async () => {}) };
+  vi.stubGlobal('chrome', { storage, tabs, runtime });
   // Public IPs only, so fetch's private-network guard lets these through.
   vi.stubGlobal('browser', {
+    storage,
+    runtime,
     tabs,
     dns: { resolve: vi.fn(async () => ({ addresses: ['93.184.216.34'], canonicalName: '', isTRR: false })) },
   });
@@ -247,5 +247,80 @@ describe('what stays outside the audit', () => {
     const res = await tabHandlers.handleSpawnedTabWaitForLoad(ctx('agent.browser.tab.waitForLoad', { tabId: SPAWNED_TAB }));
     expect(res.ok).toBe(true);
     expect(Audit.query({ origin: ORIGIN })).toHaveLength(0);
+  });
+});
+
+describe("a sensitive host is recorded, not classified", () => {
+  // docs.google.com, slack.com and chase.com are on the engine's sensitive-
+  // domain list. Classifying them would label the call and refuse it at the
+  // information-flow tier (ERR_LABEL_FLOW_BLOCKED).
+  it('tabs.create, navigate and fetch to sensitive hosts proceed and record the host', async () => {
+    const created = await tabHandlers.handleTabsCreate(ctx('agent.browser.tabs.create', { url: 'https://docs.google.com/' }));
+    const navigated = await browserHandlers.handleBrowserNavigate(ctx('agent.browser.navigate', { url: 'https://chase.com/' }));
+    const fetched = await browserHandlers.handleBrowserFetch(ctx('agent.browser.fetch', { url: 'https://slack.com/api' }));
+    expect([created.ok, navigated.ok, fetched.ok]).toEqual([true, true, true]);
+    const records = Audit.query({ origin: ORIGIN });
+    expect(records.map((r) => r.resource?.host)).toEqual(['docs.google.com', 'chase.com', 'slack.com']);
+    expect(records.every((r) => r.labelsOut.length === 0)).toBe(true);
+  });
+
+  it("a page on a sensitive domain can act on its own tab", async () => {
+    const own = { ...ctx('agent.browser.activeTab.readability'), origin: 'https://docs.google.com' } as RequestContext;
+    const res = await browserHandlers.handleBrowserReadability(own);
+    expect(res.ok).toBe(true);
+    const [record] = Audit.query({ origin: 'https://docs.google.com' });
+    expect(record).toMatchObject({ action: 'browser.read.activeTab', resource: { host: 'docs.google.com' } });
+  });
+
+  it('a rule scoped to a sensitive host still matches it', async () => {
+    loadRules([{ id: 'no-docs', effect: 'deny', principal: { origin: '*' }, action: 'browser.write.tabsCreate', resource: { host: 'docs.google.com' } }]);
+    const res = await tabHandlers.handleTabsCreate(ctx('agent.browser.tabs.create', { url: 'https://docs.google.com/' }));
+    expect(res.ok).toBe(false);
+    expect(tabs.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("page fetch and the watchdog's egress limit", () => {
+  it('many cross-origin page fetches in a minute do not restrict the site', async () => {
+    const { Watchdog, attachWatchdogToAudit } = await import('../../policy/watchdog');
+    Watchdog.reset(ORIGIN);
+    const detach = attachWatchdogToAudit();
+    try {
+      for (let i = 0; i < 8; i++) {
+        const res = await browserHandlers.handleBrowserFetch(ctx('agent.browser.fetch', { url: `https://api${i}.other.example/` }));
+        expect(res.ok, `fetch ${i}`).toBe(true);
+      }
+      expect(Watchdog.inspect(ORIGIN).status).toBe('normal');
+    } finally {
+      detach();
+    }
+  });
+});
+
+describe('a call the page gave up on is not performed late', () => {
+  it('an Allow after the page aborted (its timeout) does not run the click', async () => {
+    loadRules([{ id: 'confirm', effect: 'ask', principal: { origin: '*' }, action: 'browser.write.interact' }]);
+    const controller = new AbortController();
+    showPermissionPrompt.mockImplementationOnce(async () => {
+      controller.abort(); // the page timed out while the prompt was open
+      return { granted: true, grantType: 'granted-once' };
+    });
+    const res = await browserHandlers.handleBrowserClick({
+      ...ctx('agent.browser.activeTab.click', { ref: '#go' }),
+      signal: controller.signal,
+    } as RequestContext);
+    expect(res.ok).toBe(false);
+    expect(scriptRan()).toBe(false);
+  });
+
+  it('an Allow in time still runs it', async () => {
+    loadRules([{ id: 'confirm', effect: 'ask', principal: { origin: '*' }, action: 'browser.write.interact' }]);
+    showPermissionPrompt.mockResolvedValueOnce({ granted: true, grantType: 'granted-once' });
+    const res = await browserHandlers.handleBrowserClick({
+      ...ctx('agent.browser.activeTab.click', { ref: '#go' }),
+      signal: new AbortController().signal,
+    } as RequestContext);
+    expect(res.ok).toBe(true);
+    expect(scriptRan()).toBe(true);
   });
 });
