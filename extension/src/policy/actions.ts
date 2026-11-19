@@ -461,6 +461,8 @@ export function promptActionForModel(
   const name = typeof model === 'string' ? model.toLowerCase() : '';
   const looksLocal =
     name.startsWith('ollama:') ||
+    name.startsWith('llamafile:') ||
+    name.startsWith('lmstudio:') ||
     name.startsWith('apple:') ||
     name.startsWith('local:') ||
     name.startsWith('firefox-ml:') ||

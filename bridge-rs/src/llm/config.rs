@@ -432,7 +432,8 @@ impl LlmConfig {
     /// Whether a model runs on this machine. The part of its ID before the
     /// first `:` names a provider instance (resolved to its type) or a
     /// provider type. Anything else, including an ID with no provider,
-    /// counts as not local.
+    /// counts as not local. Whether the instance is enabled doesn't matter:
+    /// a disabled instance still runs where it runs, and can't be used.
     pub fn is_local_model(&self, model_id: &str) -> bool {
         let Some((provider, _)) = model_id.split_once(':') else {
             return false;

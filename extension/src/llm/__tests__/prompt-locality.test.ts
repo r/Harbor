@@ -61,8 +61,11 @@ describe('when the bridge cannot say', () => {
 
   it("an older bridge without llm.model_locality falls back to the model's name", async () => {
     bridge.bridgeRequest.mockRejectedValue(new Error('Unknown method: llm.model_locality'));
-    expect(await promptActionForPrompt('ollama:llama3')).toBe(LOCAL);
+    for (const model of ['ollama:llama3', 'llamafile:mistral', 'lmstudio:qwen']) {
+      expect(await promptActionForPrompt(model)).toBe(LOCAL);
+    }
     expect(await promptActionForPrompt('openai:gpt-4o')).toBe(REMOTE);
+    expect(await promptActionForPrompt('my-ollama:llama3')).toBe(REMOTE);
   });
 
   it('an unknown default model counts as remote', async () => {
