@@ -570,8 +570,11 @@ describe('AcpAgentBackend', () => {
       const events = await collect(backend, baseRequest());
 
       expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_PERMISSION_DENIED' } });
-      // The denied call must never reach the page.
-      expect(tokenEvents(events).some((e) => e.type === 'tool_call')).toBe(false);
+      // The announcement itself (the agent's own order) still reaches the
+      // page — it's just an announcement, not a decision — but nothing
+      // about its actual result does, since there was never an update.
+      expect(tokenEvents(events)).toContainEqual({ type: 'tool_call', tool: 'Read file', args: {} });
+      expect(tokenEvents(events).some((e) => e.type === 'tool_result')).toBe(false);
     });
 
     it('cancels and reports ERR_TIMEOUT once the overall run timeout elapses', async () => {
@@ -746,8 +749,16 @@ describe('AcpAgentBackend', () => {
 
   describe('event ordering and the terminal event', () => {
     it('emits tool_call before awaiting the grant re-check, matching the agent’s own order', async () => {
+      // hasPermission is also called once before session/prompt is even
+      // sent (unrelated to this tool_call); only its second call is the
+      // tool_call's own re-check.
       const order: string[] = [];
-      mocks.hasPermission.mockImplementation(async () => { order.push('grant-checked'); return true; });
+      let hasPermissionCalls = 0;
+      mocks.hasPermission.mockImplementation(async () => {
+        hasPermissionCalls++;
+        if (hasPermissionCalls === 2) order.push('grant-checked');
+        return true;
+      });
       registerFakeAgent({
         onPrompt: async (ctx) => {
           await ctx.client.notify(CLIENT_METHODS.session_update, {
@@ -758,17 +769,26 @@ describe('AcpAgentBackend', () => {
         },
       });
       const backend = new AcpAgentBackend(AGENT_ID);
-      const events = await collect(backend, baseRequest());
-      for (const e of tokenEvents(events)) order.push(e.type as string);
-      expect(order.indexOf('tool_call')).toBeLessThan(order.indexOf('grant-checked'));
+      await backend.run(baseRequest(), (e) => {
+        if (e.type === 'token' && typeof e.token === 'string' && JSON.parse(e.token).type === 'tool_call') {
+          order.push('tool_call');
+        }
+      }, new AbortController().signal);
+      expect(order).toEqual(['tool_call', 'grant-checked']);
     });
 
     it('drops every emit after the terminal event, even from a notification handler still awaiting a grant check', async () => {
-      // hasPermission resolves slowly, so the tool_call_update handler is
-      // still awaiting it when session/prompt's response (and the final
-      // event it produces) arrives first.
+      // The first call is the pre-prompt check (unrelated to this test) and
+      // resolves normally; the second, the tool_call_update's own re-check,
+      // hangs until the test releases it — long after session/prompt's
+      // response (and the final/done it produces) has already arrived.
       let releaseGate!: (value: boolean) => void;
-      mocks.hasPermission.mockImplementation(() => new Promise((resolve) => { releaseGate = resolve; }));
+      let hasPermissionCalls = 0;
+      mocks.hasPermission.mockImplementation(() => {
+        hasPermissionCalls++;
+        if (hasPermissionCalls === 1) return Promise.resolve(true);
+        return new Promise((resolve) => { releaseGate = resolve; });
+      });
       registerFakeAgent({
         onPrompt: async (ctx) => {
           // Fire-and-forget: the agent doesn't wait for this notification
@@ -781,14 +801,23 @@ describe('AcpAgentBackend', () => {
         },
       });
       const backend = new AcpAgentBackend(AGENT_ID);
-      const events = await collect(backend, baseRequest());
+      const events: StreamToken[] = [];
+      let terminalSeen = false;
+      const runPromise = backend.run(baseRequest(), (e) => {
+        events.push(e);
+        if (e.type === 'done' || e.type === 'error') terminalSeen = true;
+      }, new AbortController().signal);
 
-      // The run already ended with exactly one terminal event...
+      // The run already ended with exactly one terminal event, while the
+      // tool_call_update handler is still awaiting its grant check...
+      await vi.waitFor(() => expect(terminalSeen).toBe(true));
       expect(events.at(-1)).toEqual({ type: 'done' });
       expect(events.filter((e) => e.type === 'done' || e.type === 'error')).toHaveLength(1);
+
       // ...and the slow grant check's eventual answer no longer matters:
       // releasing it now must not add a late tool_result after the fact.
       releaseGate(true);
+      await runPromise;
       await new Promise((r) => setTimeout(r, 10));
       expect(tokenEvents(events).some((e) => e.type === 'tool_result')).toBe(false);
     });

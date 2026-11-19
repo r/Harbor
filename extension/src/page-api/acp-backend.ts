@@ -88,6 +88,57 @@ export function answerPermissionRequest(
 }
 
 /**
+ * Builds a function that scrubs the session's working directory, and the
+ * home directory it's under, out of any string: the canonical `cwd` from
+ * the `open` event becomes ".", and the part of it before
+ * `/.harbor/acp/workspaces/` (the user's home directory) becomes "~".
+ * Nothing about where Harbor keeps a site's ACP workspace, or the user's
+ * home path and username, should reach a page — an agent's own output
+ * (goose, in testing) can otherwise echo the absolute path back in a
+ * tool's final answer.
+ *
+ * macOS canonicalizes `/var/...` to `/private/var/...` (`cwd.canonicalize()`
+ * in bridge-rs/src/acp/mod.rs), so when `cwd` starts with `/private/`,
+ * both forms are scrubbed: an agent that reports a path itself may use
+ * either. The longer (canonical) form is always replaced before the
+ * shorter alias, so a canonical occurrence's tail doesn't get partially
+ * matched by the alias first.
+ */
+function buildPathScrubber(cwd: string): (text: string) => string {
+  const workspaceMarker = '/.harbor/acp/workspaces/';
+
+  const cwdVariants = [cwd];
+  if (cwd.startsWith('/private/')) cwdVariants.push(cwd.slice('/private'.length));
+
+  const rules: Array<[from: string, to: string]> = cwdVariants.map((v) => [v, '.']);
+  for (const v of cwdVariants) {
+    const idx = v.indexOf(workspaceMarker);
+    if (idx > 0) rules.push([v.slice(0, idx), '~']);
+  }
+  rules.sort((a, b) => b[0].length - a[0].length);
+
+  return (text: string): string => {
+    let out = text;
+    for (const [from, to] of rules) {
+      if (from) out = out.split(from).join(to);
+    }
+    return out;
+  };
+}
+
+/** Walks a JSON-ish value, scrubbing every string it contains. */
+function scrubDeep<T>(value: T, scrub: (text: string) => string): T {
+  if (typeof value === 'string') return scrub(value) as T;
+  if (Array.isArray(value)) return value.map((v) => scrubDeep(v, scrub)) as T;
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = scrubDeep(v, scrub);
+    return out as T;
+  }
+  return value;
+}
+
+/**
  * Wraps the bridge's acp.open event stream as the ACP SDK's bidirectional
  * `Stream`: the agent's parsed JSON-RPC messages become the readable side,
  * and every message the SDK writes is relayed with `acp.send`. Resolves
@@ -146,21 +197,41 @@ export class AcpAgentBackend implements AgentBackend {
   async run(req: AgentRunRequest, emit: (event: StreamToken) => void, signal: AbortSignal): Promise<void> {
     const { origin, tabId, task, systemPrompt } = req;
 
-    if (signal.aborted) {
-      emit(cancelReasonEvent('aborted'));
-      return;
-    }
+    // Registered before the first `acp.open` event, not just checked once
+    // up front: an abort (the page's, or a tab closing) can land at any
+    // point while the agent is still starting, before there's a session
+    // (or even a channel) to cancel. `aborted` is re-checked right after
+    // the first event arrives, below, so that case still ends with
+    // exactly one ERR_ABORTED instead of going on to initialize/prompt.
+    let aborted = signal.aborted;
+    const onAbort = () => { aborted = true; };
+    signal.addEventListener('abort', onAbort);
 
     const { stream: bridgeEvents, cancel: cancelBridgeStream } = acpOpenStream(this.agentId, origin);
     // Set only once `open` arrives, so the `finally` below knows whether
-    // there's a real channel to `acp.close` — a fatal pre-open failure
-    // never produced one.
+    // there's a real channel to `acp.close` — a fatal pre-open failure,
+    // or an abort that landed before `open`, never produced one.
     let channel: string | undefined;
 
     try {
+      if (aborted) {
+        emit(cancelReasonEvent('aborted'));
+        return;
+      }
+
       let cwd: string;
       try {
         const first = await bridgeEvents.next();
+
+        if (aborted) {
+          // The abort landed while `acp.open` was still in flight. If this
+          // first event still produced a channel, close it in the
+          // `finally` below; either way, never reach initialize/prompt.
+          if (!first.done && first.value.type === 'open') channel = first.value.channel;
+          emit(cancelReasonEvent('aborted'));
+          return;
+        }
+
         if (first.done) {
           emit(agentFailedEvent('Agent closed before starting'));
           return;
@@ -183,6 +254,7 @@ export class AcpAgentBackend implements AgentBackend {
 
       await this.runSession(channel, cwd, bridgeEvents, req, emit, signal);
     } finally {
+      signal.removeEventListener('abort', onAbort);
       cancelBridgeStream();
       if (channel) {
         await acpClose(channel).catch(() => { /* best-effort: the run's own outcome already stands */ });
@@ -199,6 +271,25 @@ export class AcpAgentBackend implements AgentBackend {
     signal: AbortSignal,
   ): Promise<void> {
     const { origin, tabId, task, systemPrompt, maxToolCalls } = req;
+
+    const scrub = buildPathScrubber(cwd);
+
+    // `session/update` notifications are handled concurrently (the SDK
+    // doesn't wait for one handler to settle before dispatching the
+    // next), so a `tool_call_update` that's still awaiting its grant
+    // re-check can resolve after `session/prompt`'s response already
+    // produced the terminal event. `send`/`sendToken` are the only way
+    // anything reaches the page from here on, so this flag alone decides
+    // it: once a terminal event has gone out, nothing more does.
+    let terminalSent = false;
+    function send(event: StreamToken): void {
+      if (terminalSent) return;
+      if (event.type === 'done' || event.type === 'error') terminalSent = true;
+      emit(event);
+    }
+    function sendToken(payload: Record<string, unknown>): void {
+      send({ type: 'token', token: JSON.stringify(scrubDeep(payload, scrub)) });
+    }
 
     let cancelReason: CancelReason | null = null;
     let sessionId: string | null = null;
@@ -236,25 +327,25 @@ export class AcpAgentBackend implements AgentBackend {
     function emitStopReason(stopReason: StopReason): void {
       switch (stopReason) {
         case 'end_turn':
-          emit({ type: 'token', token: JSON.stringify({ type: 'final', output: accumulatedText }) });
-          emit({ type: 'done' });
+          sendToken({ type: 'final', output: accumulatedText });
+          send({ type: 'done' });
           return;
         case 'refusal':
-          emit({ type: 'error', error: { code: ErrorCodes.AGENT_REFUSED, message: 'The agent refused the request' } });
+          send({ type: 'error', error: { code: ErrorCodes.AGENT_REFUSED, message: 'The agent refused the request' } });
           return;
         case 'max_tokens':
         case 'max_turn_requests':
-          emit({ type: 'error', error: { code: ErrorCodes.AGENT_LIMIT, message: `The agent stopped: ${stopReason}` } });
+          send({ type: 'error', error: { code: ErrorCodes.AGENT_LIMIT, message: `The agent stopped: ${stopReason}` } });
           return;
         case 'cancelled':
           if (cancelReason) {
-            emit(cancelReasonEvent(cancelReason));
+            send(cancelReasonEvent(cancelReason));
           } else {
             // Nothing here triggered the cancel — e.g. Codex reports
             // `cancelled` when a single tool call is rejected. Treat it as
             // the run ending normally, with whatever text came back.
-            emit({ type: 'token', token: JSON.stringify({ type: 'final', output: accumulatedText }) });
-            emit({ type: 'done' });
+            sendToken({ type: 'final', output: accumulatedText });
+            send({ type: 'done' });
           }
           return;
       }
@@ -270,11 +361,19 @@ export class AcpAgentBackend implements AgentBackend {
           return;
         case 'agent_thought_chunk':
           if (update.content.type === 'text') {
-            emit({ type: 'token', token: JSON.stringify({ type: 'thinking', content: update.content.text }) });
+            sendToken({ type: 'thinking', content: update.content.text });
           }
           return;
         case 'tool_call': {
           if (cancelReason) return;
+
+          // Announced as soon as it arrives, before the (async) grant
+          // re-check below: it's the agent telling the page what it's
+          // about to do, in the agent's own order, not a decision that
+          // needs gating itself — only the tool's actual result does.
+          const name = update.title || update.kind || update.toolCallId;
+          toolNames.set(update.toolCallId, name);
+          sendToken({ type: 'tool_call', tool: name, args: update.rawInput ?? {} });
 
           if (!await hasPermission(origin, 'model:prompt', tabId)) {
             triggerCancel('permission-denied', ctx.agent);
@@ -284,10 +383,6 @@ export class AcpAgentBackend implements AgentBackend {
             triggerCancel('tool-limit', ctx.agent);
             return;
           }
-
-          const name = update.title || update.kind || update.toolCallId;
-          toolNames.set(update.toolCallId, name);
-          emit({ type: 'token', token: JSON.stringify({ type: 'tool_call', tool: name, args: update.rawInput ?? {} }) });
           return;
         }
         case 'tool_call_update': {
@@ -304,10 +399,7 @@ export class AcpAgentBackend implements AgentBackend {
 
           if (update.status === 'completed' || update.status === 'failed') {
             const name = toolNames.get(update.toolCallId) ?? update.title ?? update.kind ?? update.toolCallId;
-            emit({
-              type: 'token',
-              token: JSON.stringify({ type: 'tool_result', tool: name, result: update.content ?? update.rawOutput ?? null }),
-            });
+            sendToken({ type: 'tool_result', tool: name, result: update.content ?? update.rawOutput ?? null });
           }
           return;
         }
@@ -327,7 +419,7 @@ export class AcpAgentBackend implements AgentBackend {
       await app.connectWith(stream, async (ctx) => {
         connectionCtx = ctx;
 
-        await ctx.request(
+        const initResult = await ctx.request(
           AGENT_METHODS.initialize,
           {
             protocolVersion: 1,
@@ -335,6 +427,10 @@ export class AcpAgentBackend implements AgentBackend {
           },
           { cancellationSignal: requestAbort.signal, stopWaitingOnCancel: true },
         );
+        if (initResult.protocolVersion !== 1) {
+          send(agentFailedEvent('unsupported ACP protocol version'));
+          return;
+        }
 
         const newSession = await ctx.request(
           AGENT_METHODS.session_new,
@@ -348,7 +444,7 @@ export class AcpAgentBackend implements AgentBackend {
         // last check before the agent does anything on the page's behalf.
         if (!await hasPermission(origin, 'model:prompt', tabId)) {
           triggerCancel('permission-denied', ctx);
-          emit(cancelReasonEvent('permission-denied'));
+          send(cancelReasonEvent('permission-denied'));
           return;
         }
 
@@ -367,9 +463,9 @@ export class AcpAgentBackend implements AgentBackend {
       });
     } catch (e) {
       if (cancelReason) {
-        emit(cancelReasonEvent(cancelReason));
+        send(cancelReasonEvent(cancelReason));
       } else {
-        emit(agentFailedEvent(e instanceof Error ? e.message : 'Agent run failed'));
+        send(agentFailedEvent(e instanceof Error ? e.message : 'Agent run failed'));
       }
     } finally {
       signal.removeEventListener('abort', onPageAbort);
