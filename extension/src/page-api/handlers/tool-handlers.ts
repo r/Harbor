@@ -9,7 +9,6 @@ import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission, getPermissions } from './permission-handlers';
 import { ErrorCodes } from '../types';
-import { HARBOR_SESSION_GONE } from './ai-handlers';
 
 // =============================================================================
 // Handlers
@@ -90,25 +89,12 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
     });
     return successResponse(ctx.id, result.result);
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Tool call failed';
-    if (sessionId !== undefined) {
-      if (message === BUDGET_EXCEEDED_MESSAGE) {
-        return errorResponse(ctx.id, ErrorCodes.BUDGET_EXCEEDED, 'Session tool call budget exceeded');
-      }
-      // Not found, terminated, expired, or another origin's session: all look
-      // the same to the page.
-      if (HARBOR_SESSION_GONE.test(message)) {
-        return errorResponse(ctx.id, ErrorCodes.SESSION_NOT_FOUND, 'Session not found');
-      }
+    // Harbor's own session refusals carry their code. Anything else, whatever
+    // its message, is the tool failing.
+    const code = (e as { code?: unknown }).code;
+    if (code === ErrorCodes.BUDGET_EXCEEDED || code === ErrorCodes.SESSION_NOT_FOUND) {
+      return errorResponse(ctx.id, code, (e as Error).message);
     }
-    return errorResponse(ctx.id, 'ERR_TOOL_FAILED', message);
+    return errorResponse(ctx.id, 'ERR_TOOL_FAILED', e instanceof Error ? e.message : 'Tool call failed');
   }
 }
-
-// =============================================================================
-// Session tool budget
-// =============================================================================
-
-/** Harbor's refusal when a session's `limits.maxToolCalls` is spent. */
-const BUDGET_EXCEEDED_MESSAGE = 'Tool call budget exceeded';
-

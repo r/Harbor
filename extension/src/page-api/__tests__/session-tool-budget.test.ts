@@ -253,4 +253,16 @@ describe('a session tool budget', () => {
     expect(replies.filter(r => r.error?.code === 'ERR_BUDGET_EXCEEDED')).toHaveLength(3);
     expect(host.callTool).toHaveBeenCalledTimes(2);
   });
+
+  it.each(['Session not found', 'Session has expired', 'Tool call budget exceeded'])(
+    'reports a tool that fails with %j as a tool failure, not a Harbor refusal',
+    async (toolError) => {
+      const request = connectPort(`${ORIGIN}/page`);
+      const sessionId = await createSession(request, 5);
+
+      host.callTool.mockResolvedValueOnce({ ok: false, error: toolError });
+      const reply = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+      expect(reply.error).toEqual({ code: 'ERR_TOOL_FAILED', message: toolError });
+    },
+  );
 });

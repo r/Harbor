@@ -25,6 +25,7 @@ import { promptActionForModel, type TypedAction } from './policy/actions';
 import type { PolicyResource } from './policy/engine';
 import { getPermissionStatus, requestPermissions, SCOPE_DESCRIPTIONS } from './policy/permissions';
 import type { PermissionScope } from './agents/types';
+import { ErrorCodes } from './page-api/types';
 
 // =============================================================================
 // Types
@@ -40,6 +41,12 @@ export interface ExtensionApiResponse {
   ok: boolean;
   result?: unknown;
   error?: string;
+  /**
+   * A page-facing error code, set only by Harbor's own refusals that the page
+   * must tell apart from a failure whose text came from elsewhere (a tool's
+   * error message, for one).
+   */
+  code?: string;
 }
 
 // Message types for the extension API
@@ -287,8 +294,9 @@ async function handleMcpCallTool(payload: unknown): Promise<ExtensionApiResponse
  * With `spend`, an allowed call is also counted. Runs synchronously: there
  * is no await between the check and the count.
  *
- * The failure messages are the ones the page API maps to
- * `ERR_BUDGET_EXCEEDED` and `ERR_SESSION_NOT_FOUND`.
+ * A refusal carries its page-facing code (`ERR_BUDGET_EXCEEDED` or
+ * `ERR_SESSION_NOT_FOUND`), so the page API never has to guess from the
+ * message, which a failing tool could also produce.
  */
 function sessionToolBudgetRefusal(
   payload: unknown,
@@ -301,26 +309,24 @@ function sessionToolBudgetRefusal(
     toolName?: unknown;
   };
   if (sessionId === undefined) return null;
-  if (typeof sessionId !== 'string' || typeof origin !== 'string') {
-    return failure('Session not found');
-  }
+  // Not found, terminated, expired, or another origin's session: all look the
+  // same to the page.
+  const gone = { ok: false, error: 'Session not found', code: ErrorCodes.SESSION_NOT_FOUND };
+  const spent = { ok: false, error: 'Session tool call budget exceeded', code: ErrorCodes.BUDGET_EXCEEDED };
+  if (typeof sessionId !== 'string' || typeof origin !== 'string') return gone;
   try {
     SessionRegistry.getValidatedSession(sessionId, origin);
-  } catch (e) {
-    return failure(e);
+  } catch {
+    return gone;
   }
   if (!spend) {
-    return SessionRegistry.getRemainingToolBudget(sessionId) === 0
-      ? failure(TOOL_BUDGET_EXCEEDED)
-      : null;
+    return SessionRegistry.getRemainingToolBudget(sessionId) === 0 ? spent : null;
   }
   const tool = `${String(serverId)}/${String(toolName)}`;
-  if (!SessionRegistry.recordToolCall(sessionId, tool)) return failure(TOOL_BUDGET_EXCEEDED);
+  if (!SessionRegistry.recordToolCall(sessionId, tool)) return spent;
   SessionRegistry.touchSession(sessionId);
   return null;
 }
-
-const TOOL_BUDGET_EXCEEDED = 'Tool call budget exceeded';
 
 async function handleMcpStartServer(payload: unknown): Promise<ExtensionApiResponse> {
   const { serverId } = payload as { serverId?: string };
