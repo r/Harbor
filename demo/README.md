@@ -53,7 +53,7 @@ These demos are published via GitHub Pages at: **https://[your-org].github.io/ha
 - **Text Generation**: Basic prompt → response using `window.ai`
 - **Agent Tasks**: Run autonomous tasks with tool access using `window.agent.run()`
 - **Tool Listing**: View available MCP tools
-- **Streaming Responses**: Token-by-token output (Research Pipeline, Chrome Compat Demo)
+- **Streaming Responses**: Token-by-token output (Research Pipeline)
 - **Chat Without Building One**: A page hands the conversation to your agent's chat with `window.agent.chat.open()`
 
 ## Bring Your Own Chatbot Demo
