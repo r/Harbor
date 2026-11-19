@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { agent as buildAgentApp, AGENT_METHODS, CLIENT_METHODS, type StopReason } from '@agentclientprotocol/sdk';
+import { agent as buildAgentApp, AGENT_METHODS, CLIENT_METHODS, RequestError, type StopReason } from '@agentclientprotocol/sdk';
 
 const mocks = vi.hoisted(() => ({
   hasPermission: vi.fn(),
@@ -30,7 +30,7 @@ const terminals = (ev: StreamToken[]) => ev.filter((e) => e.type === 'done' || e
 
 beforeEach(() => { mocks.hasPermission.mockReset(); mocks.hasPermission.mockResolvedValue(true); mocks.openGate.current = null; vi.useRealTimers(); });
 
-describe('verifier probes', () => {
+describe('ACP backend: races, ordering and hostile input', () => {
   it('P1 abort while acp.open is pending stops the run before the prompt', async () => {
     const b = createFakeAcpBridge(); mocks.bridge.current = b;
     let promptCalled = false; let releasePrompt!: (r: { stopReason: StopReason }) => void;
@@ -46,10 +46,8 @@ describe('verifier probes', () => {
     c.abort();            // page aborts / tab closes while the agent is still spawning
     openNow();
     const settled = await Promise.race([p.then(() => 'settled'), new Promise((r) => setTimeout(() => r('still-running'), 500))]);
-    console.log('P1', { settled, promptCalled, closeCalls: closeSpy.mock.calls.length, ev: JSON.stringify(ev) });
     if (releasePrompt) releasePrompt({ stopReason: 'end_turn' });
     await p;
-    console.log('P1 after agent finishes', JSON.stringify(ev));
     expect(promptCalled).toBe(false);
     expect(settled).toBe('settled');
   });
@@ -67,7 +65,6 @@ describe('verifier probes', () => {
       const c = new AbortController(); const ev: StreamToken[] = [];
       const p = new AcpAgentBackend('a').run(req, (e) => ev.push(e), c.signal);
       await inStage; c.abort(); await p;
-      console.log('P2', stage, JSON.stringify(ev), closeSpy.mock.calls.length);
       expect(terminals(ev)).toHaveLength(1);
       expect(ev.at(-1)).toMatchObject({ error: { code: 'ERR_ABORTED' } });
       expect(closeSpy).toHaveBeenCalledTimes(1);
@@ -89,7 +86,6 @@ describe('verifier probes', () => {
     c.abort();
     await vi.advanceTimersByTimeAsync(ACP_RUN_TIMEOUT_MS);
     await p;
-    console.log('P3', JSON.stringify(terminals(ev)));
     expect(terminals(ev)).toHaveLength(1);
   });
 
@@ -105,7 +101,6 @@ describe('verifier probes', () => {
     const p = new AcpAgentBackend('a').run(req, (e) => ev.push(e), c.signal);
     await vi.waitFor(() => expect(resolvePrompt).not.toBeNull());
     c.abort(); await p; await new Promise((r) => setTimeout(r, 60));
-    console.log('P4', JSON.stringify(ev));
     expect(terminals(ev)).toHaveLength(1);
     expect(ev.at(-1)).toMatchObject({ error: { code: 'ERR_ABORTED' } });
   });
@@ -116,7 +111,7 @@ describe('verifier probes', () => {
       .onRequest(AGENT_METHODS.initialize, async () => ({ protocolVersion: 1 }))
       .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }))
       .onRequest(AGENT_METHODS.session_prompt, async (ctx: any) => {
-        const n = (u: unknown) => ctx.client.notify(CLIENT_METHODS.session_update, { sessionId: 's', update: u }).catch((e: unknown) => console.log('notify err', String(e)));
+        const n = (u: unknown) => ctx.client.notify(CLIENT_METHODS.session_update, { sessionId: 's', update: u }).catch(() => { /* the run may already be over */ });
         await n({ sessionUpdate: 'tool_call', toolCallId: 'x', title: '<img src=x onerror=alert(1)>', rawInput: { blob: 'A'.repeat(2_000_000) } });
         await n({ sessionUpdate: 'tool_call_update', toolCallId: 'ghost', status: 'completed', content: [{ type: 'content', content: { type: 'image', data: 'AAAA', mimeType: 'image/png' } }] });
         await n({ sessionUpdate: 'agent_message_chunk', content: { type: 'image', data: 'AAAA', mimeType: 'image/png' } });
@@ -142,7 +137,6 @@ describe('verifier probes', () => {
     };
     const ev: StreamToken[] = [];
     await new AcpAgentBackend('a').run(req, (e) => ev.push(e), new AbortController().signal);
-    console.log('P5', ev.map((e) => e.type === 'token' ? (e.token as string).slice(0, 120) : JSON.stringify(e)));
     expect(terminals(ev)).toHaveLength(1);
     expect(ev.at(-1)).toMatchObject({ type: 'done' });
   });
@@ -160,6 +154,58 @@ describe('verifier probes', () => {
     const ev: StreamToken[] = [];
     await new AcpAgentBackend('a').run(req, (e) => ev.push(e), new AbortController().signal);
     await new Promise((r) => setTimeout(r, 50));
-    console.log('P6', ev.map((e) => e.type === 'token' ? JSON.parse(e.token as string).type : e.type));
+    const order = ev.map((e) => (e.type === 'token' ? JSON.parse(e.token as string).type : e.type));
+    expect(order).toEqual(['tool_call', 'final', 'done']);
+  });
+
+  const CWD = '/Users/someone/.harbor/acp/workspaces/abc123';
+  const promptAgent = (onPrompt: (ctx: any) => Promise<any>) =>
+    buildAgentApp({ name: 'f' })
+      .onRequest(AGENT_METHODS.initialize, async () => ({ protocolVersion: 1 }))
+      .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }))
+      .onRequest(AGENT_METHODS.session_prompt, onPrompt);
+
+  it('scrubs paths from an agent error message', async () => {
+    const b = createFakeAcpBridge(); mocks.bridge.current = b;
+    b.registerAgent('a', promptAgent(async () => {
+      throw new RequestError(-32603, `cannot read ${CWD}/secret or /Users/someone/.ssh/id_rsa`);
+    }), { cwd: CWD });
+    const ev: StreamToken[] = [];
+    await new AcpAgentBackend('a').run(req, (e) => ev.push(e), new AbortController().signal);
+    const all = JSON.stringify(ev);
+    expect(all).not.toContain('/Users/someone');
+    expect(terminals(ev)).toHaveLength(1);
+    expect(terminals(ev)[0]).toMatchObject({ type: 'error', error: { code: 'ERR_AGENT_FAILED' } });
+  });
+
+  it('ends the run with an error on an unknown stop reason', async () => {
+    const b = createFakeAcpBridge(); mocks.bridge.current = b;
+    b.registerAgent('a', promptAgent(async () => ({ stopReason: 'paused' as StopReason })), { cwd: CWD });
+    const ev: StreamToken[] = [];
+    await new AcpAgentBackend('a').run(req, (e) => ev.push(e), new AbortController().signal);
+    expect(terminals(ev)).toHaveLength(1);
+    expect(terminals(ev)[0]).toMatchObject({ type: 'error', error: { code: 'ERR_AGENT_FAILED' } });
+  });
+
+  it('scrubs paths in object keys and respects path boundaries', async () => {
+    const b = createFakeAcpBridge(); mocks.bridge.current = b;
+    b.registerAgent('a', promptAgent(async (ctx: any) => {
+      await ctx.client.notify(CLIENT_METHODS.session_update, {
+        sessionId: 's',
+        update: { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'read', rawInput: { [`${CWD}/key`]: 1 } },
+      });
+      await ctx.client.notify(CLIENT_METHODS.session_update, {
+        sessionId: 's',
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'see /Users/someone. and /Users/someoneelse/x' } },
+      });
+      return { stopReason: 'end_turn' as StopReason };
+    }), { cwd: CWD });
+    const ev: StreamToken[] = [];
+    await new AcpAgentBackend('a').run(req, (e) => ev.push(e), new AbortController().signal);
+    const tokens = ev.filter((e) => e.type === 'token').map((e) => JSON.parse(e.token as string));
+    const call = tokens.find((t) => t.type === 'tool_call');
+    expect(Object.keys(call.args)).toEqual(['./key']);
+    const final = tokens.find((t) => t.type === 'final');
+    expect(final.output).toBe('see ~. and /Users/someoneelse/x');
   });
 });

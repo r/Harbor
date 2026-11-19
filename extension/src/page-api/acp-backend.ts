@@ -119,11 +119,20 @@ function buildPathScrubber(cwd: string): (text: string) => string {
   }
   rules.sort((a, b) => b[0].length - a[0].length);
 
+  // Replace a path only where it ends at a path boundary: end of text, a
+  // separator, a character that can't continue a path segment, or a period
+  // that ends a sentence. Otherwise
+  // `/Users/sam` would also rewrite `/Users/samuel`. Paths are escaped, so
+  // regex metacharacters in them are literal.
+  const PATH_END = String.raw`(?=$|[/\s"'<>\x60),;:\]\)}]|\.(?:$|\s))`;
+  const escape = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const compiled = rules
+    .filter(([from]) => from)
+    .map(([from, to]) => [new RegExp(escape(from) + PATH_END, 'g'), to] as const);
+
   return (text: string): string => {
     let out = text;
-    for (const [from, to] of rules) {
-      if (from) out = out.split(from).join(to);
-    }
+    for (const [pattern, to] of compiled) out = out.replace(pattern, to);
     return out;
   };
 }
@@ -134,7 +143,7 @@ function scrubDeep<T>(value: T, scrub: (text: string) => string): T {
   if (Array.isArray(value)) return value.map((v) => scrubDeep(v, scrub)) as T;
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = scrubDeep(v, scrub);
+    for (const [k, v] of Object.entries(value)) out[scrub(k)] = scrubDeep(v, scrub);
     return out as T;
   }
   return value;
@@ -338,6 +347,11 @@ export class AcpAgentBackend implements AgentBackend {
             send({ type: 'done' });
           }
           return;
+        default:
+          // A stop reason this client doesn't know. End the run so the page
+          // isn't left waiting.
+          send(agentFailedEvent(`The agent stopped with an unknown reason: ${String(stopReason)}`));
+          return;
       }
     }
 
@@ -453,7 +467,7 @@ export class AcpAgentBackend implements AgentBackend {
       if (cancelReason) {
         send(cancelReasonEvent(cancelReason));
       } else {
-        send(agentFailedEvent(e instanceof Error ? e.message : 'Agent run failed'));
+        send(agentFailedEvent(scrub(e instanceof Error ? e.message : 'Agent run failed')));
       }
     } finally {
       signal.removeEventListener('abort', onPageAbort);
