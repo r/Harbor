@@ -442,7 +442,7 @@
           <div>
             <strong style="color: var(--shop-text);">Harbor's chat opens and runs on your own model</strong>
             <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
-              Harbor draws the chat surface on this page itself; the page never sees its markup.
+              Harbor draws the chat panel on this page. Because the page could reach that panel, Harbor treats every message in it as this site's prompt.
               Your first message prompts Harbor to ask, once, whether this site may send prompts
               to your model — that's the <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">model:prompt</code> permission. Replies come from the
               model reading this page's visible text (the product grid below), not from the
@@ -618,7 +618,7 @@
         console.error('[BYOC Demo] agent.chat.open() failed:', err);
 
         if (err?.code === 'ERR_PERMISSION_DENIED') {
-          showChatError("You didn't allow Acme Shop to open a chat. Allow chat:open for this site in Harbor's sidebar to try again.");
+          showChatError("Harbor didn't let Acme Shop open a chat.");
         } else if (err?.code === 'ERR_BLOCKED_BY_POLICY') {
           showChatError("Harbor's policy doesn't allow this site to open a chat.");
         } else if (err?.code === 'ERR_QUARANTINED') {

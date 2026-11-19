@@ -14,7 +14,8 @@ browser — opens the chat surface instead. The page writes no chat UI of its ow
    origin prompts for the `chat:open` permission. If it's denied, the call rejects and the page
    shows an inline message.
 3. **Harbor's chat opens on the page and runs on your own model** — Harbor draws the chat
-   surface itself; the page never sees its markup. Your first message prompts Harbor to ask,
+   panel on the page. Because the page could reach that panel, Harbor treats every message in
+   it as the site's prompt. Your first message prompts Harbor to ask,
    once, whether the site may send prompts to your model (`model:prompt`). Replies come from
    the model reading the page's visible text (the product grid), not from the MCP tools this
    page advertises — Harbor's chat doesn't call those yet.
