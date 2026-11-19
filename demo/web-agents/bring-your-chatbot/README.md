@@ -40,7 +40,7 @@ Open `http://localhost:8000/web-agents/bring-your-chatbot/` with Harbor installe
 
 ### 3. Try it out
 
-Click the chat button in the corner and ask questions like:
+Click "Chat with Acme Shop" and ask questions like:
 - "What laptops do you have?"
 - "Tell me about the wireless headphones"
 - "What do you recommend for home office?"

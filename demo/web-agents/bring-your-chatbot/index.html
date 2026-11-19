@@ -268,50 +268,39 @@
       background: #f7f7f7;
     }
 
-    /* Chat FAB (Floating Action Button) - Amazon style */
-    .chat-fab {
-      position: fixed;
-      bottom: var(--demo-space-6);
-      right: var(--demo-space-6);
-      width: 56px;
-      height: 56px;
+    /* Chat button: sits in the hero, so it never covers the chat panel
+       that Harbor opens at the side of the page. */
+    .chat-button {
+      margin-top: var(--demo-space-4);
+      padding: var(--demo-space-3) var(--demo-space-6);
       background: var(--shop-primary);
       border: none;
-      border-radius: 50%;
+      border-radius: 8px;
       color: var(--shop-header-bg);
-      font-size: 24px;
+      font-size: 15px;
+      font-weight: 600;
       cursor: pointer;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-      transition: all 0.2s;
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
     }
 
-    .chat-fab:hover {
+    .chat-button:hover {
       background: var(--shop-primary-dark);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
-    .chat-fab.hidden {
+    .chat-button.hidden {
       display: none;
     }
 
     /* Inline chat error (shown instead of an alert() when chat.open rejects) */
     .chat-error-banner {
-      position: fixed;
-      bottom: calc(var(--demo-space-6) + 68px);
-      right: var(--demo-space-6);
-      max-width: 300px;
+      max-width: 480px;
+      margin: var(--demo-space-3) auto 0;
       background: #fff0f0;
       border: 1px solid #e0a0a0;
       color: #a11;
       border-radius: 8px;
       padding: var(--demo-space-3);
       font-size: 13px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-      z-index: 100;
     }
 
     .chat-error-banner.hidden {
@@ -396,7 +385,7 @@
           <p>
             This page writes no chat UI of its own. It calls <code>agent.chat.open()</code>
             and the Web Agent API's implementer — Harbor, in this browser — opens a chat
-            surface that runs on your own model. Click the chat button in the corner to try it.
+            surface that runs on your own model. Click "Chat with Acme Shop" below to try it.
           </p>
         </div>
       </div>
@@ -482,7 +471,13 @@
     <!-- Hero -->
     <section class="shop-hero">
       <h1>Welcome to Acme Shop</h1>
-      <p>Find the perfect products with help from your AI assistant. Click the chat button to get personalized recommendations!</p>
+      <p>Find the perfect products with help from your AI assistant.</p>
+      <!-- The only chat-related UI this page owns. Clicking it hands off to
+           window.agent.chat.open(); everything after that is drawn by the
+           Web Agent API's implementer, not by this page. -->
+      <button class="chat-button hidden" id="chat-button">💬 Chat with Acme Shop</button>
+      <!-- Inline error shown if agent.chat.open() rejects (e.g. permission denied) -->
+      <div class="chat-error-banner hidden" id="chat-error-banner"></div>
     </section>
 
     <!-- Product Grid -->
@@ -538,16 +533,6 @@
     </section>
   </main>
 
-  <!-- Chat button: the only chat-related UI this page owns. Clicking it
-       hands off to window.agent.chat.open() — everything past this button
-       is drawn by the Web Agent API's implementer, not by this page. -->
-  <button class="chat-fab hidden" id="chat-fab" title="Chat with Acme Shop">
-    💬
-  </button>
-
-  <!-- Inline error shown if agent.chat.open() rejects (e.g. permission denied) -->
-  <div class="chat-error-banner hidden" id="chat-error-banner"></div>
-
   <!-- Footer -->
   <footer class="shop-footer">
     <p>
@@ -561,7 +546,7 @@
     // DOM Elements
     // =============================================================================
 
-    const chatFab = document.getElementById('chat-fab');
+    const chatFab = document.getElementById('chat-button');
     const noApiBanner = document.getElementById('no-api-banner');
     const chatErrorBanner = document.getElementById('chat-error-banner');
 
