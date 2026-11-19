@@ -28,6 +28,7 @@
 //!   tasks does not.
 
 pub mod config;
+pub mod resolve;
 
 use std::collections::HashMap;
 use std::io;
@@ -353,6 +354,61 @@ fn list_agents_for(config: &AcpConfig) -> Result<Value, RpcError> {
         .map(|a| json!({ "id": a.id, "name": a.name }))
         .collect();
     Ok(json!({ "agents": agents }))
+}
+
+/// `acp.get_agents {}` -> the full configured agent list, including
+/// `command`, `args` and `env` - unlike `list_agents`, which hides them.
+/// Only Harbor's own extension pages call this; the extension enforces
+/// that, and the bridge's own enforcement is that this method (like every
+/// other `acp.*` method) simply isn't reachable over HTTP at all - see
+/// `http_server::is_acp_method`.
+pub async fn get_agents() -> Result<Value, RpcError> {
+    get_agents_for(&AcpConfig::load())
+}
+
+fn get_agents_for(config: &AcpConfig) -> Result<Value, RpcError> {
+    let agents: Vec<Value> = config
+        .agents
+        .iter()
+        .map(|a| {
+            json!({
+                "id": a.id,
+                "name": a.name,
+                "command": a.command,
+                "args": a.args,
+                "env": a.env,
+            })
+        })
+        .collect();
+    Ok(json!({ "agents": agents }))
+}
+
+/// `acp.save_agents {agents: [...]}`: validates the whole list (see
+/// `config::parse_and_validate_agents` for the exact rules, each surfaced
+/// as a `-32602` error naming the field), then replaces `acp.json` with it
+/// atomically (`AcpConfig::save_atomic`). This replaces the whole list;
+/// there is no partial update. An agent that's already open keeps running
+/// unaffected - only a later `acp.open` reads the new file, since
+/// `open_stream` calls `AcpConfig::load()` fresh on every call. Never runs
+/// a shell or executes anything: this only ever reads the request and
+/// writes a JSON file.
+pub async fn save_agents(params: Value) -> Result<Value, RpcError> {
+    let agents_value = params
+        .get("agents")
+        .ok_or_else(|| RpcError::invalid_params("agents is required"))?;
+    let agents_array = agents_value
+        .as_array()
+        .ok_or_else(|| RpcError::invalid_params("agents must be an array"))?;
+
+    let agents =
+        config::parse_and_validate_agents(agents_array).map_err(RpcError::invalid_params)?;
+
+    let new_config = AcpConfig { agents };
+    new_config
+        .save_atomic()
+        .map_err(|e| RpcError::internal(format!("failed to save acp.json: {}", e)))?;
+
+    Ok(json!({ "ok": true }))
 }
 
 /// `acp.send {channel, message}`. Validates and enqueues onto the channel's
@@ -958,5 +1014,30 @@ mod tests {
         assert!(!serialized.contains("goose\",\"args\""));
         assert!(!serialized.contains("SECRET"));
         assert!(!serialized.contains("command"));
+    }
+
+    #[test]
+    fn get_agents_includes_command_args_and_env() {
+        let config = AcpConfig {
+            agents: vec![AgentConfig {
+                id: "goose".to_string(),
+                name: "Goose".to_string(),
+                command: "goose".to_string(),
+                args: vec!["acp".to_string()],
+                env: HashMap::from([("GOOSE_MODE".to_string(), "approve".to_string())]),
+            }],
+        };
+
+        let result = get_agents_for(&config).unwrap();
+        assert_eq!(
+            result,
+            json!({ "agents": [{
+                "id": "goose",
+                "name": "Goose",
+                "command": "goose",
+                "args": ["acp"],
+                "env": {"GOOSE_MODE": "approve"},
+            }] })
+        );
     }
 }

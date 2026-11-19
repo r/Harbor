@@ -116,6 +116,33 @@ fn fake_agent(id: &str) -> Value {
     json!({ "id": id, "name": id, "command": FAKE_AGENT_BIN, "args": [], "env": {} })
 }
 
+/// A full `acp.save_agents`-shaped agent, with every field an actual value
+/// (not relying on `args`/`env` defaults), for tests of
+/// `acp.get_agents`/`acp.save_agents`.
+fn full_agent(id: &str, name: &str, command: &str, args: Vec<&str>, env: Vec<(&str, &str)>) -> Value {
+    json!({
+        "id": id,
+        "name": name,
+        "command": command,
+        "args": args,
+        "env": env.into_iter().collect::<std::collections::HashMap<_, _>>(),
+    })
+}
+
+/// The real, host-OS-specific `dirs::config_dir()/harbor` under `home` -
+/// the one of `config_dir_candidates`'s two paths the running bridge
+/// process actually reads/writes on this platform (both are populated by
+/// `write_acp_config` so `AcpConfig::load` finds agents regardless of
+/// which OS runs the test, but only one is live for save/atomicity
+/// assertions).
+fn real_config_dir(home: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        home.join("Library").join("Application Support").join("harbor")
+    } else {
+        home.join(".config").join("harbor")
+    }
+}
+
 fn is_rpc_response(m: &Value, id: &str) -> bool {
     m["type"] == "rpc_response" && m["id"] == json!(id)
 }
@@ -963,5 +990,544 @@ fn open_rejects_missing_empty_or_oversized_workspace() {
     assert_eq!(not_a_string["event"]["type"], "error");
     assert_eq!(not_a_string["event"]["fatal"], true);
 
+    bridge.shutdown();
+}
+
+// =============================================================================
+// acp.get_agents / acp.save_agents
+// =============================================================================
+
+#[test]
+fn get_agents_round_trips_save_agents() {
+    let mut bridge = Bridge::spawn(json!([]));
+
+    let agents = json!([
+        full_agent("alpha", "Alpha", "alpha-cmd", vec!["--flag", "x"], vec![("FOO", "bar")]),
+        full_agent("beta", "Beta", "beta-cmd", vec![], vec![]),
+    ]);
+    let save = bridge.rpc("S", "acp.save_agents", json!({ "agents": agents.clone() }));
+    assert_eq!(save["result"]["ok"], true, "save_agents failed: {:?}", save);
+
+    let got = bridge.rpc("G", "acp.get_agents", json!({}));
+    assert_eq!(got["result"]["agents"], agents, "get_agents must round-trip save_agents");
+
+    bridge.shutdown();
+}
+
+#[test]
+fn save_agents_rejects_every_documented_validation_rule() {
+    let mut bridge = Bridge::spawn(json!([]));
+
+    let cases: Vec<(&str, Value, &str)> = vec![
+        (
+            "id_bad_chars",
+            json!([{"id": "Bad_ID!", "name": "n", "command": "c", "args": [], "env": {}}]),
+            ".id",
+        ),
+        (
+            "id_too_long",
+            json!([{"id": "a".repeat(33), "name": "n", "command": "c", "args": [], "env": {}}]),
+            ".id",
+        ),
+        (
+            "id_duplicate",
+            json!([
+                {"id": "dup", "name": "n", "command": "c", "args": [], "env": {}},
+                {"id": "dup", "name": "n2", "command": "c2", "args": [], "env": {}},
+            ]),
+            ".id",
+        ),
+        (
+            "name_empty",
+            json!([{"id": "a1", "name": "", "command": "c", "args": [], "env": {}}]),
+            ".name",
+        ),
+        (
+            "name_too_long",
+            json!([{"id": "a1", "name": "a".repeat(65), "command": "c", "args": [], "env": {}}]),
+            ".name",
+        ),
+        (
+            "command_empty",
+            json!([{"id": "a1", "name": "n", "command": "", "args": [], "env": {}}]),
+            ".command",
+        ),
+        (
+            "command_too_long",
+            json!([{"id": "a1", "name": "n", "command": "a".repeat(1025), "args": [], "env": {}}]),
+            ".command",
+        ),
+        (
+            "too_many_args",
+            json!([{"id": "a1", "name": "n", "command": "c", "args": vec!["x"; 65], "env": {}}]),
+            ".args",
+        ),
+        (
+            "arg_too_long",
+            json!([{"id": "a1", "name": "n", "command": "c", "args": ["a".repeat(4097)], "env": {}}]),
+            ".args",
+        ),
+        (
+            "too_many_env",
+            json!([{
+                "id": "a1", "name": "n", "command": "c", "args": [],
+                "env": (0..65).map(|i| (format!("K{}", i), "v".to_string())).collect::<std::collections::HashMap<_, _>>(),
+            }]),
+            ".env",
+        ),
+        (
+            "env_bad_key",
+            json!([{"id": "a1", "name": "n", "command": "c", "args": [], "env": {"1BAD": "v"}}]),
+            ".env",
+        ),
+        (
+            "env_value_too_long",
+            json!([{"id": "a1", "name": "n", "command": "c", "args": [], "env": {"K": "a".repeat(4097)}}]),
+            ".env",
+        ),
+        (
+            "too_many_agents",
+            Value::Array(
+                (0..33)
+                    .map(|i| json!({"id": format!("a{}", i), "name": "n", "command": "c", "args": [], "env": {}}))
+                    .collect(),
+            ),
+            "agents",
+        ),
+    ];
+
+    for (label, agents, expected_substring) in cases {
+        let resp = bridge.rpc(label, "acp.save_agents", json!({ "agents": agents }));
+        let error = resp
+            .get("error")
+            .unwrap_or_else(|| panic!("case {} should be rejected, got {:?}", label, resp));
+        assert_eq!(error["code"], -32602, "case {} wrong error code: {:?}", label, error);
+        let message = error["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains(expected_substring),
+            "case {}: expected message to contain {:?}, got {:?}",
+            label,
+            expected_substring,
+            message
+        );
+    }
+
+    bridge.shutdown();
+}
+
+#[test]
+fn save_agents_writes_atomically_with_0600_and_no_leftover_tmp_file() {
+    let mut bridge = Bridge::spawn(json!([]));
+
+    let agents = json!([full_agent("solo", "Solo", "solo-cmd", vec![], vec![])]);
+    let resp = bridge.rpc("S", "acp.save_agents", json!({ "agents": agents }));
+    assert_eq!(resp["result"]["ok"], true, "save_agents failed: {:?}", resp);
+
+    let dir = real_config_dir(&bridge._home);
+    let acp_path = dir.join("acp.json");
+    assert!(acp_path.exists(), "acp.json missing after save");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&acp_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "acp.json must be mode 0600");
+    }
+
+    let leftover: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|name| name != "acp.json")
+        .collect();
+    assert!(leftover.is_empty(), "leftover files in config dir: {:?}", leftover);
+
+    bridge.shutdown();
+}
+
+#[test]
+fn open_uses_the_newly_saved_config() {
+    let mut bridge = Bridge::spawn(json!([fake_agent("old")]));
+
+    // The old id works before any save.
+    let channel = bridge.open("old", WORKSPACE, "O0");
+    bridge.close(&channel);
+    bridge.wait_for(|m| is_stream_event(m, "O0", "exit"), Duration::from_secs(5));
+
+    let save = bridge.rpc("S", "acp.save_agents", json!({ "agents": [fake_agent("new")] }));
+    assert_eq!(save["result"]["ok"], true, "save_agents failed: {:?}", save);
+
+    // A later open sees the new config: the new id now works...
+    let channel = bridge.open("new", WORKSPACE, "O1");
+    bridge.close(&channel);
+    bridge.wait_for(|m| is_stream_event(m, "O1", "exit"), Duration::from_secs(5));
+
+    // ... and the old id, no longer present after the full replace, doesn't.
+    let gone = bridge.open_raw("old", WORKSPACE, "O2");
+    assert_eq!(gone["event"]["type"], "error");
+    assert_eq!(gone["event"]["fatal"], true);
+
+    bridge.shutdown();
+}
+
+#[test]
+fn save_agents_burst_lands_in_arrival_order_with_no_errors() {
+    let mut bridge = Bridge::spawn(json!([]));
+
+    // Fire every save before waiting on any response, so the bridge's
+    // native-messaging read loop actually receives them back to back - the
+    // shape that used to let the generic spawn-per-message dispatch run
+    // many `acp::save_agents` calls concurrently, racing each other's
+    // temp-file-then-rename sequence, with no guarantee the one that
+    // finished last was the one sent last.
+    const N: usize = 300;
+    for i in 0..N {
+        let id = format!("B{}", i);
+        let agents = json!([{
+            "id": "burst", "name": format!("n{}", i), "command": "c", "args": [], "env": {},
+        }]);
+        bridge.send(json!({
+            "type": "rpc", "id": id, "method": "acp.save_agents", "params": { "agents": agents },
+        }));
+    }
+
+    for i in 0..N {
+        let id = format!("B{}", i);
+        let resp = bridge
+            .wait_for(|m| is_rpc_response(m, &id), Duration::from_secs(30))
+            .unwrap_or_else(|| panic!("no rpc_response for save #{}", i));
+        assert_eq!(resp["result"]["ok"], true, "save #{} failed: {:?}", i, resp);
+    }
+
+    let got = bridge.rpc("G", "acp.get_agents", json!({}));
+    let expected = json!([{
+        "id": "burst", "name": format!("n{}", N - 1), "command": "c", "args": [], "env": {},
+    }]);
+    assert_eq!(
+        got["result"]["agents"], expected,
+        "the file on disk must equal the last save actually sent, not merely the last one to finish"
+    );
+
+    let dir = real_config_dir(&bridge._home);
+    let leftover: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|name| name != "acp.json")
+        .collect();
+    assert!(leftover.is_empty(), "leftover files after a save burst: {:?}", leftover);
+
+    bridge.shutdown();
+}
+
+// =============================================================================
+// acp.resolve_command
+// =============================================================================
+
+#[cfg(unix)]
+fn write_executable(path: &Path, contents: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, contents).expect("write executable");
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+}
+
+#[test]
+fn resolve_command_finds_a_tool_through_a_fake_login_shell() {
+    let fake_bin_dir = unique_dir("hbr84-fakebin");
+    let tool_name = "harbor-fake-tool";
+    let tool_path = fake_bin_dir.join(tool_name);
+    write_executable(&tool_path, "#!/bin/sh\necho hi\n");
+
+    // A fake login shell, standing in for a real one customizing `PATH` via
+    // a startup file (e.g. `.zprofile`) before running the given command -
+    // which is exactly why `acp.resolve_command` uses a login shell rather
+    // than the bridge's own `PATH`.
+    let shell_dir = unique_dir("hbr84-fakeshell");
+    let shell_path = shell_dir.join("login-shell.sh");
+    write_executable(
+        &shell_path,
+        &format!(
+            "#!/bin/sh\nexport PATH=\"{}:$PATH\"\nexec /bin/sh \"$@\"\n",
+            fake_bin_dir.display()
+        ),
+    );
+
+    let mut bridge = Bridge::spawn_with_env(json!([]), &[("SHELL", shell_path.to_str().unwrap())]);
+    let resp = bridge.rpc("R", "acp.resolve_command", json!({ "name": tool_name }));
+    assert_eq!(
+        resp["result"]["path"],
+        json!(tool_path.to_string_lossy()),
+        "unexpected resolve_command result: {:?}",
+        resp
+    );
+
+    bridge.shutdown();
+}
+
+/// Asserts `resp` is a genuine successful `{"path": null}` result, not
+/// merely something that happens to index to `Null` - e.g. an
+/// `-32601 Unknown method` error response has no `"result"` key at all, and
+/// `resp["result"]["path"]` on that is *also* `Value::Null` (serde_json
+/// indexes a missing key as `Null`), which would let a method that doesn't
+/// exist pass for one that resolves to nothing.
+fn assert_resolved_to_null(resp: &Value) {
+    assert!(
+        resp.get("error").is_none(),
+        "expected a successful null result, got an error: {:?}",
+        resp
+    );
+    assert_eq!(resp["result"]["path"], Value::Null, "unexpected result: {:?}", resp);
+}
+
+#[test]
+fn resolve_command_returns_null_for_a_name_that_is_not_found() {
+    let mut bridge = Bridge::spawn(json!([]));
+    let resp = bridge.rpc(
+        "R",
+        "acp.resolve_command",
+        json!({ "name": "harbor-definitely-not-a-real-command-xyz" }),
+    );
+    assert_resolved_to_null(&resp);
+    bridge.shutdown();
+}
+
+#[test]
+fn resolve_command_returns_null_for_a_name_with_a_slash() {
+    let mut bridge = Bridge::spawn(json!([]));
+    let resp = bridge.rpc("R", "acp.resolve_command", json!({ "name": "a/b" }));
+    assert_resolved_to_null(&resp);
+    bridge.shutdown();
+}
+
+/// Reads a single decimal pid, written by a fake shell script, after
+/// waiting briefly for it to show up (the script writes it near the start
+/// of its run, well before the bridge's 5s `resolve_command` deadline, but
+/// give it a moment rather than assuming the write already landed).
+fn read_pid_file(path: &Path) -> u32 {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Ok(contents) = std::fs::read_to_string(path) {
+            if let Ok(pid) = contents.trim().parse::<u32>() {
+                return pid;
+            }
+        }
+        if Instant::now() >= deadline {
+            panic!("pid file {:?} never appeared with a valid pid", path);
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn resolve_command_returns_null_on_a_shell_timeout_and_kills_the_backgrounded_job() {
+    let shell_dir = unique_dir("hbr84-sleepyshell");
+    let pid_file = shell_dir.join("child.pid");
+    let shell_path = shell_dir.join("sleepy-shell.sh");
+    // The shell itself never answers (so the bridge must give up on its
+    // own timeout), and it backgrounds a child before blocking - the same
+    // shape as a `.zprofile` line left running, so killing only the direct
+    // child (the old behavior) would leave this orphaned and still running
+    // long after the bridge gave up on it.
+    write_executable(
+        &shell_path,
+        &format!("#!/bin/sh\nsleep 30 &\necho $! > {}\nwait\n", pid_file.display()),
+    );
+
+    let mut bridge = Bridge::spawn_with_env(json!([]), &[("SHELL", shell_path.to_str().unwrap())]);
+    let start = Instant::now();
+    bridge.send(json!({ "type": "rpc", "id": "R", "method": "acp.resolve_command", "params": { "name": "sh" } }));
+    let resp = bridge
+        .wait_for(|m| is_rpc_response(m, "R"), Duration::from_secs(8))
+        .expect("rpc_response for acp.resolve_command after a shell timeout");
+    let elapsed = start.elapsed();
+
+    assert_resolved_to_null(&resp);
+    assert!(
+        elapsed < Duration::from_secs(8),
+        "resolve_command should give up well before the fake shell's 30s sleep, took {:?}",
+        elapsed
+    );
+
+    let child_pid = read_pid_file(&pid_file);
+    assert!(
+        !process_alive(child_pid),
+        "the backgrounded child (pid {}) must not survive a resolve_command timeout",
+        child_pid
+    );
+
+    bridge.shutdown();
+}
+
+#[test]
+fn resolve_command_still_resolves_past_a_backgrounded_holdover_job_and_cleans_it_up() {
+    let fake_bin_dir = unique_dir("hbr84-holdover-bin");
+    // A real, resolvable command, found through the shell's own `PATH`
+    // rather than a bare absolute lookup, so this also exercises the
+    // normal success path.
+    let tool_name = "harbor-holdover-tool";
+    let tool_path = fake_bin_dir.join(tool_name);
+    write_executable(&tool_path, "#!/bin/sh\necho hi\n");
+
+    let shell_dir = unique_dir("hbr84-holdovershell");
+    let pid_file = shell_dir.join("child.pid");
+    let shell_path = shell_dir.join("holdover-shell.sh");
+    // Backgrounds a long-running job (standing in for a `.zprofile` line
+    // ending in `&`) *before* running the real shell that actually answers
+    // `command -v`. The background job inherits the write end of the
+    // stdout pipe, so it alone would keep that pipe open - and itself
+    // running - long after the real answer has already been printed and
+    // the shell has exited.
+    write_executable(
+        &shell_path,
+        &format!(
+            "#!/bin/sh\nsleep 30 &\necho $! > {}\nexport PATH=\"{}:$PATH\"\nexec /bin/sh \"$@\"\n",
+            pid_file.display(),
+            fake_bin_dir.display()
+        ),
+    );
+
+    let mut bridge = Bridge::spawn_with_env(json!([]), &[("SHELL", shell_path.to_str().unwrap())]);
+    let start = Instant::now();
+    let resp = bridge.rpc("R", "acp.resolve_command", json!({ "name": tool_name }));
+    let elapsed = start.elapsed();
+
+    assert!(resp.get("error").is_none(), "unexpected error: {:?}", resp);
+    assert_eq!(
+        resp["result"]["path"],
+        json!(tool_path.to_string_lossy()),
+        "a holdover job in the shell's startup must not turn a real resolution into null: {:?}",
+        resp
+    );
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "resolving past a holdover job should not wait anywhere near the full deadline, took {:?}",
+        elapsed
+    );
+
+    let child_pid = read_pid_file(&pid_file);
+    assert!(
+        !process_alive(child_pid),
+        "the holdover job (pid {}) must not survive a successful resolve either",
+        child_pid
+    );
+
+    bridge.shutdown();
+}
+
+#[test]
+fn resolve_command_name_is_never_interpolated_into_the_shell_script() {
+    let marker_dir = unique_dir("hbr84-pwned-marker");
+    let marker_path = marker_dir.join("pwned");
+    let malicious_name = format!("x;touch {}", marker_path.display());
+
+    let mut bridge = Bridge::spawn(json!([]));
+    let resp = bridge.rpc("R", "acp.resolve_command", json!({ "name": malicious_name }));
+    assert_resolved_to_null(&resp);
+    assert!(
+        !marker_path.exists(),
+        "the name must never be interpolated into a shell script"
+    );
+
+    bridge.shutdown();
+}
+
+#[test]
+fn resolve_command_passes_the_name_as_a_separate_argv_entry_not_embedded_in_the_script() {
+    // A fake login shell that doesn't try to resolve anything itself - it
+    // just records its own argv (mirroring the real invocation: `-l -c
+    // '<script>' _ <name>`) to a file, then forwards to a real shell so the
+    // call still completes normally. If the name were ever formatted into
+    // the `-c` script string instead of passed as a trailing argument
+    // (`$1` inside that script), it would show up inside ARG3 here instead
+    // of only in ARG5.
+    let shell_dir = unique_dir("hbr84-argvshell");
+    let argv_dump = shell_dir.join("argv.txt");
+    let shell_path = shell_dir.join("argv-shell.sh");
+    write_executable(
+        &shell_path,
+        &format!(
+            "#!/bin/sh\nprintf 'ARG1=%s\\nARG2=%s\\nARG3=%s\\nARG4=%s\\nARG5=%s\\n' \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" > {}\nexec /bin/sh \"$@\"\n",
+            argv_dump.display()
+        ),
+    );
+
+    let name = "harbor-argv-probe-tool";
+    let mut bridge = Bridge::spawn_with_env(json!([]), &[("SHELL", shell_path.to_str().unwrap())]);
+    let resp = bridge.rpc("R", "acp.resolve_command", json!({ "name": name }));
+    // Not found (no such tool on PATH) is fine here - the point is what the
+    // fake shell actually received, not whether it resolved to anything.
+    assert!(resp.get("error").is_none(), "unexpected error: {:?}", resp);
+
+    let dump = std::fs::read_to_string(&argv_dump).expect("argv dump must have been written");
+    let line = |prefix: &str| -> String {
+        dump.lines()
+            .find(|l| l.starts_with(prefix))
+            .unwrap_or_else(|| panic!("missing {} in argv dump: {:?}", prefix, dump))
+            .to_string()
+    };
+
+    assert_eq!(line("ARG1="), "ARG1=-l");
+    assert_eq!(line("ARG2="), "ARG2=-c");
+    assert_eq!(line("ARG4="), "ARG4=_");
+    assert_eq!(
+        line("ARG5="),
+        format!("ARG5={}", name),
+        "the name must arrive as its own argv entry"
+    );
+    assert!(
+        !line("ARG3=").contains(name),
+        "the name must never be embedded inside the -c script string: {:?}",
+        dump
+    );
+
+    bridge.shutdown();
+}
+
+/// Catches a validation bypass directly: `/bin/sh` is a real, existing,
+/// executable path. If `valid_name`'s rejection of any name containing `/`
+/// were ever skipped, `command -v -- "/bin/sh"` would genuinely print
+/// `/bin/sh` back (POSIX `command -v` treats an operand containing `/` as
+/// a literal path check, not a `PATH` search - verified directly against
+/// the system shell, not assumed), so this must return `null` on its own,
+/// not because the path happens not to exist.
+#[test]
+fn resolve_command_returns_null_for_a_real_existing_path_not_just_a_missing_one() {
+    let mut bridge = Bridge::spawn(json!([]));
+    let resp = bridge.rpc("R", "acp.resolve_command", json!({ "name": "/bin/sh" }));
+    assert_resolved_to_null(&resp);
+    bridge.shutdown();
+}
+
+#[test]
+fn resolve_command_returns_null_when_the_shell_prints_a_relative_path() {
+    let shell_dir = unique_dir("hbr84-relpathshell");
+    let shell_path = shell_dir.join("relpath-shell.sh");
+    // Never runs a real resolution - just prints something that looks like
+    // a plausible `command -v` answer but isn't absolute.
+    write_executable(&shell_path, "#!/bin/sh\necho bin/not-absolute\n");
+
+    let mut bridge = Bridge::spawn_with_env(json!([]), &[("SHELL", shell_path.to_str().unwrap())]);
+    let resp = bridge.rpc("R", "acp.resolve_command", json!({ "name": "anything" }));
+    assert_resolved_to_null(&resp);
+    bridge.shutdown();
+}
+
+#[test]
+fn resolve_command_returns_null_when_the_shell_prints_a_non_executable_path() {
+    let target_dir = unique_dir("hbr84-nonexec-target");
+    let target_path = target_dir.join("just-a-data-file");
+    std::fs::write(&target_path, b"not a program").expect("write data file");
+    // Deliberately no execute bit, unlike `write_executable`.
+
+    let shell_dir = unique_dir("hbr84-nonexecshell");
+    let shell_path = shell_dir.join("nonexec-shell.sh");
+    write_executable(
+        &shell_path,
+        &format!("#!/bin/sh\necho {}\n", target_path.display()),
+    );
+
+    let mut bridge = Bridge::spawn_with_env(json!([]), &[("SHELL", shell_path.to_str().unwrap())]);
+    let resp = bridge.rpc("R", "acp.resolve_command", json!({ "name": "anything" }));
+    assert_resolved_to_null(&resp);
     bridge.shutdown();
 }
