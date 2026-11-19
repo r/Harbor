@@ -197,3 +197,24 @@ describe('a refused agent.chat.open reports the policy engine\'s code', () => {
     expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
   });
 });
+
+describe("agent.mcp's own refusals reach the page with their code", () => {
+  it('registering a server on another origin is refused with ERR_PERMISSION_DENIED', async () => {
+    const page = connectPort(`${ORIGIN}/page`);
+    const reply = await page.request('agent.mcp.register', { url: 'https://elsewhere.example/mcp', name: 'Elsewhere' });
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
+  });
+
+  it("unregistering another site's server is refused with ERR_PERMISSION_DENIED", async () => {
+    const owner = connectPort('https://owner.example/page');
+    const registered = await owner.request('agent.mcp.register', { url: 'https://owner.example/mcp', name: 'Owner' });
+    expect(registered.ok, registered.error?.message).toBe(true);
+    const serverId = (registered.result as { serverId: string }).serverId;
+
+    const page = connectPort(`${ORIGIN}/page`);
+    const reply = await page.request('agent.mcp.unregister', { serverId });
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
+  });
+});
