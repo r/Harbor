@@ -13,7 +13,7 @@ import type {
   SupervisorTask,
 } from '../../multi-agent/types';
 import { log, requireAction, checkAction } from './helpers';
-import { checkPermissions } from '../../policy/permissions';
+import { getPermissionStatus, isAgentOriginAllowed } from '../../policy/permissions';
 import { browserAPI } from '../../browser-compat';
 import {
   registerAgent,
@@ -155,13 +155,10 @@ export async function handleAgentsGetInfo(
     return;
   }
 
-  // Only return info if same origin or has crossOrigin permission
-  if (agent.origin !== ctx.origin) {
-    const check = await checkPermissions(ctx.origin, ['agents:crossOrigin']);
-    if (!check.granted) {
-      sender.sendResponse({ id: ctx.id, ok: true, result: null });
-      return;
-    }
+  // Only return info if same origin, or the origin may reach the agent's site
+  if (agent.origin !== ctx.origin && !(await isAgentOriginAllowed(ctx.origin, agent.origin, ctx.tabId))) {
+    sender.sendResponse({ id: ctx.id, ok: true, result: null });
+    return;
   }
 
   const usage = getAgentUsage(agentId);
@@ -209,14 +206,13 @@ export async function handleAgentsDiscover(
     includeRemote?: boolean;
   } | undefined;
 
-  // Check if cross-origin discovery is allowed
-  let allowCrossOrigin = false;
-  if (payload?.includeCrossOrigin) {
-    const check = await checkPermissions(ctx.origin, ['agents:crossOrigin']);
-    allowCrossOrigin = check.granted;
-  }
+  // Cross-origin agents are listed only on sites the origin may already
+  // reach, so discovery can't reveal which other sites have agents.
+  const reachable = payload?.includeCrossOrigin
+    ? new Set((await getPermissionStatus(ctx.origin, ctx.tabId)).agentOrigins ?? [])
+    : new Set<string>();
 
-  const agents = discoverAgents(ctx.origin, payload || {}, allowCrossOrigin);
+  const agents = discoverAgents(ctx.origin, payload || {}, (site) => reachable.has(site));
 
   sender.sendResponse({ id: ctx.id, ok: true, result: agents });
 }
@@ -269,7 +265,7 @@ export async function handleAgentsInvoke(
   const promptScope = isCrossOrigin ? 'agents:crossOrigin' : 'agents:invoke';
   if (!(await requireAction(ctx, sender, action, {
     promptAsScope: promptScope,
-    resource: targetAgent ? { server: targetAgent.id } : undefined,
+    resource: targetAgent ? { server: targetAgent.id, host: targetAgent.origin } : undefined,
     reason: `Invoke agent ${payload.agentId}: ${payload.task}`,
   }))) {
     return;
@@ -327,6 +323,19 @@ export async function handleAgentsSend(
 
   const payload = ctx.payload as { to: string; payload: unknown };
 
+  // A message to another site's agent needs a grant for that site, as an
+  // invoke does.
+  const recipient = getAgent(payload.to);
+  if (recipient && recipient.origin !== ctx.origin) {
+    if (!(await requireAction(ctx, sender, 'agent.delegate.crossOrigin', {
+      promptAsScope: 'agents:crossOrigin',
+      resource: { server: recipient.id, host: recipient.origin },
+      reason: `Send a message to agent ${recipient.id}`,
+    }))) {
+      return;
+    }
+  }
+
   const fromAgentId = originAgents.get(ctx.origin);
   if (!fromAgentId) {
     sender.sendResponse({
@@ -340,7 +349,7 @@ export async function handleAgentsSend(
     return;
   }
 
-  const result = await sendAgentMessage(fromAgentId, payload.to, payload.payload, ctx.origin);
+  const result = await sendAgentMessage(fromAgentId, payload.to, payload.payload);
 
   sender.sendResponse({ id: ctx.id, ok: true, result });
 }
@@ -533,7 +542,7 @@ function orchestrationStepGate(ctx: RequestContext, label: string): StepGate {
       const isCrossOrigin = targetAgent !== undefined && targetAgent.origin !== ctx.origin;
       return checkAction(ctx, isCrossOrigin ? 'agent.delegate.crossOrigin' : 'agent.invoke', {
         promptAsScope: isCrossOrigin ? 'agents:crossOrigin' : 'agents:invoke',
-        resource: targetAgent ? { server: targetAgent.id } : undefined,
+        resource: targetAgent ? { server: targetAgent.id, host: targetAgent.origin } : undefined,
         reason: `${label}: invoke agent ${targetAgentId}`,
       });
     });

@@ -122,7 +122,8 @@ type PermissionScope =
   | 'agents:register'
   | 'agents:discover'
   | 'agents:invoke'
-  | 'agents:message';
+  | 'agents:message'
+  | 'agents:crossOrigin';
 
 type PermissionGrant = 'granted-once' | 'granted-always' | 'denied' | 'not-granted';
 
@@ -130,12 +131,16 @@ interface PermissionGrantResult {
   granted: boolean;
   scopes: Record<PermissionScope, PermissionGrant>;
   allowedTools?: string[];
+  /** Sites whose agents this page may reach (agents:crossOrigin). */
+  agentOrigins?: string[];
 }
 
 interface PermissionStatus {
   origin: string;
   scopes: Record<PermissionScope, PermissionGrant>;
   allowedTools?: string[];
+  /** Sites whose agents this page may reach (agents:crossOrigin). */
+  agentOrigins?: string[];
 }
 
 interface TextSessionOptions {
@@ -1305,6 +1310,8 @@ const agentApi = Object.freeze({
     scopes: PermissionScope[];
     reason?: string;
     tools?: string[];
+    /** Required with agents:crossOrigin: the sites, e.g. "https://example.com". */
+    agentOrigins?: string[];
   }): Promise<PermissionGrantResult> {
     return sendRequest<PermissionGrantResult>('agent.requestPermissions', options);
   },
@@ -1384,7 +1391,7 @@ const agentApi = Object.freeze({
         'browser:activeTab.read', 'browser:activeTab.interact', 'browser:activeTab.screenshot',
         'browser:tabs.create', 'browser:tabs.read', 'browser:navigate',
         'web:fetch', 'chat:open',
-        'agents:register', 'agents:discover', 'agents:invoke', 'agents:message',
+        'agents:register', 'agents:discover', 'agents:invoke', 'agents:message', 'agents:crossOrigin',
       ],
     };
   },

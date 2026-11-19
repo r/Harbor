@@ -102,10 +102,10 @@ beforeEach(async () => {
   await initializePolicyStore();
 
   // Both origins may register as agents; the invoker (b.example) also needs
-  // cross-origin delegation, since the handler (a.example) is a different
-  // origin.
+  // a cross-origin grant for the handler's site (a.example).
   await grantPermissions('https://a.example', ['agents:register'], 'granted-always');
-  await grantPermissions('https://b.example', ['agents:register', 'agents:crossOrigin'], 'granted-always');
+  await grantPermissions('https://b.example', ['agents:register'], 'granted-always');
+  await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, ['https://a.example']);
 });
 
 afterEach(() => {

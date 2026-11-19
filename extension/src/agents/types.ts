@@ -95,18 +95,24 @@ export interface PermissionGrantResult {
   granted: boolean;
   scopes: Record<PermissionScope, PermissionGrant>;
   allowedTools?: string[];
+  /** Sites whose agents the origin may currently reach (`agents:crossOrigin`). */
+  agentOrigins?: string[];
 }
 
 export interface PermissionStatus {
   origin: string;
   scopes: Record<PermissionScope, PermissionGrant>;
   allowedTools?: string[];
+  /** Sites whose agents the origin may currently reach (`agents:crossOrigin`). */
+  agentOrigins?: string[];
 }
 
 export interface RequestPermissionsOptions {
   scopes: PermissionScope[];
   reason?: string;
   tools?: string[];
+  /** The sites `agents:crossOrigin` is asked for. Required with that scope. */
+  agentOrigins?: string[];
 }
 
 export interface StoredPermission {
@@ -120,6 +126,12 @@ export interface StoredOriginPermissions {
   origin: string;
   scopes: Record<PermissionScope, StoredPermission>;
   allowedTools: string[];
+  /**
+   * `agents:crossOrigin` grants, one per target site, each with its own
+   * duration and tab. The scope has no site-wide entry: an old one in
+   * `scopes` is ignored.
+   */
+  agentOrigins?: Record<string, StoredPermission>;
 }
 
 // =============================================================================

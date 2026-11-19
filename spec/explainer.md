@@ -888,7 +888,7 @@ interface AgentCapabilitiesReport {
     discover: boolean;       // Can discover agents (Extension 3)
     invoke: boolean;         // Can invoke agents (Extension 3)
     message: boolean;        // Can message agents (Extension 3)
-    crossOrigin: boolean;    // Can cross-origin communicate (Extension 3)
+    crossOrigin: boolean;    // Can reach agents on at least one other site (Extension 3)
     remote: boolean;         // Can connect to remote agents (Extension 3)
   };
   
@@ -901,6 +901,7 @@ interface AgentCapabilitiesReport {
   };
   
   allowedTools: string[];    // Tools this origin can call
+  agentOrigins: string[];    // Sites whose agents this origin can reach
   
   features: {
     browserInteraction: boolean;  // Feature flag status
@@ -951,6 +952,7 @@ agent.requestPermissions(options: {
   scopes: PermissionScope[];
   reason?: string;
   tools?: string[];
+  agentOrigins?: string[];
 }): Promise<PermissionGrantResult>
 ```
 
@@ -961,6 +963,7 @@ agent.requestPermissions(options: {
 | `scopes` | `PermissionScope[]` | Array of permission scopes to request |
 | `reason` | `string` | Human-readable explanation shown in prompt |
 | `tools` | `string[]` | Specific tools to request (for `mcp:tools.call`) |
+| `agentOrigins` | `string[]` | The sites whose agents to reach. Required with `agents:crossOrigin`, which is granted per site |
 
 **Returns:**
 ```typescript

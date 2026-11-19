@@ -21,9 +21,15 @@ export interface OriginPermissions {
   scopes: Partial<Record<PermissionScope, PermissionGrantType>>;
   /** Tools the origin may call. Empty means none: there is no "all tools" default. */
   allowedTools: string[];
+  /** Sites whose agents the origin may reach. Empty means none. */
+  agentOrigins: string[];
 }
 
-const NOTHING_GRANTED: OriginPermissions = { scopes: {}, allowedTools: [] };
+const NOTHING_GRANTED: OriginPermissions = { scopes: {}, allowedTools: [], agentOrigins: [] };
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
 
 function isGranted(grant: PermissionGrantType | undefined): boolean {
   return grant === 'granted-once' || grant === 'granted-always';
@@ -32,13 +38,12 @@ function isGranted(grant: PermissionGrantType | undefined): boolean {
 /** Accept Harbor's answer only if it has the expected shape. */
 function readPermissions(raw: unknown): OriginPermissions | null {
   if (!raw || typeof raw !== 'object') return null;
-  const { scopes, allowedTools } = raw as { scopes?: unknown; allowedTools?: unknown };
+  const { scopes, allowedTools, agentOrigins } = raw as { scopes?: unknown; allowedTools?: unknown; agentOrigins?: unknown };
   if (!scopes || typeof scopes !== 'object' || Array.isArray(scopes)) return null;
   return {
     scopes: scopes as OriginPermissions['scopes'],
-    allowedTools: Array.isArray(allowedTools)
-      ? allowedTools.filter((t): t is string => typeof t === 'string')
-      : [],
+    allowedTools: stringList(allowedTools),
+    agentOrigins: stringList(agentOrigins),
   };
 }
 
@@ -67,10 +72,12 @@ export async function hasPermission(origin: string, scope: PermissionScope, tabI
 // =============================================================================
 
 export async function handleRequestPermissions(ctx: RequestContext): HandlerResponse {
-  const { scopes, reason, tools } = (ctx.payload || {}) as {
+  const { scopes, reason, tools, agentOrigins } = (ctx.payload || {}) as {
     scopes?: PermissionScope[];
     reason?: string;
     tools?: string[];
+    /** The sites an agents:crossOrigin request is for. */
+    agentOrigins?: string[];
   };
 
   if (!Array.isArray(scopes) || scopes.length === 0) {
@@ -82,10 +89,11 @@ export async function handleRequestPermissions(ctx: RequestContext): HandlerResp
       granted?: unknown;
       scopes?: Record<string, PermissionGrantType>;
       allowedTools?: string[];
+      agentOrigins?: string[];
     }>(
       'permissions.request',
       // Ask for exactly the scopes the page named, each once.
-      { origin: ctx.origin, tabId: ctx.tabId, scopes: [...new Set(scopes)], reason, tools },
+      { origin: ctx.origin, tabId: ctx.tabId, scopes: [...new Set(scopes)], reason, tools, agentOrigins },
       { timeoutMs: PERMISSION_PROMPT_TIMEOUT_MS },
     );
     if (!result || typeof result.granted !== 'boolean' || !result.scopes) {
@@ -95,6 +103,7 @@ export async function handleRequestPermissions(ctx: RequestContext): HandlerResp
       granted: result.granted,
       scopes: result.scopes,
       allowedTools: Array.isArray(result.allowedTools) ? result.allowedTools : [],
+      agentOrigins: stringList(result.agentOrigins),
     });
   } catch (e) {
     return errorResponse(
@@ -111,5 +120,6 @@ export async function handlePermissionsList(ctx: RequestContext): HandlerRespons
     origin: ctx.origin,
     scopes: permissions.scopes,
     allowedTools: permissions.allowedTools,
+    agentOrigins: permissions.agentOrigins,
   });
 }

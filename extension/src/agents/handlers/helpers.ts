@@ -140,20 +140,32 @@ export async function checkAction(
     return denialFor(decision);
   }
 
+  // agents:crossOrigin is granted per target site, so the prompt names the
+  // site and a grant must cover it. With no target site there is nothing the
+  // person could allow.
+  const targetSite = scopeForPrompt === 'agents:crossOrigin' ? options.resource?.host : undefined;
+  if (scopeForPrompt === 'agents:crossOrigin' && !targetSite) {
+    return denialFor(decision);
+  }
+
   const promptResult = await showPermissionPrompt(
     ctx.origin,
     [scopeForPrompt],
     options.reason ?? decision.reason,
     options.resource?.tool ? [options.resource.tool] : undefined,
+    undefined,
+    targetSite ? [targetSite] : undefined,
   );
 
-  if (promptResult.granted && promptResult.grantType) {
+  const coversTarget = !targetSite || (promptResult.agentOrigins ?? []).includes(targetSite);
+  if (promptResult.granted && promptResult.grantType && coversTarget) {
     await grantPermissions(
       ctx.origin,
       [scopeForPrompt],
       promptResult.grantType,
       ctx.tabId,
       promptResult.allowedTools,
+      promptResult.agentOrigins,
     );
     return null;
   }

@@ -19,7 +19,14 @@ let openPrompts = 0;
 let mostOpenPrompts = 0;
 vi.mock('../../../policy/permissions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../policy/permissions')>()),
-  showPermissionPrompt: vi.fn(async (origin: string, scopes: string[]) => {
+  showPermissionPrompt: vi.fn(async (
+    origin: string,
+    scopes: string[],
+    _reason?: string,
+    _tools?: string[],
+    _session?: unknown,
+    agentOrigins?: string[],
+  ) => {
     prompts.push({ origin, scopes });
     openPrompts += 1;
     mostOpenPrompts = Math.max(mostOpenPrompts, openPrompts);
@@ -27,7 +34,8 @@ vi.mock('../../../policy/permissions', async (importOriginal) => ({
       // A real prompt waits for the person; let other checks run meanwhile.
       await new Promise((resolve) => setTimeout(resolve, 0));
       const granted = promptAnswer(scopes);
-      return granted ? { granted, grantType: 'granted-once' as const } : { granted, explicitDeny: true };
+      // Like the prompt page, an Allow covers the target sites it showed.
+      return granted ? { granted, grantType: 'granted-once' as const, agentOrigins } : { granted, explicitDeny: true };
     } finally {
       openPrompts -= 1;
     }
