@@ -7,6 +7,7 @@
 import { harborRequest } from '../harbor-core';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
+import { policyRefusalCode } from '../policy-refusal';
 
 // =============================================================================
 // Handlers
@@ -21,8 +22,8 @@ export async function handleChatCanOpen(ctx: RequestContext): HandlerResponse {
   } catch (e) {
     return errorResponse(
       ctx.id,
-      'ERR_CHAT',
-      e instanceof Error ? e.message : 'Failed to check chat availability'
+      policyRefusalCode(e) ?? 'ERR_CHAT',
+      e instanceof Error ? e.message : 'Failed to check chat availability',
     );
   }
 }
@@ -56,8 +57,8 @@ export async function handleChatOpen(ctx: RequestContext): HandlerResponse {
   } catch (e) {
     return errorResponse(
       ctx.id,
-      'ERR_CHAT_OPEN',
-      e instanceof Error ? e.message : 'Failed to open chat'
+      policyRefusalCode(e) ?? 'ERR_CHAT_OPEN',
+      e instanceof Error ? e.message : 'Failed to open chat',
     );
   }
 }
@@ -78,8 +79,8 @@ export async function handleChatClose(ctx: RequestContext): HandlerResponse {
   } catch (e) {
     return errorResponse(
       ctx.id,
-      'ERR_CHAT_CLOSE',
-      e instanceof Error ? e.message : 'Failed to close chat'
+      policyRefusalCode(e) ?? 'ERR_CHAT_CLOSE',
+      e instanceof Error ? e.message : 'Failed to close chat',
     );
   }
 }

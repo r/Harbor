@@ -578,6 +578,7 @@ These are the policy engine's codes, and Harbor reports them as is wherever its 
 - A `window.ai` text session's `prompt()` throws them, and `promptStreaming()` ends with them, when the session runs on Harbor's own model.
 - `agent.run()` ends with them as its `error` event when its tool list is refused, or, on Harbor's own model, a model call.
 - `agent.browser.*` calls (page interaction, screenshots, reading the page, navigation, `fetch` and the tab calls) throw them.
+- `agent.agents.*` calls (registering, discovering, invoking and messaging agents, and orchestration) and `agent.chat.open()` throw them.
 
 When the person has chosen an ACP agent to answer, prompts go to that agent rather than through Harbor's policy engine, so its failures use the ACP codes (`ERR_AGENT_FAILED`, `ERR_AGENT_BUSY`, `ERR_AGENT_REFUSED`, `ERR_AGENT_LIMIT`). `agent.run()`'s tool list is still checked by the policy engine on either backend.
 

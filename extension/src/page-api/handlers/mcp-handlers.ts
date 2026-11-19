@@ -7,6 +7,7 @@
 import { harborRequest } from '../harbor-core';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
+import { policyRefusalCode } from '../policy-refusal';
 
 // =============================================================================
 // Handlers
@@ -27,8 +28,8 @@ export async function handleMcpDiscover(ctx: RequestContext): HandlerResponse {
   } catch (e) {
     return errorResponse(
       ctx.id,
-      'ERR_MCP_DISCOVER',
-      e instanceof Error ? e.message : 'Failed to discover MCP servers'
+      policyRefusalCode(e) ?? 'ERR_MCP_DISCOVER',
+      e instanceof Error ? e.message : 'Failed to discover MCP servers',
     );
   }
 }
@@ -63,8 +64,8 @@ export async function handleMcpRegister(ctx: RequestContext): HandlerResponse {
   } catch (e) {
     return errorResponse(
       ctx.id,
-      'ERR_MCP_REGISTER',
-      e instanceof Error ? e.message : 'Failed to register MCP server'
+      policyRefusalCode(e) ?? 'ERR_MCP_REGISTER',
+      e instanceof Error ? e.message : 'Failed to register MCP server',
     );
   }
 }
@@ -85,8 +86,8 @@ export async function handleMcpUnregister(ctx: RequestContext): HandlerResponse 
   } catch (e) {
     return errorResponse(
       ctx.id,
-      'ERR_MCP_UNREGISTER',
-      e instanceof Error ? e.message : 'Failed to unregister MCP server'
+      policyRefusalCode(e) ?? 'ERR_MCP_UNREGISTER',
+      e instanceof Error ? e.message : 'Failed to unregister MCP server',
     );
   }
 }
