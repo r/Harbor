@@ -6,7 +6,7 @@
  * rule that asks still prompts. With no rule, the site's grant stands in
  * for Harbor's prompt, so normal use sees no new prompt.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HandlerResponse, RequestContext } from '../handlers/types';
 
 type TransportResponse = Awaited<HandlerResponse>;
@@ -74,9 +74,37 @@ let showPermissionPrompt: ReturnType<typeof vi.fn>;
 let browserHandlers: typeof import('../handlers/browser-handlers');
 let tabHandlers: typeof import('../handlers/tab-handlers');
 
-beforeEach(async () => {
-  vi.resetModules();
+// Import once: vi.resetModules() would re-import these but not the mocked
+// permission-handlers, leaving the handlers on a stale Audit instance.
+let engine: typeof import('../../policy/engine');
+beforeAll(async () => {
+  stubGlobals();
+  ({ Audit } = await import('../../policy/audit'));
+  ({ Policy } = await import('../../policy/store'));
+  ({ compileRule } = await import('../../policy/rules'));
+  engine = await import('../../policy/engine');
+  showPermissionPrompt = vi.mocked((await import('../../policy/permissions')).showPermissionPrompt);
+  browserHandlers = await import('../handlers/browser-handlers');
+  tabHandlers = await import('../handlers/tab-handlers');
+});
+
+function stubGlobals() {
+  vi.stubGlobal('fetch', fetchMock);
+  vi.stubGlobal('chrome', {
+    storage: { local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) } },
+    tabs,
+    runtime: { id: 'harbor@test' },
+  });
+  // Public IPs only, so fetch's private-network guard lets these through.
+  vi.stubGlobal('browser', {
+    tabs,
+    dns: { resolve: vi.fn(async () => ({ addresses: ['93.184.216.34'], canonicalName: '', isTRR: false })) },
+  });
+}
+
+beforeEach(() => {
   vi.clearAllMocks();
+  stubGlobals();
   mocks.hasPermission.mockResolvedValue(true);
   mocks.executeScriptInTab.mockResolvedValue({ success: true });
   tabs.get.mockImplementation(async (id: number) => ({
@@ -93,27 +121,8 @@ beforeEach(async () => {
     ok: true, status: 200, statusText: 'OK', url, redirected: false,
     headers: new Headers(), text: async () => 'body',
   }));
-  vi.stubGlobal('fetch', fetchMock);
-  vi.stubGlobal('chrome', {
-    storage: { local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) } },
-    tabs,
-    runtime: { id: 'harbor@test' },
-  });
-  // Public IPs only, so fetch's private-network guard lets these through.
-  vi.stubGlobal('browser', {
-    tabs,
-    dns: { resolve: vi.fn(async () => ({ addresses: ['93.184.216.34'], canonicalName: '', isTRR: false })) },
-  });
-
-  ({ Audit } = await import('../../policy/audit'));
-  ({ Policy } = await import('../../policy/store'));
-  ({ compileRule } = await import('../../policy/rules'));
-  const engine = await import('../../policy/engine');
   engine.setOriginGrantResolver(() => null);
   engine.setWatchdogResolver(() => ({ status: 'normal' }));
-  showPermissionPrompt = vi.mocked((await import('../../policy/permissions')).showPermissionPrompt);
-  browserHandlers = await import('../handlers/browser-handlers');
-  tabHandlers = await import('../handlers/tab-handlers');
   Audit.clear();
   Policy.__reset();
   tabHandlers.trackSpawnedTab(ORIGIN, SPAWNED_TAB);
@@ -208,7 +217,6 @@ describe('policy decisions are enforced before the browser is touched', () => {
   });
 
   it('a watchdog restriction prompts even with the grant', async () => {
-    const engine = await import('../../policy/engine');
     engine.setWatchdogResolver(() => ({ status: 'restricted' }) as never);
     showPermissionPrompt.mockResolvedValueOnce({ granted: false });
     const res = await browserHandlers.handleBrowserNavigate(ctx('agent.browser.navigate', { url: 'https://x.example/' }));

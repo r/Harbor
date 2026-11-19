@@ -6,7 +6,7 @@
 
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
-import { hasPermission } from './permission-handlers';
+import { hasPermission, policyRefusal } from './permission-handlers';
 import { executeScriptInTab } from '../../browser-compat';
 
 // =============================================================================
@@ -169,6 +169,9 @@ export async function handleTabsCreate(ctx: RequestContext): HandlerResponse {
     return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', `Only http(s) URLs can be opened, got ${target.protocol}`);
   }
 
+  const refused = await policyRefusal(ctx, 'browser.write.tabsCreate', target.host);
+  if (refused) return refused;
+
   try {
     const createOptions: chrome.tabs.CreateProperties = {
       url: target.href,
@@ -205,6 +208,9 @@ export async function handleTabsList(ctx: RequestContext): HandlerResponse {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:tabs.read required');
   }
 
+  const refused = await policyRefusal(ctx, 'browser.read.tabs');
+  if (refused) return refused;
+
   try {
     const tabs = await chrome.tabs.query({});
     const result = tabs.map(tab => ({
@@ -240,6 +246,9 @@ export async function handleTabsClose(ctx: RequestContext): HandlerResponse {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Can only close tabs created by this origin');
   }
 
+  const refused = await policyRefusal(ctx, 'browser.write.tabsCreate');
+  if (refused) return refused;
+
   try {
     await chrome.tabs.remove(tabId);
     untrackSpawnedTab(ctx.origin, tabId);
@@ -271,6 +280,9 @@ export async function handleSpawnedTabReadability(ctx: RequestContext): HandlerR
   if (!await isTabOnOrigin(tabId, ctx.origin)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', OTHER_ORIGIN_MESSAGE);
   }
+
+  const refused = await policyRefusal(ctx, 'browser.write.tabsCreate');
+  if (refused) return refused;
 
   try {
     const result = await executeScriptInTab<{
@@ -351,6 +363,9 @@ export async function handleSpawnedTabGetHtml(ctx: RequestContext): HandlerRespo
   if (!await isTabOnOrigin(tabId, ctx.origin)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', OTHER_ORIGIN_MESSAGE);
   }
+
+  const refused = await policyRefusal(ctx, 'browser.write.tabsCreate');
+  if (refused) return refused;
 
   try {
     const result = await executeScriptInTab<{ html: string; url: string; title: string } | OriginMismatch>(

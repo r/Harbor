@@ -319,7 +319,21 @@ Every PolicyEngine decision — whether it prompted, auto-allowed, denied, or do
 
 ### Page calls
 
-Harbor injects the page API (`window.ai`, `window.agent`, `navigator.modelContext`) itself, from `extension/src/page-api/`. A page's calls arrive over a port from Harbor's own content script, and Harbor takes the page's origin and tab from the browser's record of that port (`port.sender`), never from the message. The page API calls the rest of Harbor in-process through `page-api/harbor-core.ts`. Harbor runs each model and tool call through the PolicyEngine under that origin: `llm.chat`, `llm.chatStream`, `mcp.listTools`, `mcp.callTool`, and `session.create` (one check per requested capability). An `agent.run` therefore appears in the audit log as its tool listing, each model prompt and each tool call, in order. A prompt is classified as local or remote by the model it will run on. A prompt that names no model, as every `agent.run` prompt does, runs on the bridge's default model and is classified by that model. If the default model is unknown, the prompt counts as remote. A call without an origin is rejected.
+Harbor injects the page API (`window.ai`, `window.agent`, `navigator.modelContext`) itself, from `extension/src/page-api/`. A page's calls arrive over a port from Harbor's own content script, and Harbor takes the page's origin and tab from the browser's record of that port (`port.sender`), never from the message. The page API calls the rest of Harbor in-process through `page-api/harbor-core.ts`. Harbor runs each model and tool call through the PolicyEngine under that origin: `llm.chat`, `llm.chatStream`, `mcp.listTools`, `mcp.callTool`, and `session.create` (one check per requested capability). An `agent.run` therefore appears in the audit log as its tool listing, each model prompt and each tool call, in order. Browser and tab calls go through the same check, after the page API has checked the site's grant:
+
+| Page call | Typed action | Resource host |
+| --- | --- | --- |
+| `activeTab.click`, `fill`, `select`, `scroll` | `browser.write.interact` | the calling page |
+| `activeTab.screenshot` | `browser.read.screenshot` | the calling page |
+| `activeTab.getElements` | `browser.read.element` | the calling page |
+| `activeTab.readability` | `browser.read.activeTab` | the calling page |
+| `navigate` | `browser.write.navigate` | the destination |
+| `fetch` | `network.egress.same_origin` or `network.egress.cross_origin` | the destination |
+| `tabs.list` | `browser.read.tabs` | the calling page |
+| `tabs.create` | `browser.write.tabsCreate` | the new tab's URL |
+| `tabs.close`, and reading a tab the site opened (`readability`, `getHtml`) | `browser.write.tabsCreate` | the calling page |
+
+`waitForLoad` on a tab the site opened isn't audited: it only reports load status. A `fetch` to this device or a private network is refused before the check, so it isn't audited either. A prompt is classified as local or remote by the model it will run on. A prompt that names no model, as every `agent.run` prompt does, runs on the bridge's default model and is classified by that model. If the default model is unknown, the prompt counts as remote. A call without an origin is rejected.
 
 Harbor holds the only store of per-origin grants and the only consent prompt. The page API checks Harbor's store (`permissions.check`) before each page call, and `agent.requestPermissions()` goes to Harbor's prompt (`permissions.request`). So a site revoked in Harbor's sidebar is refused on its next call. That includes work the site started while it still held the grant: every prompt on an open text session (`window.ai` or `agent.sessions.create`), and every model turn of a running `agent.run`, re-checks `model:prompt`. Revoking the site, or a one-time grant expiring, stops the next one. This holds in Safari too: its build injects the same page API.
 

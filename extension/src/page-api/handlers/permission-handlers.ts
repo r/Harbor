@@ -9,8 +9,8 @@
  * request times out), nothing is granted.
  */
 
-import { harborRequest } from '../harbor-core';
-import type { PermissionScope, PermissionGrantType } from '../types';
+import { checkPageAction, harborRequest, type PageBrowserAction } from '../harbor-core';
+import type { PermissionScope, PermissionGrantType, TransportResponse } from '../types';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 
@@ -112,4 +112,30 @@ export async function handlePermissionsList(ctx: RequestContext): HandlerRespons
     scopes: permissions.scopes,
     allowedTools: permissions.allowedTools,
   });
+}
+
+// =============================================================================
+// Policy gate for browser and tab calls
+// =============================================================================
+
+/**
+ * Run a browser or tab call past Harbor's PolicyEngine after its grant
+ * check. Returns the error response to send, or `null` to proceed.
+ * `host` defaults to the calling page's own host.
+ */
+export async function policyRefusal(
+  ctx: RequestContext,
+  action: PageBrowserAction,
+  host: string = hostOf(ctx.origin),
+): Promise<TransportResponse | null> {
+  const refusal = await checkPageAction(ctx, action, { host });
+  return refusal ? errorResponse(ctx.id, refusal.code, refusal.message) : null;
+}
+
+function hostOf(origin: string): string {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return '';
+  }
 }

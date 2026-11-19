@@ -6,7 +6,7 @@
 
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
-import { hasPermission } from './permission-handlers';
+import { hasPermission, policyRefusal } from './permission-handlers';
 import { executeScriptInTab } from '../../browser-compat';
 import { isBlockedUrl } from './net-guard';
 
@@ -29,6 +29,9 @@ export async function handleBrowserClick(ctx: RequestContext): HandlerResponse {
   if (!ctx.tabId) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
+
+  const refused = await policyRefusal(ctx, 'browser.write.interact');
+  if (refused) return refused;
 
   try {
     const result = await executeScriptInTab<{ success: boolean; error?: string }>(
@@ -82,6 +85,9 @@ export async function handleBrowserFill(ctx: RequestContext): HandlerResponse {
   if (!ctx.tabId) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
+
+  const refused = await policyRefusal(ctx, 'browser.write.interact');
+  if (refused) return refused;
 
   try {
     const result = await executeScriptInTab<{ success: boolean; error?: string }>(
@@ -137,6 +143,9 @@ export async function handleBrowserSelect(ctx: RequestContext): HandlerResponse 
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
 
+  const refused = await policyRefusal(ctx, 'browser.write.interact');
+  if (refused) return refused;
+
   try {
     const result = await executeScriptInTab<{ success: boolean; error?: string }>(
       ctx.tabId,
@@ -185,6 +194,9 @@ export async function handleBrowserScroll(ctx: RequestContext): HandlerResponse 
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
 
+  const refused = await policyRefusal(ctx, 'browser.write.interact');
+  if (refused) return refused;
+
   try {
     const result = await executeScriptInTab<{ success: boolean }>(
       ctx.tabId,
@@ -222,6 +234,9 @@ export async function handleBrowserScreenshot(ctx: RequestContext): HandlerRespo
   if (!ctx.tabId) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
+
+  const refused = await policyRefusal(ctx, 'browser.read.screenshot');
+  if (refused) return refused;
 
   const tabId = ctx.tabId;
   const tabsApi = (typeof browser !== 'undefined' ? browser.tabs : chrome.tabs);
@@ -278,6 +293,9 @@ export async function handleBrowserGetElements(ctx: RequestContext): HandlerResp
   if (!ctx.tabId) {
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
+
+  const refused = await policyRefusal(ctx, 'browser.read.element');
+  if (refused) return refused;
 
   try {
     const result = await executeScriptInTab<ElementInfo[]>(
@@ -385,6 +403,9 @@ export async function handleBrowserReadability(ctx: RequestContext): HandlerResp
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
 
+  const refused = await policyRefusal(ctx, 'browser.read.activeTab');
+  if (refused) return refused;
+
   try {
     const result = await executeScriptInTab<ReadabilityResult>(
       ctx.tabId,
@@ -463,6 +484,9 @@ export async function handleBrowserNavigate(ctx: RequestContext): HandlerRespons
     return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
   }
 
+  const refused = await policyRefusal(ctx, 'browser.write.navigate', target.host);
+  if (refused) return refused;
+
   try {
     await chrome.tabs.update(ctx.tabId, { url: target.toString() });
     return successResponse(ctx.id, { success: true });
@@ -515,6 +539,13 @@ export async function handleBrowserFetch(ctx: RequestContext): HandlerResponse {
   if (await isBlockedUrl(target)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', LOCAL_NETWORK_MESSAGE);
   }
+
+  const refused = await policyRefusal(
+    ctx,
+    target.origin === ctx.origin ? 'network.egress.same_origin' : 'network.egress.cross_origin',
+    target.host,
+  );
+  if (refused) return refused;
 
   try {
     const init: RequestInit = {

@@ -805,13 +805,54 @@ async function gatePageCall(
     return failure(`${type} requires the calling page's origin`);
   }
 
-  const ctx: RequestContext = {
-    id: requestId ?? crypto.randomUUID(),
-    type: type as RequestContext['type'],
-    payload,
-    origin: p.origin,
-    tabId: typeof p.tabId === 'number' ? p.tabId : undefined,
+  return runPageChecks(
+    {
+      id: requestId ?? crypto.randomUUID(),
+      type: type as RequestContext['type'],
+      payload,
+      origin: p.origin,
+      tabId: typeof p.tabId === 'number' ? p.tabId : undefined,
+    },
+    await checksFor(p),
+  );
+}
+
+/**
+ * The same gate for a page call the page API serves itself (browser and tab
+ * actions), which never passes through this router. The page API has
+ * already checked the site's grant, so this audits the call and enforces
+ * deny, a watchdog restriction and a rule that asks, without a second
+ * prompt in normal use. Returns `null` when the call may proceed.
+ */
+export async function gatePageAction(
+  call: { id: string; type: string; origin: string; tabId?: number },
+  action: TypedAction,
+  resource?: PolicyResource,
+): Promise<{ code: string; message: string } | null> {
+  if (!call.origin) {
+    return { code: ErrorCodes.PERMISSION_DENIED, message: `${call.type} requires the calling page's origin` };
+  }
+  const refusal = await runPageChecks(
+    {
+      id: call.id,
+      type: call.type as RequestContext['type'],
+      payload: undefined,
+      origin: call.origin,
+      tabId: call.tabId,
+    },
+    [{ action, resource }],
+  );
+  if (!refusal) return null;
+  return {
+    code: refusal.code ?? ErrorCodes.PERMISSION_DENIED,
+    message: refusal.error ?? 'Permission denied',
   };
+}
+
+async function runPageChecks(
+  ctx: RequestContext,
+  checks: PageCheck[],
+): Promise<ExtensionApiResponse | null> {
   let denied: ExtensionApiResponse | null = null;
   const sender: ResponseSender = {
     // Keep the policy engine's code (ERR_QUARANTINED, ERR_BLOCKED_BY_POLICY,
@@ -826,7 +867,7 @@ async function gatePageCall(
     sendStreamEvent: () => {},
   };
 
-  for (const check of await checksFor(p)) {
+  for (const check of checks) {
     const allowed = await requireAction(ctx, sender, check.action, {
       resource: check.resource,
       upstreamConsent: 'origin-grant',
