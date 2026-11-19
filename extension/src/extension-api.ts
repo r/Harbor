@@ -11,10 +11,10 @@
 import { bridgeChat, type BridgeChatRequest } from './llm/chat';
 import { modelForPrompt } from './llm/prompt-model';
 import { browserAPI } from './browser-compat';
-import { bridgeRequest, bridgeStreamRequest, getBridgeConnectionState, checkBridgeHealth } from './llm/bridge-client';
-import { listServersWithStatus, callTool, startServer, stopServer, listTools } from './mcp/host';
+import { bridgeRequest, bridgeStreamRequest } from './llm/bridge-client';
+import { listServersWithStatus, callTool, listTools } from './mcp/host';
 import { isNativeBridgeReady } from './llm/native-bridge';
-import { listAllProviders, getRuntimeCapabilities } from './llm/provider-registry';
+import { getRuntimeCapabilities } from './llm/provider-registry';
 import { SessionRegistry } from './sessions';
 import type { CreateSessionOptions, SessionSummary } from './sessions';
 import { Audit } from './policy/audit';

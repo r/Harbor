@@ -149,6 +149,17 @@ describe("a page's model-listing calls go through the policy engine", () => {
   });
 });
 
+describe('getActive when Harbor has no answer', () => {
+  it('reports no model, rather than an error, when the bridge fails', async () => {
+    await grant(['model:list']);
+    bridgeRequest.mockRejectedValue(new Error('bridge down'));
+    const request = connectPort(`${ORIGIN}/page`);
+    const reply = await request('ai.providers.getActive');
+    expect(reply.ok, reply.error?.message).toBe(true);
+    expect(reply.result).toEqual({ provider: null, model: null });
+  });
+});
+
 describe('router message types no page handler sends', () => {
   it.each([
     'llm.configureProvider',
