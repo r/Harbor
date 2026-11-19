@@ -260,6 +260,67 @@ describe('a session tool budget', () => {
     expect(host.callTool).toHaveBeenCalledTimes(2);
   });
 
+  it('prompts once, not twice, when two parallel calls want the last slot', async () => {
+    const { showPermissionPrompt } = await import('../../policy/permissions');
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+
+    await loadRules([{ id: 'ask-tools', effect: 'ask', principal: { origin: '*' }, action: 'tool.call' }]);
+    vi.mocked(showPermissionPrompt).mockResolvedValue({ granted: true, grantType: 'granted-once' } as never);
+    const replies = await Promise.all([
+      request('agent.tools.call', { tool: TOOL, args: {}, sessionId }),
+      request('agent.tools.call', { tool: TOOL, args: {}, sessionId }),
+    ]);
+
+    expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
+    expect(replies.filter(r => r.ok)).toHaveLength(1);
+    expect(replies.filter(r => r.error?.code === 'ERR_BUDGET_EXCEEDED')).toHaveLength(1);
+    expect(host.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('frees a reserved slot when the person declines, for the next call', async () => {
+    const { showPermissionPrompt } = await import('../../policy/permissions');
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+
+    await loadRules([{ id: 'ask-tools', effect: 'ask', principal: { origin: '*' }, action: 'tool.call' }]);
+    let decline!: () => void;
+    vi.mocked(showPermissionPrompt).mockImplementationOnce(
+      () => new Promise(resolve => { decline = () => resolve({ granted: false } as never); }),
+    );
+    const first = request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    await vi.waitFor(() => expect(showPermissionPrompt).toHaveBeenCalledTimes(1));
+
+    // The slot is held while the prompt is open.
+    const second = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(second.error?.code).toBe('ERR_BUDGET_EXCEEDED');
+    expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
+
+    decline();
+    expectPolicyRefusal(await first, 'ERR_PERMISSION_DENIED');
+
+    vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: true, grantType: 'granted-once' } as never);
+    const third = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(third.ok, third.error?.message).toBe(true);
+    expect(host.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a call whose session is terminated while its prompt is open', async () => {
+    const { showPermissionPrompt } = await import('../../policy/permissions');
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 2);
+
+    await loadRules([{ id: 'ask-tools', effect: 'ask', principal: { origin: '*' }, action: 'tool.call' }]);
+    vi.mocked(showPermissionPrompt).mockImplementationOnce(async () => {
+      const { SessionRegistry } = await import('../../sessions/registry');
+      SessionRegistry.terminateSession(sessionId, ORIGIN);
+      return { granted: true, grantType: 'granted-once' } as never;
+    });
+    const reply = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
+    expect(host.callTool).not.toHaveBeenCalled();
+  });
+
   it.each(['Session not found', 'Session has expired', 'Tool call budget exceeded'])(
     'reports a tool that fails with %j as a tool failure, not a Harbor refusal',
     async (toolError) => {

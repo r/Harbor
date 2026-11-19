@@ -259,7 +259,10 @@ async function handleMcpListTools(payload: unknown): Promise<ExtensionApiRespons
   }
 }
 
-async function handleMcpCallTool(payload: unknown): Promise<ExtensionApiResponse> {
+async function handleMcpCallTool(
+  payload: unknown,
+  slot: SessionToolSlot | null = null,
+): Promise<ExtensionApiResponse> {
   const { serverId, toolName, args } = payload as {
     serverId?: string;
     toolName?: string;
@@ -270,11 +273,10 @@ async function handleMcpCallTool(payload: unknown): Promise<ExtensionApiResponse
     return failure('Missing serverId or toolName');
   }
 
-  // The policy gate has allowed this call, so it now counts against its
-  // session's budget. Checking and counting happen in one synchronous step,
-  // so parallel calls can't all pass the check before any is counted.
-  const budgetRefusal = sessionToolBudgetRefusal(payload, { spend: true });
-  if (budgetRefusal) return budgetRefusal;
+  // The policy gate has allowed this call, so the slot held for it becomes
+  // a counted call.
+  const refusal = slot?.commit(`${serverId}/${toolName}`);
+  if (refusal) return refusal;
 
   try {
     const result = await callTool(serverId, toolName, args || {});
@@ -287,45 +289,77 @@ async function handleMcpCallTool(payload: unknown): Promise<ExtensionApiResponse
   }
 }
 
+/** A tool call slot held in a session's budget while the call is checked. */
+interface SessionToolSlot {
+  /**
+   * Count the call. Returns the failure to send back if the session went away
+   * while the call was being checked.
+   */
+  commit(tool: string): ExtensionApiResponse | null;
+  /** Give the slot back unless it was committed. Safe to call more than once. */
+  release(): void;
+}
+
+// Not found, terminated, expired, or another origin's session: all look the
+// same to the page. Refusals carry their page-facing code, so the page API
+// never has to guess from the message, which a failing tool could also produce.
+const SESSION_GONE: ExtensionApiResponse = {
+  ok: false,
+  error: 'Session not found',
+  code: ErrorCodes.SESSION_NOT_FOUND,
+};
+const SESSION_BUDGET_SPENT: ExtensionApiResponse = {
+  ok: false,
+  error: 'Session tool call budget exceeded',
+  code: ErrorCodes.BUDGET_EXCEEDED,
+};
+
 /**
  * A page's `session.callTool()` reaches `mcp.callTool` with the session's id.
- * Returns the failure to send back if the session can't take another call
- * (gone, another origin's, or its `maxToolCalls` spent), or null if it can.
- * With `spend`, an allowed call is also counted. Runs synchronously: there
- * is no await between the check and the count.
- *
- * A refusal carries its page-facing code (`ERR_BUDGET_EXCEEDED` or
- * `ERR_SESSION_NOT_FOUND`), so the page API never has to guess from the
- * message, which a failing tool could also produce.
+ * Before the policy gate, hold one of the session's `maxToolCalls` slots, so
+ * a call the budget can't run is refused without a prompt, and parallel calls
+ * can't all be prompted for the last slot. Returns the refusal if the session
+ * is gone or every slot is used or held; a null slot if the call has no
+ * session. The hold is synchronous: no await between the check and the hold.
  */
-function sessionToolBudgetRefusal(
+function holdSessionToolSlot(
   payload: unknown,
-  { spend }: { spend: boolean },
-): ExtensionApiResponse | null {
-  const { sessionId, origin, serverId, toolName } = (payload || {}) as {
-    sessionId?: unknown;
-    origin?: unknown;
-    serverId?: unknown;
-    toolName?: unknown;
+): { refusal: ExtensionApiResponse } | { slot: SessionToolSlot | null } {
+  const { sessionId, origin } = (payload || {}) as { sessionId?: unknown; origin?: unknown };
+  if (sessionId === undefined) return { slot: null };
+  if (typeof sessionId !== 'string' || typeof origin !== 'string') return { refusal: SESSION_GONE };
+  const valid = () => {
+    try {
+      SessionRegistry.getValidatedSession(sessionId, origin);
+      return true;
+    } catch {
+      return false;
+    }
   };
-  if (sessionId === undefined) return null;
-  // Not found, terminated, expired, or another origin's session: all look the
-  // same to the page.
-  const gone = { ok: false, error: 'Session not found', code: ErrorCodes.SESSION_NOT_FOUND };
-  const spent = { ok: false, error: 'Session tool call budget exceeded', code: ErrorCodes.BUDGET_EXCEEDED };
-  if (typeof sessionId !== 'string' || typeof origin !== 'string') return gone;
-  try {
-    SessionRegistry.getValidatedSession(sessionId, origin);
-  } catch {
-    return gone;
-  }
-  if (!spend) {
-    return SessionRegistry.getRemainingToolBudget(sessionId) === 0 ? spent : null;
-  }
-  const tool = `${String(serverId)}/${String(toolName)}`;
-  if (!SessionRegistry.recordToolCall(sessionId, tool)) return spent;
-  SessionRegistry.touchSession(sessionId);
-  return null;
+  if (!valid()) return { refusal: SESSION_GONE };
+  if (!SessionRegistry.reserveToolCall(sessionId)) return { refusal: SESSION_BUDGET_SPENT };
+
+  let held = true;
+  const release = () => {
+    if (held) SessionRegistry.releaseToolCall(sessionId);
+    held = false;
+  };
+  return {
+    slot: {
+      commit: (tool) => {
+        // The session may have been terminated or expired while a prompt was open.
+        if (!valid()) {
+          release();
+          return SESSION_GONE;
+        }
+        held = false;
+        SessionRegistry.commitToolCall(sessionId, tool);
+        SessionRegistry.touchSession(sessionId);
+        return null;
+      },
+      release,
+    },
+  };
 }
 
 async function handleMcpStartServer(payload: unknown): Promise<ExtensionApiResponse> {
@@ -818,13 +852,20 @@ export async function routeExtensionApiMessage(
   
   log(`Request from ${sender.id}: ${type}`);
 
-  // A session call whose budget is already spent is refused before the
-  // policy gate, so it isn't audited as allowed and never prompts. The
-  // budget is only spent once the gate allows the call (handleMcpCallTool),
-  // so a call the policy engine refuses doesn't count.
+  // A session's tool call holds a budget slot before the policy gate, so a
+  // call the budget can't run is refused without being audited as allowed or
+  // prompting. The slot is counted only once the gate allows the call, and
+  // given back if the gate refuses it.
   if (type === 'mcp.callTool') {
-    const budgetRefusal = sessionToolBudgetRefusal(payload, { spend: false });
-    if (budgetRefusal) return budgetRefusal;
+    const held = holdSessionToolSlot(payload);
+    if ('refusal' in held) return held.refusal;
+    try {
+      const gateFailure = await gatePageCall(type, payload);
+      if (gateFailure) return gateFailure;
+      return await handleMcpCallTool(payload, held.slot);
+    } finally {
+      held.slot?.release();
+    }
   }
 
   const gateFailure = await gatePageCall(type as MessageType, payload);
@@ -852,8 +893,7 @@ export async function routeExtensionApiMessage(
       return handleMcpListServers();
     case 'mcp.listTools':
       return handleMcpListTools(payload);
-    case 'mcp.callTool':
-      return handleMcpCallTool(payload);
+    // 'mcp.callTool' is handled above, around its budget slot.
     case 'mcp.startServer':
       return handleMcpStartServer(payload);
     case 'mcp.stopServer':

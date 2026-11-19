@@ -31,6 +31,8 @@ import type { ConversationMessage } from '../agents/types';
 
 class SessionRegistryImpl {
   private sessions = new Map<string, AgentSession>();
+  /** Tool call slots held for calls still waiting on the policy engine. */
+  private reservedToolCalls = new Map<string, number>();
   private listeners = new Set<SessionEventListener>();
 
   // Cleanup interval (10 minutes)
@@ -252,29 +254,44 @@ class SessionRegistryImpl {
   }
 
   /**
-   * Record a tool call in the session.
+   * Hold one of a session's tool call slots while the call waits for the
+   * policy engine, so parallel calls can't all be prompted for the last slot.
+   * Returns false if every slot is used or held. A session without
+   * `maxToolCalls` always has a slot. Follow with `commitToolCall` once the
+   * call is allowed, or `releaseToolCall` if it isn't.
    */
-  recordToolCall(sessionId: string, toolName: string): boolean {
+  reserveToolCall(sessionId: string): boolean {
     const session = this.sessions.get(sessionId);
     if (!session) return false;
-
-    // Check if we've exceeded the tool call limit. A limit of 0 allows no calls.
     const limit = session.capabilities.limits?.maxToolCalls;
-    if (typeof limit === 'number' && session.usage.toolCallCount >= limit) {
-      return false; // Budget exceeded
+    const held = this.reservedToolCalls.get(sessionId) ?? 0;
+    if (typeof limit === 'number' && session.usage.toolCallCount + held >= limit) {
+      return false;
     }
+    this.reservedToolCalls.set(sessionId, held + 1);
+    return true;
+  }
 
+  /** Give back a slot held by `reserveToolCall`. */
+  releaseToolCall(sessionId: string): void {
+    const held = this.reservedToolCalls.get(sessionId) ?? 0;
+    if (held <= 1) this.reservedToolCalls.delete(sessionId);
+    else this.reservedToolCalls.set(sessionId, held - 1);
+  }
+
+  /** Count an allowed call, using the slot `reserveToolCall` held for it. */
+  commitToolCall(sessionId: string, toolName: string): void {
+    this.releaseToolCall(sessionId);
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
     session.usage.toolCallCount++;
     session.lastActiveAt = Date.now();
-
     this.emit({
       type: 'session_capability_used',
       sessionId,
       capability: 'tool',
       detail: toolName,
     });
-
-    return true;
   }
 
   /**
@@ -420,19 +437,6 @@ class SessionRegistryImpl {
       default:
         return false;
     }
-  }
-
-  /**
-   * Get remaining tool call budget for a session.
-   */
-  getRemainingToolBudget(sessionId: string): number | undefined {
-    const session = this.sessions.get(sessionId);
-    if (!session) return undefined;
-
-    const limit = session.capabilities.limits?.maxToolCalls;
-    if (limit === undefined) return undefined;
-
-    return Math.max(0, limit - session.usage.toolCallCount);
   }
 
   // ===========================================================================

@@ -50,8 +50,9 @@ vi.mock('../../sessions', () => ({
     setMode: vi.fn(),
     recordPrompt: vi.fn(),
     // As the real registry does for a session without maxToolCalls.
-    recordToolCall: vi.fn(() => true),
-    getRemainingToolBudget: vi.fn(() => undefined),
+    reserveToolCall: vi.fn(() => true),
+    releaseToolCall: vi.fn(),
+    commitToolCall: vi.fn(),
     touchSession: vi.fn(),
   },
 }));
