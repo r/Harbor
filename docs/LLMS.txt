@@ -124,7 +124,7 @@ else { /* check result.scopes['model:prompt'] === 'granted-always' */ }
 | `browser:tabs.create` | High | `agent.browser.tabs.create/close`, drive spawned tabs |
 | `browser:navigate` | High | `agent.browser.navigate` (active tab) |
 | `web:fetch` | High | `agent.browser.fetch` (CORS-bypassing) |
-| `chat:open` | Low | `agent.chat.open/close` |
+| `chat:open` | Low | `agent.chat.open/close` (messages sent from the chat also need `model:prompt`) |
 | `agents:register` | Medium | `agent.agents.register` |
 | `agents:discover` | Medium | `agent.agents.discover/list` |
 | `agents:invoke` | Medium | `agent.agents.invoke` |
@@ -421,6 +421,8 @@ await window.agent.mcp.unregister(reg.serverId);
 ```
 
 ### Open the user's chat with a site-specific config
+
+Harbor shows its chat on the page. Messages sent from it are the page's prompts: each is checked and audited under the page's origin and needs `model:prompt`. Harbor's chat doesn't call `tools` yet.
 
 ```javascript
 const chat = await window.agent.chat.open({
