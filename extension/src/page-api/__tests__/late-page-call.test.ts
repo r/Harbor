@@ -202,3 +202,48 @@ describe('a streaming prompt the page cancelled while Harbor asked', () => {
     expect(bridgeStreamRequest).not.toHaveBeenCalled();
   });
 });
+
+describe('creating a session the page gave up on', () => {
+  it('creates no session after a late Allow', async () => {
+    await loadRules([{ id: 'confirm', effect: 'ask', principal: { origin: '*' }, action: 'tool.call' }]);
+    const page = connectPort(`${ORIGIN}/page`);
+    let id = '';
+    allowAfter(() => page.abort(id));
+    id = page.send('agent.sessions.create', { capabilities: { tools: [TOOL] } });
+    const reply = await page.reply(id);
+    expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
+    expect(reply.ok).toBe(false);
+    const listed = await page.request('agent.sessions.list', {});
+    expect(listed.ok, listed.error?.message).toBe(true);
+    expect(listed.result).toEqual([]);
+  });
+});
+
+describe("a streaming prompt whose caller's signal aborted", () => {
+  it('never reaches the model', async () => {
+    await loadRules([{ id: 'confirm', effect: 'ask', principal: { origin: '*' }, action: 'model.prompt.local' }]);
+    const { harborStreamRequest } = await import('../harbor-core');
+    const caller = new AbortController();
+    allowAfter(() => caller.abort());
+    const req = harborStreamRequest('llm.chatStream', {
+      origin: ORIGIN, messages: [{ role: 'user', content: 'hi' }], model: 'ollama:test',
+    }, 'r1', caller.signal);
+    for await (const _event of req.stream) { /* drain */ }
+    expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
+    expect(bridgeStreamRequest).not.toHaveBeenCalled();
+  });
+
+  it("stops listening to the caller's signal once the stream ends", async () => {
+    bridgeStreamRequest.mockImplementation(async function* () {
+      yield { type: 'done', finish_reason: 'stop' };
+    });
+    const { harborStreamRequest } = await import('../harbor-core');
+    const caller = new AbortController();
+    const remove = vi.spyOn(caller.signal, 'removeEventListener');
+    const req = harborStreamRequest('llm.chatStream', {
+      origin: ORIGIN, messages: [{ role: 'user', content: 'hi' }], model: 'ollama:test',
+    }, 'r1', caller.signal);
+    for await (const _event of req.stream) { /* drain */ }
+    expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
+});

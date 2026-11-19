@@ -9,8 +9,10 @@ vi.mock('../handlers/permission-handlers', () => ({
 
 import { handleToolsCall, handleToolsList } from '../handlers/tool-handlers';
 
+const signal = new AbortController().signal;
 const ctx = (type: string, payload: unknown) =>
-  ({ id: 'x', type, origin: 'https://page.example', tabId: 4, payload }) as never;
+  ({ id: 'x', type, origin: 'https://page.example', tabId: 4, payload, signal }) as never;
+const withSignal = { signal };
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -18,16 +20,19 @@ describe('agent.tools.* forward the page origin to Harbor', () => {
   it('agent.tools.list', async () => {
     mocks.harborRequest.mockResolvedValue({ tools: [] });
     await handleToolsList(ctx('agent.tools.list', {}));
-    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.listTools', { origin: 'https://page.example', tabId: 4 }, expect.anything());
+    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.listTools', { origin: 'https://page.example', tabId: 4 }, withSignal);
   });
 
   it('agent.tools.call, including the lookup for an unqualified tool name', async () => {
     mocks.harborRequest.mockImplementation(async (method: string) =>
       method === 'mcp.listTools' ? { tools: [{ serverId: 'clock', name: 'now' }] } : { result: 'noon' });
     await handleToolsCall(ctx('agent.tools.call', { tool: 'now', args: {} }));
-    for (const [, payload] of mocks.harborRequest.mock.calls) {
+    // Both the lookup and the call carry the page request's signal, so
+    // Harbor drops either one the page has given up on.
+    for (const [, payload, options] of mocks.harborRequest.mock.calls) {
       expect(payload).toMatchObject({ origin: 'https://page.example', tabId: 4 });
+      expect(options).toEqual(withSignal);
     }
-    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.callTool', expect.objectContaining({ serverId: 'clock', toolName: 'now' }), expect.anything());
+    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.callTool', expect.objectContaining({ serverId: 'clock', toolName: 'now' }), withSignal);
   });
 });
