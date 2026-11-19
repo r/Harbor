@@ -5,6 +5,7 @@
  */
 
 import { browserAPI, executeScriptInTab, executeScriptInTabAllFrames } from '../browser-compat';
+import { extractReadablePage, isOriginMismatch, type OriginMismatch, type ReadablePage } from '../page-api/readable-page';
 
 const HARBOR_EXTENSION_ORIGIN = 'harbor-extension';
 
@@ -470,32 +471,11 @@ export async function runLoginThenCapture(params: Record<string, unknown>): Prom
       await waitForTabLoadAndInjectable(tab.id, timeout);
     }
 
-    const result = await executeScriptInTab<{
-      title: string;
-      url: string;
-      content: string;
-      text: string;
-      cookies?: string;
-      links?: string[];
-      linksWithText?: LinkWithText[];
-    }>(
+    const page = await executeScriptInTab<ReadablePage | OriginMismatch>(tab.id, extractReadablePage);
+    if (!page || isOriginMismatch(page)) throw new Error('Failed to extract page content after login');
+    const found = await executeScriptInTab<{ links: string[]; linksWithText: LinkWithText[] }>(
       tab.id,
       () => {
-        const title = document.title;
-        const url = window.location.href;
-        const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.article'];
-        let root: Element | null = null;
-        for (const selector of mainSelectors) {
-          const el = document.querySelector(selector);
-          if (el) {
-            root = el;
-            break;
-          }
-        }
-        if (!root) root = document.body;
-        const raw = (root as HTMLElement).innerText?.trim() || (root as HTMLElement).textContent?.trim() || '';
-        const lines = raw.split(/\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
-        const content = lines.join('\n').slice(0, 50000);
         const links: string[] = [];
         const linksWithText: { text: string; url: string }[] = [];
         const base = window.location.origin;
@@ -509,19 +489,17 @@ export async function runLoginThenCapture(params: Record<string, unknown>): Prom
           const text = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 500);
           if (text) linksWithText.push({ text, url: absolute });
         });
-        return { title, url, content, text: content, links, linksWithText };
+        return { links, linksWithText };
       },
       []
     );
 
-    if (!result) throw new Error('Failed to extract page content after login');
     return {
-      content: result.content,
-      title: result.title,
-      url: result.url,
-      ...(result.cookies !== undefined && { cookies: result.cookies }),
-      links: result.links ?? [],
-      linksWithText: result.linksWithText ?? [],
+      content: page.text,
+      title: page.title,
+      url: page.url,
+      links: found?.links ?? [],
+      linksWithText: found?.linksWithText ?? [],
     };
   } finally {
     await browserAPI.tabs.remove(tab.id).catch(() => {});
@@ -610,11 +588,13 @@ export async function runCapturePage(params: Record<string, unknown>): Promise<C
       await scrollTabToEnd(tab.id);
     }
 
+    const page = await executeScriptInTab<ReadablePage | OriginMismatch>(tab.id, extractReadablePage);
+    if (!page || isOriginMismatch(page)) {
+      throw new Error('Failed to extract page content');
+    }
+    const content = page.text;
+
     const result = await executeScriptInTab<{
-      title: string;
-      url: string;
-      content: string;
-      text: string;
       cookies?: string;
       links?: string[];
       linksWithText?: LinkWithText[];
@@ -622,22 +602,18 @@ export async function runCapturePage(params: Record<string, unknown>): Promise<C
       articleDetail?: ArticleDetail;
     }>(
       tab.id,
-      (doCaptureCookies: boolean) => {
-        const title = document.title;
+      (doCaptureCookies: unknown, content: unknown) => {
+        const pageText = typeof content === 'string' ? content : '';
+        const lines = pageText.split('\n');
         const url = window.location.href;
+        // Site-specific results below look inside the main content area.
         const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.article'];
         let root: Element | null = null;
         for (const selector of mainSelectors) {
-          const el = document.querySelector(selector);
-          if (el) {
-            root = el;
-            break;
-          }
+          root = document.querySelector(selector);
+          if (root) break;
         }
         if (!root) root = document.body;
-        const raw = (root as HTMLElement).innerText?.trim() || (root as HTMLElement).textContent?.trim() || '';
-        const lines = raw.split(/\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
-        const content = lines.join('\n').slice(0, 50000);
         const cookies = doCaptureCookies ? document.cookie : undefined;
         const links: string[] = [];
         const linksWithText: { text: string; url: string }[] = [];
@@ -788,16 +764,16 @@ export async function runCapturePage(params: Record<string, unknown>): Promise<C
           };
           walkForImgs(root);
           articleDetail = {
-            text: content.slice(0, 300000),
+            text: pageText,
             ...(author && { author }),
             ...(date && { date }),
             ...(imageUrls.length > 0 && { imageUrls }),
           };
         }
 
-        return { title, url, content, text: content, cookies, links, linksWithText, searchResults, articleDetail };
+        return { cookies, links, linksWithText, searchResults, articleDetail };
       },
-      [captureCookies]
+      [captureCookies, content]
     );
 
     if (!result) {
@@ -805,9 +781,9 @@ export async function runCapturePage(params: Record<string, unknown>): Promise<C
     }
 
     return {
-      content: result.content,
-      title: result.title,
-      url: result.url,
+      content,
+      title: page.title,
+      url: page.url,
       ...(result.cookies !== undefined && { cookies: result.cookies }),
       links: result.links ?? [],
       linksWithText: result.linksWithText ?? [],

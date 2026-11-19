@@ -297,7 +297,7 @@ const tab = await window.agent.browser.tabs.create({
 });
 await window.agent.browser.tab.waitForLoad(tab.id);
 const { html } = await window.agent.browser.tab.getHtml(tab.id, 'main');
-const { title, url, content } = await window.agent.browser.tab.readability(tab.id);
+const { title, url, text } = await window.agent.browser.tab.readability(tab.id);
 const tabs = await window.agent.browser.tabs.list();
 await window.agent.browser.tabs.close(tab.id);
 ```
@@ -537,7 +537,7 @@ interface TextSession {
 }
 
 interface ActiveTabReadability {
-  title: string; url: string; content: string; length: number;
+  url: string; title: string; text: string;  // tab.readability(id) returns the same shape
 }
 interface TabInfo { id: number; url: string; title: string; active: boolean; }
 interface FetchResponse {
@@ -579,11 +579,11 @@ async function sendMessageStreaming(text, onChunk) {
 
 ```javascript
 async function summarizePage() {
-  const { content, title } = await window.agent.browser.activeTab.readability();
+  const { text, title } = await window.agent.browser.activeTab.readability();
   const session = await window.ai.createTextSession({
     systemPrompt: 'Summarize in 2-3 sentences.',
   });
-  const summary = await session.prompt(content.slice(0, 10000));
+  const summary = await session.prompt(text.slice(0, 10000));
   session.destroy();
   return { title, summary };
 }

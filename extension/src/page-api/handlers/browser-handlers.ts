@@ -9,6 +9,7 @@ import { errorResponse, successResponse } from './types';
 import { hasPermission, policyRefusal } from './permission-handlers';
 import { executeScriptInTab } from '../../browser-compat';
 import { isBlockedUrl } from './net-guard';
+import { extractReadablePage, isOriginMismatch, type OriginMismatch, type ReadablePage } from '../readable-page';
 
 const LOCAL_NETWORK_MESSAGE = 'Fetch blocked: the address is on this device or a private network';
 
@@ -387,13 +388,6 @@ export async function handleBrowserGetElements(ctx: RequestContext): HandlerResp
 // Readability Handler
 // =============================================================================
 
-type ReadabilityResult = {
-  title: string;
-  url: string;
-  content: string;
-  length: number;
-};
-
 export async function handleBrowserReadability(ctx: RequestContext): HandlerResponse {
   if (!await hasPermission(ctx.origin, 'browser:activeTab.read', ctx.tabId)) {
     return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:activeTab.read required');
@@ -407,40 +401,9 @@ export async function handleBrowserReadability(ctx: RequestContext): HandlerResp
   if (refused) return refused;
 
   try {
-    const result = await executeScriptInTab<ReadabilityResult>(
-      ctx.tabId,
-      () => {
-        const title = document.title;
-        const url = window.location.href;
-        
-        const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.article'];
-        let content = '';
-        
-        for (const selector of mainSelectors) {
-          const el = document.querySelector(selector);
-          if (el) {
-            content = el.textContent?.trim() || '';
-            break;
-          }
-        }
-        
-        if (!content) {
-          content = document.body.textContent?.trim() || '';
-        }
-        
-        content = content.replace(/\s+/g, ' ').trim();
-        
-        return {
-          title,
-          url,
-          content: content.slice(0, 50000),
-          length: content.length,
-        };
-      },
-      []
-    );
+    const result = await executeScriptInTab<ReadablePage | OriginMismatch>(ctx.tabId, extractReadablePage);
 
-    if (!result) {
+    if (!result || isOriginMismatch(result)) {
       return errorResponse(ctx.id, 'ERR_INTERNAL', 'Script execution failed');
     }
     return successResponse(ctx.id, result);

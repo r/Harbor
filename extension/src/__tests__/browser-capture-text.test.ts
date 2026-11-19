@@ -48,7 +48,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe('runCapturePage', () => {
   it('returns the shared extractor text as content', async () => {
     const { runCapturePage } = await import('../handlers/browser-capture');
-    const { extractReadablePage } = await import('../readable-page');
+    const { extractReadablePage } = await import('../page-api/readable-page');
     const result = await runCapturePage({ url: `${ORIGIN}/story`, waitForLoad: false });
     expect(mocks.executeScriptInTab.mock.calls.some(([, fn]) => fn === extractReadablePage)).toBe(true);
     expect(result).toMatchObject({ content: 'Title line\nbody text', title: 'Story', url: `${ORIGIN}/story` });

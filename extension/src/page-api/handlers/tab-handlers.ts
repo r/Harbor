@@ -8,6 +8,7 @@ import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission, policyRefusal } from './permission-handlers';
 import { executeScriptInTab } from '../../browser-compat';
+import { extractReadablePage, isOriginMismatch, type OriginMismatch, type ReadablePage } from '../readable-page';
 
 // =============================================================================
 // Spawned Tab Tracking
@@ -134,11 +135,6 @@ async function isTabOnOrigin(tabId: number, origin: string): Promise<boolean> {
 }
 
 /** Returned by an injected script that found the page on another origin. */
-type OriginMismatch = { originMismatch: true };
-
-function isOriginMismatch(value: unknown): value is OriginMismatch {
-  return typeof value === 'object' && value !== null && (value as OriginMismatch).originMismatch === true;
-}
 
 const OTHER_ORIGIN_MESSAGE = "Can only read tabs while they show a page on the caller's origin";
 
@@ -285,54 +281,7 @@ export async function handleSpawnedTabReadability(ctx: RequestContext): HandlerR
   if (refused) return refused;
 
   try {
-    const result = await executeScriptInTab<{
-      title: string;
-      url: string;
-      content: string;
-      text: string;
-      html?: string;
-      length: number;
-    } | OriginMismatch>(
-      tabId,
-      (expectedOrigin: unknown) => {
-        if (window.location.origin !== expectedOrigin) {
-          return { originMismatch: true as const };
-        }
-        const title = document.title;
-        const url = window.location.href;
-        const mainSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.article'];
-        let content = '';
-        let html = '';
-
-        for (const selector of mainSelectors) {
-          const el = document.querySelector(selector);
-          if (el) {
-            content = el.textContent?.trim() || '';
-            html = el.innerHTML || '';
-            break;
-          }
-        }
-
-        if (!content) {
-          content = document.body.textContent?.trim() || '';
-          html = document.body.innerHTML || '';
-        }
-
-        content = content.replace(/\s+/g, ' ').trim();
-        const htmlSlice = html ? html.slice(0, 150000) : '';
-
-        return {
-          title,
-          url,
-          content: content.slice(0, 50000),
-          text: content.slice(0, 50000),
-          html: htmlSlice || undefined,
-          length: content.length,
-        };
-      },
-      [ctx.origin]
-    );
-
+    const result = await executeScriptInTab<ReadablePage | OriginMismatch>(tabId, extractReadablePage, [ctx.origin]);
     if (!result) {
       return errorResponse(ctx.id, 'ERR_INTERNAL', 'Script execution failed');
     }

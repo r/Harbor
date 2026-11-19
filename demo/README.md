@@ -111,7 +111,7 @@ session.destroy();
 
 ```javascript
 const tab = await window.agent.browser.activeTab.readability();
-console.log(tab.title, tab.textContent);
+console.log(tab.title, tab.text);
 ```
 
 ## Troubleshooting
