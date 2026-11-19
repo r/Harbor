@@ -16,6 +16,7 @@ vi.mock('../harbor-core', () => ({
   harborRequest: vi.fn(async (method: string) => method === 'mcp.listTools'
     ? { tools: [] } : { content: 'ok' }),
   harborStreamRequest: vi.fn(),
+  checkPageAction: vi.fn(async () => null),
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<object>()),
