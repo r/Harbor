@@ -180,7 +180,18 @@ export class AcpAgentBackend implements AgentBackend {
     let cancelReason: CancelReason | null = null;
     let sessionId: string | null = null;
     let accumulatedText = '';
-    let toolCallUpdateCount = 0;
+    // The budget counts distinct tool calls, not every notification about
+    // one: a call is counted once, the first time its id appears, whether
+    // that's its `tool_call` or (for an id that never got one) its first
+    // `tool_call_update`. Later progress updates for the same id are free.
+    let toolCallCount = 0;
+    const countedToolCallIds = new Set<string>();
+    function countToolCall(toolCallId: string): 'ok' | 'over-budget' {
+      if (countedToolCallIds.has(toolCallId)) return 'ok';
+      countedToolCallIds.add(toolCallId);
+      toolCallCount++;
+      return toolCallCount > maxToolCalls ? 'over-budget' : 'ok';
+    }
     const toolNames = new Map<string, string>();
     const requestAbort = new AbortController();
 
@@ -240,6 +251,17 @@ export class AcpAgentBackend implements AgentBackend {
           }
           return;
         case 'tool_call': {
+          if (cancelReason) return;
+
+          if (!await hasPermission(origin, 'model:prompt', tabId)) {
+            triggerCancel('permission-denied', ctx.agent);
+            return;
+          }
+          if (countToolCall(update.toolCallId) === 'over-budget') {
+            triggerCancel('tool-limit', ctx.agent);
+            return;
+          }
+
           const name = update.title || update.kind || update.toolCallId;
           toolNames.set(update.toolCallId, name);
           emit({ type: 'token', token: JSON.stringify({ type: 'tool_call', tool: name, args: update.rawInput ?? {} }) });
@@ -252,9 +274,7 @@ export class AcpAgentBackend implements AgentBackend {
             triggerCancel('permission-denied', ctx.agent);
             return;
           }
-
-          toolCallUpdateCount++;
-          if (toolCallUpdateCount > maxToolCalls) {
+          if (countToolCall(update.toolCallId) === 'over-budget') {
             triggerCancel('tool-limit', ctx.agent);
             return;
           }
