@@ -90,6 +90,7 @@ async function setup() {
 let promptRecords: () => readonly AuditRecord[] = () => [];
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   resetMockBrowser();
   bridgeChat.mockClear();
   showPermissionPrompt.mockClear();
@@ -99,10 +100,15 @@ beforeEach(() => {
 
 describe('page chat messages are checked as the page\'s prompts', () => {
   it('checks and audits the message under the page origin before calling the model', async () => {
+    const lines: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => { lines.push(args.map(String).join(' ')); });
     const { openChat, send } = await setup();
     const chatId = await openChat();
 
     const response = await send(chatId, { tab: { id: TAB }, url: `${SHOP}/deals`, frameId: 0 });
+
+    // Neither the message nor the reply is logged.
+    expect(lines.filter((l) => l.includes('What is on sale?') || l.includes('reply from the model'))).toEqual([]);
 
     expect(response).toMatchObject({ ok: true, type: 'page_chat_response', response: 'reply from the model' });
     expect(bridgeChat).toHaveBeenCalledTimes(1);

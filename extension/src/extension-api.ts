@@ -9,6 +9,7 @@
  */
 
 import { bridgeChat, type BridgeChatRequest } from './llm/chat';
+import { modelForPrompt } from './llm/prompt-model';
 import { browserAPI } from './browser-compat';
 import { bridgeRequest, bridgeStreamRequest, getBridgeConnectionState, checkBridgeHealth } from './llm/bridge-client';
 import { listServersWithStatus, callTool, startServer, stopServer, listTools } from './mcp/host';
@@ -741,21 +742,6 @@ const BROWSER_CAPABILITY_ACTIONS: Record<'read' | 'interact' | 'screenshot', Typ
   interact: 'browser.write.interact',
   screenshot: 'browser.read.screenshot',
 };
-
-/**
- * The model a prompt will run on. A prompt that names no model (or names
- * "default") runs on the bridge's default, which `llm.get_config` reports
- * as the bridge resolves it for chat. Returns undefined when that's unknown.
- */
-async function modelForPrompt(model: unknown): Promise<string | undefined> {
-  if (typeof model === 'string' && model && model !== 'default') return model;
-  try {
-    const config = await bridgeRequest<{ default_model?: string | null }>('llm.get_config');
-    return config.default_model ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 async function promptCheck(model: unknown): Promise<PageCheck> {
   return { action: promptActionForModel(await modelForPrompt(model)) };
