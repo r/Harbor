@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An "Allow once" grant now covers only the tab where it was given, in Harbor's policy checks as well as in the page API. Before, another tab on the same site could use it, for example to register an agent.
 - `agent.agents.orchestrate.pipeline()` and `orchestrate.route()` work from a page. Before, both always failed after the permission check, because Harbor expected a different payload than the page API sends. A pipeline now returns its last step's output as `result`, and a route returns the chosen agent's response (`success`, `result`, `error`) with `selectedAgentId` alongside.
 
+- When Harbor refuses a page's `agent.chat.open()`, the page now gets the policy engine's code (`ERR_BLOCKED_BY_POLICY`, `ERR_PERMISSION_DENIED`, `ERR_QUARANTINED`) instead of `ERR_CHAT_OPEN`, so it can tell a refusal from a failure. `agent.mcp.register()` and `unregister()` report their refusal of another origin's server as `ERR_PERMISSION_DENIED` instead of `ERR_MCP_REGISTER` / `ERR_MCP_UNREGISTER`. Other failures keep their codes.
+
 ### Removed
 
 - The sidebar's **Open Chat** button and the chat page bundled inside the extension. That page ran its own copy of `window.agent` with every permission treated as granted, so it skipped the permission checks and loop fixes that web pages get. To chat with tools, use the demo-site chat (`demo/web-agents/chat-poc/`), which goes through the same `agent.run` as any site. The extension also no longer exposes `demo/*` or `demo-bootstrap.js` to web pages.
