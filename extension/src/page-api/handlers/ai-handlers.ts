@@ -9,6 +9,7 @@ import type { RequestContext, HandlerResponse, TextSessionState } from './types'
 import type { SessionSummary } from '../types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission } from './permission-handlers';
+import { policyRefusalCode } from '../policy-refusal';
 import { FEATURE_LABELS, getFeatureFlags } from '../policy/feature-flags';
 import { readAgentBackendSetting } from '../agent-backend-setting';
 import { isAcpTextSession } from '../acp-text-session-registry';
@@ -251,7 +252,7 @@ export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse 
   } catch (e) {
     return errorResponse(
       ctx.id,
-      'ERR_MODEL_FAILED',
+      policyRefusalCode(e) ?? 'ERR_MODEL_FAILED',
       e instanceof Error ? e.message : 'LLM request failed'
     );
   }

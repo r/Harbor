@@ -9,6 +9,7 @@ import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission, getPermissions } from './permission-handlers';
 import { ErrorCodes } from '../types';
+import { POLICY_REFUSAL_CODES } from '../policy-refusal';
 
 // =============================================================================
 // Handlers
@@ -105,10 +106,7 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
  * lists them: the policy engine's, and the session's.
  */
 const HARBOR_REFUSAL_CODES: ReadonlySet<string> = new Set([
-  ErrorCodes.PERMISSION_DENIED,
-  'ERR_BLOCKED_BY_POLICY',
-  'ERR_QUARANTINED',
-  'ERR_LABEL_FLOW_BLOCKED',
+  ...POLICY_REFUSAL_CODES,
   ErrorCodes.SESSION_NOT_FOUND,
   ErrorCodes.BUDGET_EXCEEDED,
 ]);

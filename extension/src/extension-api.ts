@@ -1031,7 +1031,8 @@ export type ChatStreamEvent = {
   token?: string;
   finish_reason?: string;
   model?: string;
-  error?: { code?: number; message: string };
+  /** A number from the bridge; a string when Harbor's policy gate refused the call. */
+  error?: { code?: number | string; message: string };
 };
 
 /**
@@ -1058,7 +1059,7 @@ export async function* streamLlmChat(payload: unknown, requestId?: string): Asyn
   // Fail closed, so a gate error can't leave the page's stream waiting forever.
   const gateFailure = await gatePageCall('llm.chatStream', payload, requestId).catch((e: unknown) => failure(e));
   if (gateFailure) {
-    yield { type: 'error', error: { message: gateFailure.error ?? 'Permission denied' } };
+    yield { type: 'error', error: { code: gateFailure.code, message: gateFailure.error ?? 'Permission denied' } };
     return;
   }
 

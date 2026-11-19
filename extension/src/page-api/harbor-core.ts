@@ -29,7 +29,8 @@ export interface StreamEvent {
   token?: string;
   finish_reason?: string;
   model?: string;
-  error?: { code: number; message: string };
+  /** A number from the bridge; a string when Harbor's policy gate refused the call. */
+  error?: { code?: number | string; message: string };
 }
 
 /**
