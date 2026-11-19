@@ -54,3 +54,21 @@ describe('runCapturePage', () => {
     expect(result).toMatchObject({ content: 'Title line\nbody text', title: 'Story', url: `${ORIGIN}/story` });
   });
 });
+
+describe('runLoginThenCapture', () => {
+  it('returns the shared extractor text as content after logging in', async () => {
+    const EMAIL = 'me@news.example';
+    mocks.executeScriptInTab.mockImplementation(async (_id: number, fn: (...a: unknown[]) => unknown, args: unknown[] = []) =>
+      // The first in-tab call fills the one-step login form.
+      (args.includes(EMAIL) ? { done: true, hasPassword: true } : runInPage(fn, args)));
+    const { runLoginThenCapture } = await import('../handlers/browser-capture');
+    const { extractReadablePage } = await import('../page-api/readable-page');
+    const result = await runLoginThenCapture({
+      loginUrl: `${ORIGIN}/login`, url: `${ORIGIN}/story`, email: EMAIL, password: 'pw',
+    });
+    expect(mocks.executeScriptInTab.mock.calls.some(([, fn]) => fn === extractReadablePage)).toBe(true);
+    expect(result).toEqual({
+      content: 'Title line\nbody text', title: 'Story', url: `${ORIGIN}/story`, links: [], linksWithText: [],
+    });
+  });
+});
