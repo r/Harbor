@@ -83,8 +83,9 @@ export function checkPageAction(
   call: { id: string; type: string; origin: string; tabId?: number },
   action: PageBrowserAction,
   resource?: { host?: string },
+  options: { pageFetch?: boolean } = {},
 ): Promise<{ code: string; message: string } | null> {
-  return gatePageAction(call, action, resource);
+  return gatePageAction(call, action, resource, options);
 }
 
 // =============================================================================

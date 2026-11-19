@@ -828,6 +828,7 @@ export async function gatePageAction(
   call: { id: string; type: string; origin: string; tabId?: number },
   action: TypedAction,
   resource?: PolicyResource,
+  options: { pageFetch?: boolean } = {},
 ): Promise<{ code: string; message: string } | null> {
   if (!call.origin) {
     return { code: ErrorCodes.PERMISSION_DENIED, message: `${call.type} requires the calling page's origin` };
@@ -841,6 +842,10 @@ export async function gatePageAction(
       tabId: call.tabId,
     },
     [{ action, resource }],
+    // A page opening, navigating to or fetching a sensitive domain isn't
+    // moving data there it didn't already have, so the host is recorded and
+    // matched by rules but not classified.
+    { classifyHost: false, pageFetch: options.pageFetch },
   );
   if (!refusal) return null;
   return {
@@ -852,6 +857,7 @@ export async function gatePageAction(
 async function runPageChecks(
   ctx: RequestContext,
   checks: PageCheck[],
+  options: { classifyHost?: boolean; pageFetch?: boolean } = {},
 ): Promise<ExtensionApiResponse | null> {
   let denied: ExtensionApiResponse | null = null;
   const sender: ResponseSender = {
@@ -869,6 +875,7 @@ async function runPageChecks(
 
   for (const check of checks) {
     const allowed = await requireAction(ctx, sender, check.action, {
+      ...options,
       resource: check.resource,
       upstreamConsent: 'origin-grant',
     });

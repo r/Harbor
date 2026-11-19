@@ -291,7 +291,7 @@ normal
 |---|---|
 | 20 tool calls | flagged |
 | 60 tool calls | restricted |
-| 5 cross-origin egresses | restricted |
+| 5 cross-origin egresses (a page's own `fetch` isn't counted) | restricted |
 | 3 distinct sensitive labels (no window) | restricted |
 | 3 label-flow blocks | quarantined |
 | 5 consecutive denials (no window) | quarantined |
@@ -333,7 +333,11 @@ Harbor injects the page API (`window.ai`, `window.agent`, `navigator.modelContex
 | `tabs.create` | `browser.write.tabsCreate` | the new tab's URL |
 | `tabs.close`, and reading a tab the site opened (`readability`, `getHtml`) | `browser.write.tabsCreate` | the calling page |
 
-`waitForLoad` on a tab the site opened isn't audited: it only reports load status. A `fetch` to this device or a private network is refused before the check, so it isn't audited either. A prompt is classified as local or remote by the model it will run on. A prompt that names no model, as every `agent.run` prompt does, runs on the bridge's default model and is classified by that model. If the default model is unknown, the prompt counts as remote. A call without an origin is rejected.
+`waitForLoad` on a tab the site opened isn't audited: it only reports load status. A `fetch` to this device or a private network is refused before the check, so it isn't audited either.
+
+The host is recorded in the audit log, and a policy rule can match it (for example, deny `network.egress.cross_origin` to one host). Harbor doesn't classify these hosts as sensitive, though: a page opening, navigating to or fetching a bank or a document site isn't moving data there that it didn't already have, so these calls are never refused at the information-flow tier. A page's own `fetch` also doesn't count toward the watchdog's cross-origin egress limit, because a site can already call `fetch` freely from its page.
+
+If a rule or the watchdog makes Harbor ask before a browser call, and the page gives up waiting (its request times out after 30 seconds), the call isn't performed even if the person then allows it. A prompt is classified as local or remote by the model it will run on. A prompt that names no model, as every `agent.run` prompt does, runs on the bridge's default model and is classified by that model. If the default model is unknown, the prompt counts as remote. A call without an origin is rejected.
 
 Harbor holds the only store of per-origin grants and the only consent prompt. The page API checks Harbor's store (`permissions.check`) before each page call, and `agent.requestPermissions()` goes to Harbor's prompt (`permissions.request`). So a site revoked in Harbor's sidebar is refused on its next call. That includes work the site started while it still held the grant: every prompt on an open text session (`window.ai` or `agent.sessions.create`), and every model turn of a running `agent.run`, re-checks `model:prompt`. Revoking the site, or a one-time grant expiring, stops the next one. This holds in Safari too: its build injects the same page API.
 
@@ -571,6 +575,7 @@ These are the policy engine's codes, and Harbor reports them as is wherever its 
 - `agent.tools.call()` and a session's `callTool()` throw them.
 - A `window.ai` text session's `prompt()` throws them, and `promptStreaming()` ends with them, when the session runs on Harbor's own model.
 - `agent.run()` ends with them as its `error` event when its tool list is refused, or, on Harbor's own model, a model call.
+- `agent.browser.*` calls (page interaction, screenshots, reading the page, navigation, `fetch` and the tab calls) throw them.
 
 When the person has chosen an ACP agent to answer, prompts go to that agent rather than through Harbor's policy engine, so its failures use the ACP codes (`ERR_AGENT_FAILED`, `ERR_AGENT_BUSY`, `ERR_AGENT_REFUSED`, `ERR_AGENT_LIMIT`). `agent.run()`'s tool list is still checked by the policy engine on either backend.
 

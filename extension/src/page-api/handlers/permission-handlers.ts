@@ -122,14 +122,24 @@ export async function handlePermissionsList(ctx: RequestContext): HandlerRespons
  * Run a browser or tab call past Harbor's PolicyEngine after its grant
  * check. Returns the error response to send, or `null` to proceed.
  * `host` defaults to the calling page's own host.
+ *
+ * A policy rule or the watchdog can make Harbor ask first. If the page gave
+ * up on the request while it waited (its own timeout aborts it), the call is
+ * refused even when the user then allows it, so the page never sees an
+ * error for an action that went on to happen.
  */
 export async function policyRefusal(
   ctx: RequestContext,
   action: PageBrowserAction,
   host: string = hostOf(ctx.origin),
+  options: { pageFetch?: boolean } = {},
 ): Promise<TransportResponse | null> {
-  const refusal = await checkPageAction(ctx, action, { host });
-  return refusal ? errorResponse(ctx.id, refusal.code, refusal.message) : null;
+  const refusal = await checkPageAction(ctx, action, { host }, options);
+  if (refusal) return errorResponse(ctx.id, refusal.code, refusal.message);
+  if (ctx.signal?.aborted) {
+    return errorResponse(ctx.id, 'ERR_ABORTED', 'The page stopped waiting for this call');
+  }
+  return null;
 }
 
 function hostOf(origin: string): string {

@@ -544,6 +544,7 @@ export async function handleBrowserFetch(ctx: RequestContext): HandlerResponse {
     ctx,
     target.origin === ctx.origin ? 'network.egress.same_origin' : 'network.egress.cross_origin',
     target.host,
+    { pageFetch: true },
   );
   if (refused) return refused;
 
