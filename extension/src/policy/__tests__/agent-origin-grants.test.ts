@@ -54,6 +54,16 @@ describe('per-site grants', () => {
     expect((await permissions.getPermissionStatus(A, 3)).scopes['agents:crossOrigin']).toBe('not-granted');
   });
 
+  it('keeps a denied site refused and out of the reachable sites', async () => {
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, [C]);
+    await permissions.denyPermissions(A, ['agents:crossOrigin'], [B]);
+
+    const outcome = await lookupOriginGrant(A, 'agent.delegate.crossOrigin', { agentOrigin: B }, 3);
+    expect(outcome?.effect).toBe('deny');
+    expect((await permissions.getPermissionStatus(A, 3)).agentOrigins).toEqual([C]);
+    expect(await permissions.isAgentOriginAllowed(A, B, 3)).toBe(false);
+  });
+
   it('allows nothing without a target site', async () => {
     await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, [B]);
 
