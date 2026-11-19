@@ -83,6 +83,13 @@ export async function handleRequestPermissions(ctx: RequestContext): HandlerResp
   if (!Array.isArray(scopes) || scopes.length === 0) {
     return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', 'requestPermissions needs at least one scope');
   }
+  if (scopes.includes('agents:crossOrigin') && (!Array.isArray(agentOrigins) || agentOrigins.length === 0)) {
+    return errorResponse(
+      ctx.id,
+      'ERR_INVALID_REQUEST',
+      'agents:crossOrigin is granted per site: name the sites in agentOrigins, such as ["https://example.com"]',
+    );
+  }
 
   try {
     const result = await harborRequest<{

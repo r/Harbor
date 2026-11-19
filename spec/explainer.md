@@ -901,7 +901,6 @@ interface AgentCapabilitiesReport {
   };
   
   allowedTools: string[];    // Tools this origin can call
-  agentOrigins: string[];    // Sites whose agents this origin can reach
   
   features: {
     browserInteraction: boolean;  // Feature flag status
