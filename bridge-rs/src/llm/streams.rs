@@ -101,11 +101,9 @@ mod tests {
     use tokio::sync::mpsc;
 
     /// A stand-in for chat_stream: holds its sender until it's stopped.
-    fn endless(tx: mpsc::Sender<()>) -> impl std::future::Future<Output = ()> + Send + 'static {
-        async move {
-            let _tx = tx;
-            tokio::time::sleep(Duration::from_secs(3600)).await;
-        }
+    async fn endless(tx: mpsc::Sender<()>) {
+        let _tx = tx;
+        tokio::time::sleep(Duration::from_secs(3600)).await;
     }
 
     async fn closed(rx: &mut mpsc::Receiver<()>) -> bool {
