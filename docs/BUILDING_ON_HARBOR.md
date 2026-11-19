@@ -14,7 +14,7 @@ If you're just looking for the API reference, read [`WEB_AGENTS_API.md`](./WEB_A
 |---|---|---|
 | An AI feature inside a single web app | `WEB_AGENTS_API.md` § *window.ai* and § *Tools* | `BUILDING_ON_WEB_AGENTS_API.md` |
 | A site-specific assistant ("BYOC") | `WEB_AGENTS_API.md` § *MCP* and § *Chat* | `demo/web-agents/bring-your-chatbot/` |
-| An autonomous agent that uses tools | `WEB_AGENTS_API.md` § *Autonomous Agent* and § *Sessions* | `demo/web-agents/chat-poc/` |
+| An autonomous agent that uses tools | `WEB_AGENTS_API.md` § *Autonomous Agent* and § *Sessions* | `demo/web-agents/getting-started/` |
 | A multi-agent workflow (page-bound, today) | `WEB_AGENTS_API.md` § *Multi-Agent* | `demo/multi-web-agent/research-writer/` |
 | A page that can drive itself or a spawned tab | `WEB_AGENTS_API.md` § *Browser APIs* | `demo/web-agent-control/` |
 | A background "Hermes-style" assistant | This doc, § *Hermes pattern* | `AGENTIC_BROWSER_ROADMAP.md` Phase C |
