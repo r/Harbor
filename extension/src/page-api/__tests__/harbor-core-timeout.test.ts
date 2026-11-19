@@ -44,4 +44,14 @@ describe('harborRequest time limits', () => {
     await vi.advanceTimersByTimeAsync(30_000);
     await outcome;
   });
+
+  it('keeps the agent router\'s error code', async () => {
+    const { routeAgentMessage } = await import('../../agents/background-router');
+    vi.mocked(routeAgentMessage).mockImplementation((_m, respond) => {
+      (respond as (r: unknown) => void)({ ok: false, error: 'User denied.', code: 'ERR_PERMISSION_DENIED' });
+    });
+    await expect(harborRequest('agents.invoke', { origin: 'https://a.example' })).rejects.toMatchObject({
+      code: 'ERR_PERMISSION_DENIED',
+    });
+  });
 });

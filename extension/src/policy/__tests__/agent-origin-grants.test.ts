@@ -64,6 +64,33 @@ describe('per-site grants', () => {
     expect(await permissions.isAgentOriginAllowed(A, B, 3)).toBe(false);
   });
 
+  it('keeps "allow once" for every tab that answered, not only the last', async () => {
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 4, undefined, [B]);
+
+    expect(await allowed(B, 3)).toBe(true);
+    expect(await allowed(B, 4)).toBe(true);
+    expect(await allowed(B, 5)).toBe(false);
+  });
+
+  it('keeps "allow once" for every tab that answered, for other scopes too', async () => {
+    await permissions.grantPermissions(A, ['model:prompt'], 'granted-once', 3);
+    await permissions.grantPermissions(A, ['model:prompt'], 'granted-once', 4);
+
+    expect((await permissions.getPermissionStatus(A, 3)).scopes['model:prompt']).toBe('granted-once');
+    expect((await permissions.getPermissionStatus(A, 4)).scopes['model:prompt']).toBe('granted-once');
+    expect((await permissions.getPermissionStatus(A, 5)).scopes['model:prompt']).toBe('not-granted');
+  });
+
+  it('lists denied sites for the sidebar', async () => {
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, [C]);
+    await permissions.denyPermissions(A, ['agents:crossOrigin'], [B]);
+
+    const listed = (await permissions.listAllPermissions()).find((p) => p.origin === A);
+    expect(listed?.agentOrigins).toEqual([C]);
+    expect(listed?.deniedAgentOrigins).toEqual([B]);
+  });
+
   it('allows nothing without a target site', async () => {
     await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, [B]);
 

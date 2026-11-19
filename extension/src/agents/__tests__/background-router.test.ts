@@ -59,4 +59,31 @@ describe('routeAgentMessage', () => {
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
     expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
   });
+
+  it('keeps the handler\'s error code in the response', async () => {
+    const { grantPermissions } = await import('../../policy/permissions');
+    await grantPermissions('https://unregistered.example', ['agents:message'], 'granted-always');
+    const { routeAgentMessage } = await import('../background-router');
+    const sendResponse = vi.fn();
+    routeAgentMessage(
+      { type: 'agents.send', payload: { origin: 'https://unregistered.example', agentId: 'x', payload: 1 } },
+      sendResponse,
+    );
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+    expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({ ok: false, code: 'ERR_NOT_REGISTERED' }));
+  });
+
+  it('routes agents.broadcast', async () => {
+    const { grantPermissions } = await import('../../policy/permissions');
+    await grantPermissions('https://broadcaster.example', ['agents:message'], 'granted-always');
+    const { routeAgentMessage } = await import('../background-router');
+    const sendResponse = vi.fn();
+    routeAgentMessage(
+      { type: 'agents.broadcast', payload: { origin: 'https://broadcaster.example', eventType: 'e', data: 1 } },
+      sendResponse,
+    );
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+    // Not "unknown message type": the broadcaster isn't registered, so the handler refuses it.
+    expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({ ok: false, code: 'ERR_NOT_REGISTERED' }));
+  });
 });
