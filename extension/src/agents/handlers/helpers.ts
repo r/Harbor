@@ -107,13 +107,18 @@ export async function requireAction(
 
   log('requireAction decision', decision);
 
-  if (decision.effect === 'allow') return true;
+  // The caller may have stopped waiting while the check ran (a prompt can
+  // stay open longer than a page's request timeout). Such a call isn't
+  // performed, even if the person then allowed it.
+  const proceed = (): boolean => (ctx.signal?.aborted ? sendAbandoned(ctx, sender) : true);
+
+  if (decision.effect === 'allow') return proceed();
 
   if (decision.effect === 'deny') {
     return sendDeny(ctx, sender, decision);
   }
 
-  if (proceedsOnUpstreamConsent) return true;
+  if (proceedsOnUpstreamConsent) return proceed();
 
   // ask | preview — surface the prompt via the existing flow.
   // We use the typed action's primary legacy scope unless the caller
@@ -139,7 +144,7 @@ export async function requireAction(
       ctx.tabId,
       promptResult.allowedTools,
     );
-    return true;
+    return proceed();
   }
 
   // User dismissed or denied.
@@ -177,6 +182,15 @@ function upstreamConsentCovers(decision: PolicyDecision): boolean {
     return decision.rule.effect === 'allow';
   }
   return true;
+}
+
+function sendAbandoned(ctx: RequestContext, sender: ResponseSender): false {
+  sender.sendResponse({
+    id: ctx.id,
+    ok: false,
+    error: { code: 'ERR_ABORTED', message: 'The page stopped waiting for this call' },
+  });
+  return false;
 }
 
 function sendDeny(
