@@ -519,6 +519,26 @@ mod stream_cancel_tests {
         assert_eq!(again, serde_json::json!({ "cancelled": false }));
     }
 
+    #[tokio::test]
+    async fn the_read_loop_dispatch_keeps_an_early_cancel_from_being_lost() {
+        // This test runtime is single-threaded: the stream's handler, spawned
+        // by dispatch_message, can't run until the test yields, so the
+        // cancel below is handled first, as it can be in the real bridge.
+        let (writer, mut out) = MessageWriter::new();
+        let (host_tx, _host_rx) = mpsc::channel(1);
+        dispatch_message(chat_stream_message("dispatched"), Arc::new(writer), host_tx);
+        let cancelled = llm::cancel_stream(serde_json::json!({ "id": "dispatched" }))
+            .await
+            .unwrap();
+        assert_eq!(cancelled, serde_json::json!({ "cancelled": true }), "the read loop didn't note the stream");
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        while let Ok(msg) = out.try_recv() {
+            assert_ne!(msg.msg_type, "stream", "a cancelled stream still sent events");
+        }
+        assert!(!llm::is_stream_known("dispatched"), "the stream's entry was left behind");
+    }
+
     #[test]
     fn only_chat_stream_requests_are_noted() {
         let mut other = chat_stream_message("not-a-stream");
