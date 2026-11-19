@@ -555,8 +555,10 @@ Treat `ERR_BLOCKED_BY_POLICY`, `ERR_LABEL_FLOW_BLOCKED`, and `ERR_QUARANTINED` a
 These are the policy engine's codes, and Harbor reports them as is wherever its policy check refuses a page's call:
 
 - `agent.tools.call()` and a session's `callTool()` throw them.
-- A `window.ai` text session's `prompt()` throws them, and `promptStreaming()` ends with them.
-- `agent.run()` ends with them as its `error` event, when a model call or the tool list is refused.
+- A `window.ai` text session's `prompt()` throws them, and `promptStreaming()` ends with them, when the session runs on Harbor's own model.
+- `agent.run()` ends with them as its `error` event when its tool list is refused, or, on Harbor's own model, a model call.
+
+When the person has chosen an ACP agent to answer, prompts go to that agent rather than through Harbor's policy engine, so its failures use the ACP codes (`ERR_AGENT_FAILED`, `ERR_AGENT_BUSY`, `ERR_AGENT_REFUSED`, `ERR_AGENT_LIMIT`). `agent.run()`'s tool list is still checked by the policy engine on either backend.
 
 A declined Harbor prompt is `ERR_PERMISSION_DENIED`. Any other failure keeps the call's own code (`ERR_TOOL_FAILED`, `ERR_MODEL_FAILED`, `ERR_AGENT_FAILED`), even when a tool or model returns text that looks like one of these codes.
 

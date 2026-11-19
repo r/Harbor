@@ -138,6 +138,14 @@ async function denyPrompts() {
   ]);
 }
 
+async function askForPrompts() {
+  const { Policy } = await import('../../policy/store');
+  const { compileRule } = await import('../../policy/rules');
+  Policy.__setForTesting([
+    compileRule({ id: 'ask-prompts', effect: 'ask', principal: { origin: '*' }, action: 'model.prompt.local', source: 'user' } as never),
+  ]);
+}
+
 describe('a prompt the policy engine refuses', () => {
   it('reports ERR_QUARANTINED on session.prompt', async () => {
     const { request } = connectPort();
@@ -184,6 +192,51 @@ describe('a prompt the policy engine refuses', () => {
     const error = await streamError('agent.run', { task: 'What time is it?' });
     expect(error?.code).toBe('ERR_QUARANTINED');
     expect(bridge.chat).not.toHaveBeenCalled();
+  });
+});
+
+describe('a prompt refusal reached mid-run or by prompt', () => {
+  it('reports ERR_BLOCKED_BY_POLICY when agent.run\'s first model call is refused', async () => {
+    const { streamError } = connectPort();
+    await denyPrompts(); // the tool list is still allowed
+
+    const error = await streamError('agent.run', { task: 'What time is it?' });
+    expect(error?.code).toBe('ERR_BLOCKED_BY_POLICY');
+    expect(bridge.chat).not.toHaveBeenCalled();
+  });
+
+  it('reports ERR_BLOCKED_BY_POLICY when agent.run\'s final-answer call is refused', async () => {
+    const { streamError } = connectPort();
+    await denyPrompts();
+
+    // With no tool calls allowed, the run goes straight to its final answer.
+    const error = await streamError('agent.run', { task: 'What time is it?', maxToolCalls: 0 });
+    expect(error?.code).toBe('ERR_BLOCKED_BY_POLICY');
+  });
+
+  it('reports ERR_PERMISSION_DENIED when the person declines the prompt for session.prompt', async () => {
+    const { showPermissionPrompt } = await import('../../policy/permissions');
+    const { request } = connectPort();
+    const sessionId = await textSession(request);
+    await askForPrompts();
+    vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: false } as never);
+
+    const reply = await request('session.prompt', { sessionId, input: 'Hi' });
+    expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
+    expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
+    expect(bridge.chat).not.toHaveBeenCalled();
+  });
+
+  it('reports ERR_PERMISSION_DENIED when the person declines the prompt for session.promptStreaming', async () => {
+    const { showPermissionPrompt } = await import('../../policy/permissions');
+    const { request, streamError } = connectPort();
+    const sessionId = await textSession(request);
+    await askForPrompts();
+    vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: false } as never);
+
+    const error = await streamError('session.promptStreaming', { sessionId, input: 'Hi' });
+    expect(error?.code).toBe('ERR_PERMISSION_DENIED');
+    expect(bridge.stream).not.toHaveBeenCalled();
   });
 });
 

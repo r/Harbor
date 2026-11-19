@@ -697,7 +697,7 @@ for await (const event of window.agent.run({
 | `final` | `output` | Final response |
 | `error` | `error` (`{ code, message }`) | The run failed and is over |
 
-`agent.run()` doesn't throw when a run fails. Every failure arrives as one `error` event, after which the run ends: a refusal before it starts (for example, `ERR_PERMISSION_DENIED` without `model:prompt`), the site's permission being revoked partway through, Harbor's policy engine refusing a model call or the tool list (`ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`), or a model call failing (`ERR_MODEL_FAILED`).
+`agent.run()` doesn't throw when a run fails. Every failure arrives as one `error` event, after which the run ends: a refusal before it starts (for example, `ERR_PERMISSION_DENIED` without `model:prompt`), the site's permission being revoked partway through, Harbor's policy engine refusing the tool list or, on Harbor's own model, a model call (`ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`), or a model call failing (`ERR_MODEL_FAILED`).
 
 ---
 
