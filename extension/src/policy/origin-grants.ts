@@ -36,6 +36,7 @@ interface StoredPermission {
   grantedAt: number;
   expiresAt?: number;
   tabId?: number;
+  tabIds?: number[];
 }
 
 interface StoredOriginPermissions {
@@ -114,7 +115,10 @@ function isStoredGrantLive(stored: StoredPermission, now: number, tabId?: number
   if (stored.grant === 'granted-once') {
     if (stored.expiresAt && now > stored.expiresAt) return false;
     // "Allow once" covers only the tab that granted it (as isGrantValid in permissions.ts).
-    if (stored.tabId !== undefined && tabId !== undefined && stored.tabId !== tabId) return false;
+    if (tabId !== undefined) {
+      if (stored.tabIds) return stored.tabIds.includes(tabId);
+      if (stored.tabId !== undefined && stored.tabId !== tabId) return false;
+    }
     return true;
   }
   return false;

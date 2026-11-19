@@ -105,6 +105,8 @@ export interface PermissionStatus {
   allowedTools?: string[];
   /** Sites whose agents the origin may currently reach (`agents:crossOrigin`). */
   agentOrigins?: string[];
+  /** Sites the person refused agents:crossOrigin for (sidebar display). */
+  deniedAgentOrigins?: string[];
 }
 
 export interface RequestPermissionsOptions {
@@ -120,6 +122,8 @@ export interface StoredPermission {
   grantedAt: number;
   expiresAt?: number; // For 'granted-once'
   tabId?: number; // For 'granted-once'
+  /** Every tab an unexpired 'granted-once' covers, when more than one answered. */
+  tabIds?: number[];
 }
 
 export interface StoredOriginPermissions {

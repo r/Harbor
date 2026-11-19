@@ -59,13 +59,32 @@ function isGrantValid(stored: StoredPermission, tabId?: number): boolean {
       return false; // Expired
     }
     // Check tab (if we're tracking it)
-    if (stored.tabId !== undefined && tabId !== undefined && stored.tabId !== tabId) {
+    if (tabId !== undefined && !onceGrantCoversTab(stored, tabId)) {
       return false; // Different tab
     }
     return true;
   }
 
   return false;
+}
+
+/** Whether a 'granted-once' grant covers this tab. A grant with no tab covers every tab. */
+function onceGrantCoversTab(stored: StoredPermission, tabId: number): boolean {
+  if (stored.tabIds) return stored.tabIds.includes(tabId);
+  return stored.tabId === undefined || stored.tabId === tabId;
+}
+
+/**
+ * A new 'granted-once' for a grant that is still live from another tab
+ * covers both tabs, so two tabs answering one prompt each keep their grant.
+ */
+function withEarlierTabs(previous: StoredPermission | undefined, next: StoredPermission, now: number): StoredPermission {
+  if (next.grant !== 'granted-once' || previous?.grant !== 'granted-once') return next;
+  if (previous.expiresAt !== undefined && previous.expiresAt < now) return next;
+  const earlier = previous.tabIds ?? (previous.tabId !== undefined ? [previous.tabId] : undefined);
+  // An earlier grant for every tab, or a new one, stays for every tab.
+  if (!earlier || next.tabId === undefined) return { ...next, tabId: undefined, tabIds: undefined };
+  return { ...next, tabIds: [...new Set([...earlier, next.tabId])] };
 }
 
 function getEffectiveGrant(stored: StoredPermission | undefined, tabId?: number): PermissionGrant {
@@ -256,13 +275,13 @@ export async function grantPermissions(
   for (const scope of scopes) {
     // agents:crossOrigin is granted per target site below, never site-wide.
     if (scope === 'agents:crossOrigin') continue;
-    stored.scopes[scope] = grant();
+    stored.scopes[scope] = withEarlierTabs(stored.scopes[scope], grant(), now);
   }
 
   if (scopes.includes('agents:crossOrigin') && agentOrigins && agentOrigins.length > 0) {
     stored.agentOrigins = { ...stored.agentOrigins };
     for (const target of agentOrigins) {
-      stored.agentOrigins[target] = grant();
+      stored.agentOrigins[target] = withEarlierTabs(stored.agentOrigins[target], grant(), now);
     }
   }
 
@@ -446,15 +465,19 @@ export async function listAllPermissions(): Promise<PermissionStatus[]> {
     // Shown across tabs, like the scopes above.
     const reachable = liveAgentOrigins(stored);
     scopes['agents:crossOrigin'] = reachable.grant;
+    const deniedAgentOrigins = Object.entries(stored.agentOrigins ?? {})
+      .filter(([, permission]) => permission.grant === 'denied')
+      .map(([site]) => site);
 
     // Only include origins with at least one non-default grant
-    const hasGrants = Object.values(scopes).some(g => g !== 'not-granted');
+    const hasGrants = Object.values(scopes).some(g => g !== 'not-granted') || deniedAgentOrigins.length > 0;
     if (hasGrants) {
       result.push({
         origin,
         scopes,
         allowedTools: stored.allowedTools,
         agentOrigins: reachable.origins,
+        deniedAgentOrigins,
       });
     }
   }

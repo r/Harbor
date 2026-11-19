@@ -251,6 +251,57 @@ export async function invokeAgent(
 // =============================================================================
 
 /**
+ * Deliver an event to every agent subscribed to `eventType` whose site
+ * `canReachSite` accepts. No permission check here beyond that filter: the
+ * caller (`handleAgentsBroadcast`) decides which sites the sender may reach.
+ */
+export function broadcastEvent(
+  sourceAgentId: AgentId,
+  eventType: string,
+  data: unknown,
+  canReachSite: (site: string) => boolean,
+): { delivered: number; failed: number } {
+  const subscribers = eventSubscriptions.get(eventType);
+  if (!subscribers || subscribers.size === 0) {
+    return { delivered: 0, failed: 0 };
+  }
+
+  const event: AgentEvent = {
+    type: eventType,
+    data,
+    source: sourceAgentId,
+    timestamp: Date.now(),
+  };
+
+  let delivered = 0;
+  let failed = 0;
+
+  for (const subscriberId of subscribers) {
+    if (subscriberId === sourceAgentId) continue;
+    const subscriber = getAgent(subscriberId);
+    if (!subscriber || !canReachSite(subscriber.origin)) continue;
+
+    const handler = messageHandlers.get(subscriberId);
+    if (!handler) continue;
+    try {
+      handler({
+        id: generateMessageId(),
+        from: sourceAgentId,
+        to: subscriberId,
+        type: 'event',
+        payload: { type: event.type, data: event.data, source: event.source },
+        timestamp: Date.now(),
+      });
+      delivered++;
+    } catch {
+      failed++;
+    }
+  }
+
+  return { delivered, failed };
+}
+
+/**
  * Clean up all handlers for an agent.
  */
 export function cleanupAgentHandlers(agentId: AgentId): void {

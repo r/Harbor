@@ -34,13 +34,13 @@ const agentsByTab = new Map<number, Set<AgentId>>();
 const agentUsage = new Map<AgentId, AgentUsage>();
 
 // Agent ID counter
-let agentIdCounter = 0;
 
 /**
  * Generate a unique agent ID
  */
 function generateAgentId(): AgentId {
-  return `agent-${Date.now()}-${++agentIdCounter}`;
+  // Random, so a page can't guess a live agent id on another site.
+  return `agent-${crypto.randomUUID()}`;
 }
 
 /**

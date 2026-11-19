@@ -31,6 +31,7 @@ import {
   registerInvocationHandler,
   unregisterInvocationHandler,
   subscribeToEvent,
+  broadcastEvent,
   unsubscribeFromEvent,
 } from '../../multi-agent/messaging';
 import {
@@ -376,6 +377,41 @@ export async function handleAgentsSubscribe(
 }
 
 /**
+ * Handle agents.broadcast - Send an event to every subscribed agent the
+ * sender may reach: agents on its own site, and on sites it holds an
+ * agents:crossOrigin grant for. A broadcast has no single target to ask
+ * about, so it never prompts.
+ */
+export async function handleAgentsBroadcast(
+  ctx: RequestContext,
+  sender: ResponseSender,
+): Promise<void> {
+  if (!(await requireAction(ctx, sender, 'agent.message', { promptAsScope: 'agents:message' }))) {
+    return;
+  }
+
+  const payload = ctx.payload as { eventType?: string; data?: unknown };
+  const fromAgentId = originAgents.get(ctx.origin);
+  if (!fromAgentId) {
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_NOT_REGISTERED', message: 'Must register as an agent before broadcasting' },
+    });
+    return;
+  }
+  if (!payload?.eventType) {
+    sender.sendResponse({ id: ctx.id, ok: false, error: { code: 'ERR_INVALID_REQUEST', message: 'Missing eventType' } });
+    return;
+  }
+
+  const reachable = new Set((await getPermissionStatus(ctx.origin, ctx.tabId)).agentOrigins ?? []);
+  const result = broadcastEvent(fromAgentId, payload.eventType, payload.data, (site) => site === ctx.origin || reachable.has(site));
+
+  sender.sendResponse({ id: ctx.id, ok: true, result: { delivered: result.delivered } });
+}
+
+/**
  * Handle agents.unsubscribe - Unsubscribe from an event type.
  */
 export async function handleAgentsUnsubscribe(
@@ -399,21 +435,26 @@ export function handleAgentsRegisterMessageHandler(
   ctx: RequestContext,
   sender: ResponseSender,
 ): void {
-  const agentId = originAgents.get(ctx.origin);
-  if (!agentId) {
+  const payload = ctx.payload as { agentId?: string; tabId?: number } | undefined;
+  const agentId = payload?.agentId || originAgents.get(ctx.origin);
+  const agent = agentId ? getAgent(agentId) : undefined;
+  // A page may only receive messages for its own site's agents.
+  if (!agent || agent.origin !== ctx.origin) {
     sender.sendResponse({ id: ctx.id, ok: true, result: undefined });
     return;
   }
+  const tabId = payload?.tabId || ctx.tabId;
 
-  // The actual handler is in the page, we just track registration
-  registerMessageHandler(agentId, (message) => {
-    // Forward message to the page
-    if (ctx.tabId) {
-      browserAPI.tabs.sendMessage(ctx.tabId, {
-        type: 'harbor_agent_message',
-        message,
-      }).catch(() => {});
-    }
+  // The actual handler is in the page: forward each message to its tab as an
+  // agent event, which the content script hands to the page. Broadcasts
+  // arrive as event messages and are delivered to the page's subscribers.
+  registerMessageHandler(agent.id, (message) => {
+    if (!tabId) return;
+    const event =
+      message.type === 'event'
+        ? { type: 'broadcast', broadcast: message.payload }
+        : { type: 'message', message };
+    browserAPI.tabs.sendMessage(tabId, { type: 'agentEvent', event }).catch(() => {});
   });
 
   sender.sendResponse({ id: ctx.id, ok: true, result: undefined });

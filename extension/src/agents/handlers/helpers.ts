@@ -165,7 +165,9 @@ export async function checkAction(
       promptResult.grantType,
       ctx.tabId,
       promptResult.allowedTools,
-      promptResult.agentOrigins,
+      // Only the site this call asked about: a merged prompt may have shown
+      // other sites, which their own callers grant for their own tabs.
+      targetSite ? [targetSite] : promptResult.agentOrigins,
     );
     return null;
   }

@@ -105,9 +105,9 @@ async function dispatch<T>(type: string, payload: unknown): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     routeAgentMessage(
       { type, payload },
-      (response: { ok: boolean; result?: unknown; error?: string }) => {
+      (response: { ok: boolean; result?: unknown; error?: string; code?: string }) => {
         if (response.ok) resolve(response.result as T);
-        else reject(createError(response.error ?? 'Unknown error from Harbor'));
+        else reject(createError(response.error ?? 'Unknown error from Harbor', response.code));
       },
     );
   });
