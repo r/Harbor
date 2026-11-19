@@ -42,9 +42,9 @@ export interface ExtensionApiResponse {
   result?: unknown;
   error?: string;
   /**
-   * A page-facing error code, set only by Harbor's own refusals that the page
-   * must tell apart from a failure whose text came from elsewhere (a tool's
-   * error message, for one).
+   * A page-facing error code, set only by Harbor's own refusals (the policy
+   * gate, a session's budget) so the page can tell them apart from a failure
+   * whose text came from elsewhere, such as a tool's error message.
    */
   code?: string;
 }
@@ -789,9 +789,14 @@ async function gatePageCall(
   };
   let denied: ExtensionApiResponse | null = null;
   const sender: ResponseSender = {
+    // Keep the policy engine's code (ERR_QUARANTINED, ERR_BLOCKED_BY_POLICY,
+    // ERR_PERMISSION_DENIED, ...) so the page can tell why it was refused.
     sendResponse: (response) => {
       const err = (response as { error?: { code?: string; message?: string } }).error;
-      denied = failure(err?.message ?? 'Permission denied');
+      denied = {
+        ...failure(err?.message ?? 'Permission denied'),
+        code: err?.code ?? ErrorCodes.PERMISSION_DENIED,
+      };
     },
     sendStreamEvent: () => {},
   };

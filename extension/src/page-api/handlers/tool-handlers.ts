@@ -89,10 +89,11 @@ export async function handleToolsCall(ctx: RequestContext): HandlerResponse {
     });
     return successResponse(ctx.id, result.result);
   } catch (e) {
-    // Harbor's own session refusals carry their code. Anything else, whatever
-    // its message, is the tool failing.
+    // Harbor's own refusals (the policy gate, the session's budget) carry
+    // their page-facing code. Anything else, whatever its message, is the
+    // tool failing.
     const code = (e as { code?: unknown }).code;
-    if (code === ErrorCodes.BUDGET_EXCEEDED || code === ErrorCodes.SESSION_NOT_FOUND) {
+    if (typeof code === 'string' && code !== ErrorCodes.INTERNAL) {
       return errorResponse(ctx.id, code, (e as Error).message);
     }
     return errorResponse(ctx.id, 'ERR_TOOL_FAILED', e instanceof Error ? e.message : 'Tool call failed');
