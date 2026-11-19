@@ -107,15 +107,18 @@ export function answerPermissionRequest(
  * matched by the alias first.
  */
 function buildPathScrubber(cwd: string): (text: string) => string {
-  const workspaceMarker = '/.harbor/acp/workspaces/';
+  // The bridge builds the path with the platform's separator.
+  const workspaceMarkers = ['/.harbor/acp/workspaces/', '\\.harbor\\acp\\workspaces\\'];
 
   const cwdVariants = [cwd];
   if (cwd.startsWith('/private/')) cwdVariants.push(cwd.slice('/private'.length));
 
   const rules: Array<[from: string, to: string]> = cwdVariants.map((v) => [v, '.']);
   for (const v of cwdVariants) {
-    const idx = v.indexOf(workspaceMarker);
-    if (idx > 0) rules.push([v.slice(0, idx), '~']);
+    for (const marker of workspaceMarkers) {
+      const idx = v.indexOf(marker);
+      if (idx > 0) rules.push([v.slice(0, idx), '~']);
+    }
   }
   rules.sort((a, b) => b[0].length - a[0].length);
 
@@ -124,7 +127,7 @@ function buildPathScrubber(cwd: string): (text: string) => string {
   // that ends a sentence. Otherwise
   // `/Users/sam` would also rewrite `/Users/samuel`. Paths are escaped, so
   // regex metacharacters in them are literal.
-  const PATH_END = String.raw`(?=$|[/\s"'<>\x60),;:\]\)}]|\.(?:$|\s))`;
+  const PATH_END = String.raw`(?=$|[/\\\s"'<>\x60),;:\]\)}]|\.(?:$|\s))`;
   const escape = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const compiled = rules
     .filter(([from]) => from)
@@ -143,7 +146,13 @@ function scrubDeep<T>(value: T, scrub: (text: string) => string): T {
   if (Array.isArray(value)) return value.map((v) => scrubDeep(v, scrub)) as T;
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[scrub(k)] = scrubDeep(v, scrub);
+    for (const [k, v] of Object.entries(value)) {
+      // Two keys can scrub to the same string; keep both rather than
+      // silently dropping one.
+      let key = scrub(k);
+      for (let n = 2; key in out; n++) key = `${scrub(k)} (${n})`;
+      out[key] = scrubDeep(v, scrub);
+    }
     return out as T;
   }
   return value;
@@ -249,7 +258,10 @@ export class AcpAgentBackend implements AgentBackend {
         }
         const opened = first.value;
         if (opened.type === 'error') {
-          emit(agentFailedEvent(opened.message));
+          // The bridge's reason can name local paths or configuration, so
+          // the page only learns that the agent didn't start.
+          console.warn('[Harbor] ACP agent failed to start:', opened.message);
+          emit(agentFailedEvent('The agent failed to start'));
           return;
         }
         if (opened.type !== 'open' || !opened.cwd) {
@@ -259,7 +271,8 @@ export class AcpAgentBackend implements AgentBackend {
         channel = opened.channel;
         cwd = opened.cwd;
       } catch (e) {
-        emit(agentFailedEvent(e instanceof Error ? e.message : 'Agent failed to start'));
+        console.warn('[Harbor] ACP agent failed to start:', e instanceof Error ? e.message : e);
+        emit(agentFailedEvent('The agent failed to start'));
         return;
       }
 

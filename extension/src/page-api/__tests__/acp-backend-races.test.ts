@@ -208,4 +208,45 @@ describe('ACP backend: races, ordering and hostile input', () => {
     const final = tokens.find((t) => t.type === 'final');
     expect(final.output).toBe('see ~. and /Users/someoneelse/x');
   });
+
+  it('scrubs a backslash-separated home path', async () => {
+    const WIN = 'C:\\Users\\someone\\.harbor\\acp\\workspaces\\abc123';
+    const b = createFakeAcpBridge(); mocks.bridge.current = b;
+    b.registerAgent('a', promptAgent(async (ctx: any) => {
+      await ctx.client.notify(CLIENT_METHODS.session_update, {
+        sessionId: 's',
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'home C:\\Users\\someone\\notes and C:\\Users\\someoneelse\\x' } },
+      });
+      return { stopReason: 'end_turn' as StopReason };
+    }), { cwd: WIN });
+    const ev: StreamToken[] = [];
+    await new AcpAgentBackend('a').run(req, (e) => ev.push(e), new AbortController().signal);
+    const final = ev.filter((e) => e.type === 'token').map((e) => JSON.parse(e.token as string)).find((t) => t.type === 'final');
+    expect(final.output).toBe('home ~\\notes and C:\\Users\\someoneelse\\x');
+  });
+
+  it('keeps both object keys when two scrub to the same string', async () => {
+    const b = createFakeAcpBridge(); mocks.bridge.current = b;
+    b.registerAgent('a', promptAgent(async (ctx: any) => {
+      await ctx.client.notify(CLIENT_METHODS.session_update, {
+        sessionId: 's',
+        update: { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'read', rawInput: { '.': 1, [CWD]: 2 } },
+      });
+      return { stopReason: 'end_turn' as StopReason };
+    }), { cwd: CWD });
+    const ev: StreamToken[] = [];
+    await new AcpAgentBackend('a').run(req, (e) => ev.push(e), new AbortController().signal);
+    const call = ev.filter((e) => e.type === 'token').map((e) => JSON.parse(e.token as string)).find((t) => t.type === 'tool_call');
+    expect(Object.values(call.args).sort()).toEqual([1, 2]);
+    expect(JSON.stringify(call.args)).not.toContain('/Users/someone');
+  });
+
+  it('gives the page only a generic message when the agent fails to start', async () => {
+    const b = createFakeAcpBridge(); mocks.bridge.current = b;
+    const ev: StreamToken[] = [];
+    // No agent registered under this id, so the fake bridge reports a fatal error.
+    await new AcpAgentBackend('missing').run(req, (e) => ev.push(e), new AbortController().signal);
+    expect(terminals(ev)).toHaveLength(1);
+    expect(terminals(ev)[0]).toMatchObject({ type: 'error', error: { code: 'ERR_AGENT_FAILED', message: 'The agent failed to start' } });
+  });
 });
