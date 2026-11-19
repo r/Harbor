@@ -25,6 +25,6 @@ describe('window.ai text session prompt()', () => {
     } as never);
 
     expect(res).toMatchObject({ ok: true, result: 'Hello' });
-    expect(mocks.harborRequest).toHaveBeenCalledWith('llm.chat', expect.objectContaining({ origin: ORIGIN, tabId: 3 }));
+    expect(mocks.harborRequest).toHaveBeenCalledWith('llm.chat', expect.objectContaining({ origin: ORIGIN, tabId: 3 }), expect.anything());
   });
 });

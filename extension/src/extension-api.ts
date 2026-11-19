@@ -870,6 +870,16 @@ async function runPageChecks(
   return null;
 }
 
+/**
+ * The caller stopped waiting while the policy check ran (a prompt can stay
+ * open longer than the page's request timeout). The call isn't performed,
+ * even if the person then allowed it, so the page never sees an error for
+ * a call that went on to happen.
+ */
+function abandoned(): ExtensionApiResponse {
+  return { ...failure('The page stopped waiting for this call'), code: ErrorCodes.ABORTED };
+}
+
 // =============================================================================
 // Main Router
 // =============================================================================
@@ -881,6 +891,7 @@ async function runPageChecks(
 export async function routeExtensionApiMessage(
   message: ExtensionApiRequest,
   sender: { id?: string; url?: string; tab?: { id?: number } },
+  options: { signal?: AbortSignal } = {},
 ): Promise<ExtensionApiResponse> {
   const { type, payload } = message;
   
@@ -896,6 +907,7 @@ export async function routeExtensionApiMessage(
     try {
       const gateFailure = await gatePageCall(type, payload);
       if (gateFailure) return gateFailure;
+      if (options.signal?.aborted) return abandoned();
       return await handleMcpCallTool(payload, held.slot);
     } finally {
       held.slot?.release();
@@ -904,6 +916,7 @@ export async function routeExtensionApiMessage(
 
   const gateFailure = await gatePageCall(type as MessageType, payload);
   if (gateFailure) return gateFailure;
+  if (options.signal?.aborted) return abandoned();
 
   switch (type as MessageType) {
     // LLM Operations
@@ -1115,7 +1128,11 @@ export type ChatStreamEvent = {
  * `gatePageCall` exactly as a non-streaming call does, so the policy gate
  * and audit log see the same decision either way.
  */
-export async function* streamLlmChat(payload: unknown, requestId?: string): AsyncGenerator<ChatStreamEvent> {
+export async function* streamLlmChat(
+  payload: unknown,
+  requestId?: string,
+  signal?: AbortSignal,
+): AsyncGenerator<ChatStreamEvent> {
   const { messages, model, max_tokens, temperature, system, tools } = (payload || {}) as {
     messages?: Array<{ role: string; content: string }>;
     model?: string;
@@ -1134,6 +1151,11 @@ export async function* streamLlmChat(payload: unknown, requestId?: string): Asyn
   const gateFailure = await gatePageCall('llm.chatStream', payload, requestId).catch((e: unknown) => failure(e));
   if (gateFailure) {
     yield { type: 'error', error: { code: gateFailure.code, message: gateFailure.error ?? 'Permission denied' } };
+    return;
+  }
+  if (signal?.aborted) {
+    const { code, error } = abandoned();
+    yield { type: 'error', error: { code, message: error ?? '' } };
     return;
   }
 
