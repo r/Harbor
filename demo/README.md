@@ -14,12 +14,9 @@ These demos are published via GitHub Pages at: **https://[your-org].github.io/ha
 |------|-------------|------|
 | **Demo Index** | Index page linking to all demos | `/demo/index.html` |
 | **Getting Started** | Interactive walkthrough of the Web Agent API | `/demo/web-agents/getting-started/` |
-| **Chat Demo** | Full-featured chat with MCP tools | `/demo/web-agents/chat-poc/` |
 | **AAF Invoice** | Fill and review an invoice using the visitor’s Harbor-selected AI | `/demo/web-agents/aaf-invoice/` |
 | **Page Summarizer** | Simple one-click page summarization | `/demo/web-agents/summarizer/` |
-| **Email Chat** | Chat with your email using Gmail MCP tools | `/demo/web-agents/email-chat/` |
 | **Time Agent** | Simple MCP time tool demo | `/demo/web-agents/time-agent/` |
-| **Page Chat Bookmarklet** | Bookmarklet to chat about any page | `/demo/web-agents/bookmarklet/` |
 | **Bring Your Own Chatbot** | A shop page that opens Harbor's chat with one `agent.chat.open()` call, no chat UI of its own | `/demo/web-agents/bring-your-chatbot/` |
 | **Basic Actions** | Practice click, fill, and select | `/demo/web-agent-control/basic-actions/` |
 | **Multi-step Form** | Form validation and step navigation | `/demo/web-agent-control/multi-step-form/` |
@@ -40,24 +37,15 @@ These demos are published via GitHub Pages at: **https://[your-org].github.io/ha
 3. **Open a demo in your browser**:
    - Demo Index: `http://localhost:8000`
    - Getting Started: `http://localhost:8000/web-agents/getting-started/`
-   - Chat Demo: `http://localhost:8000/web-agents/chat-poc/`
    - Page Summarizer: `http://localhost:8000/web-agents/summarizer/`
-   - Email Chat: `http://localhost:8000/web-agents/email-chat/`
+   - Bring Your Own Chatbot: `http://localhost:8000/web-agents/bring-your-chatbot/`
 
 4. **Grant Permissions**:
    - The demo will request Web Agent API permissions
    - Select the permissions you want to grant
    - Harbor will show a permission prompt
 
-5. **Start chatting**:
-   - Type a message and hit Enter
-   - Enable "Tools" to let the AI use MCP tools
-   - Enable "Active Tab" to give context from the current tab
-
-## Launching from Extension
-
-You can also launch the demos directly from the Harbor extension sidebar:
-- Click **"API Demo"** to open the chat-poc demo
+5. **Chat**: open Bring Your Own Chatbot and click **Chat with Acme Shop**. Harbor opens its chat on the page.
 
 ## Features Demonstrated
 
@@ -65,8 +53,8 @@ You can also launch the demos directly from the Harbor extension sidebar:
 - **Text Generation**: Basic prompt → response using `window.ai`
 - **Agent Tasks**: Run autonomous tasks with tool access using `window.agent.run()`
 - **Tool Listing**: View available MCP tools
-- **Streaming Responses**: Token-by-token output display
-- **Tool Call Visualization**: See tool calls and results in collapsible panels
+- **Streaming Responses**: Token-by-token output (Research Pipeline)
+- **Chat Without Building One**: A page hands the conversation to your agent's chat with `window.agent.chat.open()`
 
 ## Bring Your Own Chatbot Demo
 
@@ -80,21 +68,6 @@ the page instead, running on the person's own model. The page writes no chat UI 
 4. **Graceful Degradation**: The chat button is hidden, with an explanatory banner, when `agent.chat.open` isn't available
 
 See [`web-agents/bring-your-chatbot/README.md`](web-agents/bring-your-chatbot/README.md) for the full demo and `docs/WEB_AGENTS_API.md` for the API reference.
-
-## Email Chat Demo
-
-The Email Chat demo shows how to build an application that interacts with Gmail via MCP tools:
-
-1. **Setup Wizard**: Steps through API detection, permissions, LLM check, and tool discovery
-2. **Email Tools Detection**: Automatically finds Gmail/email-related MCP tools
-3. **Chat Interface**: Natural language interface for email tasks
-
-**Requirements**: To use email features, you need a Gmail MCP server running. The demo will still work without one but will show a warning.
-
-**Example prompts**:
-- "Summarize my unread emails from today"
-- "Find emails from my manager this week"
-- "Draft a reply to my most recent email"
 
 ## API Usage Examples
 
