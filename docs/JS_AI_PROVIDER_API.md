@@ -450,7 +450,7 @@ Harbor asks the person first (`mcp:servers.register`, remembered per site). Once
 - **Harbor's own agent** (`agent.run()`) lists them with the person's other tools, named `<serverId>/<tool>`. They still need `mcp:tools.list` and `mcp:tools.call`, and must be among the tools the site was granted.
 - **The person's own ACP agent** (goose, Claude Code, Codex and so on) gets the server in its session and connects to it directly, if it supports the transport (`streamable-http` or `sse`; no ACP agent takes `websocket`). The site needs `mcp:tools.list` and `mcp:tools.call` for that, and Harbor's policy rules for listing and calling tools apply. The site's per-tool grants don't; the agent's own permission prompts do.
 
-The server must be on the page's own origin (`ws://` and `wss://` count as `http://` and `https://`). A page on `localhost` may also register a `localhost` server; other sites can't, so a site can't reach MCP servers on the person's machine. Harbor checks this, and the transport, before it asks, so the person is never asked about a registration that would be refused. `transport` defaults to `'sse'`; `stdio` isn't supported. Registration is off when the person turns off Tool Access.
+The server must be on the page's own origin (`ws://` and `wss://` count as `http://` and `https://`). A page on a loopback host (`localhost`, `127.0.0.1`, `[::1]`) may also register a server on any loopback host; other sites can't, so a site can't reach MCP servers on the person's machine. Harbor checks this, and the transport, before it asks, so the person is never asked about a registration that would be refused. `transport` defaults to `'sse'`; `stdio` isn't supported. Registration is off when the person turns off Tool Access.
 
 The tools Harbor offers are the ones the server reports, not the `tools` you list. The registration lasts as long as the page: Harbor disconnects when the tab closes or navigates to another origin, or when the page calls `unregister()`. Other sites and other tabs never see the tools.
 
@@ -464,7 +464,7 @@ agent.mcp.register(options: MCPServerRegistration): Promise<MCPRegistrationResul
 **Parameters:**
 ```typescript
 interface MCPServerRegistration {
-  url: string;          // Server endpoint (HTTPS or localhost)
+  url: string;          // Server endpoint on the page's own origin (loopback only from a loopback page)
   name: string;         // Human-readable name
   description?: string; // What the server provides
   tools?: string[];     // Tool names for transparency; Harbor offers what the server reports
