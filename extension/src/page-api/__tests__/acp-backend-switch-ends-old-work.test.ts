@@ -216,6 +216,22 @@ describe('an open window.ai text session on the ACP backend, when the backend sw
 });
 
 describe('agent.run: the race between selectAgentBackend() and a switch landing mid-read', () => {
+  it('does not start a stale built-in backend after a switch during tool discovery', async () => {
+    await storage.local.set({ harbor_agent_backend: undefined });
+    mocks.harborRequest.mockImplementation(async (method: string) => {
+      if (method === 'mcp.listTools') {
+        await switchBackend(AGENT_ID);
+        return { tools: [] };
+      }
+      return { content: 'stale built-in answer' };
+    });
+    await receive({ id: 'discovery-switch', type: 'agent.run', payload: { task: 't' } });
+    expect(terminalEventsFor('discovery-switch')).toEqual([
+      expect.objectContaining({ event: { type: 'error', error: { code: 'ERR_AGENT_FAILED', message: 'The agent was changed.' } } }),
+    ]);
+    expect(mocks.harborRequest.mock.calls.map(([method]) => method)).toEqual(['mcp.listTools']);
+  });
+
   it('is cancelled even when the switch lands while selectAgentBackend() is still reading the (soon-to-be-stale) setting', async () => {
     // The race this models: `handleAgentRun` captures the
     // generation signal *before* `selectAgentBackend()`'s own storage

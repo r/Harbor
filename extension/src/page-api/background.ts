@@ -185,8 +185,8 @@ async function handleAgentRun(
 
   // Enforce the setting at the receiver: a page can send transport messages
   // directly, without going through the injected API's disabled wrapper.
-  // This, the grant checks below, tool listing/filtering and delivering
-  // events to the page apply to every backend, so they stay here rather
+  // This, the grant checks below and delivering events to the page
+  // apply to every backend, so they stay here rather
   // than in the backend itself.
   const refusal = featureRefusal(ctx.type, await getFeatureFlags());
   if (refusal) {
@@ -206,10 +206,20 @@ async function handleAgentRun(
   }
 
   try {
-    // Get available tools
+    // Captured *before* reading the backend selection, not after — a
+    // switch landing in the gap while `selectAgentBackend()`'s own storage
+    // read is still in flight invalidates the generation this signal
+    // belongs to, same as one landing any time later. Capturing it after
+    // the read instead would miss exactly that race: `backend` could
+    // still resolve to the (now stale) agent that switch just replaced,
+    // paired with a *new*, not-yet-aborted generation's signal, so the run
+    // would never be told the agent it just picked is already gone.
+    const backendChangeSignal = acpBackendChangeSignal();
+    const backend = backendOverride ?? await selectAgentBackend();
+    // Only the built-in loop uses Harbor’s installed tools. ACP uses its own.
     let tools: Array<{ serverId: string; name: string; description?: string; inputSchema?: unknown }> = [];
 
-    if (await hasPermission(ctx.origin, 'mcp:tools.list', ctx.tabId)) {
+    if (!(backend instanceof AcpAgentBackend) && await hasPermission(ctx.origin, 'mcp:tools.list', ctx.tabId)) {
       const toolsResult = await harborRequest<{ tools: typeof tools }>('mcp.listTools', {
         origin: ctx.origin,
         tabId: ctx.tabId,
@@ -224,16 +234,10 @@ async function handleAgentRun(
       );
     }
 
-    // Captured *before* reading the backend selection, not after — a
-    // switch landing in the gap while `selectAgentBackend()`'s own storage
-    // read is still in flight invalidates the generation this signal
-    // belongs to, same as one landing any time later. Capturing it after
-    // the read instead would miss exactly that race: `backend` could
-    // still resolve to the (now stale) agent that switch just replaced,
-    // paired with a *new*, not-yet-aborted generation's signal, so the run
-    // would never be told the agent it just picked is already gone.
-    const backendChangeSignal = acpBackendChangeSignal();
-    const backend = backendOverride ?? await selectAgentBackend();
+    // Tool discovery can wait on policy consent. If the person switched
+    // backends meanwhile, don't start the previously selected backend.
+    if (backendChangeSignal.aborted) throw new Error('The agent was changed.');
+
     // An ACP-backed run also ends if the person switches
     // `harbor_agent_backend` while it's still going on the old agent — not
     // just on the page's own abort/tab-close — by combining in the shared

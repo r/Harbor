@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Running a site's task on your own agent no longer asks about listing Harbor's installed tools, which that agent doesn't use. The built-in model still lists tools under the site's existing permissions and policy.
+
 - `agent.mcp.discover()` works again. It always failed with "No tab context for discovery" because the page's tab wasn't passed on.
 - Harbor's SSE connection to a remote MCP server now follows the MCP SDK's handshake: it reads the server's `endpoint` event as a URL, waits for it before sending, and refuses an endpoint on another origin. It used to post to the wrong address. An SSE or WebSocket connection Harbor closes on purpose no longer reconnects.
 - The Bring Your Own Chatbot demo's MCP server sends posted messages to their session instead of opening a new SSE stream for each.
