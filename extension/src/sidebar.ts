@@ -1391,6 +1391,8 @@ function updateLlmPanelForAgentSelection(selectedAgentId: string | null): void {
   llmPanelAgentNote.textContent = note ?? '';
   llmPanelAgentNote.title = note ?? '';
   llmPanelAgentNote.style.display = note ? '' : 'none';
+  // The note replaces the model status while an agent is selected.
+  llmPanelHeader.classList.toggle('agent-selected', Boolean(note));
 }
 
 /**

@@ -10,6 +10,7 @@
  * - Page context extraction
  */
 
+import { renderMarkdown } from './chat-markdown';
 import { browserAPI } from './browser-compat';
 import { connectPageChatPort } from './page-chat-port';
 
@@ -280,7 +281,9 @@ ${pageContext}
         if (response.toolsUsed && response.toolsUsed.length > 0 && messageEl) {
           const toolsInfo = document.createElement('div');
           toolsInfo.className = 'hpc-tools-used';
-          toolsInfo.innerHTML = `<small>🔧 Used: ${response.toolsUsed.map(t => t.name.split('/').pop()).join(', ')}</small>`;
+          const small = document.createElement('small');
+          small.textContent = `🔧 Used: ${response.toolsUsed.map(t => t.name.split('/').pop()).join(', ')}`;
+          toolsInfo.appendChild(small);
           messageEl.appendChild(toolsInfo);
         }
       } else {
@@ -298,6 +301,19 @@ ${pageContext}
     inputArea.focus();
   }
 
+  // A reply renders as markdown, built from DOM nodes (chat-markdown.ts), so
+  // nothing in it is parsed as HTML in the site's page. The person's own
+  // messages stay plain text.
+  function setMessageBody(body: HTMLElement, role: 'user' | 'assistant', content: string) {
+    body.replaceChildren();
+    if (role === 'assistant') {
+      body.classList.add('hpc-md');
+      body.appendChild(renderMarkdown(content));
+    } else {
+      body.innerHTML = escapeHtml(content);
+    }
+  }
+
   // Add message to UI
   function addMessage(role: 'user' | 'assistant', content: string): HTMLElement {
     emptyState.style.display = 'none';
@@ -313,8 +329,9 @@ ${pageContext}
         <span class="hpc-avatar">${avatar}</span>
         <span class="hpc-role">${roleName}</span>
       </div>
-      <div class="hpc-msg-body">${escapeHtml(content)}</div>
+      <div class="hpc-msg-body"></div>
     `;
+    setMessageBody(msg.querySelector('.hpc-msg-body') as HTMLElement, role, content);
 
     messagesContainer.appendChild(msg);
     scrollToBottom();
@@ -323,9 +340,9 @@ ${pageContext}
   }
 
   function updateMessageBody(messageEl: HTMLElement, content: string) {
-    const body = messageEl.querySelector('.hpc-msg-body');
+    const body = messageEl.querySelector('.hpc-msg-body') as HTMLElement | null;
     if (body) {
-      body.innerHTML = escapeHtml(content);
+      setMessageBody(body, messageEl.classList.contains('hpc-user') ? 'user' : 'assistant', content);
     }
   }
 
@@ -805,6 +822,17 @@ function getSidebarCSS(): string {
       color: var(--hpc-text-dim);
     }
     
+    .hpc-md p { margin: 0 0 8px; }
+    .hpc-md p:last-child, .hpc-md ul:last-child, .hpc-md ol:last-child, .hpc-md pre:last-child { margin-bottom: 0; }
+    .hpc-md h4 { margin: 4px 0 6px; font-size: 13px; font-weight: 600; color: var(--hpc-text); }
+    .hpc-md ul, .hpc-md ol { margin: 0 0 8px; padding-left: 20px; }
+    .hpc-md li { margin: 2px 0; }
+    .hpc-md strong { color: var(--hpc-text); font-weight: 600; }
+    .hpc-md a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+    .hpc-md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; padding: 1px 4px; border-radius: 4px; background: var(--hpc-surface); }
+    .hpc-md pre { margin: 0 0 8px; padding: 8px 10px; border-radius: 6px; background: var(--hpc-surface); border: 1px solid var(--hpc-border); overflow-x: auto; }
+    .hpc-md pre code { padding: 0; background: none; }
+
     .hpc-tools-used {
       margin-left: 32px;
       margin-top: 8px;
