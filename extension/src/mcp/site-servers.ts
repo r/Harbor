@@ -184,7 +184,10 @@ export async function registerSiteServer(options: RegisterSiteServerOptions): Pr
 
   let client: McpTransport;
   try {
-    client = createRemoteTransport({ url, transport: transport as RemoteTransportKind });
+    // No auto-reconnect: a site server lives as long as its page, and the
+    // SSE/WebSocket transports would otherwise reconnect after
+    // `forgetTabServers` disconnects them, reaching the site after the person left.
+    client = createRemoteTransport({ url, transport: transport as RemoteTransportKind, autoReconnect: false });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Failed to set up the MCP transport' };
   }
