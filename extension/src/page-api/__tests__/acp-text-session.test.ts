@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../harbor-core', () => ({
+  onHarborSessionEnded: vi.fn(() => () => {}),
   forgetAgentsInTab: vi.fn(),
   // This file's tabs.onRemoved tests close a tab, which background.ts's
   // real listener also uses to forget that tab's site-registered MCP

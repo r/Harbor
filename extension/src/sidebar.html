@@ -337,20 +337,6 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      /* The LLM panel's one-line note while an ACP agent is selected
-         (sidebar-llm-panel.ts) — same one-line discipline as above. */
-      #llm-panel-header.agent-selected #llm-status-indicator,
-      #llm-panel-header.agent-selected #llm-status-text {
-        display: none;
-      }
-      .panel-header-note {
-        font-size: var(--text-xs);
-        color: var(--color-text-muted);
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
       .panel-collapse-icon {
         color: var(--color-text-muted);
         font-size: 10px;
@@ -1165,8 +1151,6 @@
           <div class="panel-title">LLM Providers</div>
         </div>
         <div class="panel-header-right">
-          <!-- Shown instead of the status dot/text while an ACP agent is selected (sidebar-llm-panel.ts): the built-in model isn't running sites' requests, but agent.sessions and Harbor's own chat still use it. -->
-          <span id="llm-panel-agent-note" class="panel-header-note" style="display: none;"></span>
           <div id="llm-status-indicator" class="status-indicator connecting"></div>
           <span id="llm-status-text" class="status-text connecting">Checking...</span>
         </div>

@@ -28,6 +28,8 @@ import type { PolicyResource } from './policy/engine';
 import { getPermissionStatus, requestPermissions, SCOPE_DESCRIPTIONS } from './policy/permissions';
 import type { PermissionScope } from './agents/types';
 import { ErrorCodes } from './page-api/types';
+import { readAgentBackendSetting } from './page-api/agent-backend-setting';
+import { resolveConsentAgentName } from './policy/agent-consent';
 
 // =============================================================================
 // Types
@@ -108,6 +110,22 @@ function failure(err: unknown): ExtensionApiResponse {
 // Handlers
 // =============================================================================
 
+/**
+ * With an agent selected, every model call runs on it, and nothing reaches
+ * Harbor's built-in model (docs/ACP_BACKEND_DESIGN.md section 2). The page
+ * paths route to the agent before they get here; this refuses whatever
+ * still arrives, such as a prompt on a session made on the built-in model
+ * that raced a switch, rather than quietly answering from the built-in
+ * model.
+ */
+async function builtinModelRefusal(): Promise<ExtensionApiResponse | null> {
+  if (!(await readAgentBackendSetting())) return null;
+  return {
+    ...failure("Your own agent is selected, so Harbor's built-in model isn't used."),
+    code: ErrorCodes.AGENT_FAILED,
+  };
+}
+
 async function handleLlmChat(payload: unknown): Promise<ExtensionApiResponse> {
   const { messages, model, max_tokens, temperature, system, tools } = payload as {
     messages?: Array<{ role: string; content: string }>;
@@ -140,7 +158,21 @@ async function handleLlmChat(payload: unknown): Promise<ExtensionApiResponse> {
   }
 }
 
+/**
+ * With an agent selected, the page's provider info reports the agent: it
+ * is the only thing answering, and it picks its own model, so there are no
+ * configured models to list.
+ */
+async function selectedAgentProvider(): Promise<{ id: string; type: 'agent'; name: string; available: true; isDefault: true } | null> {
+  const backend = await readAgentBackendSetting();
+  if (!backend) return null;
+  const name = (await resolveConsentAgentName()) ?? backend.agentId;
+  return { id: backend.agentId, type: 'agent', name, available: true, isDefault: true };
+}
+
 async function handleLlmListProviders(): Promise<ExtensionApiResponse> {
+  const agent = await selectedAgentProvider();
+  if (agent) return success({ providers: [agent], default_provider: agent.id });
   try {
     const result = await bridgeRequest<{ providers: unknown[]; default_provider?: string }>('llm.list_providers');
     return success({ providers: result.providers, default_provider: result.default_provider });
@@ -150,6 +182,8 @@ async function handleLlmListProviders(): Promise<ExtensionApiResponse> {
 }
 
 async function handleLlmGetActiveProvider(): Promise<ExtensionApiResponse> {
+  const agent = await selectedAgentProvider();
+  if (agent) return success({ default_model: null, provider: agent.id });
   try {
     const result = await bridgeRequest<{ default_model?: string; providers: Record<string, unknown> }>('llm.get_config');
     return success({ default_model: result.default_model, providers: result.providers });
@@ -159,6 +193,7 @@ async function handleLlmGetActiveProvider(): Promise<ExtensionApiResponse> {
 }
 
 async function handleLlmListConfiguredModels(): Promise<ExtensionApiResponse> {
+  if (await readAgentBackendSetting()) return success({ models: [] });
   try {
     const result = await bridgeRequest<{ models: unknown[] }>('llm.list_configured_models');
     return success({ models: result.models });
@@ -168,6 +203,7 @@ async function handleLlmListConfiguredModels(): Promise<ExtensionApiResponse> {
 }
 
 async function handleLlmGetConfiguredModelsMetadata(): Promise<ExtensionApiResponse> {
+  if (await readAgentBackendSetting()) return success({ metadata: [] });
   try {
     const result = await bridgeRequest<{ metadata: Array<{ model_id: string; is_local: boolean }> }>(
       'llm.get_configured_models_metadata'
@@ -665,7 +701,14 @@ const BROWSER_CAPABILITY_ACTIONS: Record<'read' | 'interact' | 'screenshot', Typ
   screenshot: 'browser.read.screenshot',
 };
 
+/**
+ * The action a page's prompt is checked as. With an agent selected, every
+ * prompt goes to the agent, so it's checked as `model.prompt.agent`, the
+ * action each agent turn is checked as too; otherwise by where the
+ * built-in model runs.
+ */
 async function promptCheck(model: unknown): Promise<PageCheck> {
+  if (await readAgentBackendSetting()) return { action: 'model.prompt.agent' };
   return { action: await promptActionForPrompt(model) };
 }
 
@@ -852,9 +895,22 @@ export async function routeExtensionApiMessage(
     }
   }
 
+  // Refused before the gate, so the person isn't asked to allow a call
+  // that can't run.
+  if (type === 'llm.chat') {
+    const refusal = await builtinModelRefusal();
+    if (refusal) return refusal;
+  }
+
   const gateFailure = await gatePageCall(type as MessageType, payload);
   if (gateFailure) return gateFailure;
   if (options.signal?.aborted) return abandoned();
+  // And again after it: the person may have picked an agent while the
+  // check ran, which can wait on a prompt.
+  if (type === 'llm.chat') {
+    const refusal = await builtinModelRefusal();
+    if (refusal) return refusal;
+  }
 
   switch (type as MessageType) {
     // LLM Operations
@@ -1069,6 +1125,12 @@ export async function* streamLlmChat(
     return;
   }
 
+  const refusal = await builtinModelRefusal().catch((e: unknown) => failure(e));
+  if (refusal) {
+    yield { type: 'error', error: { code: refusal.code, message: refusal.error ?? 'Refused' } };
+    return;
+  }
+
   // Fail closed, so a gate error can't leave the page's stream waiting forever.
   const gateFailure = await gatePageCall('llm.chatStream', payload, requestId).catch((e: unknown) => failure(e));
   if (gateFailure) {
@@ -1078,6 +1140,13 @@ export async function* streamLlmChat(
   if (signal?.aborted) {
     const { code, error } = abandoned();
     yield { type: 'error', error: { code, message: error ?? '' } };
+    return;
+  }
+  // And again after it: the person may have picked an agent while the
+  // check ran, which can wait on a prompt.
+  const lateRefusal = await builtinModelRefusal().catch((e: unknown) => failure(e));
+  if (lateRefusal) {
+    yield { type: 'error', error: { code: lateRefusal.code, message: lateRefusal.error ?? 'Refused' } };
     return;
   }
 

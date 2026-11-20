@@ -281,7 +281,7 @@ The native bridge (`bridge-rs/`) is a Rust binary that communicates with the bro
 4. **RPC Dispatch** — Routes incoming requests to appropriate handlers:
    ```rust
    // Example RPC message
-   { "type": "llm_chat", "request_id": "abc123", "messages": [...] }
+   { "type": "rpc", "id": "abc123", "method": "llm.chat", "params": { "messages": [...] } }
    ```
 
 ### WASM Runtime
@@ -345,7 +345,7 @@ Web Page                    Extension                    Bridge                 
    │                           │                           │                        │
    │ session.prompt("Hi")      │                           │                        │
    ├──────────────────────────►│                           │                        │
-   │                           │ llm_chat                  │                        │
+   │                           │ llm.chat                  │                        │
    │                           ├──────────────────────────►│                        │
    │                           │                           │ POST /v1/chat/...      │
    │                           │                           ├───────────────────────►│
@@ -1022,7 +1022,7 @@ The bridge uses native messaging with length-prefixed JSON frames.
 
 **BYOC:** `connect_remote_mcp`, `disconnect_remote_mcp`, `page_chat_message`
 
-**LLM:** `llm_detect`, `llm_chat`, `llm_set_active`
+**LLM:** `llm_detect`, `llm_set_active`
 
 **Chat:** `chat_create_session`, `chat_send_message`, `chat_list_sessions`
 

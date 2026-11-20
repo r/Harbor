@@ -19,10 +19,6 @@ describe('sidebar model calls', () => {
     vi.mocked(bridgeRequest).mockResolvedValue({ choices: [{ message: { role: 'assistant', content: 'hello' } }] });
     expect(await dispatch('llm_test_model', { model: 'ollama:test' })).toEqual({ ok: true, response: 'hello' });
   });
-  it('chat preserves its sidebar response envelope', async () => {
-    vi.mocked(bridgeRequest).mockResolvedValue({ model: 'ollama:test', choices: [{ message: { role: 'assistant', content: 'hello' } }] });
-    expect(await dispatch('llm_chat', { messages: [{ role: 'user', content: 'Hi' }] })).toEqual({ ok: true, response: { role: 'assistant', content: 'hello' }, model: 'ollama:test' });
-  });
   it('Test model reports bridge failures', async () => {
     vi.mocked(bridgeRequest).mockRejectedValue(new Error('Model unavailable'));
     expect(await dispatch('llm_test_model', { model: 'ollama:test' })).toEqual({ ok: false, error: 'Model unavailable' });

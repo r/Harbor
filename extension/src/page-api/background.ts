@@ -15,6 +15,7 @@ import {
   harborRequest,
   harborStreamRequest,
   forgetAgentsInTab,
+  onHarborSessionEnded,
   forgetSiteServersInTab,
   forgetSiteServersOnNavigation,
 } from './harbor-core';
@@ -43,6 +44,8 @@ import {
   resolveTextSession,
   recordExplicitPrompt,
   forgetTextSession,
+  endModelSessionsForBackendSwitch,
+  endExplicitTextSession,
   // Tab utilities
   restoreSpawnedTabs,
   handleTabRemoved,
@@ -101,6 +104,8 @@ async function handleSessionPromptStreaming(
         sendEvent({ id: ctx.id, event: { type: 'token', token: chunk } });
       }, signal);
       if (result.ok) {
+        // Counts as the session's activity, as a prompt on the built-in model does.
+        recordExplicitPrompt(session, input, result.text);
         sendEvent({ id: ctx.id, event: { type: 'done' }, done: true });
       } else {
         sendEvent({ id: ctx.id, event: result.error, done: true });
@@ -274,7 +279,8 @@ export function initializePageApi(): void {
 
   // Switching `harbor_agent_backend` ends work still running on the old
   // agent, not just changes what the *next* call uses: every live
-  // ACP-backed window.ai text session is destroyed (a later prompt on one
+  // window.ai text session and agent.sessions session is ended, whether it
+  // ran on an agent or on Harbor's built-in model (a later prompt on one
   // gets the same "session not found" a destroy always produces), and
   // every in-flight ACP agent.run is cancelled with ERR_AGENT_FAILED /
   // "The agent was changed." (acp-backend-generation.ts, combined into
@@ -290,9 +296,17 @@ export function initializePageApi(): void {
     browserAPI.storage.onChanged.addListener((changes: Record<string, unknown>, area: string) => {
       if (area !== 'local' || !(AGENT_BACKEND_STORAGE_KEY in changes)) return;
       invalidateAcpBackendGeneration();
+      endModelSessionsForBackendSwitch();
       void destroyAllAcpTextSessions(forgetTextSession);
     });
   }
+
+  // An agent.sessions session Harbor ends on its own (expired, or dropped
+  // for inactivity) ends the agent process behind it too, so it stops
+  // holding one of the site's agent slots.
+  onHarborSessionEnded((sessionId, origin) => {
+    void endExplicitTextSession(sessionId, origin);
+  });
 
   // Clean up spawned tabs when they are closed.
   browserAPI.tabs.onRemoved.addListener(async (tabId: number) => {
