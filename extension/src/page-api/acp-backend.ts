@@ -18,11 +18,22 @@
  * is the same role: a client-side connection over the stream, read through
  * a `ClientContext`.
  *
- * Tools: the first release offers the agent none of Harbor's or the page's
- * tools, so `AgentRunRequest.tools` is ignored here. `AgentRunRequest.
+ * Tools: this backend still offers the agent none of Harbor's own
+ * (installed-server) tools, so `AgentRunRequest.tools` is ignored here —
+ * only the origin/tab's own site-registered MCP servers
+ * (`mcp/site-servers.ts`, via harbor-core.ts's `listSiteServersForAcp`)
+ * are candidates for `session/new`, and only when the origin holds both
+ * `mcp:tools.list` and `mcp:tools.call` (otherwise none of them are);
+ * among those, each server is then checked on its own against the
+ * policy engine (`siteServerCandidatesForAcp` below) — a rule naming one
+ * server (or a glob) only filters that one out, not every site server
+ * the origin registered. What's left is then further filtered to only
+ * the ones the agent's own `initialize` response says it can use
+ * (`acp-connection.ts`'s `initializeAcpSession`). `AgentRunRequest.
  * maxToolCalls` is ignored too: Harbor gates whether a site may use the
- * user's agent at all, not how the agent works once it's running — there's
- * no tool-call budget on this backend (a maintainer decision; see
+ * user's agent at all, not how the agent works once it's running —
+ * there's no tool-call budget on this backend, and no per-tool allowlist
+ * either, for either kind of tool (a maintainer decision; see
  * docs/ACP_BACKEND_DESIGN.md).
  */
 import {
@@ -33,7 +44,8 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk';
 
-import { acpClose, acpOpenStream, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
+import { acpClose, acpOpenStream, listSiteServersForAcp, policyAllowsSiteToolsForAcp, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
+import type { SiteMcpServerDescriptor } from '../mcp/site-servers';
 import { hasPermission } from './handlers';
 import { PER_SITE_AGENT_LIMIT, tryAcquireAgentSlot, releaseAgentSlot } from './acp-agent-limits';
 import type { StreamToken } from './types';
@@ -64,6 +76,28 @@ import {
 export { answerPermissionRequest, combineAbortSignals };
 /** This backend's own name for the shared per-turn timeout. */
 export const ACP_RUN_TIMEOUT_MS = ACP_TURN_TIMEOUT_MS;
+
+/**
+ * The origin/tab's site-registered MCP servers that may be passed into
+ * `session/new` (HBR-134, D2): none of them at all unless the origin
+ * holds *both* `mcp:tools.list` and `mcp:tools.call` (Harbor's own
+ * origin-grant store, the same check `background.ts`'s `handleAgentRun`
+ * makes for the built-in backend's own tools) — that's an all-or-nothing
+ * gate on the *origin*, not a per-server one, since Harbor's grant store
+ * itself isn't per-server. Past that, each candidate is checked on its
+ * own against the policy engine with no prompt
+ * (`policyAllowsSiteToolsForAcp`), so a rule naming one server (or a
+ * glob) only filters that one out. The per-tool allowlist still doesn't
+ * apply to an ACP agent's own tool use (unchanged maintainer decision).
+ */
+async function siteServerCandidatesForAcp(origin: string, tabId?: number): Promise<SiteMcpServerDescriptor[]> {
+  if (!await hasPermission(origin, 'mcp:tools.list', tabId)) return [];
+  if (!await hasPermission(origin, 'mcp:tools.call', tabId)) return [];
+  const candidates = listSiteServersForAcp(origin, tabId);
+  if (candidates.length === 0) return [];
+  const allowedIds = new Set(await policyAllowsSiteToolsForAcp(origin, tabId, candidates.map((c) => c.serverId)));
+  return candidates.filter((c) => allowedIds.has(c.serverId));
+}
 
 export class AcpAgentBackend implements AgentBackend {
   constructor(private readonly agentId: string) {}
@@ -295,7 +329,8 @@ export class AcpAgentBackend implements AgentBackend {
       await app.connectWith(stream, async (ctx) => {
         connectionCtx = ctx;
 
-        const initialized = await initializeAcpSession(ctx, cwd, requestAbort.signal);
+        const siteServers = await siteServerCandidatesForAcp(origin, tabId);
+        const initialized = await initializeAcpSession(ctx, cwd, requestAbort.signal, siteServers);
         if (!initialized.ok) {
           send(initialized.error);
           return;

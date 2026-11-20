@@ -11,7 +11,14 @@
  * URL in Firefox, its `origin` in Chrome) — never from the message, which a
  * page or a compromised content script could otherwise forge.
  */
-import { harborRequest, harborStreamRequest, forgetAgentsInTab, onHarborSessionEnded } from './harbor-core';
+import {
+  harborRequest,
+  harborStreamRequest,
+  forgetAgentsInTab,
+  onHarborSessionEnded,
+  forgetSiteServersInTab,
+  forgetSiteServersOnNavigation,
+} from './harbor-core';
 import { policyRefusalCode } from './policy-refusal';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
 import { type AgentBackend } from './agent-backend';
@@ -321,6 +328,18 @@ export function initializePageApi(): void {
     // ACP-backed window.ai text session this tab opened — a no-op when it
     // opened none.
     await cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
+    // Disconnects and forgets every MCP server this tab's page registered
+    // (window.agent.mcp.register) — a no-op when it registered none.
+    forgetSiteServersInTab(tabId);
+  });
+
+  // A tab's registered MCP servers belong to the page that registered
+  // them; once that tab's URL no longer shares that page's origin (a real
+  // navigation, not a same-document hash/pushState change), they're
+  // dropped too — tabs.onRemoved above is the backstop for the tab closing
+  // outright.
+  browserAPI.tabs.onUpdated?.addListener((tabId: number, changeInfo: { url?: string }) => {
+    if (changeInfo.url) forgetSiteServersOnNavigation(tabId, changeInfo.url);
   });
 
   // Port connection handler: the page-facing transport.

@@ -26,6 +26,10 @@ vi.mock('../harbor-core', () => ({
   // the real port and the real policy engine, in
   // acp-model-prompt-agent-policy.test.ts.
   requireAgentPromptAction: async () => true,
+  // This file is about backend selection and cancellation, not
+  // site-registered MCP servers — no origin here registered any.
+  listSiteServersForAcp: () => [],
+  policyAllowsSiteToolsForAcp: async () => true,
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../policy/feature-flags')>()),

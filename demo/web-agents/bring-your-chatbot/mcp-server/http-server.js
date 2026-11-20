@@ -238,6 +238,12 @@ function createMcpServer(sessionId) {
   return server;
 }
 
+// Every open SSE connection, keyed by the session id SSEServerTransport
+// generates for itself (the same id it puts in the `endpoint` event's
+// `?sessionId=` query string) — a POST is routed to the transport that
+// opened that session, never a brand new one.
+const sseTransports = new Map();
+
 // HTTP server with SSE transport
 const httpServer = http.createServer(async (req, res) => {
   // CORS headers
@@ -260,20 +266,41 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
-  // MCP SSE endpoint
+  // MCP SSE endpoint: a GET opens the stream (and gets the `endpoint`
+  // event naming where to POST); every later request for that session is
+  // a POST to that same URL with its `sessionId`, handled by the
+  // transport that opened it — never by opening another stream.
   if (url.pathname === '/mcp' || url.pathname === '/sse') {
-    console.log(`[MCP] New SSE connection from ${req.socket.remoteAddress}`);
-    
-    const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const transport = new SSEServerTransport('/mcp', res);
-    const server = createMcpServer(sessionId);
+    if (req.method === 'GET') {
+      console.log(`[MCP] New SSE connection from ${req.socket.remoteAddress}`);
 
-    res.on('close', () => {
-      console.log(`[MCP] Connection closed: ${sessionId}`);
-      carts.delete(sessionId);
-    });
+      const transport = new SSEServerTransport('/mcp', res);
+      const sessionId = transport.sessionId;
+      const server = createMcpServer(sessionId);
+      sseTransports.set(sessionId, transport);
 
-    await server.connect(transport);
+      res.on('close', () => {
+        console.log(`[MCP] Connection closed: ${sessionId}`);
+        sseTransports.delete(sessionId);
+        carts.delete(sessionId);
+      });
+
+      await server.connect(transport);
+      return;
+    }
+
+    if (req.method === 'POST') {
+      const sessionId = url.searchParams.get('sessionId');
+      const transport = sessionId && sseTransports.get(sessionId);
+      if (!transport) {
+        res.writeHead(400).end('Bad Request: no open session for this sessionId');
+        return;
+      }
+      await transport.handlePostMessage(req, res);
+      return;
+    }
+
+    res.writeHead(405, { Allow: 'GET, POST, OPTIONS' }).end('Method not allowed');
     return;
   }
 

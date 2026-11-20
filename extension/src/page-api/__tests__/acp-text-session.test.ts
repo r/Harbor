@@ -27,6 +27,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../harbor-core', () => ({
   onHarborSessionEnded: vi.fn(() => () => {}),
   forgetAgentsInTab: vi.fn(),
+  // This file's tabs.onRemoved tests close a tab, which background.ts's
+  // real listener also uses to forget that tab's site-registered MCP
+  // servers (mcp/site-servers.ts) — a no-op here since none of these
+  // sessions ever registered any.
+  forgetSiteServersInTab: vi.fn(),
   harborRequest: vi.fn(async () => ({ bridgeReady: true })),
   harborStreamRequest: vi.fn(),
   acpOpenStream: (agentId: string, workspace: string) => mocks.bridge.current!.acpOpenStream(agentId, workspace),

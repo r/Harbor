@@ -35,6 +35,10 @@ vi.mock('../harbor-core', () => ({
   acpClose: (channel: string) => mocks.bridge.current!.acpClose(channel),
   requireAgentPromptAction: async () => true,
   isModelPromptGrantedForAgent: async () => true,
+  // This file is about the per-site agent cap, not site-registered MCP
+  // servers — no origin here registered any.
+  listSiteServersForAcp: () => [],
+  policyAllowsSiteToolsForAcp: async () => true,
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../policy/feature-flags')>()),

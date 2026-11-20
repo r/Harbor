@@ -56,6 +56,9 @@ export function featuresForMessage(type: string): Array<keyof FeatureFlags> {
   if (type.startsWith('ai.')) return ['textGeneration'];
   if (type === 'agent.run') return ['toolCalling'];
   if (type.startsWith('agent.tools.')) return ['toolAccess'];
+  // agent.mcp.register follows Tool Access, the same as manual tool
+  // access — discover and unregister don't (HBR-134, D3).
+  if (type === 'agent.mcp.register') return ['toolAccess'];
   // The injected API offers readability with either browser setting.
   if (type === 'agent.browser.activeTab.readability') return ['browserInteraction', 'browserControl'];
   if (type.startsWith('agent.browser.activeTab.')) return ['browserInteraction'];

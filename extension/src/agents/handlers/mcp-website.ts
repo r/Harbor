@@ -1,30 +1,89 @@
 /**
  * Website MCP Server Registration handlers.
+ *
+ * `register` connects to the site's declared MCP server and offers its
+ * real tools to the person's agent for the registering origin/tab only —
+ * see `mcp/site-servers.ts` for the registry and `extension-api.ts`'s
+ * `handleMcpListTools`/`handleMcpCallTool` for where those tools surface.
  */
 
 import type { RequestContext, ResponseSender } from './router-types';
-import { log } from './helpers';
+import { log, requireAction } from './helpers';
 import { browserAPI } from '../../browser-compat';
+import { isSiteMcpTransport, registerSiteServer, unregisterSiteServer } from '../../mcp/site-servers';
+import { Audit } from '../../policy/audit';
+import { LabelSet, type PolicyDecision } from '../../policy/engine';
 
 // =============================================================================
-// Types
+// Auditing the D1 refusal (it never reaches requireAction/the engine)
 // =============================================================================
 
-interface WebsiteMcpServer {
-  serverId: string;
-  origin: string;
-  tabId: number;
-  url: string;
-  name: string;
-  description?: string;
-  tools?: string[];
-  transport: 'sse' | 'websocket' | 'streamable-http';
-  connected: boolean;
-  registeredAt: number;
+/**
+ * D1's same-origin/loopback rule runs before `mcp.server.register`'s own
+ * gate — so the person is never asked to allow a registration that was
+ * always going to be refused — which means it never reaches
+ * `requireAction`/`evaluate()`, the normal path every other gated
+ * decision is audited through. It should still land in the audit log
+ * (the activity feed and the watchdog both read from there), so this
+ * records it by hand, matching `evaluate()`'s own `PolicyDecision` shape
+ * (see `policy/engine.ts`) as closely as a decision that never ran
+ * through the engine can: `source: 'safetyFloor'` (declared in
+ * `DecisionSource` but not assigned by any real tier today) is the
+ * closest honest label for "Harbor's own floor, not a rule, a grant or
+ * the watchdog". Input errors (missing fields, an unrecognized
+ * transport, a malformed URL) aren't audited — they're not a policy
+ * decision about an origin, just invalid input.
+ */
+function auditOriginRuleDenial(ctx: RequestContext, reason: string): void {
+  const decision: PolicyDecision = {
+    effect: 'deny',
+    // Tier 0 is the engine's hard floor, which this is: no rule or grant
+    // can allow a cross-origin (or public-to-loopback) registration.
+    tier: 0,
+    source: 'safetyFloor',
+    reason,
+    outputLabels: LabelSet.empty(),
+    trace: [{ tier: 0, source: 'safetyFloor', outcome: 'deny', reason }],
+  };
+  Audit.record(
+    { origin: ctx.origin, action: 'mcp.server.register', correlationId: ctx.id, tabId: ctx.tabId },
+    decision,
+  );
 }
 
-// Store website-registered MCP servers (keyed by serverId)
-const websiteMcpServers = new Map<string, WebsiteMcpServer>();
+// =============================================================================
+// D1: same-origin (or matching-loopback) registration rule
+// =============================================================================
+
+/** Loopback hostnames, in every form a URL's own `.hostname` can take them. */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+function isLoopbackHost(hostname: string): boolean {
+  return LOOPBACK_HOSTS.has(hostname);
+}
+
+/** A server URL's origin, with its scheme mapped for comparison: ws(s) counts as http(s). */
+function effectiveServerOrigin(url: URL): string {
+  if (url.protocol === 'ws:') return `http://${url.host}`;
+  if (url.protocol === 'wss:') return `https://${url.host}`;
+  return url.origin;
+}
+
+/**
+ * Whether a page at `pageOrigin` may register `serverUrl` — a maintainer
+ * decision (HBR-134, D1): same-origin only, except a loopback server
+ * (localhost/127.0.0.1/::1), which is allowed only when the *page itself*
+ * is also loopback (so an ordinary site can't point Harbor at "localhost"
+ * and reach whatever's listening on the person's own machine). A
+ * same-origin `ws(s)://` URL for `transport: 'websocket'` counts as
+ * same-origin via the scheme mapping above.
+ */
+function isAllowedServerUrl(pageOrigin: URL, serverUrl: URL): boolean {
+  if (isLoopbackHost(serverUrl.hostname)) {
+    return isLoopbackHost(pageOrigin.hostname);
+  }
+  return effectiveServerOrigin(serverUrl) === pageOrigin.origin;
+}
 
 // =============================================================================
 // Handlers
@@ -38,7 +97,7 @@ export async function handleMcpDiscover(
   sender: ResponseSender,
 ): Promise<void> {
   const { tabId } = ctx;
-  
+
   if (!tabId) {
     sender.sendResponse({
       id: ctx.id,
@@ -84,17 +143,25 @@ export async function handleMcpDiscover(
 
 /**
  * Handle agent.mcp.register - register a website's MCP server.
+ *
+ * Every check that can fail on its own (missing fields, no tab context,
+ * an unrecognized transport, the same-origin/loopback rule) runs *before*
+ * `mcp.server.register`'s own gate, so the person is never asked to allow
+ * a registration that was always going to be refused. The policy gate
+ * itself still runs before any network connection: only once it's
+ * granted does this run the MCP handshake over the requested transport
+ * (`mcp/site-servers.ts`).
  */
 export async function handleMcpRegister(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  const { url, name, description, tools, transport } = ctx.payload as {
+  const { url, name, description, transport: rawTransport } = ctx.payload as {
     url: string;
     name: string;
     description?: string;
     tools?: string[];
-    transport?: 'sse' | 'websocket' | 'streamable-http';
+    transport?: unknown;
   };
 
   if (!url || !name) {
@@ -106,24 +173,40 @@ export async function handleMcpRegister(
     return;
   }
 
-  // Validate URL is allowed (must be from same origin or explicitly permitted)
+  if (!ctx.tabId) {
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: 'No tab context for registration' },
+    });
+    return;
+  }
+
+  // H2: an omitted transport defaults to sse.
+  const transport = rawTransport ?? 'sse';
+
+  if (transport === 'stdio') {
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: 'stdio is not supported for a site-registered MCP server' },
+    });
+    return;
+  }
+  if (!isSiteMcpTransport(transport)) {
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: `Unknown MCP transport: ${String(transport)}` },
+    });
+    return;
+  }
+
+  let serverUrl: URL;
+  let pageOriginUrl: URL;
   try {
-    const serverUrl = new URL(url);
-    const originUrl = new URL(ctx.origin);
-    
-    // For now, allow localhost and same-origin servers
-    const isLocalhost = serverUrl.hostname === 'localhost' || serverUrl.hostname === '127.0.0.1';
-    const isSameOrigin = serverUrl.origin === originUrl.origin;
-    
-    if (!isLocalhost && !isSameOrigin) {
-      log('MCP register rejected - cross-origin server from', ctx.origin);
-      sender.sendResponse({
-        id: ctx.id,
-        ok: false,
-        error: { code: 'ERR_PERMISSION_DENIED', message: 'MCP server must be on localhost or same origin' },
-      });
-      return;
-    }
+    serverUrl = new URL(url);
+    pageOriginUrl = new URL(ctx.origin);
   } catch {
     sender.sendResponse({
       id: ctx.id,
@@ -133,36 +216,55 @@ export async function handleMcpRegister(
     return;
   }
 
-  // Generate a unique server ID
-  const serverId = `website-${ctx.origin.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`;
+  // D1: same-origin only, except a loopback server registered from a
+  // loopback page.
+  if (!isAllowedServerUrl(pageOriginUrl, serverUrl)) {
+    log('MCP register rejected - server URL not allowed from', ctx.origin);
+    const message = 'MCP server must be on the same origin, or localhost/127.0.0.1/::1 registered from a page on the same';
+    auditOriginRuleDenial(ctx, message);
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_PERMISSION_DENIED', message },
+    });
+    return;
+  }
 
-  // Create the server record
-  const server: WebsiteMcpServer = {
-    serverId,
+  // The policy gate: only now does this ask the person, and only once
+  // granted does anything below reach the network.
+  if (!(await requireAction(ctx, sender, 'mcp.server.register', { promptAsScope: 'mcp:servers.register' }))) {
+    return;
+  }
+
+  const result = await registerSiteServer({
     origin: ctx.origin,
-    tabId: ctx.tabId || 0,
+    tabId: ctx.tabId,
     url,
     name,
     description,
-    tools,
-    transport: transport || 'sse',
-    connected: false,
-    registeredAt: Date.now(),
-  };
+    transport,
+    signal: ctx.signal,
+  });
 
-  // Store the server
-  websiteMcpServers.set(serverId, server);
-  log('MCP server registered:', serverId);
+  if (!result.ok) {
+    log('MCP server registration failed:', result.error);
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: result.aborted ? 'ERR_ABORTED' : 'ERR_INTERNAL', message: result.error },
+    });
+    return;
+  }
 
-  // TODO: Connect to the server and verify tools
-  // For now, we just register it and trust the declared tools
+  log('MCP server registered:', result.serverId, 'tools:', result.tools);
 
   sender.sendResponse({
     id: ctx.id,
     ok: true,
     result: {
       success: true,
-      serverId,
+      serverId: result.serverId,
+      tools: result.tools,
     },
   });
 }
@@ -170,10 +272,10 @@ export async function handleMcpRegister(
 /**
  * Handle agent.mcp.unregister - unregister a website's MCP server.
  */
-export function handleMcpUnregister(
+export async function handleMcpUnregister(
   ctx: RequestContext,
   sender: ResponseSender,
-): void {
+): Promise<void> {
   const { serverId } = ctx.payload as { serverId: string };
 
   if (!serverId) {
@@ -185,28 +287,28 @@ export function handleMcpUnregister(
     return;
   }
 
-  const server = websiteMcpServers.get(serverId);
-  if (!server) {
+  if (!ctx.tabId) {
     sender.sendResponse({
       id: ctx.id,
       ok: false,
-      error: { code: 'ERR_INTERNAL', message: 'MCP server not found' },
+      error: { code: 'ERR_INTERNAL', message: 'No tab context for unregistration' },
     });
     return;
   }
 
-  // Verify the origin matches
-  if (server.origin !== ctx.origin) {
+  const result = await unregisterSiteServer(ctx.origin, ctx.tabId, serverId);
+  if (!result.ok) {
     sender.sendResponse({
       id: ctx.id,
       ok: false,
-      error: { code: 'ERR_PERMISSION_DENIED', message: 'Cannot unregister server from different origin' },
+      error: {
+        code: result.error === 'MCP server not found' ? 'ERR_INTERNAL' : 'ERR_PERMISSION_DENIED',
+        message: result.error,
+      },
     });
     return;
   }
 
-  // Remove the server
-  websiteMcpServers.delete(serverId);
   log('MCP server unregistered:', serverId);
 
   sender.sendResponse({

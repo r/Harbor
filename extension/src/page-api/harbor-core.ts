@@ -18,10 +18,11 @@ import { gatePageAction, routeExtensionApiMessage, streamLlmChat } from '../exte
 import type { TypedAction } from '../policy/actions';
 import { routeAgentMessage } from '../agents/background-router';
 import { forgetTabAgents } from '../agents/handlers/multi-agent';
+import { forgetTabServers, forgetTabServersIfOriginChanged, listSiteServersForAcp as listSiteServersForAcpImpl, type SiteMcpServerDescriptor } from '../mcp/site-servers';
 import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
-import { requireAction } from '../agents/handlers/helpers';
+import { checkAction, requireAction } from '../agents/handlers/helpers';
 import type { RequestContext, ResponseSender } from '../agents/handlers/router-types';
 import { backendTagForSetting, isGrantedForBackend } from '../policy/backend-grant';
 import { SessionRegistry } from '../sessions';
@@ -374,6 +375,55 @@ export async function requireAgentPromptAction(origin: string, tabId?: number): 
 }
 
 /**
+ * Which of `serverIds` the policy engine currently allows `tool.list` and
+ * `tool.call` for, with no prompt — used by `acp-backend.ts` to decide
+ * which of the origin/tab's site-registered MCP servers to pass into
+ * `session/new` (HBR-134, D2). Checked per server, with
+ * `resource: { server: serverId } }`, so a rule naming one server (or a
+ * glob like `site:*`) only filters that one out — the engine's resource
+ * matching (`policy/rules.ts`) is what gives `site:*` its meaning here.
+ *
+ * `upstreamConsent: 'origin-grant'` means the caller's own
+ * `mcp:tools.list`/`mcp:tools.call` grant check (`hasPermission`) stands
+ * in for the engine's own Tier 9 default (an un-ruled `tool.call`
+ * defaults to `preview`) — the same deal a page's `mcp.listTools`/
+ * `mcp.callTool` calls get through `gatePageCall`. A *rule* that denies,
+ * asks or previews either action for a server still isn't covered by
+ * that consent, and `noPrompt: true` turns what would otherwise be a
+ * prompt into an outright refusal for that one server instead: this
+ * silently decides what to offer the agent, never something to interrupt
+ * a run for.
+ *
+ * Harbor's own origin-grant store is checked separately by the caller —
+ * this is only the policy engine's rule evaluation and audit trail, the
+ * same split `requireAgentPromptAction` draws for `model:prompt`.
+ */
+export async function policyAllowsSiteToolsForAcp(
+  origin: string,
+  tabId: number | undefined,
+  serverIds: readonly string[],
+): Promise<string[]> {
+  const ctx: RequestContext = {
+    id: crypto.randomUUID(),
+    type: 'session.prompt',
+    payload: {},
+    origin,
+    tabId,
+  };
+  const options = { upstreamConsent: 'origin-grant' as const, noPrompt: true };
+  const allowed: string[] = [];
+  for (const serverId of serverIds) {
+    const resource = { server: serverId };
+    const listDenial = await checkAction(ctx, 'tool.list', { ...options, resource });
+    if (listDenial) continue;
+    const callDenial = await checkAction(ctx, 'tool.call', { ...options, resource });
+    if (callDenial) continue;
+    allowed.push(serverId);
+  }
+  return allowed;
+}
+
+/**
  * Whether `origin` holds a live `model:prompt` grant recorded for the ACP
  * agent `agentId` specifically — never a live read of whatever backend is
  * currently selected. acp-text-session.ts's own `agentId` is fixed for
@@ -397,6 +447,39 @@ export async function isModelPromptGrantedForAgent(
  */
 export function forgetAgentsInTab(tabId: number, registeredBefore?: number): void {
   forgetTabAgents(tabId, registeredBefore);
+}
+
+// =============================================================================
+// Site-registered MCP servers (mcp/site-servers.ts) — per-tab lifetime
+// =============================================================================
+
+/**
+ * The tab closed, or its page went away outright: disconnect and forget
+ * every MCP server that tab's page registered (`window.agent.mcp.register`).
+ */
+export function forgetSiteServersInTab(tabId: number): void {
+  forgetTabServers(tabId);
+}
+
+/**
+ * The tab navigated to `url`. A site's registered MCP servers are dropped
+ * once the tab's new URL no longer shares their origin — a same-document
+ * URL change (a hash, or `pushState`) that keeps the same origin is a
+ * no-op, same as `webNavigation`-based cleanup elsewhere treats it.
+ */
+export function forgetSiteServersOnNavigation(tabId: number, url: string): void {
+  forgetTabServersIfOriginChanged(tabId, url);
+}
+
+/**
+ * The origin/tab's site-registered MCP servers, as candidates for
+ * `page-api/acp-connection.ts`'s `initializeAcpSession` to offer the
+ * person's own ACP agent in `session/new` (filtered there by what the
+ * agent's `initialize` response says it can actually use).
+ */
+export function listSiteServersForAcp(origin: string, tabId?: number): SiteMcpServerDescriptor[] {
+  if (tabId === undefined) return [];
+  return listSiteServersForAcpImpl(origin, tabId);
 }
 
 /**

@@ -27,7 +27,12 @@ const SURFACE_MESSAGES: Array<[path: string, message: string]> = [
   ['browser.tabs', 'agent.browser.tabs.create'],
   ['browser.navigate', 'agent.browser.navigate'],
   ['browser.fetch', 'agent.browser.fetch'],
-  ['mcp', 'agent.mcp.register'],
+  // agent.mcp.discover, not .register: register now follows Tool Access
+  // on its own (HBR-134, D3) while discover/unregister don't, so
+  // capabilities().surfaces.mcp — "is the mcp surface reachable at all"
+  // — still tracks the two that are never gated, matching this file's
+  // own header: MCP as a whole isn't gated by any toggle.
+  ['mcp', 'agent.mcp.discover'],
   ['chat', 'agent.chat.open'],
   ['sessions', 'agent.sessions.create'],
   ['agents', 'agent.agents.invoke'],

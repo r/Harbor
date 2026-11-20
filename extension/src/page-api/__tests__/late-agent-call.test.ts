@@ -28,6 +28,34 @@ vi.mock('../../mcp/host', () => ({
   stopServer: vi.fn(),
   listTools: vi.fn(async () => []),
 }));
+// This file is about the permission gate and origin checks, not the MCP
+// connection itself (covered on its own terms, against a fake server, in
+// site-mcp-connect.test.ts) — a successful "connect" here just records
+// which origin and tab registered which serverId, enough to exercise
+// `unregisterSiteServer`'s real origin-*and-tab* check below honestly: a
+// different tab for the same serverId has no entry to find at all (the
+// real registry is keyed by (tabId, serverId)), the same as an unknown
+// serverId — not the "different origin" case, which only applies when the
+// (tabId, serverId) pair itself exists under another origin.
+vi.mock('../../mcp/site-servers', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../mcp/site-servers')>();
+  const owners = new Map<string, { origin: string; tabId: number }>();
+  return {
+    ...actual,
+    registerSiteServer: vi.fn(async ({ origin, tabId, name }: { origin: string; tabId: number; name: string }) => {
+      const serverId = actual.siteServerId(origin, name);
+      owners.set(serverId, { origin, tabId });
+      return { ok: true, serverId, tools: [] };
+    }),
+    unregisterSiteServer: vi.fn(async (origin: string, tabId: number, serverId: string) => {
+      const owner = owners.get(serverId);
+      if (!owner || owner.tabId !== tabId) return { ok: false, error: 'MCP server not found' };
+      if (owner.origin !== origin) return { ok: false, error: 'Cannot unregister server from different origin' };
+      owners.delete(serverId);
+      return { ok: true };
+    }),
+  };
+});
 vi.mock('../../llm/native-bridge', () => ({ isNativeBridgeReady: vi.fn(() => false), rpcRequest: vi.fn() }));
 vi.mock('../../llm/provider-registry', () => ({
   listAllProviders: vi.fn(async () => []),
@@ -90,12 +118,12 @@ async function loadRules(rules: Array<Record<string, unknown>>) {
   Policy.__setForTesting(rules.map(r => compileRule({ source: 'user', ...r } as never)));
 }
 
-function connectPort(senderUrl: string) {
+function connectPort(senderUrl: string, tabId = 9) {
   const listeners: Array<(m: unknown) => void> = [];
   const posted: Reply[] = [];
   onConnect({
     name: 'harbor-page-api',
-    sender: { url: senderUrl, tab: { id: 9 } },
+    sender: { url: senderUrl, tab: { id: tabId } },
     onMessage: { addListener: (l: (m: unknown) => void) => listeners.push(l) },
     onDisconnect: { addListener: () => {} },
     postMessage: (m: Reply) => posted.push(m),
@@ -200,13 +228,27 @@ describe('a refused agent.chat.open reports the policy engine\'s code', () => {
 
 describe("agent.mcp's own refusals reach the page with their code", () => {
   it('registering a server on another origin is refused with ERR_PERMISSION_DENIED', async () => {
+    // Allowed to register at all — the refusal under test is the
+    // same-origin-or-localhost URL check inside the handler, which runs
+    // only once `mcp.server.register` itself is granted.
+    await loadRules([{ id: 'allow-register', effect: 'allow', principal: { origin: '*' }, action: 'mcp.server.register' }]);
     const page = connectPort(`${ORIGIN}/page`);
     const reply = await page.request('agent.mcp.register', { url: 'https://elsewhere.example/mcp', name: 'Elsewhere' });
     expect(reply.ok).toBe(false);
     expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
   });
 
+  it('registering with no grant and no rule prompts, and a dismissal refuses it with ERR_PERMISSION_DENIED', async () => {
+    showPermissionPrompt.mockResolvedValueOnce({ granted: false });
+    const page = connectPort(`${ORIGIN}/page`);
+    const reply = await page.request('agent.mcp.register', { url: `${ORIGIN}/mcp`, name: 'Mine' });
+    expect(showPermissionPrompt).toHaveBeenCalledTimes(1);
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
+  });
+
   it("unregistering another site's server is refused with ERR_PERMISSION_DENIED", async () => {
+    await loadRules([{ id: 'allow-register', effect: 'allow', principal: { origin: '*' }, action: 'mcp.server.register' }]);
     const owner = connectPort('https://owner.example/page');
     const registered = await owner.request('agent.mcp.register', { url: 'https://owner.example/mcp', name: 'Owner' });
     expect(registered.ok, registered.error?.message).toBe(true);
@@ -216,5 +258,21 @@ describe("agent.mcp's own refusals reach the page with their code", () => {
     const reply = await page.request('agent.mcp.unregister', { serverId });
     expect(reply.ok).toBe(false);
     expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
+  });
+
+  it("unregistering from a different tab than the one that registered it is refused as not found, not a different-origin denial", async () => {
+    await loadRules([{ id: 'allow-register', effect: 'allow', principal: { origin: '*' }, action: 'mcp.server.register' }]);
+    const registeringTab = connectPort(`${ORIGIN}/page`, 1);
+    const registered = await registeringTab.request('agent.mcp.register', { url: `${ORIGIN}/mcp`, name: 'Mine' });
+    expect(registered.ok, registered.error?.message).toBe(true);
+    const serverId = (registered.result as { serverId: string }).serverId;
+
+    const otherTab = connectPort(`${ORIGIN}/page`, 2); // same origin, different tab
+    const reply = await otherTab.request('agent.mcp.unregister', { serverId });
+    expect(reply.ok).toBe(false);
+    // "not found" (ERR_INTERNAL from the handler) isn't one of the policy
+    // engine's own refusal codes, so the page API reports its own code for
+    // it — not ERR_PERMISSION_DENIED, which the different-origin case above gets.
+    expect(reply.error?.code).toBe('ERR_MCP_UNREGISTER');
   });
 });
