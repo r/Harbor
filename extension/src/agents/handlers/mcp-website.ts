@@ -1,30 +1,16 @@
 /**
  * Website MCP Server Registration handlers.
+ *
+ * `register` connects to the site's declared MCP server and offers its
+ * real tools to the person's agent for the registering origin/tab only —
+ * see `mcp/site-servers.ts` for the registry and `extension-api.ts`'s
+ * `handleMcpListTools`/`handleMcpCallTool` for where those tools surface.
  */
 
 import type { RequestContext, ResponseSender } from './router-types';
-import { log } from './helpers';
+import { log, requireAction } from './helpers';
 import { browserAPI } from '../../browser-compat';
-
-// =============================================================================
-// Types
-// =============================================================================
-
-interface WebsiteMcpServer {
-  serverId: string;
-  origin: string;
-  tabId: number;
-  url: string;
-  name: string;
-  description?: string;
-  tools?: string[];
-  transport: 'sse' | 'websocket' | 'streamable-http';
-  connected: boolean;
-  registeredAt: number;
-}
-
-// Store website-registered MCP servers (keyed by serverId)
-const websiteMcpServers = new Map<string, WebsiteMcpServer>();
+import { registerSiteServer, unregisterSiteServer } from '../../mcp/site-servers';
 
 // =============================================================================
 // Handlers
@@ -38,7 +24,7 @@ export async function handleMcpDiscover(
   sender: ResponseSender,
 ): Promise<void> {
   const { tabId } = ctx;
-  
+
   if (!tabId) {
     sender.sendResponse({
       id: ctx.id,
@@ -84,17 +70,26 @@ export async function handleMcpDiscover(
 
 /**
  * Handle agent.mcp.register - register a website's MCP server.
+ *
+ * Gated by `mcp.server.register` (asks by default, remembered per origin
+ * like any other scope) *before* Harbor ever connects to the site's
+ * server. Only once that's granted does this validate the URL and run the
+ * MCP handshake over the requested transport (`mcp/site-servers.ts`).
  */
 export async function handleMcpRegister(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  const { url, name, description, tools, transport } = ctx.payload as {
+  if (!(await requireAction(ctx, sender, 'mcp.server.register', { promptAsScope: 'mcp:servers.register' }))) {
+    return;
+  }
+
+  const { url, name, description, transport } = ctx.payload as {
     url: string;
     name: string;
     description?: string;
     tools?: string[];
-    transport?: 'sse' | 'websocket' | 'streamable-http';
+    transport?: unknown;
   };
 
   if (!url || !name) {
@@ -106,15 +101,24 @@ export async function handleMcpRegister(
     return;
   }
 
+  if (!ctx.tabId) {
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: 'No tab context for registration' },
+    });
+    return;
+  }
+
   // Validate URL is allowed (must be from same origin or explicitly permitted)
   try {
     const serverUrl = new URL(url);
     const originUrl = new URL(ctx.origin);
-    
+
     // For now, allow localhost and same-origin servers
     const isLocalhost = serverUrl.hostname === 'localhost' || serverUrl.hostname === '127.0.0.1';
     const isSameOrigin = serverUrl.origin === originUrl.origin;
-    
+
     if (!isLocalhost && !isSameOrigin) {
       log('MCP register rejected - cross-origin server from', ctx.origin);
       sender.sendResponse({
@@ -133,36 +137,34 @@ export async function handleMcpRegister(
     return;
   }
 
-  // Generate a unique server ID
-  const serverId = `website-${ctx.origin.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`;
-
-  // Create the server record
-  const server: WebsiteMcpServer = {
-    serverId,
+  const result = await registerSiteServer({
     origin: ctx.origin,
-    tabId: ctx.tabId || 0,
+    tabId: ctx.tabId,
     url,
     name,
     description,
-    tools,
-    transport: transport || 'sse',
-    connected: false,
-    registeredAt: Date.now(),
-  };
+    transport,
+  });
 
-  // Store the server
-  websiteMcpServers.set(serverId, server);
-  log('MCP server registered:', serverId);
+  if (!result.ok) {
+    log('MCP server registration failed:', result.error);
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: result.error },
+    });
+    return;
+  }
 
-  // TODO: Connect to the server and verify tools
-  // For now, we just register it and trust the declared tools
+  log('MCP server registered:', result.serverId, 'tools:', result.tools);
 
   sender.sendResponse({
     id: ctx.id,
     ok: true,
     result: {
       success: true,
-      serverId,
+      serverId: result.serverId,
+      tools: result.tools,
     },
   });
 }
@@ -170,10 +172,10 @@ export async function handleMcpRegister(
 /**
  * Handle agent.mcp.unregister - unregister a website's MCP server.
  */
-export function handleMcpUnregister(
+export async function handleMcpUnregister(
   ctx: RequestContext,
   sender: ResponseSender,
-): void {
+): Promise<void> {
   const { serverId } = ctx.payload as { serverId: string };
 
   if (!serverId) {
@@ -185,28 +187,28 @@ export function handleMcpUnregister(
     return;
   }
 
-  const server = websiteMcpServers.get(serverId);
-  if (!server) {
+  if (!ctx.tabId) {
     sender.sendResponse({
       id: ctx.id,
       ok: false,
-      error: { code: 'ERR_INTERNAL', message: 'MCP server not found' },
+      error: { code: 'ERR_INTERNAL', message: 'No tab context for unregistration' },
     });
     return;
   }
 
-  // Verify the origin matches
-  if (server.origin !== ctx.origin) {
+  const result = await unregisterSiteServer(ctx.origin, ctx.tabId, serverId);
+  if (!result.ok) {
     sender.sendResponse({
       id: ctx.id,
       ok: false,
-      error: { code: 'ERR_PERMISSION_DENIED', message: 'Cannot unregister server from different origin' },
+      error: {
+        code: result.error === 'MCP server not found' ? 'ERR_INTERNAL' : 'ERR_PERMISSION_DENIED',
+        message: result.error,
+      },
     });
     return;
   }
 
-  // Remove the server
-  websiteMcpServers.delete(serverId);
   log('MCP server unregistered:', serverId);
 
   sender.sendResponse({

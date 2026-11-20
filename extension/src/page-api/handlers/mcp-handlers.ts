@@ -23,7 +23,7 @@ export async function handleMcpDiscover(ctx: RequestContext): HandlerResponse {
         tools?: string[];
         transport?: string;
       }>;
-    }>('agent.mcp.discover', { origin: ctx.origin }, { signal: ctx.signal });
+    }>('agent.mcp.discover', { origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
     return successResponse(ctx.id, result.servers || []);
   } catch (e) {
     return errorResponse(
@@ -40,7 +40,7 @@ export async function handleMcpRegister(ctx: RequestContext): HandlerResponse {
     name: string;
     description?: string;
     tools?: string[];
-    transport?: 'sse' | 'stdio' | 'streamable-http';
+    transport?: 'sse' | 'websocket' | 'streamable-http';
   };
 
   if (!url || !name) {
@@ -51,9 +51,11 @@ export async function handleMcpRegister(ctx: RequestContext): HandlerResponse {
     const result = await harborRequest<{
       success: boolean;
       serverId?: string;
+      tools?: string[];
       error?: { code: string; message: string };
     }>('agent.mcp.register', {
       origin: ctx.origin,
+      tabId: ctx.tabId,
       url,
       name,
       description,
@@ -80,6 +82,7 @@ export async function handleMcpUnregister(ctx: RequestContext): HandlerResponse 
   try {
     const result = await harborRequest<{ success: boolean }>('agent.mcp.unregister', {
       origin: ctx.origin,
+      tabId: ctx.tabId,
       serverId,
     }, { signal: ctx.signal });
     return successResponse(ctx.id, result);

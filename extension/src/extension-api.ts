@@ -13,6 +13,7 @@ import { promptActionForPrompt } from './llm/prompt-model';
 import { browserAPI } from './browser-compat';
 import { bridgeRequest, bridgeStreamRequest } from './llm/bridge-client';
 import { listServersWithStatus, callTool, listTools } from './mcp/host';
+import { callSiteTool, isSiteServerId, listSiteTools } from './mcp/site-servers';
 import { isNativeBridgeReady } from './llm/native-bridge';
 import { getRuntimeCapabilities } from './llm/provider-registry';
 import { SessionRegistry } from './sessions';
@@ -178,18 +179,26 @@ async function handleLlmGetConfiguredModelsMetadata(): Promise<ExtensionApiRespo
 }
 
 async function handleMcpListTools(payload: unknown): Promise<ExtensionApiResponse> {
-  const { serverId } = (payload || {}) as { serverId?: string };
+  const { serverId, origin, tabId } = (payload || {}) as { serverId?: string; origin?: string; tabId?: number };
 
   try {
     if (serverId) {
-      // List tools from specific server
+      // List tools from specific server — a site server when its id names
+      // one, the person's own installed servers otherwise. A site server
+      // asked about from the wrong origin/tab (or none) reports no tools,
+      // the same empty result an unknown installed serverId gives.
+      if (isSiteServerId(serverId)) {
+        if (!origin || typeof tabId !== 'number') return success({ tools: [] });
+        const tools = listSiteTools(origin, tabId).filter((t) => t.serverId === serverId);
+        return success({ tools });
+      }
       const tools = await listTools(serverId);
       return success({ tools });
     } else {
       // List tools from all running servers
       const servers = await listServersWithStatus();
       const allTools: Array<{ serverId: string; name: string; description?: string; inputSchema?: unknown }> = [];
-      
+
       for (const server of servers) {
         if (server.running && server.tools) {
           for (const tool of server.tools) {
@@ -202,7 +211,14 @@ async function handleMcpListTools(payload: unknown): Promise<ExtensionApiRespons
           }
         }
       }
-      
+
+      // The calling tab's own site-registered servers — never shown with
+      // no origin (the sidebar's own "all tools" listing has none, and
+      // never for another origin or tab than the one that registered them).
+      if (origin && typeof tabId === 'number') {
+        allTools.push(...listSiteTools(origin, tabId));
+      }
+
       return success({ tools: allTools });
     }
   } catch (e) {
@@ -214,10 +230,12 @@ async function handleMcpCallTool(
   payload: unknown,
   slot: SessionToolSlot | null = null,
 ): Promise<ExtensionApiResponse> {
-  const { serverId, toolName, args } = payload as {
+  const { serverId, toolName, args, origin, tabId } = payload as {
     serverId?: string;
     toolName?: string;
     args?: Record<string, unknown>;
+    origin?: string;
+    tabId?: number;
   };
 
   if (!serverId || !toolName) {
@@ -230,6 +248,19 @@ async function handleMcpCallTool(
   if (refusal) return refusal;
 
   try {
+    // A site-registered server only ever answers the origin and tab that
+    // registered it — with no match (wrong origin/tab, or none given),
+    // this fails the same way an unknown serverId does, not with a
+    // different message that would leak which tab actually owns it.
+    if (isSiteServerId(serverId)) {
+      if (!origin || typeof tabId !== 'number') {
+        return failure('MCP server not found');
+      }
+      const result = await callSiteTool(origin, tabId, serverId, toolName, args || {});
+      if (!result.ok) return failure(result.error);
+      return success({ result: result.result });
+    }
+
     const result = await callTool(serverId, toolName, args || {});
     if (!result.ok) {
       return failure(result.error || 'Tool call failed');

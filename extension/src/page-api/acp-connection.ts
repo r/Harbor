@@ -20,6 +20,7 @@ import {
   type AnyMessage,
   type ClientContext,
   type ContentBlock,
+  type McpServer,
   type Stream as AcpStream,
 } from '@agentclientprotocol/sdk';
 
@@ -27,6 +28,10 @@ import { acpSend, type AcpBridgeEvent } from './harbor-core';
 import { askAgentQuestion, type AgentQuestionOutcome, type AgentQuestionOption, type AgentQuestionToolCall } from './agent-question';
 import { BACKEND_CHANGED_REASON } from './acp-backend-generation';
 import { ErrorCodes, type StreamToken } from './types';
+// Type-only: erased at build time, so this doesn't reach outside page-api/
+// at runtime (see __tests__/import-boundary.test.ts) — only the shape of a
+// site's registered MCP server, not the registry itself.
+import type { SiteMcpServerDescriptor } from '../mcp/site-servers';
 
 /**
  * An agent turn can take minutes, so neither backend uses `harborRequest`'s
@@ -416,17 +421,61 @@ export async function openAcpChannel(
 }
 
 /**
+ * Turns the origin/tab's site-registered MCP servers into the ACP form
+ * `session/new` wants, keeping only what the agent just said (in its
+ * `initialize` response) it can actually use. WebSocket has no ACP
+ * transport, so a site server registered over it is dropped with a log
+ * line rather than silently.
+ *
+ * `name` is the site's own display name for the server, not the
+ * deterministic `serverId` — ACP's `McpServer.name` is documented as
+ * "human-readable", and the agent's own tool-call surface is what the
+ * person sees it through, not Harbor's allowlist (which doesn't apply to
+ * an ACP agent's own tool use — a maintainer decision).
+ */
+function mcpServersForAgent(
+  candidates: readonly SiteMcpServerDescriptor[],
+  capabilities: { http?: boolean; sse?: boolean } | undefined,
+): McpServer[] {
+  const servers: McpServer[] = [];
+  for (const site of candidates) {
+    if (site.transport === 'streamable-http') {
+      if (capabilities?.http) {
+        servers.push({ type: 'http', name: site.name, url: site.url, headers: [] });
+      }
+    } else if (site.transport === 'sse') {
+      if (capabilities?.sse) {
+        servers.push({ type: 'sse', name: site.name, url: site.url, headers: [] });
+      }
+    } else {
+      // Not `site.name`/`site.url` (page-supplied) — see
+      // page-api/__tests__/no-payload-logs.test.ts.
+      console.log('[Harbor] ACP has no websocket MCP server form; dropping one site-registered server');
+    }
+  }
+  return servers;
+}
+
+/**
  * Runs `initialize` (protocol v1, no `fs`/`terminal` capabilities) and
  * `session/new`, exactly as acp-backend.ts did inline before this was
  * extracted. Returns the new session's id, or the terminal error to
  * deliver to the page (an unsupported protocol version) — the caller
  * decides how (`send(...)` for agent.run, a rejected `open()` for a text
  * session).
+ *
+ * `siteMcpServers` is the origin/tab's site-registered MCP servers
+ * (`mcp/site-servers.ts`, reached through harbor-core.ts's
+ * `listSiteServersForAcp` — this module stays inside the page-api/ import
+ * boundary). Omitted (or empty) for a caller with no tools to offer, e.g.
+ * acp-text-session.ts's `window.ai` sessions, which stay tool-less — ACP's
+ * per-tool allowlist has no equivalent, so this is the only gate they get.
  */
 export async function initializeAcpSession(
   ctx: ClientContext,
   cwd: string,
   cancellationSignal: AbortSignal,
+  siteMcpServers: readonly SiteMcpServerDescriptor[] = [],
 ): Promise<{ ok: true; sessionId: string } | { ok: false; error: StreamToken }> {
   const initResult = await ctx.request(
     AGENT_METHODS.initialize,
@@ -440,9 +489,11 @@ export async function initializeAcpSession(
     return { ok: false, error: agentFailedEvent('unsupported ACP protocol version') };
   }
 
+  const mcpServers = mcpServersForAgent(siteMcpServers, initResult.agentCapabilities?.mcpCapabilities);
+
   const newSession = await ctx.request(
     AGENT_METHODS.session_new,
-    { cwd, mcpServers: [] },
+    { cwd, mcpServers },
     { cancellationSignal, stopWaitingOnCancel: true },
   );
   return { ok: true, sessionId: newSession.sessionId };

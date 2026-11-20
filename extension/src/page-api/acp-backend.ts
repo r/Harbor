@@ -18,11 +18,16 @@
  * is the same role: a client-side connection over the stream, read through
  * a `ClientContext`.
  *
- * Tools: the first release offers the agent none of Harbor's or the page's
- * tools, so `AgentRunRequest.tools` is ignored here. `AgentRunRequest.
- * maxToolCalls` is ignored too: Harbor gates whether a site may use the
- * user's agent at all, not how the agent works once it's running — there's
- * no tool-call budget on this backend (a maintainer decision; see
+ * Tools: this backend still offers the agent none of Harbor's own
+ * (installed-server) tools, so `AgentRunRequest.tools` is ignored here —
+ * only the origin/tab's own site-registered MCP servers
+ * (`mcp/site-servers.ts`, via harbor-core.ts's `listSiteServersForAcp`) are
+ * passed to `session/new`, filtered by what the agent's `initialize`
+ * response says it can use (`acp-connection.ts`'s `initializeAcpSession`).
+ * `AgentRunRequest.maxToolCalls` is ignored too: Harbor gates whether a
+ * site may use the user's agent at all, not how the agent works once it's
+ * running — there's no tool-call budget on this backend, and no per-tool
+ * allowlist either, for either kind of tool (a maintainer decision; see
  * docs/ACP_BACKEND_DESIGN.md).
  */
 import {
@@ -33,7 +38,7 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk';
 
-import { acpClose, acpOpenStream, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
+import { acpClose, acpOpenStream, listSiteServersForAcp, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
 import { hasPermission } from './handlers';
 import { PER_SITE_AGENT_LIMIT, tryAcquireAgentSlot, releaseAgentSlot } from './acp-agent-limits';
 import type { StreamToken } from './types';
@@ -295,7 +300,7 @@ export class AcpAgentBackend implements AgentBackend {
       await app.connectWith(stream, async (ctx) => {
         connectionCtx = ctx;
 
-        const initialized = await initializeAcpSession(ctx, cwd, requestAbort.signal);
+        const initialized = await initializeAcpSession(ctx, cwd, requestAbort.signal, listSiteServersForAcp(origin, tabId));
         if (!initialized.ok) {
           send(initialized.error);
           return;

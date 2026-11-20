@@ -1499,8 +1499,8 @@ const agentApi = Object.freeze({
       name: string;
       description?: string;
       tools?: string[];
-      transport?: 'sse' | 'stdio' | 'streamable-http';
-    }): Promise<{ success: boolean; serverId?: string; error?: { code: string; message: string } }> {
+      transport?: 'sse' | 'websocket' | 'streamable-http';
+    }): Promise<{ success: boolean; serverId?: string; tools?: string[]; error?: { code: string; message: string } }> {
       return sendRequest('agent.mcp.register', options);
     },
 

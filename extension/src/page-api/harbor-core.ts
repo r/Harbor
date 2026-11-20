@@ -18,6 +18,7 @@ import { gatePageAction, routeExtensionApiMessage, streamLlmChat } from '../exte
 import type { TypedAction } from '../policy/actions';
 import { routeAgentMessage } from '../agents/background-router';
 import { forgetTabAgents } from '../agents/handlers/multi-agent';
+import { forgetTabServers, forgetTabServersIfOriginChanged, listSiteServersForAcp as listSiteServersForAcpImpl, type SiteMcpServerDescriptor } from '../mcp/site-servers';
 import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
@@ -396,4 +397,37 @@ export async function isModelPromptGrantedForAgent(
  */
 export function forgetAgentsInTab(tabId: number, registeredBefore?: number): void {
   forgetTabAgents(tabId, registeredBefore);
+}
+
+// =============================================================================
+// Site-registered MCP servers (mcp/site-servers.ts) — per-tab lifetime
+// =============================================================================
+
+/**
+ * The tab closed, or its page went away outright: disconnect and forget
+ * every MCP server that tab's page registered (`window.agent.mcp.register`).
+ */
+export function forgetSiteServersInTab(tabId: number): void {
+  forgetTabServers(tabId);
+}
+
+/**
+ * The tab navigated to `url`. A site's registered MCP servers are dropped
+ * once the tab's new URL no longer shares their origin — a same-document
+ * URL change (a hash, or `pushState`) that keeps the same origin is a
+ * no-op, same as `webNavigation`-based cleanup elsewhere treats it.
+ */
+export function forgetSiteServersOnNavigation(tabId: number, url: string): void {
+  forgetTabServersIfOriginChanged(tabId, url);
+}
+
+/**
+ * The origin/tab's site-registered MCP servers, as candidates for
+ * `page-api/acp-connection.ts`'s `initializeAcpSession` to offer the
+ * person's own ACP agent in `session/new` (filtered there by what the
+ * agent's `initialize` response says it can actually use).
+ */
+export function listSiteServersForAcp(origin: string, tabId?: number): SiteMcpServerDescriptor[] {
+  if (tabId === undefined) return [];
+  return listSiteServersForAcpImpl(origin, tabId);
 }

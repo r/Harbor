@@ -20,6 +20,9 @@ vi.mock('../harbor-core', () => ({
   acpSend: (c: string, m: unknown) => mocks.bridge.current!.acpSend(c, m),
   acpClose: (c: string) => mocks.bridge.current!.acpClose(c),
   requireAgentPromptAction: async () => true,
+  // This file is about cancellation races, not site-registered MCP
+  // servers — no origin here registered any.
+  listSiteServersForAcp: () => [],
 }));
 
 import { createFakeAcpBridge } from './support/fake-acp-bridge';
