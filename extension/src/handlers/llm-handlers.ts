@@ -193,20 +193,4 @@ export function registerLlmHandlers(): void {
       });
     return true;
   });
-
-  // LLM chat
-  registerHandler('llm_chat', (message, _sender, sendResponse) => {
-    const { messages, model } = message as { 
-      messages?: Array<{ role: string; content: string }>;
-      model?: string;
-    };
-    if (!messages || messages.length === 0) {
-      sendResponse({ ok: false, error: 'Missing messages' });
-      return true;
-    }
-    bridgeChat({ messages, model })
-      .then((result) => sendResponse({ ok: true, response: result.message, model: result.model }))
-      .catch((error) => sendResponse(errorResponse(error)));
-    return true;
-  });
 }

@@ -10,6 +10,15 @@ import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission, getPermissions } from './permission-handlers';
 import { registerExplicitTextSession, forgetExplicitTextSession } from './ai-handlers';
+import { readAgentBackendSetting } from '../agent-backend-setting';
+import { isAcpTextSession } from '../acp-text-session-registry';
+
+// Loaded lazily for the same reason ai-handlers.ts gives: this file is part
+// of the handlers/ barrel, and acp-text-session.ts pulls in a runtime
+// listener as soon as it's imported.
+async function loadAcpTextSession() {
+  return import('../acp-text-session');
+}
 
 // =============================================================================
 // Handlers
@@ -59,6 +68,28 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
 
     if (!result.sessionId) {
       return errorResponse(ctx.id, 'ERR_INTERNAL', 'Harbor did not create a session');
+    }
+
+    // With an agent selected, the session's prompts run on it, like every
+    // other model call (docs/ACP_BACKEND_DESIGN.md section 2). Open the
+    // agent session now so the first prompt has one ready. The session's
+    // tool allowlist and budget still govern session.callTool(); the
+    // agent's own tools are its own.
+    const backend = options.capabilities.llm ? await readAgentBackendSetting() : null;
+    if (backend) {
+      const systemPrompt = options.options?.systemPrompt;
+      try {
+        const { createAcpTextSession } = await loadAcpTextSession();
+        await createAcpTextSession(
+          result.sessionId, backend.agentId, ctx.origin, ctx.tabId,
+          typeof systemPrompt === 'string' ? systemPrompt : undefined, ctx.signal,
+        );
+      } catch (e) {
+        // Don't leave a Harbor session behind that the page never got.
+        await harborRequest('session.terminate', { sessionId: result.sessionId, origin: ctx.origin }).catch(() => {});
+        const code = (e as { code?: string }).code ?? 'ERR_AGENT_FAILED';
+        return errorResponse(ctx.id, code, e instanceof Error ? e.message : 'The agent failed to start');
+      }
     }
 
     registerExplicitTextSession(result.sessionId, ctx.origin, {
@@ -142,7 +173,13 @@ export async function handleSessionsTerminate(ctx: RequestContext): HandlerRespo
       sessionId,
       origin: ctx.origin,
     });
-    if (result.terminated) forgetExplicitTextSession(sessionId, ctx.origin);
+    if (result.terminated) {
+      forgetExplicitTextSession(sessionId, ctx.origin);
+      if (isAcpTextSession(sessionId)) {
+        const { destroyAcpTextSession } = await loadAcpTextSession();
+        await destroyAcpTextSession(sessionId);
+      }
+    }
 
     return successResponse(ctx.id, { terminated: result.terminated });
   } catch (e) {

@@ -22,6 +22,7 @@ import {
   resolveTextSession,
   recordExplicitPrompt,
   forgetTextSession,
+  forgetBuiltinTextSessions,
 } from './ai-handlers';
 
 import {
@@ -246,7 +247,7 @@ export {
 };
 
 // AI utilities
-export { resolveTextSession, recordExplicitPrompt, forgetTextSession };
+export { resolveTextSession, recordExplicitPrompt, forgetTextSession, forgetBuiltinTextSessions };
 
 // Tab utilities
 export {

@@ -271,6 +271,19 @@ export async function handleSessionDestroy(ctx: RequestContext): HandlerResponse
   return successResponse(ctx.id, null);
 }
 
+/**
+ * Forgets every text session still on Harbor's built-in model, for a switch
+ * of the person's agent (background.ts): a session made on the built-in
+ * model doesn't outlive the switch, just as one made on an agent doesn't.
+ * A later prompt on one gets "Session not found". Sessions on an agent are
+ * left to destroyAllAcpTextSessions, which also ends their agent process.
+ */
+export function forgetBuiltinTextSessions(): void {
+  for (const sessionId of [...textSessions.keys()]) {
+    if (!isAcpTextSession(sessionId)) textSessions.delete(sessionId);
+  }
+}
+
 /** Drops a text session's state without an origin check — used for cleanup triggered by the extension itself (a tab closing), not a page request. */
 export function forgetTextSession(sessionId: string): void {
   textSessions.delete(sessionId);
@@ -318,8 +331,8 @@ export async function handleProvidersGetActive(ctx: RequestContext): HandlerResp
   }
 
   try {
-    const result = await harborRequest<{ default_model?: string }>('llm.getActiveProvider', pageCall(ctx), { signal: ctx.signal });
-    return successResponse(ctx.id, { provider: null, model: result.default_model || null });
+    const result = await harborRequest<{ default_model?: string | null; provider?: string | null }>('llm.getActiveProvider', pageCall(ctx), { signal: ctx.signal });
+    return successResponse(ctx.id, { provider: result.provider ?? null, model: result.default_model || null });
   } catch (e) {
     // A refusal is reported; any other failure means no model is known.
     const refused = policyRefusalCode(e);

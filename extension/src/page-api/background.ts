@@ -37,6 +37,7 @@ import {
   resolveTextSession,
   recordExplicitPrompt,
   forgetTextSession,
+  forgetBuiltinTextSessions,
   // Tab utilities
   restoreSpawnedTabs,
   handleTabRemoved,
@@ -268,7 +269,8 @@ export function initializePageApi(): void {
 
   // Switching `harbor_agent_backend` ends work still running on the old
   // agent, not just changes what the *next* call uses: every live
-  // ACP-backed window.ai text session is destroyed (a later prompt on one
+  // window.ai text session and agent.sessions session is ended, whether it
+  // ran on an agent or on Harbor's built-in model (a later prompt on one
   // gets the same "session not found" a destroy always produces), and
   // every in-flight ACP agent.run is cancelled with ERR_AGENT_FAILED /
   // "The agent was changed." (acp-backend-generation.ts, combined into
@@ -284,6 +286,7 @@ export function initializePageApi(): void {
     browserAPI.storage.onChanged.addListener((changes: Record<string, unknown>, area: string) => {
       if (area !== 'local' || !(AGENT_BACKEND_STORAGE_KEY in changes)) return;
       invalidateAcpBackendGeneration();
+      forgetBuiltinTextSessions();
       void destroyAllAcpTextSessions(forgetTextSession);
     });
   }

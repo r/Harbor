@@ -15,6 +15,7 @@ import { agent as buildAgentApp, AGENT_METHODS, CLIENT_METHODS, type StopReason 
 import { getMockStorage, resetMockBrowser } from '../../__tests__/test-setup';
 
 const mocks = vi.hoisted(() => ({
+  closedChannels: [] as string[],
   bridge: { current: null as null | ReturnType<typeof import('./support/fake-acp-bridge').createFakeAcpBridge> },
 }));
 
@@ -45,12 +46,15 @@ vi.mock('../harbor-core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../harbor-core')>()),
   acpOpenStream: (agentId: string, workspace: string) => mocks.bridge.current!.acpOpenStream(agentId, workspace),
   acpSend: (channel: string, message: unknown) => mocks.bridge.current!.acpSend(channel, message),
-  acpClose: (channel: string) => mocks.bridge.current!.acpClose(channel),
+  acpClose: (channel: string) => {
+    mocks.closedChannels.push(channel);
+    return mocks.bridge.current!.acpClose(channel);
+  },
 }));
 
 import { createFakeAcpBridge } from './support/fake-acp-bridge';
 
-type Reply = { id?: string; ok?: boolean; result?: unknown; error?: { code?: string; message: string }; event?: { type: string; token?: string; error?: { code?: string } }; done?: boolean };
+type Reply = { id?: string; ok?: boolean; code?: string; result?: unknown; error?: { code?: string; message: string }; event?: { type: string; token?: string; error?: { code?: string } }; done?: boolean };
 
 const ORIGIN = 'https://a.example';
 const AGENT_ID = 'test-agent';
@@ -76,9 +80,8 @@ function buildFakeAgent(reply: string) {
     });
 }
 
-async function setAgent(agentId: string | null) {
-  if (agentId) await getMockStorage().local.set({ harbor_agent_backend: { type: 'acp', agentId } });
-  else await getMockStorage().local.remove('harbor_agent_backend');
+async function setAgent(agentId: string) {
+  await getMockStorage().local.set({ harbor_agent_backend: { type: 'acp', agentId } });
 }
 
 /** Grants for whichever backend is selected right now (grants are per backend). */
@@ -134,6 +137,7 @@ beforeEach(async () => {
     get: vi.fn(async () => { throw new Error('no tab'); }),
   };
 
+  mocks.closedChannels.length = 0;
   mocks.bridge.current = createFakeAcpBridge();
   mocks.bridge.current.registerAgent(AGENT_ID, buildFakeAgent('From the agent.'));
 
@@ -202,6 +206,43 @@ describe('with an agent selected, agent.sessions run on it', () => {
   });
 });
 
+describe('the agent behind an agent.sessions session', () => {
+  it('ends when the page terminates the session', async () => {
+    await setAgent(AGENT_ID);
+    await grant(['model:prompt']);
+    const port = connectPort();
+    const created = await port.request('agent.sessions.create', { capabilities: { llm: {} } });
+    const sessionId = (created.result as { sessionId: string }).sessionId;
+    expect(mocks.closedChannels).toEqual([]);
+    const terminated = await port.request('agent.sessions.terminate', { sessionId });
+    expect(terminated.ok, terminated.error?.message).toBe(true);
+    expect(mocks.closedChannels).toHaveLength(1);
+    const reply = await port.request('session.prompt', { sessionId, input: 'Hi' });
+    expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
+  });
+
+  it("failing to start doesn't leave a Harbor session behind", async () => {
+    mocks.bridge.current!.registerAgent('broken-agent', buildFakeAgent('unused'), { failToStart: 'no such command' });
+    await setAgent('broken-agent');
+    await grant(['model:prompt']);
+    const port = connectPort();
+    const before = (await port.request('agent.sessions.list')).result as unknown[];
+    const created = await port.request('agent.sessions.create', { capabilities: { llm: {} } });
+    expect(created.ok).toBe(false);
+    const after = (await port.request('agent.sessions.list')).result as unknown[];
+    expect(after).toHaveLength(before.length);
+  });
+
+  it("doesn't start for a session without model access", async () => {
+    await setAgent(AGENT_ID);
+    await grant(['mcp:tools.call']);
+    const port = connectPort();
+    const created = await port.request('agent.sessions.create', { capabilities: { tools: ['time/now'] } });
+    expect(created.ok, created.error?.message).toBe(true);
+    expect(mocks.bridge.current!.openCalls).toEqual([]);
+  });
+});
+
 describe('sessions made on the built-in model before an agent was picked', () => {
   it('a window.ai text session no longer reaches the built-in model', async () => {
     await grant(['model:prompt']);
@@ -211,7 +252,7 @@ describe('sessions made on the built-in model before an agent was picked', () =>
     await setAgent(AGENT_ID);
     await grant(['model:prompt']);
     const reply = await port.request('session.prompt', { sessionId: created.result, input: 'Hi' });
-    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
   });
 
   it('an agent.sessions session no longer reaches the built-in model', async () => {
@@ -223,9 +264,9 @@ describe('sessions made on the built-in model before an agent was picked', () =>
     await setAgent(AGENT_ID);
     await grant(['model:prompt']);
     const reply = await port.request('session.prompt', { sessionId, input: 'Hi' });
-    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
     const events = await port.stream('session.promptStreaming', { sessionId, input: 'Hi' });
-    expect(events.at(-1)?.event?.type).toBe('error');
+    expect(events.at(-1)?.event?.error?.code).toBe('ERR_SESSION_NOT_FOUND');
   });
 });
 
@@ -269,6 +310,18 @@ describe("Harbor's extension API with an agent selected", () => {
       { id: chrome.runtime.id },
     );
     expect(reply.ok).toBe(false);
+    expect(reply.code).toBe('ERR_AGENT_FAILED');
     expect(reply.error).toMatch(/agent/i);
+  });
+
+  it('refuses llm.chatStream instead of using the built-in model', async () => {
+    await setAgent(AGENT_ID);
+    await grant(['model:prompt']);
+    const { streamLlmChat } = await import('../../extension-api');
+    const events = [];
+    for await (const event of streamLlmChat({ origin: ORIGIN, tabId: 9, messages: [{ role: 'user', content: 'Hi' }] })) {
+      events.push(event);
+    }
+    expect(events).toEqual([{ type: 'error', error: { code: 'ERR_AGENT_FAILED', message: expect.stringMatching(/agent/i) } }]);
   });
 });
