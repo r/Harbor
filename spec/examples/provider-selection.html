@@ -169,6 +169,13 @@
     let providers = [];
     
     async function init() {
+      // Harbor injects the API asynchronously; wait for it before giving up.
+      if (typeof window.agent === 'undefined') {
+        await new Promise((resolve) => {
+          window.addEventListener('agent-ready', resolve, { once: true });
+          setTimeout(resolve, 3000);
+        });
+      }
       if (typeof window.agent === 'undefined') {
         activeEl.textContent = 'Web Agent API not available';
         return;

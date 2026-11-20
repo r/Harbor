@@ -64,6 +64,8 @@ export interface TextSessionState {
   createdAt: number;
   /** Created by agent.sessions.create; Harbor's registry is the authority on it. */
   explicit?: boolean;
+  /** An explicit session created with model access (`capabilities.llm`). */
+  hasLLM?: boolean;
 }
 
 // =============================================================================

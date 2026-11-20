@@ -13,6 +13,7 @@ vi.mock('../handlers/permission-handlers', async (importOriginal) => ({
   ...(await importOriginal<object>()), hasPermission: mocks.hasPermission,
 }));
 vi.mock('../harbor-core', () => ({
+  onHarborSessionEnded: vi.fn(() => () => {}),
   harborRequest: vi.fn(async (method: string) => method === 'mcp.listTools'
     ? { tools: [] } : { content: 'ok' }),
   harborStreamRequest: vi.fn(),

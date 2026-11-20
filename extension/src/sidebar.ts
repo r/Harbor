@@ -13,7 +13,6 @@ import {
 import { AgentPanelController, type AgentBackendIO } from './sidebar-agent-controller';
 import { AgentFormState } from './agent-form-state';
 import { buildAgentPresetDocsHint } from './agent-preset-docs-hint';
-import { llmPanelCollapsedForAgent, llmPanelNoteForAgent } from './sidebar-llm-panel';
 
 type SecretDecl = { name: string; label: string; type?: 'text' | 'password' };
 
@@ -118,7 +117,7 @@ const llmPanelToggle = document.getElementById('llm-panel-toggle') as HTMLSpanEl
 const llmPanelBody = document.getElementById('llm-panel-body') as HTMLDivElement;
 const llmStatusIndicator = document.getElementById('llm-status-indicator') as HTMLDivElement;
 const llmStatusText = document.getElementById('llm-status-text') as HTMLSpanElement;
-const llmPanelAgentNote = document.getElementById('llm-panel-agent-note') as HTMLSpanElement;
+const llmPanel = document.getElementById('llm-panel') as HTMLDivElement;
 const configuredModelsEl = document.getElementById('configured-models') as HTMLDivElement;
 const availableModelsSelect = document.getElementById('available-models') as HTMLSelectElement;
 const addModelBtn = document.getElementById('add-model-btn') as HTMLButtonElement;
@@ -1375,24 +1374,13 @@ async function loadAgentSettings(): Promise<void> {
 }
 
 /**
- * Collapses/expands the LLM Providers panel and shows/hides its
- * agent-selected note (sidebar-llm-panel.ts), given the Agent panel's
- * current selection. Called on load and every time that selection changes
- * — picking an agent, switching back to the built-in model, or an agent
- * being removed out from under the current selection.
+ * Hides the LLM Providers panel while the person has their own agent
+ * selected: every model call then runs on the agent, so the built-in model's
+ * settings don't do anything. Called on load and every time the selection
+ * changes, including an agent being removed out from under it.
  */
 function updateLlmPanelForAgentSelection(selectedAgentId: string | null): void {
-  const agentSelected = selectedAgentId !== null;
-  const collapsed = llmPanelCollapsedForAgent(agentSelected);
-  llmPanelBody.classList.toggle('collapsed', collapsed);
-  llmPanelToggle.classList.toggle('collapsed', collapsed);
-
-  const note = llmPanelNoteForAgent(agentSelected);
-  llmPanelAgentNote.textContent = note ?? '';
-  llmPanelAgentNote.title = note ?? '';
-  llmPanelAgentNote.style.display = note ? '' : 'none';
-  // The note replaces the model status while an agent is selected.
-  llmPanelHeader.classList.toggle('agent-selected', Boolean(note));
+  llmPanel.hidden = selectedAgentId !== null;
 }
 
 /**

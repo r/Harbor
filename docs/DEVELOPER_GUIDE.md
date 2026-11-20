@@ -611,7 +611,6 @@ interface ErrorResponse {
 | `llm_list_providers` | List all providers and status |
 | `llm_set_active` | Set the active provider |
 | `llm_list_models` | List models from active provider |
-| `llm_chat` | Send a chat completion request |
 
 #### Chat Orchestration
 | Type | Description |

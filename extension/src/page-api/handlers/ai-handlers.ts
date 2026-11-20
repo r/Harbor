@@ -13,6 +13,10 @@ import { policyRefusalCode } from '../policy-refusal';
 import { FEATURE_LABELS, getFeatureFlags } from '../policy/feature-flags';
 import { readAgentBackendSetting } from '../agent-backend-setting';
 import { isAcpTextSession } from '../acp-text-session-registry';
+import { acpBackendChangeSignal } from '../acp-backend-generation';
+
+/** What a page sees when the person switched agents while its session was being created. */
+export const AGENT_CHANGED_MESSAGE = 'The agent was changed. Create the session again.';
 
 // Loaded lazily (not a top-level import): acp-text-session.ts pulls in
 // acp-connection.ts -> agent-question.ts, which registers a
@@ -52,6 +56,11 @@ export async function handleAiCanCreateTextSession(ctx: RequestContext): Handler
 }
 
 export async function handleAiCreateTextSession(ctx: RequestContext): HandlerResponse {
+  // A switch of the person's agent while this runs would otherwise leave a
+  // session made for the old choice, registered after the switch's own
+  // cleanup already ran.
+  const backendChanged = acpBackendChangeSignal();
+
   console.log('[Web Agents API] handleAiCreateTextSession called', { origin: ctx.origin });
   
   // Check permission
@@ -85,9 +94,19 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
       // way, the agent shouldn't keep starting once nobody's waiting.
       await createAcpTextSession(sessionId, backendSetting.agentId, ctx.origin, ctx.tabId, systemPrompt, ctx.signal);
     } catch (e) {
+      // A switch cancels an agent still starting; say why.
+      if (backendChanged.aborted) return errorResponse(ctx.id, 'ERR_AGENT_FAILED', AGENT_CHANGED_MESSAGE);
       const code = (e as { code?: string }).code ?? 'ERR_AGENT_FAILED';
       return errorResponse(ctx.id, code, e instanceof Error ? e.message : 'The agent failed to start');
     }
+  }
+
+  if (backendChanged.aborted) {
+    if (isAcpTextSession(sessionId)) {
+      const { destroyAcpTextSession } = await loadAcpTextSession();
+      await destroyAcpTextSession(sessionId);
+    }
+    return errorResponse(ctx.id, 'ERR_AGENT_FAILED', AGENT_CHANGED_MESSAGE);
   }
 
   textSessions.set(sessionId, {
@@ -111,6 +130,7 @@ export function registerExplicitTextSession(
   sessionId: string,
   origin: string,
   options: Record<string, unknown>,
+  hasLLM = true,
 ): void {
   textSessions.set(sessionId, {
     sessionId,
@@ -119,13 +139,24 @@ export function registerExplicitTextSession(
     history: [],
     createdAt: Date.now(),
     explicit: true,
+    hasLLM,
   });
 }
 
-/** Drop the local state for an explicit session the origin terminated. */
-export function forgetExplicitTextSession(sessionId: string, origin: string): void {
+/**
+ * Ends an explicit session's local state once Harbor has ended it (the page
+ * terminated it, it expired, or Harbor dropped it), including the agent
+ * process behind it when it ran on the person's agent. A no-op for another
+ * origin's session or one already gone.
+ */
+export async function endExplicitTextSession(sessionId: string, origin: string): Promise<void> {
   const session = textSessions.get(sessionId);
-  if (session?.explicit && session.origin === origin) textSessions.delete(sessionId);
+  if (!session?.explicit || session.origin !== origin) return;
+  textSessions.delete(sessionId);
+  if (isAcpTextSession(sessionId)) {
+    const { destroyAcpTextSession } = await loadAcpTextSession();
+    await destroyAcpTextSession(sessionId);
+  }
 }
 
 /** Harbor's refusals from getValidatedSession: the session is gone for this origin. */
@@ -192,7 +223,7 @@ export async function resolveTextSession(
         const code = (e as { code?: string }).code ?? 'ERR_INTERNAL';
         return { code, message: `Could not check the session with Harbor: ${message}` };
       }
-      textSessions.delete(sessionId);
+      await endExplicitTextSession(sessionId, origin);
       return { code: 'ERR_SESSION_NOT_FOUND', message: 'Session not found' };
     }
     if (!hasLLM) {
@@ -221,6 +252,8 @@ export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse 
     if (!result.ok) {
       return errorResponse(ctx.id, result.error.error?.code ?? 'ERR_AGENT_FAILED', result.error.error?.message ?? 'Agent run failed');
     }
+    // Counts as the session's activity, as a prompt on the built-in model does.
+    recordExplicitPrompt(session, input, result.text);
     return successResponse(ctx.id, result.text);
   }
 
@@ -271,6 +304,28 @@ export async function handleSessionDestroy(ctx: RequestContext): HandlerResponse
   return successResponse(ctx.id, null);
 }
 
+/**
+ * Ends the model sessions a switch of the person's agent leaves behind
+ * (background.ts), whichever backend they ran on, so none outlives the
+ * switch. A window.ai text session still on the built-in model is
+ * forgotten; a later prompt on it gets "Session not found". An
+ * agent.sessions session with model access is also terminated in Harbor's
+ * registry, so `agent.sessions.list()` and `get()` agree with that. A
+ * tools-only agent.sessions session uses no model and is left alone.
+ * Agent processes are ended by destroyAllAcpTextSessions.
+ */
+export function endModelSessionsForBackendSwitch(): void {
+  for (const [sessionId, session] of [...textSessions]) {
+    if (session.explicit) {
+      if (!session.hasLLM) continue;
+      textSessions.delete(sessionId);
+      void harborRequest('session.terminate', { sessionId, origin: session.origin }).catch(() => {});
+    } else if (!isAcpTextSession(sessionId)) {
+      textSessions.delete(sessionId);
+    }
+  }
+}
+
 /** Drops a text session's state without an origin check — used for cleanup triggered by the extension itself (a tab closing), not a page request. */
 export function forgetTextSession(sessionId: string): void {
   textSessions.delete(sessionId);
@@ -318,8 +373,8 @@ export async function handleProvidersGetActive(ctx: RequestContext): HandlerResp
   }
 
   try {
-    const result = await harborRequest<{ default_model?: string }>('llm.getActiveProvider', pageCall(ctx), { signal: ctx.signal });
-    return successResponse(ctx.id, { provider: null, model: result.default_model || null });
+    const result = await harborRequest<{ default_model?: string | null; provider?: string | null }>('llm.getActiveProvider', pageCall(ctx), { signal: ctx.signal });
+    return successResponse(ctx.id, { provider: result.provider ?? null, model: result.default_model || null });
   } catch (e) {
     // A refusal is reported; any other failure means no model is known.
     const refused = policyRefusalCode(e);

@@ -9,7 +9,16 @@ import type { PermissionScope, CreateSessionOptions, SessionSummary } from '../t
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission, getPermissions } from './permission-handlers';
-import { registerExplicitTextSession, forgetExplicitTextSession } from './ai-handlers';
+import { registerExplicitTextSession, endExplicitTextSession, AGENT_CHANGED_MESSAGE } from './ai-handlers';
+import { acpBackendChangeSignal } from '../acp-backend-generation';
+import { readAgentBackendSetting } from '../agent-backend-setting';
+
+// Loaded lazily for the same reason ai-handlers.ts gives: this file is part
+// of the handlers/ barrel, and acp-text-session.ts pulls in a runtime
+// listener as soon as it's imported.
+async function loadAcpTextSession() {
+  return import('../acp-text-session');
+}
 
 // =============================================================================
 // Handlers
@@ -34,6 +43,11 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
   if (options.capabilities.tools && options.capabilities.tools.length > 0) {
     requiredScopes.push('mcp:tools.call');
   }
+
+  // A switch of the person's agent while this runs (including during
+  // Harbor's own policy check of the create, which reads the setting)
+  // would otherwise leave a session checked and made for the old choice.
+  const backendChanged = acpBackendChangeSignal();
 
   // Check permissions
   for (const scope of requiredScopes) {
@@ -61,11 +75,45 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
       return errorResponse(ctx.id, 'ERR_INTERNAL', 'Harbor did not create a session');
     }
 
+    // With an agent selected, the session's prompts run on it, like every
+    // other model call (docs/ACP_BACKEND_DESIGN.md section 2). Open the
+    // agent session now so the first prompt has one ready. The session's
+    // tool allowlist and budget still govern session.callTool(); the
+    // agent's own tools are its own.
+    if (options.capabilities.llm && backendChanged.aborted) {
+      await harborRequest('session.terminate', { sessionId: result.sessionId, origin: ctx.origin }).catch(() => {});
+      return errorResponse(ctx.id, 'ERR_AGENT_FAILED', AGENT_CHANGED_MESSAGE);
+    }
+    const backend = options.capabilities.llm ? await readAgentBackendSetting() : null;
+    if (backend) {
+      const systemPrompt = options.options?.systemPrompt;
+      try {
+        const { createAcpTextSession } = await loadAcpTextSession();
+        await createAcpTextSession(
+          result.sessionId, backend.agentId, ctx.origin, ctx.tabId,
+          typeof systemPrompt === 'string' ? systemPrompt : undefined, ctx.signal,
+        );
+      } catch (e) {
+        // Don't leave a Harbor session behind that the page never got.
+        await harborRequest('session.terminate', { sessionId: result.sessionId, origin: ctx.origin }).catch(() => {});
+        // A switch cancels an agent still starting; say why.
+        if (backendChanged.aborted) return errorResponse(ctx.id, 'ERR_AGENT_FAILED', AGENT_CHANGED_MESSAGE);
+        const code = (e as { code?: string }).code ?? 'ERR_AGENT_FAILED';
+        return errorResponse(ctx.id, code, e instanceof Error ? e.message : 'The agent failed to start');
+      }
+    }
+
     registerExplicitTextSession(result.sessionId, ctx.origin, {
       systemPrompt: options.options?.systemPrompt,
       temperature: options.options?.temperature,
       model: options.capabilities.llm?.model,
-    });
+    }, Boolean(options.capabilities.llm));
+
+    if (options.capabilities.llm && backendChanged.aborted) {
+      await harborRequest('session.terminate', { sessionId: result.sessionId, origin: ctx.origin }).catch(() => {});
+      await endExplicitTextSession(result.sessionId, ctx.origin);
+      return errorResponse(ctx.id, 'ERR_AGENT_FAILED', AGENT_CHANGED_MESSAGE);
+    }
 
     return successResponse(ctx.id, {
       success: true,
@@ -142,7 +190,7 @@ export async function handleSessionsTerminate(ctx: RequestContext): HandlerRespo
       sessionId,
       origin: ctx.origin,
     });
-    if (result.terminated) forgetExplicitTextSession(sessionId, ctx.origin);
+    if (result.terminated) await endExplicitTextSession(sessionId, ctx.origin);
 
     return successResponse(ctx.id, { terminated: result.terminated });
   } catch (e) {

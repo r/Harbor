@@ -152,6 +152,13 @@
     
     async function init() {
       // Check if Web Agent API is available
+      // Harbor injects the API asynchronously; wait for it before giving up.
+      if (typeof window.agent === 'undefined') {
+        await new Promise((resolve) => {
+          window.addEventListener('agent-ready', resolve, { once: true });
+          setTimeout(resolve, 3000);
+        });
+      }
       if (typeof window.agent === 'undefined') {
         permsEl.innerHTML = '<span class="perm denied">Web Agent API not available</span>';
         return;

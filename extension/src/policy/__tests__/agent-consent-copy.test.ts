@@ -40,19 +40,17 @@ describe('consentScopeDescription', () => {
     }
   });
 
-  it('names which calls actually go to the agent: text prompts, agent runs and page chat', () => {
+  it("says everything the site asks of a model goes to the agent, not a list of features", () => {
     const info = consentScopeDescription('model:prompt', 'goose');
-    expect(info.title.toLowerCase()).toContain('text prompt');
-    expect(info.title.toLowerCase()).toContain('agent run');
-    expect(info.title.toLowerCase()).toContain('page chat');
+    expect(info.title).toBe("This site's AI requests go to goose, your own agent");
   });
 
-  it('names the page APIs that reach the agent, and says the rest still uses the built-in model', () => {
-    const info = consentScopeDescription('model:prompt', 'goose');
-    expect(info.description).toContain('window.ai');
-    expect(info.description).toContain('agent.run');
-    expect(info.description.toLowerCase()).toContain('page chat');
-    expect(info.description.toLowerCase()).toContain("harbor's built-in model");
+  it("doesn't say anything still uses Harbor's built-in model: nothing does with an agent selected", () => {
+    for (const scope of ['model:prompt', 'model:tools'] as const) {
+      const info = consentScopeDescription(scope, 'goose');
+      expect(info.description.toLowerCase()).not.toContain('built-in model');
+      expect(info.description).not.toMatch(/window\.ai|agent\.run/);
+    }
   });
 
   it('says plainly that the site gets the agent with whatever it can do, including its tools and what it remembers about the person', () => {

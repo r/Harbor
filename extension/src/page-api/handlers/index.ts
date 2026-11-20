@@ -22,6 +22,8 @@ import {
   resolveTextSession,
   recordExplicitPrompt,
   forgetTextSession,
+  endModelSessionsForBackendSwitch,
+  endExplicitTextSession,
 } from './ai-handlers';
 
 import {
@@ -246,7 +248,7 @@ export {
 };
 
 // AI utilities
-export { resolveTextSession, recordExplicitPrompt, forgetTextSession };
+export { resolveTextSession, recordExplicitPrompt, forgetTextSession, endModelSessionsForBackendSwitch, endExplicitTextSession };
 
 // Tab utilities
 export {

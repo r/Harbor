@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   harborStreamRequest: vi.fn(), resolveTextSession: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
+  onHarborSessionEnded: vi.fn(() => () => {}),
   forgetAgentsInTab: vi.fn(),
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
 }));
