@@ -132,6 +132,37 @@ async function denyAgentPrompts() {
 }
 
 describe('model.prompt.agent gates agent.run on the ACP backend', () => {
+  it.each(['acp', 'builtin'])('%s only checks installed tools when that backend uses them', async (backend) => {
+    if (backend === 'acp') await setAgentBackend();
+    await grantPrompting();
+    const { grantPermissions } = await import('../../policy/permissions');
+    await grantPermissions(ORIGIN, ['mcp:tools.list'], 'granted-always');
+    const { Policy } = await import('../../policy/store');
+    const { compileRule } = await import('../../policy/rules');
+    Policy.__setForTesting([
+      compileRule({ id: 'deny-installed-tools', effect: 'deny', principal: { origin: '*' }, action: 'tool.list', source: 'user' } as never),
+    ]);
+    let promptCalled = false;
+    registerHappyAgent(async () => { promptCalled = true; return { stopReason: 'end_turn' }; });
+
+    const { receive, posted } = connectPort();
+    await receive({ id: 'tools-run', type: 'agent.run', payload: { task: 'hi' } });
+    await vi.waitFor(() => expect(posted.some(p => p.done)).toBe(true));
+    const terminal = posted.find(p => p.done);
+    const { Audit } = await import('../../policy/audit');
+    const toolChecks = Audit.query({ origin: ORIGIN, action: 'tool.list' });
+
+    if (backend === 'acp') {
+      expect(terminal?.event).toEqual({ type: 'done' });
+      expect(promptCalled).toBe(true);
+      expect(toolChecks).toEqual([]);
+    } else {
+      expect(terminal?.event?.error?.code).toBe('ERR_BLOCKED_BY_POLICY');
+      expect(promptCalled).toBe(false);
+      expect(toolChecks.some(r => r.effect === 'deny')).toBe(true);
+    }
+  });
+
   it('denies the run with ERR_PERMISSION_DENIED, without ever sending session/prompt, and records an audit entry for the deny', async () => {
     await setAgentBackend();
     await grantPrompting();
