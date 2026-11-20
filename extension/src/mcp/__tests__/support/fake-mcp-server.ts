@@ -89,6 +89,8 @@ export interface FakeSseConnection {
    * assert whether the transport under test called `close()` in response.
    */
   simulateError(): void;
+  /** Delivers an unsolicited `message` event, as a server-pushed notification (no matching pending request) would arrive. */
+  pushNotification(payload: unknown): void;
 }
 
 export interface FakeMcpServerHandle {
@@ -110,6 +112,8 @@ export interface FakeMcpServerHandle {
 export interface FakeWsConnection {
   /** A real network blip, not a `close()` call from the transport under test. */
   simulateUnexpectedClose(): void;
+  /** Delivers an unsolicited `message` event, as a server-pushed notification (no matching pending request) would arrive. */
+  pushNotification(payload: unknown): void;
 }
 
 function jsonResponse(body: unknown, extraHeaders: Record<string, string> = {}, status = 200): Response {
@@ -279,6 +283,7 @@ export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpSe
         sessionId: this.sessionId,
         get closed() { return self.closed; },
         simulateError: () => self.onerror?.(new Event('error')),
+        pushNotification: (payload: unknown) => self.dispatch('message', JSON.stringify(payload)),
       });
       queueMicrotask(() => {
         if (this.closed) return;
@@ -322,6 +327,7 @@ export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpSe
         // from the transport under test, same as `this.onclose?.()` below
         // but without `close()` having set `readyState = 3` first.
         simulateUnexpectedClose: () => this.onclose?.(),
+        pushNotification: (payload: unknown) => this.onmessage?.({ data: JSON.stringify(payload) }),
       });
       queueMicrotask(() => {
         this.readyState = 1;

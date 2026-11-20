@@ -154,6 +154,36 @@ describe('McpSseTransport', () => {
 
     expect(server.sseConnections).toHaveLength(1);
   });
+
+  it('disconnect() while still connecting leaves the state disconnected, with no later state flip or settlement once the endpoint timeout would have fired', async () => {
+    vi.useFakeTimers();
+    // Never sends an `endpoint` event, so connect() is still waiting on it
+    // when disconnect() runs — the endpoint timeout (this.timeout below)
+    // would otherwise fire later and flip state back to 'error'.
+    class NeverRespondingEventSource {
+      onopen: (() => void) | null = null;
+      onerror: ((e: unknown) => void) | null = null;
+      closed = false;
+      constructor(public readonly url: string) {}
+      addEventListener(): void {}
+      close(): void { this.closed = true; }
+    }
+    vi.stubGlobal('EventSource', NeverRespondingEventSource);
+
+    const transport = new McpSseTransport({ url: 'https://shop.example/mcp', transport: 'sse', timeout: 5000 });
+    const connectPromise = transport.connect();
+    let settled = false;
+    connectPromise.then(() => { settled = true; }, () => { settled = true; });
+
+    transport.disconnect();
+    expect(transport.getState()).toBe('disconnected');
+
+    await vi.advanceTimersByTimeAsync(10_000); // well past the 5s endpoint timeout
+    await Promise.resolve(); // flush any microtask the (cleared) timer would have queued
+
+    expect(transport.getState()).toBe('disconnected');
+    expect(settled).toBe(false); // no late reject/resolve from the abandoned attempt
+  });
 });
 
 describe('McpWebSocketTransport', () => {
@@ -193,6 +223,33 @@ describe('McpWebSocketTransport', () => {
     await vi.advanceTimersByTimeAsync(3_000);
 
     expect(server.webSocketOpenCount).toBeGreaterThan(1);
+  });
+
+  it('connect() times out (closing the socket, state error) if the WebSocket never fires any handler', async () => {
+    vi.useFakeTimers();
+    let closed = false;
+    class NeverRespondingWebSocket {
+      static readonly OPEN = 1;
+      readyState = 0;
+      onopen: (() => void) | null = null;
+      onerror: ((e: unknown) => void) | null = null;
+      onclose: (() => void) | null = null;
+      onmessage: ((e: { data: string }) => void) | null = null;
+      constructor(public readonly url: string) {}
+      close(): void { closed = true; this.readyState = 3; }
+      send(): void { /* never reached in this test */ }
+    }
+    vi.stubGlobal('WebSocket', NeverRespondingWebSocket);
+
+    const transport = new McpWebSocketTransport({ url: 'https://shop.example/mcp-ws', transport: 'websocket', timeout: 5000 });
+    const connectPromise = transport.connect();
+
+    const assertion = expect(connectPromise).rejects.toThrow(/timed out/i);
+    await vi.advanceTimersByTimeAsync(5001);
+    await assertion;
+
+    expect(closed).toBe(true);
+    expect(transport.getState()).toBe('error');
   });
 });
 
@@ -286,5 +343,49 @@ describe('McpStreamableHttpTransport', () => {
     const assertion = expect(notify).rejects.toThrow(/timed out/i);
     await vi.advanceTimersByTimeAsync(5001);
     await assertion;
+  });
+});
+
+/**
+ * Harbor must not write what a site's own server sends to the console —
+ * same invariant as page-api/__tests__/no-payload-logs.test.ts, here for
+ * an unsolicited (no matching pending request) notification a server
+ * pushes, which both SSE and WebSocket log.
+ */
+describe('logging a server-pushed notification never includes its body', () => {
+  const SECRET = 'MARKER-notif-7f3a';
+
+  function captureConsole(): { logged: string[]; restore: () => void } {
+    const logged: string[] = [];
+    const spies = (['log', 'warn', 'error'] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+        logged.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
+      }),
+    );
+    return { logged, restore: () => spies.forEach((s) => s.mockRestore()) };
+  }
+
+  it('over SSE', async () => {
+    const server = installFakeMcpServer({ tools: [] });
+    const transport = new McpSseTransport({ url: 'https://shop.example/mcp', transport: 'sse' });
+    await transport.connect();
+
+    const { logged, restore } = captureConsole();
+    server.sseConnections[0].pushNotification({ jsonrpc: '2.0', method: 'notifications/secret_update', params: { value: SECRET } });
+    restore();
+
+    expect(logged.some((line) => line.includes(SECRET))).toBe(false);
+  });
+
+  it('over WebSocket', async () => {
+    const server = installFakeMcpServer({ tools: [] });
+    const transport = new McpWebSocketTransport({ url: 'https://shop.example/mcp-ws', transport: 'websocket' });
+    await transport.connect();
+
+    const { logged, restore } = captureConsole();
+    server.webSocketConnections[0].pushNotification({ jsonrpc: '2.0', method: 'notifications/secret_update', params: { value: SECRET } });
+    restore();
+
+    expect(logged.some((line) => line.includes(SECRET))).toBe(false);
   });
 });

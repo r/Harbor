@@ -218,6 +218,19 @@ describe('D1: a site may register only a same-origin (or matching-loopback) serv
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('records the origin-rule refusal in the audit log, same as every other policy-shaped refusal', async () => {
+    const { Audit } = await import('../../policy/audit');
+    Audit.clear();
+
+    const page = connectPort(`${SHOP}/page`, TAB);
+    const reply = await page.request('agent.mcp.register', { url: 'https://evil.example/mcp', name: 'Shop', transport: 'sse' });
+    expect(reply.ok).toBe(false);
+
+    const records = Audit.query({ origin: SHOP, action: 'mcp.server.register', effect: 'deny' });
+    expect(records).toHaveLength(1);
+    expect(records[0].reason).toMatch(/same origin|loopback/i);
+  });
+
   it('treats a same-origin wss:// URL for websocket as same-origin', async () => {
     const page = connectPort(`${SHOP}/page`, TAB); // https://shop.example
     const reply = await page.request('agent.mcp.register', { url: 'wss://shop.example/mcp-ws', name: 'Shop', transport: 'websocket' });
