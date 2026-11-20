@@ -21,6 +21,9 @@ import { forgetTabAgents } from '../agents/handlers/multi-agent';
 import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
+import { requireAction } from '../agents/handlers/helpers';
+import type { RequestContext, ResponseSender } from '../agents/handlers/router-types';
+import { backendTagForSetting, isGrantedForBackend } from '../policy/backend-grant';
 
 // =============================================================================
 // Types
@@ -101,6 +104,13 @@ const REQUEST_TIMEOUT_MS = 30_000;
  * contract as the old cross-extension harborRequest, including its time
  * limit: 30 seconds unless the caller asks for longer (a permission prompt
  * waits on the user).
+ *
+ * `options.signal`, when given, is forwarded to the handler itself (today,
+ * only `permissions.request` reads it) rather than racing it here — racing
+ * it here would only make *this* call reject early, while the consent
+ * prompt it started stayed open and could still grant well after the page
+ * gave up. Letting the handler act on the signal means the prompt itself
+ * closes, or discards this call's own answer.
  */
 export async function harborRequest<T = unknown>(
   type: string,
@@ -124,6 +134,11 @@ export async function harborRequest<T = unknown>(
     }, timeoutMs);
   });
   try {
+    // One signal covers both reasons a caller can give up: its own timeout
+    // or request abort (`options.signal`), and this request's own 30s (or
+    // longer, for a permission prompt) timer. Passing `controller.signal`
+    // on, rather than `options.signal`, means a late prompt answer is
+    // discarded here too, not just when the page itself gave up first.
     return await Promise.race([dispatch<T>(type, payload, controller.signal), timeout]);
   } finally {
     clearTimeout(timer);
@@ -309,6 +324,70 @@ export async function acpSend(channel: string, message: unknown): Promise<void> 
  */
 export async function acpClose(channel: string): Promise<void> {
   await rpcRequest('acp.close', { channel });
+}
+
+// =============================================================================
+// model.prompt.agent — the policy gate for a prompt sent to the person's
+// own ACP agent (see page-api/acp-backend.ts and page-api/acp-text-session.ts)
+// =============================================================================
+
+/**
+ * Runs the typed-action policy gate for one prompt about to be sent to the
+ * person's own ACP agent (`model.prompt.agent`) — the same `requireAction`
+ * path page calls go through (`extension-api.ts`'s `gatePageCall`), so the
+ * decision reaches the rule engine and the audit log exactly as a prompt to
+ * Harbor's own model does. Called once per `agent.run` and once per prompt
+ * on an ACP-backed `window.ai` text session, right before `session/prompt`
+ * — in addition to, not instead of, the `model:prompt` origin-grant check
+ * both already do (`hasPermission`): that's Harbor's own consent store,
+ * this is the policy engine's rule evaluation and audit trail.
+ *
+ * Returns only a boolean: whatever response `requireAction` would have sent
+ * back to a page is discarded (the `sender` below is a no-op), since the
+ * caller here always reports a plain `ERR_PERMISSION_DENIED` on `false` —
+ * the same wording the pre-existing origin-grant check already uses — not
+ * the policy engine's own error code for whichever tier actually denied it.
+ *
+ * `upstreamConsent: 'origin-grant'` means a site that already holds
+ * `model:prompt` proceeds without a second native popup when the engine
+ * would otherwise ask or preview for this action — the same deal a page's
+ * own `llm.chat`/`session.create` calls get through `gatePageCall`.
+ */
+export async function requireAgentPromptAction(origin: string, tabId?: number): Promise<boolean> {
+  const ctx: RequestContext = {
+    id: crypto.randomUUID(),
+    // `requireAction` never branches on `ctx.type` (only `ctx.id`/`ctx.origin`/
+    // `ctx.tabId` reach the policy request and the audit record) — the
+    // transport-level `agent.run`/`session.promptStreaming` types this is
+    // called from aren't part of this `MessageType` union at all (it's the
+    // agent-router's own type, distinct from extension-api.ts's), so this
+    // names the closest real member rather than widening the type for one
+    // synthetic ctx.
+    type: 'session.prompt',
+    payload: {},
+    origin,
+    tabId,
+  };
+  const sender: ResponseSender = { sendResponse: () => {}, sendStreamEvent: () => {} };
+  return requireAction(ctx, sender, 'model.prompt.agent', { upstreamConsent: 'origin-grant' });
+}
+
+/**
+ * Whether `origin` holds a live `model:prompt` grant recorded for the ACP
+ * agent `agentId` specifically — never a live read of whatever backend is
+ * currently selected. acp-text-session.ts's own `agentId` is fixed for
+ * the session's whole life, so its per-turn check needs this instead of
+ * `requireAgentPromptAction`'s live-selection check, which a long-lived
+ * session can outlive (defence in depth: the primary fix for the same gap
+ * is destroying every live ACP text session on a backend switch, in
+ * page-api/background.ts).
+ */
+export async function isModelPromptGrantedForAgent(
+  origin: string,
+  agentId: string,
+  tabId?: number,
+): Promise<boolean> {
+  return isGrantedForBackend(origin, 'model:prompt', backendTagForSetting({ type: 'acp', agentId }), tabId);
 }
 
 /**

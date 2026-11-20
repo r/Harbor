@@ -433,8 +433,9 @@
             <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
               Harbor draws the chat panel on this page. Because the page could reach that panel, Harbor treats every message in it as this site's prompt.
               Your first message prompts Harbor to ask, once, whether this site may send prompts
-              to your model — that's the <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">model:prompt</code> permission. Replies come from the
-              model reading this page's visible text (the product grid below), not from the
+              to your model — that's the <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">model:prompt</code> permission. If you've picked your own agent in
+              Harbor, it answers and can use what it knows about you; otherwise Harbor's built-in model does.
+              Replies use this page's visible text (the product grid below), not the
               MCP tools this page advertises — Harbor's chat doesn't call those yet.
             </p>
           </div>
@@ -596,7 +597,7 @@
 
       try {
         await window.agent.chat.open({
-          systemPrompt: 'You are Acme Shop\'s shopping assistant. Help the person find products on this page, compare them, and answer questions about price, rating and availability. Only talk about what\'s shown on the page; say so if something isn\'t listed here.',
+          systemPrompt: 'You are Acme Shop\'s shopping assistant. Help the person choose from the products on this page, using anything you know about them and the people they\'re shopping for. Compare price, rating and availability from the page, and don\'t make up products or details that aren\'t listed here.',
           style: { accentColor: '#ff9900', position: 'right' },
         });
       } catch (err) {

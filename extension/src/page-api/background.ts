@@ -16,7 +16,15 @@ import { policyRefusalCode } from './policy-refusal';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
 import { type AgentBackend } from './agent-backend';
 import { selectAgentBackend } from './agent-backend-selection';
-import { isAcpTextSession, promptStreamingAcpTextSession, cleanupAcpTextSessionsForTab } from './acp-text-session';
+import { AcpAgentBackend, combineAbortSignals } from './acp-backend';
+import { acpBackendChangeSignal, invalidateAcpBackendGeneration } from './acp-backend-generation';
+import { AGENT_BACKEND_STORAGE_KEY } from './agent-backend-setting';
+import {
+  isAcpTextSession,
+  promptStreamingAcpTextSession,
+  cleanupAcpTextSessionsForTab,
+  destroyAllAcpTextSessions,
+} from './acp-text-session';
 import type { TransportStreamEvent } from './types';
 
 import {
@@ -205,11 +213,29 @@ async function handleAgentRun(
       );
     }
 
+    // Captured *before* reading the backend selection, not after — a
+    // switch landing in the gap while `selectAgentBackend()`'s own storage
+    // read is still in flight invalidates the generation this signal
+    // belongs to, same as one landing any time later. Capturing it after
+    // the read instead would miss exactly that race: `backend` could
+    // still resolve to the (now stale) agent that switch just replaced,
+    // paired with a *new*, not-yet-aborted generation's signal, so the run
+    // would never be told the agent it just picked is already gone.
+    const backendChangeSignal = acpBackendChangeSignal();
     const backend = backendOverride ?? await selectAgentBackend();
+    // An ACP-backed run also ends if the person switches
+    // `harbor_agent_backend` while it's still going on the old agent — not
+    // just on the page's own abort/tab-close — by combining in the shared
+    // generation signal (acp-backend-generation.ts), which a storage
+    // change below aborts. The built-in backend doesn't need this: there's
+    // no "old agent" for it to keep running on.
+    const runSignal = backend instanceof AcpAgentBackend
+      ? combineAbortSignals([signal, backendChangeSignal])
+      : signal;
     await backend.run(
       { origin: ctx.origin, tabId: ctx.tabId, task, systemPrompt, maxToolCalls, tools },
       (event) => sendEvent({ id: ctx.id, event, done: event.type === 'done' || event.type === 'error' }),
-      signal,
+      runSignal,
     );
   } catch (e) {
     sendEvent({
@@ -239,6 +265,28 @@ export function initializePageApi(): void {
 
   // Restore tracked spawned tabs from storage.
   restoreSpawnedTabs();
+
+  // Switching `harbor_agent_backend` ends work still running on the old
+  // agent, not just changes what the *next* call uses: every live
+  // ACP-backed window.ai text session is destroyed (a later prompt on one
+  // gets the same "session not found" a destroy always produces), and
+  // every in-flight ACP agent.run is cancelled with ERR_AGENT_FAILED /
+  // "The agent was changed." (acp-backend-generation.ts, combined into
+  // each such run's signal above). `storage.onChanged` fires for *any*
+  // write to the key, including one that re-selects the same agent, or
+  // clears back to the built-in model — all treated the same way, since
+  // there's no cheap way to tell "really changed" from "written again"
+  // apart, and erring toward ending old work is the safe side.
+  // Guarded like policy/store.ts's own storage.onChanged listener: some
+  // test harnesses (and, in principle, a browser target) stub a `chrome`
+  // with no `storage.onChanged` at all.
+  if (browserAPI.storage?.onChanged) {
+    browserAPI.storage.onChanged.addListener((changes: Record<string, unknown>, area: string) => {
+      if (area !== 'local' || !(AGENT_BACKEND_STORAGE_KEY in changes)) return;
+      invalidateAcpBackendGeneration();
+      void destroyAllAcpTextSessions(forgetTextSession);
+    });
+  }
 
   // Clean up spawned tabs when they are closed.
   browserAPI.tabs.onRemoved.addListener(async (tabId: number) => {

@@ -182,6 +182,10 @@ export async function checkAction(
       promptResult.grantType,
       ctx.tabId,
       promptResult.allowedTools,
+      // The backend the prompt itself named (model:prompt/model:tools
+      // only; ignored for every other scope) — see
+      // policy/permissions.ts's requestPermissions.
+      promptResult.backendTag,
       // Only the site this call asked about: a merged prompt may have shown
       // other sites, which their own callers grant for their own tabs.
       targetSite ? [targetSite] : promptResult.agentOrigins,
@@ -256,6 +260,7 @@ function primaryLegacyScope(action: TypedAction): PermissionScope | null {
     case 'model.prompt.local':
     case 'model.prompt.remote.firstParty':
     case 'model.prompt.remote.thirdParty':
+    case 'model.prompt.agent':
       return 'model:prompt';
 
     case 'tool.list':

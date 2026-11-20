@@ -105,7 +105,7 @@ beforeEach(async () => {
   // a cross-origin grant for the handler's site (a.example).
   await grantPermissions('https://a.example', ['agents:register'], 'granted-always');
   await grantPermissions('https://b.example', ['agents:register'], 'granted-always');
-  await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, ['https://a.example']);
+  await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, undefined, ['https://a.example']);
 });
 
 afterEach(() => {

@@ -33,6 +33,8 @@ vi.mock('../harbor-core', () => ({
   acpOpenStream: (agentId: string, workspace: string) => mocks.bridge.current!.acpOpenStream(agentId, workspace),
   acpSend: (channel: string, message: unknown) => mocks.bridge.current!.acpSend(channel, message),
   acpClose: (channel: string) => mocks.bridge.current!.acpClose(channel),
+  requireAgentPromptAction: async () => true,
+  isModelPromptGrantedForAgent: async () => true,
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../policy/feature-flags')>()),

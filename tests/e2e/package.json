@@ -22,7 +22,8 @@
     "test:mcp:keep-open": "node test-mcp-servers.mjs --keep-open",
     "test:host-request": "node test-host-request.mjs",
     "test:wasm": "node test-wasm-server.mjs",
-    "test:all": "npm run test:bridge && npm run test:harbor && npm run test:wasm && npm run test:mcp && npm run test:browser"
+    "test:all": "npm run test:bridge && npm run test:harbor && npm run test:wasm && npm run test:mcp && npm run test:browser",
+    "test:markdown": "node test-chat-markdown-sanitize.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.42.0",

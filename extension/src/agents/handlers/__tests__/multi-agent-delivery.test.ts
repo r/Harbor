@@ -121,7 +121,7 @@ describe('broadcasts reach only sites the sender may reach', () => {
     await call(handleAgentsSubscribe, B, 'agents.subscribe', { eventType: 'news' });
     await call(handleAgentsSubscribe, C, 'agents.subscribe', { eventType: 'news' });
     await pageAgent(A);
-    await grantPermissions(A, ['agents:crossOrigin'], 'granted-always', undefined, undefined, [B]);
+    await grantPermissions(A, ['agents:crossOrigin'], 'granted-always', undefined, undefined, undefined, [B]);
     tabMessages.length = 0;
 
     const response = await call(handleAgentsBroadcast, A, 'agents.broadcast', { eventType: 'news', data: { n: 1 } });
@@ -154,7 +154,7 @@ describe('a broadcast asks no one', () => {
     await pageAgent(B);
     await call(handleAgentsSubscribe, B, 'agents.subscribe', { eventType: 'news' });
     await pageAgent(A);
-    await grantPermissions(A, ['agents:crossOrigin'], 'granted-always', undefined, undefined, [B]);
+    await grantPermissions(A, ['agents:crossOrigin'], 'granted-always', undefined, undefined, undefined, [B]);
     const { compileRule } = await import('../../../policy/rules');
     Policy.__setForTesting([
       compileRule({ id: 'ask-cross', effect: 'ask', principal: { origin: '*' }, action: 'agent.delegate.crossOrigin', source: 'user' }),

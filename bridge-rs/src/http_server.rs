@@ -472,6 +472,9 @@ mod tests {
         assert!(is_acp_method("acp.open"));
         assert!(is_acp_method("acp.send"));
         assert!(is_acp_method("acp.close"));
+        assert!(is_acp_method("acp.get_agents"));
+        assert!(is_acp_method("acp.save_agents"));
+        assert!(is_acp_method("acp.resolve_command"));
         assert!(!is_acp_method("llm.chat"));
         assert!(!is_acp_method("acplike.notreally"));
     }
@@ -506,6 +509,22 @@ mod tests {
         let error = body.get("error").expect("error field");
         assert_eq!(error["code"], -32601);
         assert!(error["message"].as_str().unwrap().contains("acp.list_agents"));
+
+        // The three new ACP methods are rejected the same way: never run
+        // over HTTP, whatever their params.
+        for method in ["acp.get_agents", "acp.save_agents", "acp.resolve_command"] {
+            let resp = client
+                .post(format!("http://127.0.0.1:{}/rpc", port))
+                .json(&serde_json::json!({ "id": 1, "method": method, "params": {} }))
+                .send()
+                .await
+                .expect("request should succeed");
+            let body: serde_json::Value = resp.json().await.expect("valid JSON response");
+            assert!(body.get("result").is_none(), "{} must not run over HTTP", method);
+            let error = body.get("error").expect("error field");
+            assert_eq!(error["code"], -32601);
+            assert!(error["message"].as_str().unwrap().contains(method));
+        }
 
         // A non-acp method still works over HTTP, proving the rejection is
         // specific to `acp.*` and not a general breakage.

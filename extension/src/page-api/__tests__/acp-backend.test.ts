@@ -21,6 +21,11 @@ vi.mock('../harbor-core', () => ({
   acpOpenStream: (agentId: string, workspace: string) => mocks.bridge.current!.acpOpenStream(agentId, workspace),
   acpSend: (channel: string, message: unknown) => mocks.bridge.current!.acpSend(channel, message),
   acpClose: (channel: string) => mocks.bridge.current!.acpClose(channel),
+  // The model.prompt.agent policy gate itself is covered, driven through
+  // the real port and the real policy engine, in
+  // acp-model-prompt-agent-policy.test.ts; here it's a pass-through so
+  // these tests keep exercising everything else unchanged.
+  requireAgentPromptAction: async () => true,
 }));
 // The dialog itself (the popup window, its message validation, the
 // liveness timeout, window-closed handling) is covered on its own, without
@@ -205,8 +210,11 @@ describe('AcpAgentBackend', () => {
     });
     const backend = new AcpAgentBackend(AGENT_ID);
     await collect(backend, baseRequest({ task: 'hello', systemPrompt: undefined }));
-    expect(promptBlocks).toHaveLength(1);
-    expect(promptBlocks[0].text).toBe('hello');
+    // Harbor's own framing, then the task: no site-instructions block.
+    expect(promptBlocks).toHaveLength(2);
+    expect(promptBlocks[0].text).toMatch(/working for the person/i);
+    expect(promptBlocks.some((b) => b.text.startsWith('Instructions from'))).toBe(false);
+    expect(promptBlocks[1].text).toBe('hello');
   });
 
   describe('event mapping', () => {

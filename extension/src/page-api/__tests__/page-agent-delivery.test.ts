@@ -157,7 +157,7 @@ describe('messages between page agents', () => {
     const tabB = connectPort('https://b.example/page', 2);
     const onA = await register(tabA, 'a');
     await register(tabB, 'b');
-    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, ['https://a.example']);
+    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, undefined, ['https://a.example']);
 
     const reply = await request(tabB, 'agent.agents.send', { agentId: onA, payload: 'hi' });
 
@@ -171,7 +171,7 @@ describe('messages between page agents', () => {
     const tabB = connectPort('https://b.example/page', 2);
     const onA = await register(tabA, 'a');
     await register(tabB, 'b');
-    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, ['https://a.example']);
+    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, undefined, ['https://a.example']);
     // Tab 1 moved on before its port closed.
     tabUrls.set(1, 'https://evil.example/');
 
@@ -186,7 +186,7 @@ describe('messages between page agents', () => {
     const tabB = connectPort('https://b.example/page', 2);
     const onA = await register(tabA, 'a');
     await register(tabB, 'b');
-    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, ['https://a.example']);
+    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, undefined, ['https://a.example']);
 
     tabA.disconnect();
     const reply = await request(tabB, 'agent.agents.send', { agentId: onA, payload: 'late' });
@@ -202,7 +202,7 @@ describe('a reloaded page', () => {
     const tabB = connectPort('https://b.example/page', 2);
     const oldAgent = await register(oldPage, 'old');
     await register(tabB, 'b');
-    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, ['https://a.example']);
+    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, undefined, ['https://a.example']);
     // The tab reloads: the new page connects and registers before the old
     // page's connection reports that it closed.
     await new Promise((r) => setTimeout(r, 2));
@@ -240,7 +240,7 @@ describe('broadcasts between page agents', () => {
     await register(tabA, 'a');
     await register(tabB, 'b');
     await request(tabA, 'agent.agents.subscribe', { eventType: 'news' });
-    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, ['https://a.example']);
+    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, undefined, ['https://a.example']);
 
     const reply = await request(tabB, 'agent.agents.broadcast', { eventType: 'news', data: 2 });
 
@@ -253,7 +253,7 @@ describe('broadcasts between page agents', () => {
     await register(tabA, 'a');
     await register(tabB, 'b');
     await request(tabA, 'agent.agents.subscribe', { eventType: 'news' });
-    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, ['https://a.example']);
+    await grantPermissions('https://b.example', ['agents:crossOrigin'], 'granted-always', undefined, undefined, undefined, ['https://a.example']);
     const { Policy } = await import('../../policy/store');
     const { compileRule } = await import('../../policy/rules');
     Policy.__setForTesting([

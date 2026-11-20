@@ -107,6 +107,19 @@ export interface PermissionGrantResult {
 export interface PermissionStatus {
   origin: string;
   scopes: Record<PermissionScope, PermissionGrant>;
+  /**
+   * For `model:prompt`/`model:tools` only, when at least one backend holds
+   * its own allow (policy/backend-grant.ts): every backend tag ('builtin'
+   * or `acp:<agentId>') with a live allow, and the grant it holds. The flat
+   * `scopes` entry for these two is `'not-granted'` once this exists (a
+   * backend-scoped allow lives only here, not in the flat field) unless
+   * the scope is denied, which is always universal and always flat — so a
+   * reader has to check both to know the whole picture. Populated by
+   * `listAllPermissions` for the sidebar's permission list, which
+   * otherwise couldn't see (or revoke) a site holding only a per-backend
+   * allow.
+   */
+  backendAllows?: Partial<Record<PermissionScope, Record<string, PermissionGrant>>>;
   allowedTools?: string[];
   /** Sites whose agents the origin may currently reach (`agents:crossOrigin`). */
   agentOrigins?: string[];
@@ -129,6 +142,21 @@ export interface StoredPermission {
   tabId?: number; // For 'granted-once'
   /** For 'granted-once' answered by several tabs: tab id (or `*`) to its expiry. */
   tabs?: Record<string, number>;
+  /**
+   * Round 2's single-backend field for `model:prompt`/`model:tools`: which
+   * backend ('builtin' or `acp:<agentId>`) a *flat* grant was given for.
+   * Still read, as that one backend's own allow, when `allows` (below) is
+   * absent; no longer written — see policy/backend-grant.ts.
+   */
+  backend?: string;
+  /**
+   * For `model:prompt`/`model:tools` only: one allow per backend, since a
+   * deny is universal (applies under every backend) but an allow is not —
+   * granting under a second backend must not overwrite the first's own
+   * allow. See policy/backend-grant.ts's `withBackendAllow`/
+   * `effectiveGrantForBackend`.
+   */
+  allows?: Record<string, { grant: 'granted-once' | 'granted-always'; grantedAt: number; expiresAt?: number; tabId?: number }>;
 }
 
 export interface StoredOriginPermissions {

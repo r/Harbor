@@ -5,6 +5,7 @@
 import type { RequestContext, ResponseSender } from './router-types';
 import { log, requireAction } from './helpers';
 import { browserAPI } from '../../browser-compat';
+import { closeAgentChatSession } from '../../handlers/page-chat-agent-sessions';
 
 // =============================================================================
 // State Management
@@ -28,15 +29,40 @@ const activeChats = new Map<string, {
   createdAt: number;
 }>();
 
-// Chat ID counter
-let chatIdCounter = 0;
-
 /**
  * The tab, origin and config of a chat opened with agent.chat.open, or
  * undefined if no such chat is open.
  */
 export function getActiveChat(chatId: string) {
   return activeChats.get(chatId);
+}
+
+/**
+ * Drops one open chat — a tab's own port disconnecting (a real navigation
+ * or reload; handlers/page-chat-handlers.ts's `runtime.onConnect`
+ * listener) ends that specific chat, not necessarily every chat in its
+ * tab. Called alongside ending the chat's agent session
+ * (handlers/page-chat-agent-sessions.ts), so there's one teardown path for
+ * both. Doesn't message the tab (unlike `handleChatClose`): the content
+ * script's old page is already gone. A later `page_chat_message` for a
+ * dropped chat gets the same "This chat is not open on this page" refusal
+ * a chat that was never opened gets.
+ */
+export function forgetChat(chatId: string): void {
+  activeChats.delete(chatId);
+}
+
+/**
+ * Drops every open chat whose tab is `tabId` — the tab closing outright.
+ * Called from handlers/page-chat-handlers.ts's own `tabs.onRemoved`
+ * listener, the backstop for `forgetChat`'s own port-disconnect signal
+ * (a port can, in principle, fail to fire its disconnect event before the
+ * tab itself is gone).
+ */
+export function forgetChatsForTab(tabId: number): void {
+  for (const [id, chat] of activeChats) {
+    if (chat.tabId === tabId) activeChats.delete(id);
+  }
 }
 
 // =============================================================================
@@ -98,8 +124,13 @@ export async function handleChatOpen(
     return;
   }
 
-  // Generate chat ID
-  const chatId = `chat-${Date.now()}-${++chatIdCounter}`;
+  // An unguessable chat ID: page_chat_message, page_chat_closed and this
+  // handler's own close-by-chatId path below all trust whoever names a
+  // chatId to be the page that actually holds it, checked against the
+  // sender's own tab/origin — a predictable id (the old `chat-<ms>-<n>`)
+  // would let another site's page guess a live one and act on it before
+  // that check ever ran.
+  const chatId = crypto.randomUUID();
 
   // Store chat state
   activeChats.set(chatId, {
@@ -169,9 +200,14 @@ export async function handleChatClose(
   const chatId = payload?.chatId;
 
   if (chatId) {
-    // Close specific chat
+    // Close specific chat — only when it's this *caller's own* chat: the
+    // origin that opened it, and (when the caller's own tab is known) the
+    // tab it opened in. Without this, a site could close another site's
+    // chat by guessing or otherwise learning its chatId; a mismatch is
+    // treated exactly like a chatId that doesn't exist (same `ok: true`
+    // response either way, so a probing site learns nothing from it).
     const chat = activeChats.get(chatId);
-    if (chat) {
+    if (chat && chat.origin === ctx.origin && (ctx.tabId === undefined || chat.tabId === ctx.tabId)) {
       try {
         await browserAPI.tabs.sendMessage(chat.tabId, {
           type: 'harbor_chat_close',
@@ -181,6 +217,9 @@ export async function handleChatClose(
         // Tab might be closed
       }
       activeChats.delete(chatId);
+      // A no-op when this chat ran on the built-in model (no agent session
+      // was ever opened for it).
+      await closeAgentChatSession(chatId);
     }
   } else {
     // Close all chats for this origin
@@ -195,6 +234,7 @@ export async function handleChatClose(
           // Tab might be closed
         }
         activeChats.delete(id);
+        await closeAgentChatSession(id);
       }
     }
   }

@@ -34,7 +34,7 @@ afterEach(() => {
 
 describe('per-site grants', () => {
   it('allows only the granted site', async () => {
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, undefined, [B]);
 
     expect(await allowed(B)).toBe(true);
     expect(await allowed(C)).toBe(false);
@@ -55,7 +55,7 @@ describe('per-site grants', () => {
   });
 
   it('keeps a denied site refused and out of the reachable sites', async () => {
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, [C]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, undefined, [C]);
     await permissions.denyPermissions(A, ['agents:crossOrigin'], [B]);
 
     const outcome = await lookupOriginGrant(A, 'agent.delegate.crossOrigin', { agentOrigin: B }, 3);
@@ -65,8 +65,8 @@ describe('per-site grants', () => {
   });
 
   it('keeps "allow once" for every tab that answered, not only the last', async () => {
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, [B]);
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 4, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 4, undefined, undefined, [B]);
 
     expect(await allowed(B, 3)).toBe(true);
     expect(await allowed(B, 4)).toBe(true);
@@ -85,8 +85,8 @@ describe('per-site grants', () => {
   it('keeps "allow once" for both tabs when they are granted at the same moment', async () => {
     // One prompt answered for two waiting tabs resolves both callers together.
     await Promise.all([
-      permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, [B]),
-      permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 4, undefined, [B]),
+      permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, undefined, [B]),
+      permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 4, undefined, undefined, [B]),
     ]);
 
     expect(await allowed(B, 3)).toBe(true);
@@ -95,9 +95,9 @@ describe('per-site grants', () => {
 
   it('lets each tab\'s "allow once" run out on its own clock', async () => {
     vi.useFakeTimers({ now: 1_000_000 });
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, undefined, [B]);
     vi.setSystemTime(1_000_000 + 5 * 60 * 1000);
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 4, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 4, undefined, undefined, [B]);
     vi.setSystemTime(1_000_000 + 11 * 60 * 1000);
 
     expect(await allowed(B, 3)).toBe(false);
@@ -107,9 +107,9 @@ describe('per-site grants', () => {
   it('does not renew an earlier "allow once" for every tab when one tab asks again', async () => {
     vi.useFakeTimers({ now: 1_000_000 });
     // A grant with no tab covers every tab.
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', undefined, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', undefined, undefined, undefined, [B]);
     vi.setSystemTime(1_000_000 + 5 * 60 * 1000);
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 4, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 4, undefined, undefined, [B]);
     vi.setSystemTime(1_000_000 + 11 * 60 * 1000);
 
     expect(await allowed(B, 4)).toBe(true);
@@ -118,7 +118,7 @@ describe('per-site grants', () => {
 
   it('keeps a deny and a grant written at the same moment', async () => {
     await Promise.all([
-      permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, [C]),
+      permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, undefined, [C]),
       permissions.denyPermissions(A, ['agents:crossOrigin'], [B]),
     ]);
 
@@ -135,7 +135,7 @@ describe('per-site grants', () => {
   });
 
   it('lists denied sites for the sidebar', async () => {
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, [C]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, undefined, [C]);
     await permissions.denyPermissions(A, ['agents:crossOrigin'], [B]);
 
     const listed = (await permissions.listAllPermissions()).find((p) => p.origin === A);
@@ -144,7 +144,7 @@ describe('per-site grants', () => {
   });
 
   it('allows nothing without a target site', async () => {
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, undefined, [B]);
 
     const outcome = await lookupOriginGrant(A, 'agent.delegate.crossOrigin', undefined, 3);
     expect(outcome?.effect).not.toBe('allow');
@@ -152,23 +152,23 @@ describe('per-site grants', () => {
 
   it('lets an expired "allow once" lapse even when another site is allowed later', async () => {
     vi.useFakeTimers({ now: 1_000_000 });
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, undefined, [B]);
     vi.setSystemTime(1_000_000 + 11 * 60 * 1000);
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, [C]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, undefined, [C]);
 
     expect(await allowed(C)).toBe(true);
     expect(await allowed(B)).toBe(false);
   });
 
   it('keeps "allow once" to the tab that granted it', async () => {
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-once', 3, undefined, undefined, [B]);
 
     expect(await allowed(B, 3)).toBe(true);
     expect(await allowed(B, 4)).toBe(false);
   });
 
   it('reports the allowed sites in the status, and shows the scope as granted', async () => {
-    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, [B]);
+    await permissions.grantPermissions(A, ['agents:crossOrigin'], 'granted-always', 3, undefined, undefined, [B]);
 
     const status = await permissions.getPermissionStatus(A, 3);
     expect(status.agentOrigins).toEqual([B]);

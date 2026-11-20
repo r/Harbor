@@ -331,11 +331,25 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
  * and this is only a backstop). Every other request type keeps the
  * default — a page can't tell which backend it's on, so this doesn't widen
  * what a slow built-in request gets either.
+ *
+ * `agent.requestPermissions` also needs far longer than 30 seconds: it
+ * waits on a person actually reading and answering the consent prompt, not
+ * on any backend. 5 minutes comfortably undercuts every other limit in the
+ * chain this request can wait on — the background handler's own 10-minute
+ * cap (page-api/handlers/permission-handlers.ts's
+ * PERMISSION_PROMPT_TIMEOUT_MS) and the popup's own wait, which has no
+ * timeout of its own at all — so this is the limit that actually fires
+ * first, and the one a page should expect. When it does, the page's own
+ * giving-up is told to the background the same way as the two request
+ * types above (the `abort` message below), which discards this call's own
+ * answer rather than letting a late one still land after the page stopped
+ * caring (policy/permissions.ts's `showPermissionPrompt`).
  */
 const REQUEST_TIMEOUT_MS: Record<string, number> = {
   'ai.createTextSession': 2 * 60 * 1000,
   'ai.languageModel.create': 2 * 60 * 1000,
   'session.prompt': 10 * 60 * 1000 + 30 * 1000,
+  'agent.requestPermissions': 5 * 60 * 1000,
 };
 
 function sendRequest<T>(type: string, payload?: unknown): Promise<T> {

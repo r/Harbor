@@ -53,6 +53,21 @@ async function setup() {
     listeners.push(l as Listener);
   });
   (chrome as unknown as { scripting: unknown }).scripting = { executeScript: vi.fn(async () => []) };
+  const tabRemovedListeners: Array<(tabId: number) => void | Promise<void>> = [];
+  (chrome as unknown as { tabs: Record<string, unknown> }).tabs = {
+    ...(chrome as unknown as { tabs: Record<string, unknown> }).tabs,
+    onRemoved: { addListener: (l: (tabId: number) => void | Promise<void>) => tabRemovedListeners.push(l) },
+  };
+  interface FakePort {
+    name: string;
+    sender?: { tab?: { id: number }; url?: string };
+    onDisconnect: { addListener: (l: () => void) => void };
+  }
+  const connectListeners: Array<(port: FakePort) => void> = [];
+  (chrome as unknown as { runtime: Record<string, unknown> }).runtime = {
+    ...(chrome as unknown as { runtime: Record<string, unknown> }).runtime,
+    onConnect: { addListener: (l: (port: FakePort) => void) => connectListeners.push(l) },
+  };
 
   // Fresh modules per test, so the engine, audit log and open chats are
   // the ones the handlers below use.
@@ -70,7 +85,7 @@ async function setup() {
   promptRecords = () => Audit.list().filter((r) => r.action.startsWith('model.prompt'));
 
   const { registerPageChatHandlers } = await import('../page-chat-handlers');
-  const { handleChatOpen } = await import('../../agents/handlers/chat');
+  const { handleChatOpen, handleChatClose } = await import('../../agents/handlers/chat');
   registerPageChatHandlers();
 
   async function openChat(origin = SHOP, tabId = TAB): Promise<string> {
@@ -81,6 +96,13 @@ async function setup() {
     );
     if (!result?.ok || !result.result) throw new Error(`chat.open failed: ${JSON.stringify(result)}`);
     return result.result.chatId;
+  }
+
+  async function closeChat(chatId: string, origin = SHOP, tabId?: number): Promise<void> {
+    await handleChatClose(
+      { id: 'close-1', type: 'agent.chat.close', origin, tabId, payload: { chatId } } as never,
+      { sendResponse: () => {}, sendStreamEvent: () => {} },
+    );
   }
 
   function send(chatId: string, sender: unknown): Promise<{ ok: boolean; type: string; response?: string; error?: { message: string; code?: string } }> {
@@ -95,7 +117,26 @@ async function setup() {
     });
   }
 
-  return { openChat, send };
+  function fireTabRemoved(tabId: number): Promise<void> {
+    return Promise.all(tabRemovedListeners.map((l) => l(tabId))).then(() => undefined);
+  }
+
+  /** Simulates page-chat.ts opening its `harbor-page-chat:<chatId>` port. */
+  function connectChatPort(
+    chatId: string,
+    sender: { tabId?: number; url?: string } = { tabId: TAB, url: `${SHOP}/deals` },
+  ): { disconnect: () => void } {
+    const disconnectListeners: Array<() => void> = [];
+    const port: FakePort = {
+      name: `harbor-page-chat:${chatId}`,
+      sender: { tab: sender.tabId !== undefined ? { id: sender.tabId } : undefined, url: sender.url },
+      onDisconnect: { addListener: (l: () => void) => disconnectListeners.push(l) },
+    };
+    for (const l of connectListeners) l(port);
+    return { disconnect: () => { for (const l of disconnectListeners) l(); } };
+  }
+
+  return { openChat, closeChat, send, fireTabRemoved, connectChatPort };
 }
 
 let promptRecords: () => readonly AuditRecord[] = () => [];
@@ -237,5 +278,70 @@ describe('page chat messages are checked as the page\'s prompts', () => {
     expect(response).toMatchObject({ ok: false, type: 'error' });
     expect(bridgeChat).not.toHaveBeenCalled();
     expect(promptRecords()).toHaveLength(0);
+  });
+
+  it('drops the chat from the registry when its tab closes, refusing a later message the same as a chat that was never opened', async () => {
+    const { openChat, send, fireTabRemoved } = await setup();
+    const chatId = await openChat();
+
+    await fireTabRemoved(TAB);
+
+    const response = await send(chatId, { tab: { id: TAB }, url: `${SHOP}/deals`, frameId: 0 });
+    expect(response).toMatchObject({ ok: false, type: 'error', error: { message: 'This chat is not open on this page' } });
+    expect(bridgeChat).not.toHaveBeenCalled();
+  });
+
+  it("drops the chat from the registry when its port disconnects (a real navigation or reload)", async () => {
+    const { openChat, send, connectChatPort } = await setup();
+    const chatId = await openChat();
+    const port = connectChatPort(chatId);
+
+    port.disconnect();
+
+    const response = await send(chatId, { tab: { id: TAB }, url: `${SHOP}/deals`, frameId: 0 });
+    expect(response).toMatchObject({ ok: false, type: 'error', error: { message: 'This chat is not open on this page' } });
+    expect(bridgeChat).not.toHaveBeenCalled();
+  });
+
+  it('keeps the chat through a same-document change (a hash or pushState) — nothing disconnects its port for one', async () => {
+    const { openChat, send, connectChatPort } = await setup();
+    const chatId = await openChat();
+    connectChatPort(chatId);
+
+    // There's no tabs.onUpdated listener left to misfire on a same-document
+    // `url` change; the chat is unaffected either way.
+    const response = await send(chatId, { tab: { id: TAB }, url: `${SHOP}/deals`, frameId: 0 });
+    expect(response).toMatchObject({ ok: true, type: 'page_chat_response' });
+  });
+
+  it('refuses a cross-origin agent.chat.close, leaving the chat usable', async () => {
+    const { openChat, closeChat, send } = await setup();
+    const chatId = await openChat();
+
+    await closeChat(chatId, 'https://evil.example');
+
+    const response = await send(chatId, { tab: { id: TAB }, url: `${SHOP}/deals`, frameId: 0 });
+    expect(response).toMatchObject({ ok: true, type: 'page_chat_response' });
+  });
+
+  it('refuses a same-origin agent.chat.close from the wrong tab, leaving the chat usable', async () => {
+    const { openChat, closeChat, send } = await setup();
+    const chatId = await openChat();
+
+    await closeChat(chatId, SHOP, TAB + 1);
+
+    const response = await send(chatId, { tab: { id: TAB }, url: `${SHOP}/deals`, frameId: 0 });
+    expect(response).toMatchObject({ ok: true, type: 'page_chat_response' });
+  });
+
+  it('gives each chat an unguessable id, not a predictable chat-<ms>-<n> sequence', async () => {
+    const { openChat } = await setup();
+    const a = await openChat();
+    const b = await openChat();
+
+    const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    expect(a).toMatch(uuidLike);
+    expect(b).toMatch(uuidLike);
+    expect(a).not.toBe(b);
   });
 });

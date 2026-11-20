@@ -1,6 +1,7 @@
 import { build, context } from 'esbuild';
 import { copyFile, mkdir, cp, rm, readFile, writeFile } from 'node:fs/promises';
 import sharp from 'sharp';
+import vm from 'node:vm';
 
 const isWatch = process.argv.includes('--watch');
 const isChrome = process.argv.includes('--chrome');
@@ -36,6 +37,55 @@ const entryPoints = [
   'src/page-api/content-script.ts',
   'src/page-api/injected.ts',
 ];
+
+// Files the browser runs as a plain classic script, never as a module: a
+// `files:` executeScript() injection (chat.ts's `files: ['page-chat.js']`),
+// a content script (manifest's `content_scripts`), or a `<script src>` tag
+// a content script writes into the page (content-script.ts, for
+// injected.js). None of these can contain a top-level `export`/`import` —
+// Chrome and Safari build every entry point as ESM (`useESM`, above), so a
+// module-only export left in one of these specific bundles (as
+// page-chat.ts's once did, HBR round-4) throws `SyntaxError: Unexpected
+// token 'export'` the moment the browser tries to run it, and the feature
+// silently never starts. background.js is excluded: Chrome's manifest
+// declares it `"type": "module"`, so it's actually run as one.
+const SCRIPT_INJECTED_FILES = [
+  'page-chat.js',
+  'page-api/content-script.js',
+  'page-api/injected.js',
+];
+
+/**
+ * Parses each of `SCRIPT_INJECTED_FILES`, under `dir`, as a plain script —
+ * the same thing `node --check` would catch, without spawning a process
+ * per file. Throws on the first one that isn't valid that way (a stray
+ * top-level `export`/`import` being the one this guards against), naming
+ * the file and the parse error. A file that isn't in `dir` at all is
+ * skipped, not failed: not every browser target builds every one of these
+ * paths from the same source tree layout.
+ */
+async function checkNoEsmInScriptInjectedFiles(dir) {
+  let checked = 0;
+  for (const rel of SCRIPT_INJECTED_FILES) {
+    const path = `${dir}/${rel}`;
+    let code;
+    try {
+      code = await readFile(path, 'utf-8');
+    } catch {
+      continue;
+    }
+    try {
+      new vm.Script(code, { filename: path });
+    } catch (e) {
+      throw new Error(
+        `[Harbor] ${path} is injected as a classic script (executeScript({files}), a content script, or a <script src> tag), but isn't valid as one: ${e.message}. ` +
+        `Move whatever it imports/exports into a module it only imports from (never re-exports), so this bundle stays export-free.`
+      );
+    }
+    checked++;
+  }
+  console.log(`[Harbor] ✓ ${checked} script-injected file(s) have no top-level export/import`);
+}
 
 // Generate PNG icons from SVG for Chrome (Chrome prefers PNG)
 async function generatePngIcons(svgPath, outputDir) {
@@ -130,6 +180,7 @@ if (isWatch) {
   });
   await ctx.watch();
   await copyStatic();
+  await checkNoEsmInScriptInjectedFiles(outDir);
   console.log(`[Harbor] esbuild watch started for ${targetBrowser}`);
 } else {
   await build({
@@ -137,5 +188,6 @@ if (isWatch) {
     entryPoints,
   });
   await copyStatic();
+  await checkNoEsmInScriptInjectedFiles(outDir);
   console.log(`[Harbor] Build complete for ${targetBrowser}`);
 }

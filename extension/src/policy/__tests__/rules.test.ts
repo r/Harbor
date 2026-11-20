@@ -290,6 +290,30 @@ describe('String DSL parser', () => {
     expect(rule!.action).toBe('model.prompt.local');
   });
 
+  // A person's "deny every prompt" rule (Prompt(*), or any unrecognized
+  // Prompt(...) argument) must cover model.prompt.agent too — otherwise a
+  // blanket deny-all-prompts rule would silently exempt prompts sent to
+  // their own ACP agent.
+  it('Prompt(*) covers model.prompt.agent along with the three model-call actions', () => {
+    const rule = parseDSLString('Prompt(*)', 'deny', 'r6');
+    expect(rule).not.toBeNull();
+    expect(rule!.action).toEqual([
+      'model.prompt.local',
+      'model.prompt.remote.firstParty',
+      'model.prompt.remote.thirdParty',
+      'model.prompt.agent',
+    ]);
+  });
+
+  it('a deny-all-prompts rule actually denies a prompt sent to the agent', async () => {
+    const { evaluate } = await import('../engine');
+    const { Policy } = await import('../store');
+    Policy.__setForTesting([compileRule({ ...(parseDSLString('Prompt(*)', 'deny', 'r7') as Rule), source: 'user' })]);
+    const decision = await evaluate({ origin: 'https://example.com', action: 'model.prompt.agent' });
+    expect(decision.effect).toBe('deny');
+    Policy.__reset();
+  });
+
   it('returns null for unrecognized DSL', () => {
     expect(parseDSLString('Whatever(x)', 'allow', 'r')).toBeNull();
     expect(parseDSLString('not even close', 'allow', 'r')).toBeNull();

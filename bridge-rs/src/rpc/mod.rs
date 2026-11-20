@@ -198,16 +198,30 @@ fn register_acp_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
   // `native_messaging::handle_streaming_rpc`) and is deliberately not
   // registered here, matching how `llm.chat_stream` is handled.
   //
-  // `acp.send` is also deliberately not registered here: native messaging
-  // intercepts it before it would reach this registry and calls
-  // `acp::enqueue_send` inline (never via `tokio::spawn`), so sends are
-  // processed in the exact order the extension sent them. See
-  // `native_messaging::run_native_messaging`.
+  // `acp.send` and `acp.save_agents` are also deliberately not registered
+  // here: native messaging intercepts both before they'd reach this
+  // registry and calls `acp::enqueue_send`/`acp::save_agents` inline (never
+  // via `tokio::spawn`). For `acp.send` that's what keeps writes to an
+  // agent's stdin in the order the extension sent them; for
+  // `acp.save_agents` it's what keeps a burst of saves applied in that same
+  // order - the registry's normal spawn-per-message dispatch starts each
+  // message's handler on its own task, so nothing would otherwise guarantee
+  // that a second save sent right after a first doesn't finish (and land on
+  // disk) before it. See `native_messaging::run_native_messaging`.
   //
-  // All `acp.*` methods, including the two registered below, are also
+  // All `acp.*` methods, including the ones registered below, are also
   // rejected outright over the HTTP/WebSocket (Safari) surface; see
-  // `http_server::is_acp_method`.
+  // `http_server::is_acp_method`. `acp.get_agents` and `acp.save_agents`
+  // carry the full agent config (commands, args, env) that
+  // `acp.list_agents` deliberately hides; only Harbor's own extension pages
+  // call them (the extension enforces that), and the bridge's own
+  // enforcement is simply that they, like every `acp.*` method, never
+  // answer outside native messaging at all.
   handlers.insert("acp.list_agents", |_| Box::pin(acp::list_agents()));
+  handlers.insert("acp.get_agents", |_| Box::pin(acp::get_agents()));
+  handlers.insert("acp.resolve_command", |p| {
+    Box::pin(acp::resolve::resolve_command(p))
+  });
   handlers.insert("acp.close", |p| Box::pin(acp::close(p)));
 }
 

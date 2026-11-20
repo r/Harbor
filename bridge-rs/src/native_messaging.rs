@@ -280,6 +280,27 @@ pub async fn run_native_messaging() {
                             }))).await,
                         }
                     }
+                    // `acp.save_agents` is handled inline for the same
+                    // reason `acp.send` is, just above: the spawn-per-message
+                    // dispatch below starts each message's handler on its
+                    // own task, so nothing guarantees those tasks reach
+                    // `AcpConfig::save_atomic`'s write-then-rename in the
+                    // order the extension actually sent them - whichever
+                    // task's rename lands last wins, not whichever save was
+                    // sent last. Awaiting it here, before this `select!`
+                    // loop reads the next frame, means a second save sent
+                    // right after a first one doesn't even start until the
+                    // first has fully landed on disk.
+                    Some(msg) if msg.msg_type == "rpc" && msg.method.as_deref() == Some("acp.save_agents") => {
+                        let id = msg.id.clone().unwrap_or(serde_json::Value::Null);
+                        match acp::save_agents(msg.params).await {
+                            Ok(result) => writer.send_rpc_response(id, Some(result), None).await,
+                            Err(e) => writer.send_rpc_response(id, None, Some(serde_json::json!({
+                                "code": e.code,
+                                "message": e.message,
+                            }))).await,
+                        }
+                    }
                     Some(msg) => {
                         dispatch_message(msg, writer.clone(), host_request_tx.clone());
                     }

@@ -101,7 +101,14 @@ export async function handleRequestPermissions(ctx: RequestContext): HandlerResp
       'permissions.request',
       // Ask for exactly the scopes the page named, each once.
       { origin: ctx.origin, tabId: ctx.tabId, scopes: [...new Set(scopes)], reason, tools, agentOrigins },
-      { timeoutMs: PERMISSION_PROMPT_TIMEOUT_MS },
+      // `ctx.signal` aborts when the page's own (5-minute) client-side
+      // timeout for this request fires, or its tab/port goes away first —
+      // forwarded all the way to the open consent prompt
+      // (policy/permissions.ts's showPermissionPrompt), so a page that's
+      // given up either closes the prompt outright or stops waiting on its
+      // own answer, rather than still granting against a page that's no
+      // longer listening.
+      { timeoutMs: PERMISSION_PROMPT_TIMEOUT_MS, signal: ctx.signal },
     );
     if (!result || typeof result.granted !== 'boolean' || !result.scopes) {
       return errorResponse(ctx.id, 'ERR_HARBOR_NOT_FOUND', 'Harbor is needed to grant permissions');

@@ -263,6 +263,14 @@
         gap: var(--space-2);
         margin-top: var(--space-2);
       }
+      /* The preset row (goose / Claude Code / Codex / Custom) is the one
+         .form-actions row that must wrap within the form's width — it has
+         four buttons' worth of label text, unlike the two-button Save/Check
+         rows that share this class, which stay on one line. Without this,
+         the last button (Custom) was clipped at the form's right edge. */
+      #agent-preset-buttons {
+        flex-wrap: wrap;
+      }
       .model-select {
         margin-top: var(--space-3);
         padding-top: var(--space-3);
@@ -297,11 +305,17 @@
         display: flex;
         align-items: center;
         gap: var(--space-2);
+        flex-shrink: 0;
+      }
+      .panel-header-left .panel-title {
+        white-space: nowrap;
       }
       .panel-header-right {
         display: flex;
         align-items: center;
         gap: var(--space-1);
+        min-width: 0;
+        margin-left: var(--space-3);
       }
       .panel-header-right .status-indicator {
         width: 6px;
@@ -309,6 +323,33 @@
       }
       .panel-header-right .status-text {
         font-size: var(--text-xs);
+      }
+      /* A header-right status that can run long (the agent's own name and
+         version, or a check/error message) must never grow into the panel
+         title: it gets its own left margin, stays on one line, and
+         truncates with an ellipsis rather than wrapping or overflowing.
+         The full text is still available via the element's `title`
+         attribute (sidebar.ts's setStatusText). */
+      #agent-check-status {
+        margin-left: var(--space-2);
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      /* The LLM panel's one-line note while an ACP agent is selected
+         (sidebar-llm-panel.ts) — same one-line discipline as above. */
+      #llm-panel-header.agent-selected #llm-status-indicator,
+      #llm-panel-header.agent-selected #llm-status-text {
+        display: none;
+      }
+      .panel-header-note {
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .panel-collapse-icon {
         color: var(--color-text-muted);
@@ -1124,6 +1165,8 @@
           <div class="panel-title">LLM Providers</div>
         </div>
         <div class="panel-header-right">
+          <!-- Shown instead of the status dot/text while an ACP agent is selected (sidebar-llm-panel.ts): the built-in model isn't running sites' requests, but agent.sessions and Harbor's own chat still use it. -->
+          <span id="llm-panel-agent-note" class="panel-header-note" style="display: none;"></span>
           <div id="llm-status-indicator" class="status-indicator connecting"></div>
           <span id="llm-status-text" class="status-text connecting">Checking...</span>
         </div>
@@ -1163,6 +1206,74 @@
             <button class="btn btn-primary btn-sm" id="api-key-save" style="width: 100%;">Save</button>
           </div>
         </details>
+      </div>
+    </div>
+
+    <!-- Agent Panel: Harbor built-in vs. the person's own ACP agent -->
+    <div class="panel" id="agent-panel">
+      <div class="panel-header" id="agent-panel-header">
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon" id="agent-panel-toggle">&#9660;</span>
+          <div class="panel-title">Agent</div>
+        </div>
+        <div class="panel-header-right">
+          <span id="agent-check-status" class="status-text"></span>
+        </div>
+      </div>
+      <div class="panel-body" id="agent-panel-body">
+        <div class="section-hint">
+          Harbor starts agents without your shell environment. Give your agent's tools their keys in the agent's own settings.
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="agent-backend-select">Run sites on</label>
+          <select class="form-input" id="agent-backend-select">
+            <option value="">Harbor (built-in model)</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" id="agent-check-btn" style="margin-top: var(--space-2);" disabled>Check</button>
+        </div>
+
+        <div class="section-label">Configured agents</div>
+        <div id="configured-agents" class="configured-models-list"></div>
+
+        <div class="add-model-section">
+          <button class="btn btn-secondary btn-sm" id="add-agent-btn" disabled>+ Add agent</button>
+        </div>
+
+        <!-- Add/Edit Agent Form (hidden by default) -->
+        <div id="agent-form" class="api-key-config" style="display: none;">
+          <div class="api-key-header">
+            <span id="agent-form-title">Add agent</span>
+            <button class="btn btn-ghost btn-sm" id="agent-form-cancel" type="button">&times;</button>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Preset</label>
+            <div id="agent-preset-buttons" class="form-actions">
+              <button class="btn btn-secondary btn-sm" id="agent-preset-goose" data-preset="goose" type="button">goose</button>
+              <button class="btn btn-secondary btn-sm" id="agent-preset-claude-code" data-preset="claude-code" type="button">Claude Code</button>
+              <button class="btn btn-secondary btn-sm" id="agent-preset-codex" data-preset="codex" type="button">Codex</button>
+              <button class="btn btn-secondary btn-sm" id="agent-preset-custom" data-preset="custom" type="button">Custom</button>
+            </div>
+            <div class="form-hint" id="agent-preset-docs-hint" style="display: none;"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="agent-form-name">Name</label>
+            <input type="text" class="form-input" id="agent-form-name" placeholder="goose" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="agent-form-command">Command</label>
+            <input type="text" class="form-input" id="agent-form-command" placeholder="goose" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="agent-form-args">Arguments (one per line)</label>
+            <textarea class="form-input" id="agent-form-args" rows="3" placeholder="acp"></textarea>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-secondary btn-sm" id="agent-form-check" disabled>Check</button>
+            <button class="btn btn-primary btn-sm" id="agent-form-save" style="flex: 1;" disabled>Save</button>
+          </div>
+          <div class="form-hint" id="agent-form-check-result"></div>
+        </div>
       </div>
     </div>
 

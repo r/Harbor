@@ -379,7 +379,7 @@ async function handlePermissionsCheck(payload: unknown): Promise<ExtensionApiRes
   }
 }
 
-async function handlePermissionsRequest(payload: unknown): Promise<ExtensionApiResponse> {
+async function handlePermissionsRequest(payload: unknown, signal?: AbortSignal): Promise<ExtensionApiResponse> {
   const p = (payload || {}) as Record<string, unknown>;
   const origin = readPermissionOrigin(p);
   if (!origin) {
@@ -411,6 +411,7 @@ async function handlePermissionsRequest(payload: unknown): Promise<ExtensionApiR
         agentOrigins: agentOrigins as string[] | undefined,
       },
       readTabId(p),
+      signal,
     );
     return success({ ...result, allowedTools: result.allowedTools ?? [], agentOrigins: result.agentOrigins ?? [] });
   } catch (e) {
@@ -787,10 +788,20 @@ function abandoned(): ExtensionApiResponse {
 export async function routeExtensionApiMessage(
   message: ExtensionApiRequest,
   sender: { id?: string; url?: string; tab?: { id?: number } },
+  // `options.signal` aborts when the caller gave up — either its own
+  // timeout/abort, or harbor-core.ts's own request timer running out
+  // (see harborRequest). Checked below before the gate and before every
+  // handler that can wait on a prompt, and forwarded on to
+  // 'permissions.request' specifically — the one call here that keeps a
+  // consent prompt open past this function's own return, so the page's
+  // own giving-up needs a way to reach it (see
+  // page-api/handlers/permission-handlers.ts and
+  // policy/permissions.ts's showPermissionPrompt).
   options: { signal?: AbortSignal } = {},
 ): Promise<ExtensionApiResponse> {
   const { type, payload } = message;
-  
+  const { signal } = options;
+
   log(`Request from ${sender.id}: ${type}`);
 
   // A session's tool call holds a budget slot before the policy gate, so a
@@ -864,7 +875,7 @@ export async function routeExtensionApiMessage(
     case 'permissions.check':
       return handlePermissionsCheck(payload);
     case 'permissions.request':
-      return handlePermissionsRequest(payload);
+      return handlePermissionsRequest(payload, signal);
 
     // System
     case 'system.getCapabilities':

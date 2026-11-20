@@ -46,6 +46,11 @@ export function acpTextSessionIdsForTab(tabId: number): string[] {
   return [...registry.entries()].filter(([, entry]) => entry.tabId === tabId).map(([sessionId]) => sessionId);
 }
 
+/** @internal acp-text-session.ts only. Every registered session, regardless of tab — for destroying all of them at once (a backend switch, not a per-tab event). */
+export function allAcpTextSessionIds(): string[] {
+  return [...registry.keys()];
+}
+
 interface PendingOpen {
   tabId?: number;
   cancelled: boolean;
@@ -94,6 +99,14 @@ export function isPendingOpenCancelled(sessionId: string): boolean {
 export function cancelPendingOpensForTab(tabId: number): void {
   for (const pending of pendingOpens.values()) {
     if (pending.tabId !== tabId) continue;
+    pending.cancelled = true;
+    pending.abort?.();
+  }
+}
+
+/** Same as `cancelPendingOpensForTab`, but every still-opening session — for a backend switch, which ends work on every tab's session, not just one. */
+export function cancelAllPendingOpens(): void {
+  for (const pending of pendingOpens.values()) {
     pending.cancelled = true;
     pending.abort?.();
   }
