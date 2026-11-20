@@ -327,10 +327,8 @@ describe('page chat on the ACP agent backend', () => {
     await closedViaUi(chatId);
     expect(closeSpy).toHaveBeenCalled();
 
-    // The chat is still "open" in Harbor's own registry (only the agent
-    // session ended) — a later message reopens a fresh agent session.
-    await send(chatId);
-    expect(sessionNewCalls).toBe(2);
+    expect(await send(chatId)).toMatchObject({ ok: false, type: 'error' });
+    expect(sessionNewCalls).toBe(1);
   });
 
   it('ends the agent session when the tab closes', async () => {
