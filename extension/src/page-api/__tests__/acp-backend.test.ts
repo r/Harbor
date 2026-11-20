@@ -210,8 +210,11 @@ describe('AcpAgentBackend', () => {
     });
     const backend = new AcpAgentBackend(AGENT_ID);
     await collect(backend, baseRequest({ task: 'hello', systemPrompt: undefined }));
-    expect(promptBlocks).toHaveLength(1);
-    expect(promptBlocks[0].text).toBe('hello');
+    // Harbor's own framing, then the task: no site-instructions block.
+    expect(promptBlocks).toHaveLength(2);
+    expect(promptBlocks[0].text).toMatch(/working for the person/i);
+    expect(promptBlocks.some((b) => b.text.startsWith('Instructions from'))).toBe(false);
+    expect(promptBlocks[1].text).toBe('hello');
   });
 
   describe('event mapping', () => {

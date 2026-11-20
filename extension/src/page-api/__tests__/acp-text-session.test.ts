@@ -299,6 +299,7 @@ describe('create, then a multi-turn prompt reusing the same ACP session', () => 
 
     expect(prompts).toHaveLength(2);
     expect(prompts[0].blocks.map((b) => b.text)).toEqual([
+      expect.stringMatching(/working for the person/i),
       expect.stringContaining('Instructions from https://example.test:'),
       'first',
     ]);
@@ -385,7 +386,7 @@ describe('concurrent prompts on one ACP session', () => {
     const resolvers: Array<(r: { stopReason: StopReason }) => void> = [];
     registerFakeAgent({
       onPrompt: async (promptCtx) => {
-        order.push(`start:${promptCtx.params.prompt[0].text}`);
+        order.push(`start:${promptCtx.params.prompt[promptCtx.params.prompt.length - 1].text}`);
         return new Promise((resolve) => { resolvers.push(resolve); });
       },
     });

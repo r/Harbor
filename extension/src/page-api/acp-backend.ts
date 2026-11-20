@@ -325,7 +325,7 @@ export class AcpAgentBackend implements AgentBackend {
           AGENT_METHODS.session_prompt,
           {
             sessionId: initialized.sessionId,
-            prompt: buildPromptBlocks(origin, task, systemPrompt),
+            prompt: buildPromptBlocks(origin, task, systemPrompt, true),
             // A Harbor-aware agent can read this instead of (or alongside)
             // the labelled text block above, which stays for agents that
             // don't look at `_meta`.

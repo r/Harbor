@@ -392,7 +392,7 @@ export class AcpTextSession {
         return { ok: false, error: cancelReasonEvent('permission-denied') };
       }
 
-      const prompt = buildPromptBlocks(this.origin, input, this.firstPromptSent ? undefined : this.systemPrompt);
+      const prompt = buildPromptBlocks(this.origin, input, this.systemPrompt, !this.firstPromptSent);
       // Set before the request settles, not after: the systemPrompt was
       // included in *this* prompt's blocks regardless of how the turn ends,
       // so a failed first turn still doesn't get it resent on the next one.
