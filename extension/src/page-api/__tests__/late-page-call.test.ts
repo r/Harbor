@@ -75,7 +75,8 @@ beforeEach(async () => {
   const bridge = await import('../../llm/bridge-client');
   bridgeRequest = vi.mocked(bridge.bridgeRequest);
   bridgeStreamRequest = vi.mocked(bridge.bridgeStreamRequest);
-  bridgeRequest.mockResolvedValue({ default_model: 'ollama:test' });
+  bridgeRequest.mockImplementation(async (method: string, params?: unknown) =>
+    method === 'llm.model_locality' ? { is_local: (params as { model?: string } | undefined)?.model?.startsWith('ollama:') === true } : { default_model: 'ollama:test' });
   bridgeChat.mockResolvedValue({ choices: [{ message: { role: 'assistant', content: 'hi' }, finish_reason: 'stop' }], model: 'ollama:test' });
   initializePageApi();
 });

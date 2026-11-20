@@ -751,6 +751,8 @@ is prepended as a system message, and tool definitions use
 response IDs are preserved. Streaming forwards tools to the provider; its
 existing token/done/error events do not expose tool-call deltas.
 
+`llm.model_locality { model }` answers `{ is_local }`: whether the model's provider runs on this machine. The part of the model ID before the first `:` names a provider instance, resolved to its type, or a provider type; `ollama`, `llamafile`, `lmstudio` and `apple` are local. Harbor's policy check uses it to classify a page's prompt as local or remote.
+
 `llm.cancel_stream { id }` stops a running `llm.chat_stream` by its request
 id: the bridge aborts the stream's task, which drops the request to the
 provider, and answers `{ cancelled }` (`false` if the stream had already

@@ -32,6 +32,14 @@ fn default_true() -> bool {
     true
 }
 
+/// Provider types that run on this machine: their prompts never leave it.
+const LOCAL_PROVIDER_TYPES: [&str; 4] = ["ollama", "llamafile", "lmstudio", "apple"];
+
+/// Whether a provider type runs on this machine.
+pub fn is_local_provider_type(provider_type: &str) -> bool {
+    LOCAL_PROVIDER_TYPES.contains(&provider_type)
+}
+
 impl ProviderInstance {
     /// Create a new provider instance with auto-generated ID
     pub fn new(provider_type: &str, name: &str) -> Self {
@@ -414,12 +422,27 @@ impl LlmConfig {
             return false;
         };
         if let Some(instance) = self.resolve_provider(provider) {
-            instance.enabled && (matches!(instance.provider_type.as_str(), "ollama" | "llamafile" | "lmstudio" | "apple")
+            instance.enabled && (is_local_provider_type(&instance.provider_type)
                 || instance.api_key.as_ref().is_some_and(|key| !key.trim().is_empty()))
         } else {
-            matches!(provider, "ollama" | "llamafile" | "lmstudio" | "apple")
-                && self.get_instances_by_type(provider).is_empty()
+            is_local_provider_type(provider) && self.get_instances_by_type(provider).is_empty()
         }
+    }
+
+    /// Whether a model runs on this machine. The part of its ID before the
+    /// first `:` names a provider instance (resolved to its type) or a
+    /// provider type. Anything else, including an ID with no provider,
+    /// counts as not local. Whether the instance is enabled doesn't matter:
+    /// a disabled instance still runs where it runs, and can't be used.
+    pub fn is_local_model(&self, model_id: &str) -> bool {
+        let Some((provider, _)) = model_id.split_once(':') else {
+            return false;
+        };
+        let provider_type = self
+            .get_instance(provider)
+            .map(|instance| instance.provider_type.as_str())
+            .unwrap_or(provider);
+        is_local_provider_type(provider_type)
     }
 
     /// Model ID to use when a request doesn't name one: the legacy
@@ -535,6 +558,26 @@ fn get_provider_display_name(provider_type: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_models_include_every_local_provider_type() {
+        let cfg = LlmConfig::default();
+        for model in ["ollama:llama3", "llamafile:mistral", "lmstudio:qwen", "apple:system"] {
+            assert!(cfg.is_local_model(model), "{model} should be local");
+        }
+        for model in ["openai:gpt-4o", "anthropic:claude", "unknown:x", "no-prefix", ""] {
+            assert!(!cfg.is_local_model(model), "{model} should not be local");
+        }
+    }
+
+    #[test]
+    fn a_named_instance_is_local_by_its_provider_type() {
+        let mut cfg = LlmConfig::default();
+        cfg.add_instance(ProviderInstance::with_id("my-ollama", "ollama", "Home Ollama"));
+        cfg.add_instance(ProviderInstance::with_id("work-openai", "openai", "Work"));
+        assert!(cfg.is_local_model("my-ollama:llama3"));
+        assert!(!cfg.is_local_model("work-openai:gpt-4o"));
+    }
 
     #[test]
     fn default_config_serializes_current_version() {
