@@ -251,26 +251,25 @@ export function installWebAgentsMock(global) {
     },
   };
 
+  function checkTextSessionError() {
+    if (state.textSessionError) {
+      throw createApiError(state.textSessionError.code || 'ERR_MODEL_FAILED', state.textSessionError.message || 'Model failed');
+    }
+  }
+
   function createTextSession(sessionOptions = {}) {
     const sessionId = 'mock-session-' + Math.random().toString(36).slice(2);
     return {
       sessionId,
       async prompt(input) {
-        if (state.textSessionError) {
-          const e = createApiError(state.textSessionError.code || 'ERR_MODEL_FAILED', state.textSessionError.message || 'Model failed');
-          throw e;
-        }
+        checkTextSessionError();
         return state.textSessionResponse;
       },
       async *promptStreaming(input) {
-        if (state.textSessionError) {
-          yield { type: 'error', error: { code: state.textSessionError.code || 'ERR_MODEL_FAILED', message: state.textSessionError.message || 'Model failed' } };
-          return;
-        }
+        checkTextSessionError();
         for (const token of (state.textSessionStreamTokens || [state.textSessionResponse])) {
-          yield { type: 'token', token };
+          if (token) yield token;
         }
-        yield { type: 'done' };
       },
       async destroy() {},
     };
