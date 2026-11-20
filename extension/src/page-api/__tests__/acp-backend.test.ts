@@ -33,9 +33,10 @@ vi.mock('../harbor-core', () => ({
   listSiteServersForAcp: (origin: string, tabId?: number) => mocks.listSiteServersForAcp(origin, tabId),
   // D2's own grant+policy gate for whether to pass site servers at all is
   // covered in acp-site-mcp-servers-policy.test.ts; here it's a
-  // pass-through so these tests (which drive `listSiteServersForAcp`
-  // directly) keep exercising only the capability filter in front of it.
-  policyAllowsSiteToolsForAcp: async () => true,
+  // pass-through (every candidate id comes back allowed) so these tests
+  // (which drive `listSiteServersForAcp` directly) keep exercising only
+  // the capability filter in front of it.
+  policyAllowsSiteToolsForAcp: async (_origin: string, _tabId: number | undefined, serverIds: readonly string[]) => [...serverIds],
 }));
 // The dialog itself (the popup window, its message validation, the
 // liveness timeout, window-closed handling) is covered on its own, without

@@ -745,16 +745,24 @@ export class McpStreamableHttpTransport implements McpTransport {
     throw new Error('Streamable HTTP event stream ended before this request\'s response arrived');
   }
 
-  /** Best-effort: DELETE the session the server handed out, if any. */
+  /**
+   * Best-effort: DELETE the session the server handed out, if any.
+   * Bounded by the same timeout as `send()`/`notify()` — a server that
+   * never answers the DELETE can't hold a caller (e.g.
+   * `mcp/site-servers.ts`'s re-register path, which awaits this before
+   * replacing the registry entry) open indefinitely.
+   */
   async disconnect(): Promise<void> {
     if (!this.sessionId) return;
     const sessionId = this.sessionId;
     const protocolVersion = this.protocolVersion;
     this.sessionId = null;
     try {
-      const headers: Record<string, string> = { 'Mcp-Session-Id': sessionId };
-      if (protocolVersion) headers['MCP-Protocol-Version'] = protocolVersion;
-      await fetch(this.options.url, { method: 'DELETE', headers, redirect: 'error' });
+      await this.withTimeout(async (signal) => {
+        const headers: Record<string, string> = { 'Mcp-Session-Id': sessionId };
+        if (protocolVersion) headers['MCP-Protocol-Version'] = protocolVersion;
+        await fetch(this.options.url, { method: 'DELETE', headers, redirect: 'error', signal });
+      });
     } catch {
       // Nice-to-have only: the connection is being torn down either way.
     }

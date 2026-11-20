@@ -374,24 +374,34 @@ export async function requireAgentPromptAction(origin: string, tabId?: number): 
 }
 
 /**
- * Whether the policy engine currently allows `tool.list` and `tool.call`
- * for `origin`, with no prompt — used by `acp-backend.ts` to decide
- * whether to pass the origin/tab's site-registered MCP servers into
- * `session/new` at all (HBR-134, D2). `upstreamConsent: 'origin-grant'`
- * means the caller's own `mcp:tools.list`/`mcp:tools.call` grant check
- * (`hasPermission`) stands in for the engine's own Tier 9 default (an
- * un-ruled `tool.call` defaults to `preview`) — the same deal a page's
- * `mcp.listTools`/`mcp.callTool` calls get through `gatePageCall`. A
- * *rule* that denies, asks or previews either action still isn't covered
- * by that consent, and `noPrompt: true` turns what would otherwise be a
- * prompt into an outright refusal instead: this silently decides what to
- * offer the agent, never something to interrupt a run for.
+ * Which of `serverIds` the policy engine currently allows `tool.list` and
+ * `tool.call` for, with no prompt — used by `acp-backend.ts` to decide
+ * which of the origin/tab's site-registered MCP servers to pass into
+ * `session/new` (HBR-134, D2). Checked per server, with
+ * `resource: { server: serverId } }`, so a rule naming one server (or a
+ * glob like `site:*`) only filters that one out — the engine's resource
+ * matching (`policy/rules.ts`) is what gives `site:*` its meaning here.
+ *
+ * `upstreamConsent: 'origin-grant'` means the caller's own
+ * `mcp:tools.list`/`mcp:tools.call` grant check (`hasPermission`) stands
+ * in for the engine's own Tier 9 default (an un-ruled `tool.call`
+ * defaults to `preview`) — the same deal a page's `mcp.listTools`/
+ * `mcp.callTool` calls get through `gatePageCall`. A *rule* that denies,
+ * asks or previews either action for a server still isn't covered by
+ * that consent, and `noPrompt: true` turns what would otherwise be a
+ * prompt into an outright refusal for that one server instead: this
+ * silently decides what to offer the agent, never something to interrupt
+ * a run for.
  *
  * Harbor's own origin-grant store is checked separately by the caller —
  * this is only the policy engine's rule evaluation and audit trail, the
  * same split `requireAgentPromptAction` draws for `model:prompt`.
  */
-export async function policyAllowsSiteToolsForAcp(origin: string, tabId?: number): Promise<boolean> {
+export async function policyAllowsSiteToolsForAcp(
+  origin: string,
+  tabId: number | undefined,
+  serverIds: readonly string[],
+): Promise<string[]> {
   const ctx: RequestContext = {
     id: crypto.randomUUID(),
     type: 'session.prompt',
@@ -400,10 +410,16 @@ export async function policyAllowsSiteToolsForAcp(origin: string, tabId?: number
     tabId,
   };
   const options = { upstreamConsent: 'origin-grant' as const, noPrompt: true };
-  const listDenial = await checkAction(ctx, 'tool.list', options);
-  if (listDenial) return false;
-  const callDenial = await checkAction(ctx, 'tool.call', options);
-  return !callDenial;
+  const allowed: string[] = [];
+  for (const serverId of serverIds) {
+    const resource = { server: serverId };
+    const listDenial = await checkAction(ctx, 'tool.list', { ...options, resource });
+    if (listDenial) continue;
+    const callDenial = await checkAction(ctx, 'tool.call', { ...options, resource });
+    if (callDenial) continue;
+    allowed.push(serverId);
+  }
+  return allowed;
 }
 
 /**

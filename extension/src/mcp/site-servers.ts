@@ -266,11 +266,37 @@ export async function registerSiteServer(options: RegisterSiteServerOptions): Pr
   const key = registryKey(tabId, serverId);
 
   // Re-registering the same (slugified) name in the same tab replaces the
-  // old connection rather than running two side by side.
+  // old connection rather than running two side by side. The new entry
+  // goes in *immediately* — no await between the abandonment check above
+  // and this `registry.set` — so a forget landing from here on finds this
+  // entry through the normal `forgetTabServers`/
+  // `forgetTabServersIfOriginChanged` path (which tears its client down
+  // too), instead of racing a still-open old connection's teardown (a
+  // streamable-HTTP DELETE can itself take a while) against nothing in
+  // the registry to protect, which could otherwise leave a live
+  // connection registered for a tab that's already gone.
   const existing = registry.get(key);
-  if (existing) await safeDisconnect(existing.client);
-
   registry.set(key, { serverId, origin, tabId, url, name, description, transport, tools, client });
+
+  if (existing) {
+    await safeDisconnect(existing.client);
+
+    // The old connection's teardown just above can take a while; if the
+    // tab was forgotten (or the caller's own signal aborted) while we
+    // waited on it, the normal forget path has already removed and
+    // disconnected the entry this call just inserted — report the
+    // abandonment instead of a stale success. `stillOurs` guards against
+    // tearing down a *third* registration's entry that happened to land
+    // under the same key in the meantime.
+    if (signal?.aborted || generationFor(tabId) !== startGeneration) {
+      const stillOurs = registry.get(key);
+      if (stillOurs?.client === client) {
+        registry.delete(key);
+        await safeDisconnect(client);
+      }
+      return { ok: false, error: 'The page stopped waiting for this registration', aborted: true };
+    }
+  }
 
   return { ok: true, serverId, tools: tools.map((t) => t.name) };
 }
