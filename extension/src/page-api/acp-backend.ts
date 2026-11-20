@@ -77,6 +77,12 @@ export { answerPermissionRequest, combineAbortSignals };
 /** This backend's own name for the shared per-turn timeout. */
 export const ACP_RUN_TIMEOUT_MS = ACP_TURN_TIMEOUT_MS;
 
+// Claude Code can start a pending call with an empty object while it streams input.
+function hasToolInput(input: unknown, status: string | null | undefined): boolean {
+  if (input == null) return false;
+  return status !== 'pending' || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length > 0;
+}
+
 /**
  * The origin/tab's site-registered MCP servers that may be passed into
  * `session/new` (HBR-134, D2): none of them at all unless the origin
@@ -206,6 +212,7 @@ export class AcpAgentBackend implements AgentBackend {
     let sessionId: string | null = null;
     let accumulatedText = '';
     const toolNames = new Map<string, string>();
+    const pendingCalls = new Set<string>();
     const requestAbort = new AbortController();
 
     const triggerCancel = (reason: CancelReason, ctx?: ClientContext) => {
@@ -261,13 +268,13 @@ export class AcpAgentBackend implements AgentBackend {
         case 'tool_call': {
           if (cancelReason) return;
 
-          // Announced as soon as it arrives, before the (async) grant
-          // re-check below: it's the agent telling the page what it's
-          // about to do, in the agent's own order, not a decision that
-          // needs gating itself — only the tool's actual result does.
           const name = update.title || update.kind || update.toolCallId;
           toolNames.set(update.toolCallId, name);
-          sendToken({ type: 'tool_call', tool: name, args: update.rawInput ?? {} });
+          if (!hasToolInput(update.rawInput, update.status)) {
+            pendingCalls.add(update.toolCallId);
+          } else {
+            sendToken({ type: 'tool_call', tool: name, args: update.rawInput });
+          }
 
           if (!await hasPermission(origin, 'model:prompt', tabId)) {
             triggerCancel('permission-denied', ctx.agent);
@@ -277,13 +284,24 @@ export class AcpAgentBackend implements AgentBackend {
         case 'tool_call_update': {
           if (cancelReason) return;
 
+          const id = update.toolCallId;
+          const name = toolNames.get(id) ?? update.title ?? update.kind ?? id;
+          // As on the initial notification, announce supplied input in wire order.
+          // Only the result waits for the asynchronous grant re-check.
+          if (pendingCalls.has(id) && hasToolInput(update.rawInput, update.status)) {
+            pendingCalls.delete(id);
+            sendToken({ type: 'tool_call', tool: name, args: update.rawInput });
+          }
+
           if (!await hasPermission(origin, 'model:prompt', tabId)) {
             triggerCancel('permission-denied', ctx.agent);
             return;
           }
 
-          if (update.status === 'completed' || update.status === 'failed') {
-            const name = toolNames.get(update.toolCallId) ?? update.title ?? update.kind ?? update.toolCallId;
+          if (cancelReason || terminalSent) return;
+          const finished = update.status === 'completed' || update.status === 'failed';
+          if (finished) {
+            if (pendingCalls.delete(id)) sendToken({ type: 'tool_call', tool: name, args: {} });
             sendToken({ type: 'tool_result', tool: name, result: update.content ?? update.rawOutput ?? null });
           }
           return;

@@ -146,7 +146,7 @@ describe('ACP backend: races, ordering and hostile input', () => {
     expect(ev.at(-1)).toMatchObject({ type: 'done' });
   });
 
-  it('P6 tool_call notification immediately followed by the prompt response: order', async () => {
+  it('announces late input before a prompt response racing its grant check', async () => {
     const b = createFakeAcpBridge(); mocks.bridge.current = b;
     mocks.hasPermission.mockImplementation(() => new Promise((r) => setTimeout(() => r(true), 5)));
     b.registerAgent('a', buildAgentApp({ name: 'f' })
@@ -154,6 +154,7 @@ describe('ACP backend: races, ordering and hostile input', () => {
       .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }))
       .onRequest(AGENT_METHODS.session_prompt, async (ctx: any) => {
         await ctx.client.notify(CLIENT_METHODS.session_update, { sessionId: 's', update: { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'read' } });
+        await ctx.client.notify(CLIENT_METHODS.session_update, { sessionId: 's', update: { sessionUpdate: 'tool_call_update', toolCallId: 't1', rawInput: { path: 'note' } } });
         return { stopReason: 'end_turn' as StopReason };
       }), {});
     const ev: StreamToken[] = [];
