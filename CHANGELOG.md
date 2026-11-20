@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The sidebar, permission prompt, agent-question popup and MCP directory now use the public site's brand: green-tinted ink and rules, report green for links and focus, bright green for the main action, Helvetica Neue headings and monospaced labels, in light and dark. `extension/src/design-tokens.css` takes its palette from `whitepaper/styles.css` and writes each color once with `light-dark()`. It was a duplicated copy of itself with 32 unused tokens and 64 unused classes; those are gone. The Safari build now needs Safari 17.5, the first with `light-dark()`.
 - A site's `model:prompt` and `model:tools` allows are kept per backend. After you switch between the built-in model and an agent, or between agents, the site has to ask again, and the prompt names where its requests will go; switching back restores the earlier allow. A deny applies whichever backend is selected. Switching also ends the site's open text sessions and its `agent.sessions` sessions that use a model, whichever backend they ran on, and cancels its running `agent.run`.
 - With an agent selected, the permission prompt says "This site's AI requests go to <agent>, your own agent", shows prompts and tools as one row, and rates it medium risk, since the site gets an agent that can use its tools.
 - `agent.requestPermissions()` waits up to 5 minutes for an answer, up from 30 seconds. If the page stops waiting first, its answer is discarded, so a late Allow grants nothing.
@@ -41,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Styles in the sidebar and directory that pointed at tokens Harbor never defined (`--color-surface-tertiary`, `--color-success-bg`, `--border` and six others) now use defined ones, so those backgrounds and rules render.
+- The directory's "installed, stopped" badge was filled with the muted text color, so its label was nearly unreadable.
+- Scrollbars in Harbor's pages follow the theme in Firefox. They were styled only with `-webkit-` rules, which Firefox ignores.
 - `agent.mcp.discover()` works again. It always failed with "No tab context for discovery" because the page's tab wasn't passed on.
 - Harbor's SSE connection to a remote MCP server now follows the MCP SDK's handshake: it reads the server's `endpoint` event as a URL, waits for it before sending, and refuses an endpoint on another origin. It used to post to the wrong address. An SSE or WebSocket connection Harbor closes on purpose no longer reconnects.
 - The Bring Your Own Chatbot demo's MCP server sends posted messages to their session instead of opening a new SSE stream for each.

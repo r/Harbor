@@ -206,41 +206,33 @@
     }
 
     .badge-js {
-      background: rgba(247, 223, 30, 0.15);
-      color: #b8a000;
-    }
-
-    [data-theme="dark"] .badge-js {
-      color: #f7df1e;
+      background: var(--color-surface-tertiary);
+      color: var(--color-text-secondary);
     }
 
     .badge-running {
-      background: var(--color-success-bg, rgba(34, 197, 94, 0.1));
+      background: var(--color-success-subtle);
       color: var(--color-success);
     }
 
     .badge-installed-stopped {
-      background: var(--color-text-muted, rgba(107, 114, 128, 0.15));
-      color: var(--color-text-secondary, #6b7280);
+      background: var(--color-border-subtle);
+      color: var(--color-text-secondary);
     }
 
     .badge-builtin {
-      background: var(--color-info-subtle, rgba(2, 132, 199, 0.1));
-      color: var(--color-info, #0284c7);
+      background: var(--color-info-subtle);
+      color: var(--color-info);
     }
 
     .badge-remote {
-      background: rgba(59, 130, 246, 0.15);
-      color: #3b82f6;
+      background: var(--color-info-subtle);
+      color: var(--color-info);
     }
 
     .badge-warning {
-      background: rgba(234, 179, 8, 0.15);
-      color: #b8860b;
-    }
-
-    [data-theme="dark"] .badge-warning {
-      color: #eab308;
+      background: var(--color-warning-subtle);
+      color: var(--color-warning);
     }
 
     /* Empty state */
@@ -278,7 +270,7 @@
       border-radius: var(--radius-md);
       font-size: var(--text-sm);
       font-weight: var(--weight-medium);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      box-shadow: var(--shadow-md);
       z-index: 1000;
       animation: toast-in 0.2s ease-out;
     }
@@ -379,7 +371,7 @@
       font-size: var(--text-2xs);
       padding: 1px 4px;
       background: var(--color-bg-subtle);
-      border-radius: var(--radius-xs);
+      border-radius: var(--radius-sm);
     }
 
     /* Drop zone for file upload */

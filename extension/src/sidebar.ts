@@ -1822,13 +1822,13 @@ function fmtTime(ts: number): string {
 
 function effectBadge(effect: string): string {
   const colorMap: Record<string, string> = {
-    allow: '#16a34a',
-    ask: '#ca8a04',
-    preview: '#0891b2',
-    deny: '#dc2626',
+    allow: 'var(--color-success)',
+    ask: 'var(--color-warning)',
+    preview: 'var(--color-info)',
+    deny: 'var(--color-error)',
   };
-  const c = colorMap[effect] ?? '#6b7280';
-  return `<span style="background:${c};color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(effect)}</span>`;
+  const c = colorMap[effect] ?? 'var(--color-text-muted)';
+  return `<span style="background:${c};color:var(--color-text-inverse);padding:1px 6px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(effect)}</span>`;
 }
 
 function renderTrace(trace: AuditTraceStep[] | undefined): string {
@@ -1946,7 +1946,7 @@ async function loadActivity(): Promise<void> {
       const rule = r.rule ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">rule:${escapeHtml(r.rule.id)}</span>` : '';
       const recordJson = encodeURIComponent(JSON.stringify(r));
       return `
-        <div class="activity-row" data-record-id="${escapeHtml(r.id)}" data-record-json="${recordJson}" style="padding:6px 0;border-bottom:1px solid var(--color-border);cursor:pointer;">
+        <div class="activity-row" data-record-id="${escapeHtml(r.id)}" data-record-json="${recordJson}" style="padding:6px 0;border-bottom:1px solid var(--color-border-subtle);cursor:pointer;">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
             <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
               ${effectBadge(r.effect)}
@@ -1956,7 +1956,7 @@ async function loadActivity(): Promise<void> {
             <span style="font-size:10px;color:var(--color-text-muted);flex-shrink:0;">${fmtTime(r.timestamp)}</span>
           </div>
           <div style="font-size:11px;color:var(--color-text-muted);margin-top:2px;">${escapeHtml(r.reason)} · ${tier}${rule}${labels} · <a class="activity-why-link" data-record-id="${escapeHtml(r.id)}" style="color:var(--color-accent-primary);text-decoration:underline;cursor:pointer;">Why?</a></div>
-          <div class="activity-detail" data-detail-for="${escapeHtml(r.id)}" style="display:none;margin-top:6px;padding:6px;background:var(--color-bg-tertiary);border-radius:4px;font-size:11px;"></div>
+          <div class="activity-detail" data-detail-for="${escapeHtml(r.id)}" style="display:none;margin-top:6px;padding:6px;background:var(--color-surface-tertiary);border-radius:4px;font-size:11px;"></div>
         </div>`;
     }).join('');
     activityList.innerHTML = rows;
@@ -2348,18 +2348,18 @@ function renderSearchResultParsed(data: Record<string, unknown>): string {
   const parts: string[] = [];
   if (query) parts.push(`<div class="form-label" style="margin-bottom: var(--space-1);">Query: ${escapeHtml(query)}</div>`);
   if (articles.length > 0) {
-    parts.push('<table style="width:100%; border-collapse: collapse; margin-bottom: var(--space-2);"><thead><tr><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--border);">Title</th><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--border);">Author</th><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--border);">Date</th></tr></thead><tbody>');
+    parts.push('<table style="width:100%; border-collapse: collapse; margin-bottom: var(--space-2);"><thead><tr><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">Title</th><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">Author</th><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">Date</th></tr></thead><tbody>');
     for (const a of articles.slice(0, 20)) {
       const row = a as Record<string, unknown>;
       const title = escapeHtml(String(row.title ?? ''));
       const author = escapeHtml(String(row.author ?? ''));
       const date = escapeHtml(String(row.date ?? row.dateISO ?? ''));
-      parts.push(`<tr><td style="padding: 4px 6px; border-bottom: 1px solid var(--border);">${title}</td><td style="padding: 4px 6px; border-bottom: 1px solid var(--border);">${author}</td><td style="padding: 4px 6px; border-bottom: 1px solid var(--border);">${date}</td></tr>`);
+      parts.push(`<tr><td style="padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">${title}</td><td style="padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">${author}</td><td style="padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">${date}</td></tr>`);
     }
     parts.push('</tbody></table>');
-    if (articles.length > 20) parts.push(`<div style="color: var(--text-muted);">… and ${articles.length - 20} more</div>`);
+    if (articles.length > 20) parts.push(`<div style="color: var(--color-text-muted);">… and ${articles.length - 20} more</div>`);
   }
-  if (urls.length > 0) parts.push(`<div style="color: var(--text-muted);">Article URLs: ${urls.length}</div>`);
+  if (urls.length > 0) parts.push(`<div style="color: var(--color-text-muted);">Article URLs: ${urls.length}</div>`);
   return parts.join('');
 }
 
