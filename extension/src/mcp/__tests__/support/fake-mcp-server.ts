@@ -87,11 +87,21 @@ export interface FakeMcpServerHandle {
   sessionId: string | null;
   /** Every SSE connection this fake has opened, in order (including closed ones). */
   sseConnections: FakeSseConnection[];
+  /** How many `new WebSocket(...)` this fake has seen — a reconnect shows up as a second one. */
+  webSocketOpenCount: number;
+  /** Every WebSocket this fake has opened, in order. */
+  webSocketConnections: FakeWsConnection[];
 }
 
-function jsonResponse(body: unknown, extraHeaders: Record<string, string> = {}): Response {
+/** One WebSocket connection the fake has opened (`new WebSocket(...)`). */
+export interface FakeWsConnection {
+  /** A real network blip, not a `close()` call from the transport under test. */
+  simulateUnexpectedClose(): void;
+}
+
+function jsonResponse(body: unknown, extraHeaders: Record<string, string> = {}, status = 200): Response {
   return new Response(JSON.stringify(body), {
-    status: 200,
+    status,
     headers: { 'Content-Type': 'application/json', ...extraHeaders },
   });
 }
@@ -136,7 +146,7 @@ function safeParseUrl(url: string): URL | null {
 
 /** Installs the fake server's globals and returns a handle to inspect what it saw. */
 export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpServerHandle {
-  const handle: FakeMcpServerHandle = { requests: [], sessionId: null, sseConnections: [] };
+  const handle: FakeMcpServerHandle = { requests: [], sessionId: null, sseConnections: [], webSocketOpenCount: 0, webSocketConnections: [] };
 
   // --- SSE's own HTTP endpoint (the base URL every EventSource opened against) ---
   const sseBaseUrls = new Set<string>();
@@ -169,7 +179,7 @@ export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpSe
     // Mirrors `validateSession`: once a session exists, every later
     // request (anything but `initialize`) must carry it back.
     if (handle.sessionId && rpcMethod !== 'initialize' && headers['mcp-session-id'] !== handle.sessionId) {
-      return jsonResponse({ jsonrpc: '2.0', id: body?.id ?? null, error: { code: -32000, message: 'Bad Request: Mcp-Session-Id header is required' } }, {});
+      return jsonResponse({ jsonrpc: '2.0', id: body?.id ?? null, error: { code: -32000, message: 'Bad Request: Mcp-Session-Id header is required' } }, {}, 400);
     }
 
     if (!body?.id) {
@@ -272,6 +282,13 @@ export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpSe
     onerror: ((e: unknown) => void) | null = null;
     onclose: (() => void) | null = null;
     constructor(public readonly url: string) {
+      handle.webSocketOpenCount++;
+      handle.webSocketConnections.push({
+        // A real network blip: the socket closes with no `close()` call
+        // from the transport under test, same as `this.onclose?.()` below
+        // but without `close()` having set `readyState = 3` first.
+        simulateUnexpectedClose: () => this.onclose?.(),
+      });
       queueMicrotask(() => {
         this.readyState = 1;
         this.onopen?.();

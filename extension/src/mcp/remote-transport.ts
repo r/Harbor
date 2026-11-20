@@ -52,6 +52,10 @@ export class McpSseTransport implements McpTransport {
   private state: ConnectionState = 'disconnected';
   private reconnectAttempts = 0;
   private sessionEndpoint: string | null = null;
+  /** In flight while `connect()` is waiting on the `endpoint` event; reused by concurrent callers. */
+  private connectPromise: Promise<void> | null = null;
+  /** Set by `disconnect()` so a disconnect already in progress doesn't schedule a reconnect once its `onerror`/`onclose` fires. */
+  private intentionalDisconnect = false;
 
   constructor(private readonly options: RemoteTransportOptions) {
     this.timeout = options.timeout ?? 30000;
@@ -60,75 +64,140 @@ export class McpSseTransport implements McpTransport {
   }
 
   /**
-   * Connect to the remote server.
+   * Connect to the remote server. Resolves only once the server's
+   * `endpoint` event has arrived — the SSE server transport in
+   * `@modelcontextprotocol/sdk` (and the spec it implements) sends that
+   * before anything can be POSTed, so a caller that only waited for
+   * `onopen` could (and did, against the real SDK) send its first
+   * request to the bare SSE URL with no session, which the server has no
+   * way to answer.
    */
   async connect(): Promise<void> {
-    if (this.state === 'connected' || this.state === 'connecting') {
-      return;
-    }
+    if (this.state === 'connected') return;
+    if (this.state === 'connecting' && this.connectPromise) return this.connectPromise;
 
     this.state = 'connecting';
-    
-    return new Promise((resolve, reject) => {
+    this.intentionalDisconnect = false;
+
+    this.connectPromise = new Promise<void>((resolve, reject) => {
       try {
-        // For SSE, we connect to the server URL
-        // The server should return a session endpoint for posting requests
         const url = new URL(this.options.url);
-        
+
         this.eventSource = new EventSource(url.toString());
-        
+
+        // The server has up to `this.timeout` to send its `endpoint`
+        // event once the connection opens; nothing can be sent before it.
+        const endpointTimeout = setTimeout(() => {
+          this.state = 'error';
+          this.eventSource?.close();
+          this.eventSource = null;
+          reject(new Error("Timed out waiting for the server's SSE endpoint event"));
+        }, this.timeout);
+
         this.eventSource.onopen = () => {
-          console.log('[RemoteTransport] SSE connection opened:', url.toString());
-          this.state = 'connected';
-          this.reconnectAttempts = 0;
-          resolve();
+          console.log('[RemoteTransport] SSE connection opened');
+          // Not resolved yet: still waiting on the `endpoint` event below.
         };
-        
+
         this.eventSource.onerror = (error) => {
           console.error('[RemoteTransport] SSE error:', error);
           if (this.state === 'connecting') {
+            clearTimeout(endpointTimeout);
             this.state = 'error';
+            this.eventSource?.close();
+            this.eventSource = null;
             reject(new Error('Failed to connect to remote server'));
-          } else {
-            this.handleDisconnect();
+            return;
           }
+          // A native EventSource keeps trying to reconnect on its own
+          // after an error unless something calls close() — when we
+          // don't want that (no auto-reconnect, or our own attempts are
+          // exhausted), stop it here rather than let two reconnect
+          // mechanisms race.
+          if (!this.autoReconnect) {
+            this.eventSource?.close();
+            this.eventSource = null;
+          }
+          this.handleDisconnect();
         };
-        
-        // Listen for the endpoint message that tells us where to POST requests
+
+        // The endpoint event tells us where to POST requests. The real
+        // SSE server transport sends a plain relative (or absolute) URL
+        // string as `data`, not JSON — `data: /mcp?sessionId=<id>`. A
+        // `{endpoint: "..."}` JSON form is tolerated too, in case a
+        // server sends that instead.
         this.eventSource.addEventListener('endpoint', (event: MessageEvent) => {
-          const data = JSON.parse(event.data);
-          this.sessionEndpoint = data.endpoint;
-          console.log('[RemoteTransport] Received session endpoint:', this.sessionEndpoint);
+          const endpoint = this.parseEndpointEvent(event.data);
+          if (!endpoint) {
+            console.error('[RemoteTransport] Could not parse the SSE endpoint event');
+            return;
+          }
+          this.sessionEndpoint = endpoint;
+          console.log('[RemoteTransport] Received the SSE session endpoint');
+          if (this.state === 'connecting') {
+            clearTimeout(endpointTimeout);
+            this.state = 'connected';
+            this.reconnectAttempts = 0;
+            resolve();
+          }
         });
-        
+
         // Listen for message events (responses from the server)
         this.eventSource.addEventListener('message', (event: MessageEvent) => {
           this.handleMessage(event.data);
         });
-        
+
         // Some servers use a custom event type for responses
         this.eventSource.addEventListener('response', (event: MessageEvent) => {
           this.handleMessage(event.data);
         });
-        
+
       } catch (error) {
         this.state = 'error';
-        reject(error);
+        reject(error instanceof Error ? error : new Error(String(error)));
       }
+    }).finally(() => {
+      this.connectPromise = null;
     });
+
+    return this.connectPromise;
+  }
+
+  /**
+   * The `endpoint` event's `data`: a plain relative-or-absolute URL
+   * string per the SSE server transport's real wire format, resolved
+   * against this transport's own URL. A `{endpoint: "..."}` JSON form is
+   * also accepted, for a server that sends that instead.
+   */
+  private parseEndpointEvent(data: string): string | null {
+    let candidate = data;
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed && typeof parsed === 'object' && typeof (parsed as { endpoint?: unknown }).endpoint === 'string') {
+        candidate = (parsed as { endpoint: string }).endpoint;
+      }
+    } catch {
+      // Not JSON — the common case: a plain URL string.
+    }
+    try {
+      return new URL(candidate, this.options.url).toString();
+    } catch {
+      return null;
+    }
   }
 
   /**
    * Disconnect from the remote server.
    */
   disconnect(): void {
+    this.intentionalDisconnect = true;
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
     }
     this.state = 'disconnected';
     this.sessionEndpoint = null;
-    
+
     // Reject all pending requests
     for (const [id, pending] of this.pending.entries()) {
       clearTimeout(pending.timeoutId);
@@ -246,10 +315,15 @@ export class McpSseTransport implements McpTransport {
   }
 
   /**
-   * Handle disconnection.
+   * Handle disconnection. Never reconnects after `disconnect()` was the
+   * cause (`intentionalDisconnect`) — a site server, in particular, is
+   * meant to stay gone once Harbor drops it, not reappear a few seconds
+   * later because the browser's own `EventSource` (or our own backoff)
+   * tried again.
    */
   private handleDisconnect(): void {
     this.state = 'disconnected';
+    if (this.intentionalDisconnect) return;
 
     if (this.autoReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
@@ -291,6 +365,8 @@ export class McpWebSocketTransport implements McpTransport {
   private ws: WebSocket | null = null;
   private state: ConnectionState = 'disconnected';
   private reconnectAttempts = 0;
+  /** Set by `disconnect()` so its own `onclose` doesn't schedule a reconnect — a WebSocket always fires `onclose`, even for a close *we* asked for. */
+  private intentionalDisconnect = false;
 
   constructor(private readonly options: RemoteTransportOptions) {
     this.timeout = options.timeout ?? 30000;
@@ -307,6 +383,7 @@ export class McpWebSocketTransport implements McpTransport {
     }
 
     this.state = 'connecting';
+    this.intentionalDisconnect = false;
 
     return new Promise((resolve, reject) => {
       try {
@@ -321,7 +398,9 @@ export class McpWebSocketTransport implements McpTransport {
         this.ws = new WebSocket(url.toString());
 
         this.ws.onopen = () => {
-          console.log('[RemoteTransport] WebSocket connection opened:', url.toString());
+          // Not `url.toString()` — a site's own server URL can carry a
+          // query string. See page-api/__tests__/no-payload-logs.test.ts.
+          console.log('[RemoteTransport] WebSocket connection opened');
           this.state = 'connected';
           this.reconnectAttempts = 0;
           resolve();
@@ -355,6 +434,7 @@ export class McpWebSocketTransport implements McpTransport {
    * Disconnect from the remote server.
    */
   disconnect(): void {
+    this.intentionalDisconnect = true;
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -443,10 +523,15 @@ export class McpWebSocketTransport implements McpTransport {
   }
 
   /**
-   * Handle disconnection.
+   * Handle disconnection. A WebSocket fires `onclose` even for a close
+   * *we* asked for (`disconnect()`), so without the
+   * `intentionalDisconnect` check below, Harbor dropping a site server
+   * (a tab closing, a cross-origin navigation, `unregister()`) would
+   * still reconnect to it a few seconds later.
    */
   private handleDisconnect(): void {
     this.state = 'disconnected';
+    if (this.intentionalDisconnect) return;
 
     if (this.autoReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
@@ -487,6 +572,15 @@ export class McpWebSocketTransport implements McpTransport {
  */
 export class McpStreamableHttpTransport implements McpTransport {
   private sessionId: string | null = null;
+  /**
+   * The protocol version `initialize`'s own JSON-RPC result negotiated,
+   * carried as `MCP-Protocol-Version` on every later request — the
+   * server is lenient about a missing header (it falls back to whatever
+   * it negotiated), but sending it is what the spec and
+   * `WebStandardStreamableHTTPServerTransport.validateProtocolVersion`
+   * actually expect "for all requests after initialization".
+   */
+  private protocolVersion: string | null = null;
 
   constructor(private readonly options: RemoteTransportOptions) {}
 
@@ -501,6 +595,7 @@ export class McpStreamableHttpTransport implements McpTransport {
     };
     if (this.options.authHeader) headers['Authorization'] = this.options.authHeader;
     if (this.sessionId) headers['Mcp-Session-Id'] = this.sessionId;
+    if (this.protocolVersion) headers['MCP-Protocol-Version'] = this.protocolVersion;
     return headers;
   }
 
@@ -519,18 +614,24 @@ export class McpStreamableHttpTransport implements McpTransport {
     }
 
     const contentType = response.headers.get('Content-Type') || '';
+    let result: McpResponse;
     if (contentType.includes('text/event-stream')) {
-      return this.readEventStreamResponse(response, request.id);
-    }
-    if (contentType.includes('application/json')) {
-      return (await response.json()) as McpResponse;
-    }
-    if (response.status === 202) {
+      result = await this.readEventStreamResponse(response, request.id);
+    } else if (contentType.includes('application/json')) {
+      result = (await response.json()) as McpResponse;
+    } else if (response.status === 202) {
       // Accepted with no body — only valid for a notification, never a
       // request a caller is waiting on a result for.
-      return { jsonrpc: '2.0', id: request.id, result: null };
+      result = { jsonrpc: '2.0', id: request.id, result: null };
+    } else {
+      throw new Error(`Unexpected streamable HTTP response content-type: "${contentType || '(none)'}"`);
     }
-    throw new Error(`Unexpected streamable HTTP response content-type: "${contentType || '(none)'}"`);
+
+    if (request.method === 'initialize' && !result.error) {
+      const negotiated = (result.result as { protocolVersion?: unknown } | undefined)?.protocolVersion;
+      if (typeof negotiated === 'string') this.protocolVersion = negotiated;
+    }
+    return result;
   }
 
   async notify(notification: McpNotification): Promise<void> {
@@ -585,9 +686,12 @@ export class McpStreamableHttpTransport implements McpTransport {
   async disconnect(): Promise<void> {
     if (!this.sessionId) return;
     const sessionId = this.sessionId;
+    const protocolVersion = this.protocolVersion;
     this.sessionId = null;
     try {
-      await fetch(this.options.url, { method: 'DELETE', headers: { 'Mcp-Session-Id': sessionId } });
+      const headers: Record<string, string> = { 'Mcp-Session-Id': sessionId };
+      if (protocolVersion) headers['MCP-Protocol-Version'] = protocolVersion;
+      await fetch(this.options.url, { method: 'DELETE', headers });
     } catch {
       // Nice-to-have only: the connection is being torn down either way.
     }
