@@ -28,6 +28,7 @@ vi.mock('../harbor-core', () => ({
   // This file is about backend selection and cancellation, not
   // site-registered MCP servers — no origin here registered any.
   listSiteServersForAcp: () => [],
+  policyAllowsSiteToolsForAcp: async () => true,
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../policy/feature-flags')>()),

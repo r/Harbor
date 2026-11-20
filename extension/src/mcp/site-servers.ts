@@ -45,11 +45,19 @@ export interface RegisterSiteServerOptions {
   description?: string;
   /** Whatever the page sent; validated here, not trusted from its declared type. */
   transport: unknown;
+  /**
+   * Aborts if the page's own request gives up while the handshake is
+   * still running (its own timeout, or the page/port going away) — the
+   * same signal `requireAction`'s own abandonment check already reads
+   * for everything else. Checked after the handshake; a response that
+   * arrives after this fires is still torn down, not stored.
+   */
+  signal?: AbortSignal;
 }
 
 export type RegisterSiteServerResult =
   | { ok: true; serverId: string; tools: string[] }
-  | { ok: false; error: string };
+  | { ok: false; error: string; aborted?: boolean };
 
 export interface SiteMcpServerDescriptor {
   serverId: string;
@@ -107,8 +115,44 @@ function registryKey(tabId: number, serverId: string): string {
   return `${tabId}:${serverId}`;
 }
 
-function isSiteMcpTransport(value: unknown): value is SiteMcpTransport {
+/** Exported so `agents/handlers/mcp-website.ts` can validate the transport before gating or prompting — `registerSiteServer` still checks it too. */
+export function isSiteMcpTransport(value: unknown): value is SiteMcpTransport {
   return value === 'sse' || value === 'websocket' || value === 'streamable-http';
+}
+
+/** A tool entry worth keeping: an object with a non-empty string `name`. A hostile or buggy server can send anything else. */
+function isValidTool(value: unknown): value is SiteMcpTool {
+  return !!value && typeof value === 'object' && typeof (value as { name?: unknown }).name === 'string' && (value as { name: string }).name.length > 0;
+}
+
+// =============================================================================
+// Abandonment — a registration whose tab closed or navigated away, or whose
+// own caller stopped waiting, while the handshake was still running
+// =============================================================================
+
+/**
+ * Bumped whenever a tab's site servers are forgotten (closed, navigated
+ * to a different origin, or test reset), so a `registerSiteServer()` that
+ * started before that — its handshake can take real network round
+ * trips — discards its result on the way out instead of registering into
+ * a tab that has already moved on.
+ */
+const tabGenerations = new Map<number, number>();
+
+/**
+ * The origin currently believed to own `tabId`'s site servers, set as
+ * soon as a registration *starts*, independent of whether it ever
+ * succeeds — so a navigation mid-handshake is still detected even before
+ * anything made it into `registry`.
+ */
+const tabOrigins = new Map<number, string>();
+
+function generationFor(tabId: number): number {
+  return tabGenerations.get(tabId) ?? 0;
+}
+
+function bumpGeneration(tabId: number): void {
+  tabGenerations.set(tabId, generationFor(tabId) + 1);
 }
 
 // =============================================================================
@@ -160,8 +204,9 @@ async function handshakeAndListTools(client: McpTransport): Promise<SiteMcpTool[
   if (toolsResponse.error) {
     throw new Error(toolsResponse.error.message || 'MCP tools/list failed');
   }
-  const result = toolsResponse.result as { tools?: SiteMcpTool[] } | undefined;
-  return Array.isArray(result?.tools) ? result!.tools! : [];
+  const result = toolsResponse.result as { tools?: unknown[] } | undefined;
+  const rawTools = Array.isArray(result?.tools) ? result!.tools! : [];
+  return rawTools.filter(isValidTool);
 }
 
 /**
@@ -173,7 +218,7 @@ async function handshakeAndListTools(client: McpTransport): Promise<SiteMcpTool[
  * whatever got connected is torn down again.
  */
 export async function registerSiteServer(options: RegisterSiteServerOptions): Promise<RegisterSiteServerResult> {
-  const { origin, tabId, url, name, description, transport } = options;
+  const { origin, tabId, url, name, description, transport, signal } = options;
 
   if (transport === 'stdio') {
     return { ok: false, error: 'stdio is not supported for a site-registered MCP server' };
@@ -181,6 +226,13 @@ export async function registerSiteServer(options: RegisterSiteServerOptions): Pr
   if (!isSiteMcpTransport(transport)) {
     return { ok: false, error: `Unknown MCP transport: ${String(transport)}` };
   }
+
+  // Captured before the handshake starts: the tab's own notion of what
+  // origin owns its site servers is authoritative from this point on,
+  // even though nothing is in `registry` yet — see `forgetTabServers`/
+  // `forgetTabServersIfOriginChanged` and the abandonment check below.
+  const startGeneration = generationFor(tabId);
+  tabOrigins.set(tabId, origin);
 
   let client: McpTransport;
   try {
@@ -198,6 +250,16 @@ export async function registerSiteServer(options: RegisterSiteServerOptions): Pr
   } catch (e) {
     await safeDisconnect(client);
     return { ok: false, error: e instanceof Error ? e.message : 'Failed to connect to the MCP server' };
+  }
+
+  // The tab may have closed or navigated to a different origin, or the
+  // page's own call may have given up, while the handshake above was
+  // still running — a real network round trip, not a formality. Neither
+  // case should leave a live connection behind, or register into a tab
+  // that's already moved on.
+  if (signal?.aborted || generationFor(tabId) !== startGeneration) {
+    await safeDisconnect(client);
+    return { ok: false, error: 'The page stopped waiting for this registration', aborted: true };
   }
 
   const serverId = siteServerId(origin, name);
@@ -323,6 +385,8 @@ export function listSiteServersForAcp(origin: string, tabId: number): SiteMcpSer
 
 /** The tab closed, or the page registering its servers went away outright. */
 export function forgetTabServers(tabId: number): void {
+  bumpGeneration(tabId);
+  tabOrigins.delete(tabId);
   for (const [key, entry] of registry) {
     if (entry.tabId !== tabId) continue;
     registry.delete(key);
@@ -331,17 +395,24 @@ export function forgetTabServers(tabId: number): void {
 }
 
 /**
- * The tab navigated. If its new URL's origin no longer matches a
- * registered server's origin, that server (and every other one this tab
- * registered — only one origin's page runs the top frame at a time) is
+ * The tab navigated. If its new URL's origin no longer matches what this
+ * tab's site servers belong to — whether that's an already-registered
+ * entry, or just a registration still in flight (`tabOrigins`, set the
+ * moment `registerSiteServer` starts, before anything is in `registry`)
+ * — every server (and any in-flight registration) this tab has is
  * dropped. A same-document URL change (hash, `pushState`) that keeps the
  * same origin is a no-op.
  */
 export function forgetTabServersIfOriginChanged(tabId: number, newUrl: string): void {
   const newOrigin = originOf(newUrl);
+  const trackedOrigin = tabOrigins.get(tabId);
+  if (trackedOrigin !== undefined && newOrigin !== null && newOrigin === trackedOrigin) {
+    return; // same-document change (hash/pushState): nothing moved
+  }
+  bumpGeneration(tabId);
+  tabOrigins.delete(tabId);
   for (const [key, entry] of registry) {
     if (entry.tabId !== tabId) continue;
-    if (newOrigin && newOrigin === entry.origin) continue;
     registry.delete(key);
     void safeDisconnect(entry.client);
   }
@@ -361,4 +432,6 @@ export function resetSiteMcpServersForTests(): void {
     void safeDisconnect(entry.client);
   }
   registry.clear();
+  tabGenerations.clear();
+  tabOrigins.clear();
 }

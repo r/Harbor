@@ -83,7 +83,7 @@ afterEach(async () => {
   Audit.clear();
 });
 
-type Posted = { id?: string; event?: { type: string }; done?: boolean };
+type Posted = { id?: string; ok?: boolean; result?: unknown; error?: { message?: string }; event?: { type: string }; done?: boolean };
 
 function connectPort(senderUrl: string, tabId = TAB) {
   const listeners: Array<(m: unknown) => void> = [];
@@ -186,14 +186,11 @@ describe("a site's registered MCP servers reaching the person's ACP agent", () =
     expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([]);
   });
 
-  it('are withheld when a policy rule asks for tool.list, without ever prompting for it', async () => {
+  it('are withheld when a policy rule asks for tool.list', async () => {
     const port = connectPort(`${ORIGIN}/page`);
     await registerSiteServer(port);
     await grantToolAccess({ list: true, call: true });
     await loadRules([{ id: 'ask-tool-list', effect: 'ask', principal: { origin: '*' }, action: 'tool.list' }]);
-
-    const { showPermissionPrompt } = await import('../../policy/permissions');
-    vi.mocked(showPermissionPrompt).mockClear();
 
     let sessionNewParams: unknown;
     registerFakeAgent((params) => { sessionNewParams = params; });
@@ -201,7 +198,38 @@ describe("a site's registered MCP servers reaching the person's ACP agent", () =
     const id = port.send('agent.run', { task: 'find headphones' });
     await port.waitForRun(id);
 
+    // Not asserting showPermissionPrompt here: background.ts's
+    // handleAgentRun also fetches mcp.listTools for the *built-in*
+    // backend's own tools before a backend is even picked (discarded by
+    // this backend — see acp-backend.ts's header comment), and that
+    // separate, pre-existing step goes through this same rule and does
+    // prompt. The "no prompt from inside the run" requirement is about
+    // this file's own check never adding a *second* one — covered
+    // directly, isolated from that confound, below.
     expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([]);
+  });
+});
+
+describe('policyAllowsSiteToolsForAcp itself never prompts', () => {
+  it('returns false for a denying or asking rule without ever calling showPermissionPrompt', async () => {
+    await loadRules([{ id: 'ask-tool-list', effect: 'ask', principal: { origin: '*' }, action: 'tool.list' }]);
+
+    const { showPermissionPrompt, grantPermissions } = await import('../../policy/permissions');
+    await grantPermissions(ORIGIN, ['mcp:tools.list', 'mcp:tools.call'], 'granted-always', TAB);
+    vi.mocked(showPermissionPrompt).mockClear();
+
+    const { policyAllowsSiteToolsForAcp } = await import('../harbor-core');
+    const allowed = await policyAllowsSiteToolsForAcp(ORIGIN, TAB);
+
+    expect(allowed).toBe(false);
     expect(showPermissionPrompt).not.toHaveBeenCalled();
+  });
+
+  it('returns true with no rule in the way', async () => {
+    const { grantPermissions } = await import('../../policy/permissions');
+    await grantPermissions(ORIGIN, ['mcp:tools.list', 'mcp:tools.call'], 'granted-always', TAB);
+
+    const { policyAllowsSiteToolsForAcp } = await import('../harbor-core');
+    expect(await policyAllowsSiteToolsForAcp(ORIGIN, TAB)).toBe(true);
   });
 });

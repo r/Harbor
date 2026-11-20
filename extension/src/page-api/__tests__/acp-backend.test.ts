@@ -31,6 +31,11 @@ vi.mock('../harbor-core', () => ({
   // these tests keep exercising everything else unchanged.
   requireAgentPromptAction: async () => true,
   listSiteServersForAcp: (origin: string, tabId?: number) => mocks.listSiteServersForAcp(origin, tabId),
+  // D2's own grant+policy gate for whether to pass site servers at all is
+  // covered in acp-site-mcp-servers-policy.test.ts; here it's a
+  // pass-through so these tests (which drive `listSiteServersForAcp`
+  // directly) keep exercising only the capability filter in front of it.
+  policyAllowsSiteToolsForAcp: async () => true,
 }));
 // The dialog itself (the popup window, its message validation, the
 // liveness timeout, window-closed handling) is covered on its own, without
@@ -920,9 +925,17 @@ describe('AcpAgentBackend', () => {
 
     it('re-checks model:prompt on every tool_call_update, and cancels with ERR_PERMISSION_DENIED once it is revoked', async () => {
       let resolvePrompt: ((r: { stopReason: StopReason }) => void) | null = null;
+      // Scope-aware, not a positional mockResolvedValueOnce queue: the
+      // site-servers grant/policy check (siteServersAllowedForAcp) also
+      // calls hasPermission, for mcp:tools.list/call, before the
+      // pre-prompt model:prompt check this test cares about — a queue
+      // keyed only by call order would answer the wrong check.
+      let modelPromptGranted = true;
+      mocks.hasPermission.mockImplementation(async (_origin: string, scope: string) => scope !== 'model:prompt' || modelPromptGranted);
       registerFakeAgent({
         onSessionCancel: () => resolvePrompt?.({ stopReason: 'cancelled' }),
         onPrompt: async (ctx) => {
+          modelPromptGranted = false; // revoked once the agent starts working, before its first update
           await ctx.client.notify(CLIENT_METHODS.session_update, {
             sessionId: ctx.params.sessionId,
             update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', status: 'completed', rawOutput: 'secret' },
@@ -930,8 +943,6 @@ describe('AcpAgentBackend', () => {
           return new Promise((resolve) => { resolvePrompt = resolve; });
         },
       });
-      mocks.hasPermission.mockResolvedValueOnce(true); // the pre-prompt check
-      mocks.hasPermission.mockResolvedValueOnce(false); // the tool_call_update check
 
       const backend = new AcpAgentBackend(AGENT_ID);
       const events = await collect(backend, baseRequest());
@@ -966,9 +977,14 @@ describe('AcpAgentBackend', () => {
 
     it('re-checks model:prompt on a tool_call with no update yet, and cancels with ERR_PERMISSION_DENIED', async () => {
       let resolvePrompt: ((r: { stopReason: StopReason }) => void) | null = null;
+      // Scope-aware, not a positional mockResolvedValueOnce queue — see
+      // the comment on the equivalent tool_call_update test above.
+      let modelPromptGranted = true;
+      mocks.hasPermission.mockImplementation(async (_origin: string, scope: string) => scope !== 'model:prompt' || modelPromptGranted);
       registerFakeAgent({
         onSessionCancel: () => resolvePrompt?.({ stopReason: 'cancelled' }),
         onPrompt: async (ctx) => {
+          modelPromptGranted = false;
           await ctx.client.notify(CLIENT_METHODS.session_update, {
             sessionId: ctx.params.sessionId,
             update: { sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'Read file' },
@@ -976,8 +992,6 @@ describe('AcpAgentBackend', () => {
           return new Promise((resolve) => { resolvePrompt = resolve; });
         },
       });
-      mocks.hasPermission.mockResolvedValueOnce(true); // the pre-prompt check
-      mocks.hasPermission.mockResolvedValueOnce(false); // the tool_call check
 
       const backend = new AcpAgentBackend(AGENT_ID);
       const events = await collect(backend, baseRequest());
@@ -1162,14 +1176,18 @@ describe('AcpAgentBackend', () => {
 
   describe('event ordering and the terminal event', () => {
     it('emits tool_call before awaiting the grant re-check, matching the agent’s own order', async () => {
-      // hasPermission is also called once before session/prompt is even
-      // sent (unrelated to this tool_call); only its second call is the
-      // tool_call's own re-check.
+      // hasPermission is also called for mcp:tools.list/call
+      // (siteServersAllowedForAcp) and once more for model:prompt before
+      // session/prompt is even sent (unrelated to this tool_call); only
+      // the tool_call's own model:prompt re-check — its *second*
+      // model:prompt call — counts here.
       const order: string[] = [];
-      let hasPermissionCalls = 0;
-      mocks.hasPermission.mockImplementation(async () => {
-        hasPermissionCalls++;
-        if (hasPermissionCalls === 2) order.push('grant-checked');
+      let modelPromptCalls = 0;
+      mocks.hasPermission.mockImplementation(async (_origin: string, scope: string) => {
+        if (scope === 'model:prompt') {
+          modelPromptCalls++;
+          if (modelPromptCalls === 2) order.push('grant-checked');
+        }
         return true;
       });
       registerFakeAgent({
@@ -1191,15 +1209,19 @@ describe('AcpAgentBackend', () => {
     });
 
     it('drops every emit after the terminal event, even from a notification handler still awaiting a grant check', async () => {
-      // The first call is the pre-prompt check (unrelated to this test) and
-      // resolves normally; the second, the tool_call_update's own re-check,
-      // hangs until the test releases it — long after session/prompt's
-      // response (and the final/done it produces) has already arrived.
+      // hasPermission is also called for mcp:tools.list/call
+      // (siteServersAllowedForAcp), resolved normally — unrelated to this
+      // test. The pre-prompt model:prompt check (the first *model:prompt*
+      // call) resolves normally too; the tool_call_update's own re-check
+      // (the second model:prompt call) hangs until the test releases it —
+      // long after session/prompt's response (and the final/done it
+      // produces) has already arrived.
       let releaseGate!: (value: boolean) => void;
-      let hasPermissionCalls = 0;
-      mocks.hasPermission.mockImplementation(() => {
-        hasPermissionCalls++;
-        if (hasPermissionCalls === 1) return Promise.resolve(true);
+      let modelPromptCalls = 0;
+      mocks.hasPermission.mockImplementation((_origin: string, scope: string) => {
+        if (scope !== 'model:prompt') return Promise.resolve(true);
+        modelPromptCalls++;
+        if (modelPromptCalls === 1) return Promise.resolve(true);
         return new Promise((resolve) => { releaseGate = resolve; });
       });
       registerFakeAgent({

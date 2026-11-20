@@ -16,10 +16,10 @@ type PendingRequest = {
 };
 
 /**
- * Every transport `createRemoteTransport`/`createSiteTransport` can build.
- * A superset of `../wasm/types.ts`'s `RemoteTransport` (installed servers'
- * manifest field, `'sse' | 'websocket'` only): streamable HTTP is site-only
- * today, so it's added here rather than widening that type.
+ * Every transport `createRemoteTransport` can build. A superset of
+ * `../wasm/types.ts`'s `RemoteTransport` (installed servers' manifest
+ * field, `'sse' | 'websocket'` only): streamable HTTP is site-only today,
+ * so it's added here rather than widening that type.
  */
 export type RemoteTransportKind = RemoteTransport | 'streamable-http';
 
@@ -130,6 +130,29 @@ export class McpSseTransport implements McpTransport {
           const endpoint = this.parseEndpointEvent(event.data);
           if (!endpoint) {
             console.error('[RemoteTransport] Could not parse the SSE endpoint event');
+            return;
+          }
+          // Matches the SDK's own SSE client (client/sse.js): a server
+          // naming an endpoint on a different origin than the connection
+          // itself could redirect Harbor's later POSTs anywhere, so this
+          // is a failed connect, not a connect that happens to use a
+          // surprising URL.
+          let endpointOrigin: string;
+          try {
+            endpointOrigin = new URL(endpoint).origin;
+          } catch {
+            endpointOrigin = '';
+          }
+          if (endpointOrigin !== url.origin) {
+            const error = new Error(`Endpoint origin does not match connection origin: ${endpointOrigin}`);
+            console.error('[RemoteTransport]', error.message);
+            if (this.state === 'connecting') {
+              clearTimeout(endpointTimeout);
+              this.state = 'error';
+              this.eventSource?.close();
+              this.eventSource = null;
+              reject(error);
+            }
             return;
           }
           this.sessionEndpoint = endpoint;
@@ -266,6 +289,9 @@ export class McpSseTransport implements McpTransport {
     const response = await fetch(url, {
       method: 'POST',
       headers,
+      // Never follow a redirect: a server naming its endpoint shouldn't
+      // also get to bounce individual requests somewhere else.
+      redirect: 'error',
       body: JSON.stringify(request),
     });
 
@@ -350,7 +376,7 @@ export class McpSseTransport implements McpTransport {
     const postUrl = this.sessionEndpoint || this.options.url;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.options.authHeader) headers['Authorization'] = this.options.authHeader;
-    await fetch(postUrl, { method: 'POST', headers, body: JSON.stringify(notification) });
+    await fetch(postUrl, { method: 'POST', headers, redirect: 'error', body: JSON.stringify(notification) });
   }
 }
 
@@ -581,8 +607,11 @@ export class McpStreamableHttpTransport implements McpTransport {
    * actually expect "for all requests after initialization".
    */
   private protocolVersion: string | null = null;
+  private readonly timeout: number;
 
-  constructor(private readonly options: RemoteTransportOptions) {}
+  constructor(private readonly options: RemoteTransportOptions) {
+    this.timeout = options.timeout ?? 30000;
+  }
 
   isConnected(): boolean {
     return true;
@@ -599,52 +628,85 @@ export class McpStreamableHttpTransport implements McpTransport {
     return headers;
   }
 
+  /**
+   * Runs `run` with a timeout: unlike the SSE/WebSocket transports, there
+   * is no persistent connection whose own error/close events can tell us
+   * a request is never coming back, so every POST gets its own
+   * `AbortController`, aborted after `this.timeout` — without it, a
+   * request to a server that accepts the connection but never answers
+   * would hang forever.
+   */
+  private async withTimeout<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    try {
+      return await run(controller.signal);
+    } catch (e) {
+      if (controller.signal.aborted) {
+        throw new Error(`Request timed out after ${this.timeout}ms`);
+      }
+      throw e;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   async send(request: McpRequest): Promise<McpResponse> {
-    const response = await fetch(this.options.url, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify(request),
+    return this.withTimeout(async (signal) => {
+      const response = await fetch(this.options.url, {
+        method: 'POST',
+        headers: this.headers(),
+        // Never follow a redirect: a server shouldn't get to bounce an
+        // individual request somewhere else.
+        redirect: 'error',
+        body: JSON.stringify(request),
+        signal,
+      });
+
+      const sessionId = response.headers.get('Mcp-Session-Id');
+      if (sessionId) this.sessionId = sessionId;
+
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.status} ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('Content-Type') || '';
+      let result: McpResponse;
+      if (contentType.includes('text/event-stream')) {
+        result = await this.readEventStreamResponse(response, request.id, signal);
+      } else if (contentType.includes('application/json')) {
+        result = (await response.json()) as McpResponse;
+      } else if (response.status === 202) {
+        // Accepted with no body — only valid for a notification, never a
+        // request a caller is waiting on a result for.
+        result = { jsonrpc: '2.0', id: request.id, result: null };
+      } else {
+        throw new Error(`Unexpected streamable HTTP response content-type: "${contentType || '(none)'}"`);
+      }
+
+      if (request.method === 'initialize' && !result.error) {
+        const negotiated = (result.result as { protocolVersion?: unknown } | undefined)?.protocolVersion;
+        if (typeof negotiated === 'string') this.protocolVersion = negotiated;
+      }
+      return result;
     });
-
-    const sessionId = response.headers.get('Mcp-Session-Id');
-    if (sessionId) this.sessionId = sessionId;
-
-    if (!response.ok) {
-      throw new Error(`HTTP error: ${response.status} ${response.statusText}`);
-    }
-
-    const contentType = response.headers.get('Content-Type') || '';
-    let result: McpResponse;
-    if (contentType.includes('text/event-stream')) {
-      result = await this.readEventStreamResponse(response, request.id);
-    } else if (contentType.includes('application/json')) {
-      result = (await response.json()) as McpResponse;
-    } else if (response.status === 202) {
-      // Accepted with no body — only valid for a notification, never a
-      // request a caller is waiting on a result for.
-      result = { jsonrpc: '2.0', id: request.id, result: null };
-    } else {
-      throw new Error(`Unexpected streamable HTTP response content-type: "${contentType || '(none)'}"`);
-    }
-
-    if (request.method === 'initialize' && !result.error) {
-      const negotiated = (result.result as { protocolVersion?: unknown } | undefined)?.protocolVersion;
-      if (typeof negotiated === 'string') this.protocolVersion = negotiated;
-    }
-    return result;
   }
 
   async notify(notification: McpNotification): Promise<void> {
-    const response = await fetch(this.options.url, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify(notification),
+    await this.withTimeout(async (signal) => {
+      const response = await fetch(this.options.url, {
+        method: 'POST',
+        headers: this.headers(),
+        redirect: 'error',
+        body: JSON.stringify(notification),
+        signal,
+      });
+      const sessionId = response.headers.get('Mcp-Session-Id');
+      if (sessionId) this.sessionId = sessionId;
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.status} ${response.statusText}`);
+      }
     });
-    const sessionId = response.headers.get('Mcp-Session-Id');
-    if (sessionId) this.sessionId = sessionId;
-    if (!response.ok) {
-      throw new Error(`HTTP error: ${response.status} ${response.statusText}`);
-    }
   }
 
   /**
@@ -653,7 +715,7 @@ export class McpStreamableHttpTransport implements McpTransport {
    * delimited `data:` lines); messages for a different request id are
    * dropped rather than treated as an error, in case the server multiplexes.
    */
-  private async readEventStreamResponse(response: Response, requestId: string): Promise<McpResponse> {
+  private async readEventStreamResponse(response: Response, requestId: string, signal: AbortSignal): Promise<McpResponse> {
     if (!response.body) {
       throw new Error('Streamable HTTP response had no body to read as an event stream');
     }
@@ -662,6 +724,7 @@ export class McpStreamableHttpTransport implements McpTransport {
     let buffer = '';
     try {
       while (true) {
+        if (signal.aborted) throw new Error('aborted');
         const { done, value } = await reader.read();
         if (value) buffer += decoder.decode(value, { stream: true });
         let boundary = buffer.indexOf('\n\n');
@@ -691,7 +754,7 @@ export class McpStreamableHttpTransport implements McpTransport {
     try {
       const headers: Record<string, string> = { 'Mcp-Session-Id': sessionId };
       if (protocolVersion) headers['MCP-Protocol-Version'] = protocolVersion;
-      await fetch(this.options.url, { method: 'DELETE', headers });
+      await fetch(this.options.url, { method: 'DELETE', headers, redirect: 'error' });
     } catch {
       // Nice-to-have only: the connection is being torn down either way.
     }

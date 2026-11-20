@@ -23,6 +23,7 @@ vi.mock('../harbor-core', () => ({
   // This file is about cancellation races, not site-registered MCP
   // servers — no origin here registered any.
   listSiteServersForAcp: () => [],
+  policyAllowsSiteToolsForAcp: async () => true,
 }));
 
 import { createFakeAcpBridge } from './support/fake-acp-bridge';

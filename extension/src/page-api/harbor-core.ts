@@ -22,7 +22,7 @@ import { forgetTabServers, forgetTabServersIfOriginChanged, listSiteServersForAc
 import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
-import { requireAction } from '../agents/handlers/helpers';
+import { checkAction, requireAction } from '../agents/handlers/helpers';
 import type { RequestContext, ResponseSender } from '../agents/handlers/router-types';
 import { backendTagForSetting, isGrantedForBackend } from '../policy/backend-grant';
 
@@ -371,6 +371,39 @@ export async function requireAgentPromptAction(origin: string, tabId?: number): 
   };
   const sender: ResponseSender = { sendResponse: () => {}, sendStreamEvent: () => {} };
   return requireAction(ctx, sender, 'model.prompt.agent', { upstreamConsent: 'origin-grant' });
+}
+
+/**
+ * Whether the policy engine currently allows `tool.list` and `tool.call`
+ * for `origin`, with no prompt — used by `acp-backend.ts` to decide
+ * whether to pass the origin/tab's site-registered MCP servers into
+ * `session/new` at all (HBR-134, D2). `upstreamConsent: 'origin-grant'`
+ * means the caller's own `mcp:tools.list`/`mcp:tools.call` grant check
+ * (`hasPermission`) stands in for the engine's own Tier 9 default (an
+ * un-ruled `tool.call` defaults to `preview`) — the same deal a page's
+ * `mcp.listTools`/`mcp.callTool` calls get through `gatePageCall`. A
+ * *rule* that denies, asks or previews either action still isn't covered
+ * by that consent, and `noPrompt: true` turns what would otherwise be a
+ * prompt into an outright refusal instead: this silently decides what to
+ * offer the agent, never something to interrupt a run for.
+ *
+ * Harbor's own origin-grant store is checked separately by the caller —
+ * this is only the policy engine's rule evaluation and audit trail, the
+ * same split `requireAgentPromptAction` draws for `model:prompt`.
+ */
+export async function policyAllowsSiteToolsForAcp(origin: string, tabId?: number): Promise<boolean> {
+  const ctx: RequestContext = {
+    id: crypto.randomUUID(),
+    type: 'session.prompt',
+    payload: {},
+    origin,
+    tabId,
+  };
+  const options = { upstreamConsent: 'origin-grant' as const, noPrompt: true };
+  const listDenial = await checkAction(ctx, 'tool.list', options);
+  if (listDenial) return false;
+  const callDenial = await checkAction(ctx, 'tool.call', options);
+  return !callDenial;
 }
 
 /**

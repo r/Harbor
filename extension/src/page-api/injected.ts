@@ -1307,6 +1307,16 @@ function setupAgentEventListener() {
   });
 }
 
+/** `window.agent.mcp.register()`'s own shape — named so the Tool Access ternary below doesn't have to repeat it. */
+type McpRegisterOptions = {
+  url: string;
+  name: string;
+  description?: string;
+  tools?: string[];
+  transport?: 'sse' | 'websocket' | 'streamable-http';
+};
+type McpRegisterResult = { success: boolean; serverId?: string; tools?: string[]; error?: { code: string; message: string } };
+
 // =============================================================================
 // window.agent Implementation
 // =============================================================================
@@ -1484,8 +1494,10 @@ const agentApi = Object.freeze({
     },
 
     /**
-     * Register an MCP server with the browser.
-     * 
+     * Register an MCP server with the browser. Follows the Tool Access
+     * setting, the same as `window.agent.tools.*` — `discover`/
+     * `unregister` above and below don't.
+     *
      * @example
      * const result = await window.agent.mcp.register({
      *   url: 'http://localhost:3001/mcp',
@@ -1494,15 +1506,9 @@ const agentApi = Object.freeze({
      *   transport: 'sse',
      * });
      */
-    async register(options: {
-      url: string;
-      name: string;
-      description?: string;
-      tools?: string[];
-      transport?: 'sse' | 'websocket' | 'streamable-http';
-    }): Promise<{ success: boolean; serverId?: string; tools?: string[]; error?: { code: string; message: string } }> {
-      return sendRequest('agent.mcp.register', options);
-    },
+    register: FEATURE_FLAGS.toolAccess
+      ? (options: McpRegisterOptions): Promise<McpRegisterResult> => sendRequest('agent.mcp.register', options)
+      : featureDisabledAsync('toolAccess'),
 
     /**
      * Unregister a previously registered MCP server.

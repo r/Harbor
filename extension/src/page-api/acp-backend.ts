@@ -22,12 +22,15 @@
  * (installed-server) tools, so `AgentRunRequest.tools` is ignored here —
  * only the origin/tab's own site-registered MCP servers
  * (`mcp/site-servers.ts`, via harbor-core.ts's `listSiteServersForAcp`) are
- * passed to `session/new`, filtered by what the agent's `initialize`
- * response says it can use (`acp-connection.ts`'s `initializeAcpSession`).
- * `AgentRunRequest.maxToolCalls` is ignored too: Harbor gates whether a
- * site may use the user's agent at all, not how the agent works once it's
- * running — there's no tool-call budget on this backend, and no per-tool
- * allowlist either, for either kind of tool (a maintainer decision; see
+ * passed to `session/new`, and only when the origin holds both
+ * `mcp:tools.list` and `mcp:tools.call` and the policy engine doesn't
+ * deny or ask about either (`siteServersAllowedForAcp` below) — and even
+ * then only the ones the agent's own `initialize` response says it can
+ * use (`acp-connection.ts`'s `initializeAcpSession`). `AgentRunRequest.
+ * maxToolCalls` is ignored too: Harbor gates whether a site may use the
+ * user's agent at all, not how the agent works once it's running —
+ * there's no tool-call budget on this backend, and no per-tool allowlist
+ * either, for either kind of tool (a maintainer decision; see
  * docs/ACP_BACKEND_DESIGN.md).
  */
 import {
@@ -38,7 +41,7 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk';
 
-import { acpClose, acpOpenStream, listSiteServersForAcp, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
+import { acpClose, acpOpenStream, listSiteServersForAcp, policyAllowsSiteToolsForAcp, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
 import { hasPermission } from './handlers';
 import { PER_SITE_AGENT_LIMIT, tryAcquireAgentSlot, releaseAgentSlot } from './acp-agent-limits';
 import type { StreamToken } from './types';
@@ -69,6 +72,24 @@ import {
 export { answerPermissionRequest, combineAbortSignals };
 /** This backend's own name for the shared per-turn timeout. */
 export const ACP_RUN_TIMEOUT_MS = ACP_TURN_TIMEOUT_MS;
+
+/**
+ * Whether the origin/tab's site-registered MCP servers may be passed into
+ * `session/new` at all (HBR-134, D2): the origin must hold *both*
+ * `mcp:tools.list` and `mcp:tools.call` (Harbor's own origin-grant store,
+ * the same check `background.ts`'s `handleAgentRun` makes for the
+ * built-in backend's own tools), *and* the policy engine must currently
+ * allow `tool.list`/`tool.call` for that origin with no prompt. Either
+ * check failing means `[]` — never a prompt from inside the run, and
+ * never a reason to refuse the run itself: the agent just gets no tools
+ * from this site. The per-tool allowlist still doesn't apply to an ACP
+ * agent's own tool use (unchanged maintainer decision).
+ */
+async function siteServersAllowedForAcp(origin: string, tabId?: number): Promise<boolean> {
+  if (!await hasPermission(origin, 'mcp:tools.list', tabId)) return false;
+  if (!await hasPermission(origin, 'mcp:tools.call', tabId)) return false;
+  return policyAllowsSiteToolsForAcp(origin, tabId);
+}
 
 export class AcpAgentBackend implements AgentBackend {
   constructor(private readonly agentId: string) {}
@@ -300,7 +321,8 @@ export class AcpAgentBackend implements AgentBackend {
       await app.connectWith(stream, async (ctx) => {
         connectionCtx = ctx;
 
-        const initialized = await initializeAcpSession(ctx, cwd, requestAbort.signal, listSiteServersForAcp(origin, tabId));
+        const siteServers = await siteServersAllowedForAcp(origin, tabId) ? listSiteServersForAcp(origin, tabId) : [];
+        const initialized = await initializeAcpSession(ctx, cwd, requestAbort.signal, siteServers);
         if (!initialized.ok) {
           send(initialized.error);
           return;
