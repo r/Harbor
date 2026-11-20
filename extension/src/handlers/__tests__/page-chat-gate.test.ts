@@ -18,7 +18,12 @@ vi.mock('../../llm/chat', () => ({ bridgeChat: (...args: unknown[]) => bridgeCha
 let defaultModel: string | null = 'openai:gpt-test';
 let bridgeConfigUnavailable = false;
 vi.mock('../../llm/bridge-client', () => ({
-  bridgeRequest: vi.fn(async (method: string) => {
+  bridgeRequest: vi.fn(async (method: string, params?: unknown) => {
+    // The bridge reports Ollama and LM Studio models as local.
+    if (method === 'llm.model_locality') {
+      const model = (params as { model?: string } | undefined)?.model ?? '';
+      return { is_local: model.startsWith('ollama:') || model.startsWith('lmstudio:') };
+    }
     if (method === 'llm.get_config') {
       if (bridgeConfigUnavailable) throw new Error('bridge not connected');
       return { default_model: defaultModel };
@@ -168,6 +173,16 @@ describe('page chat messages are checked as the page\'s prompts', () => {
 
   it('classifies the bridge\'s local default model as a local prompt', async () => {
     defaultModel = 'ollama:llama3';
+    const { openChat, send } = await setup();
+    const chatId = await openChat();
+
+    await send(chatId, { tab: { id: TAB }, url: `${SHOP}/`, frameId: 0 });
+
+    expect(promptRecords()[0]).toMatchObject({ origin: SHOP, action: 'model.prompt.local' });
+  });
+
+  it('classifies a default model the bridge reports as local, such as LM Studio, as a local prompt', async () => {
+    defaultModel = 'lmstudio:qwen';
     const { openChat, send } = await setup();
     const chatId = await openChat();
 

@@ -150,6 +150,7 @@ fn register_llm_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
   handlers.insert("llm.set_default_model", |p| Box::pin(llm::set_default_model(p)));
   handlers.insert("llm.list_configured_models", |_| Box::pin(llm::list_configured_models()));
   handlers.insert("llm.get_configured_models_metadata", |_| Box::pin(llm::get_configured_models_metadata()));
+  handlers.insert("llm.model_locality", |p| Box::pin(llm::model_locality(p)));
   handlers.insert("llm.add_configured_model", |p| Box::pin(llm::add_configured_model(p)));
   handlers.insert("llm.remove_configured_model", |p| Box::pin(llm::remove_configured_model(p)));
   handlers.insert("llm.set_configured_model_default", |p| {
@@ -300,4 +301,34 @@ mod tests {
     assert!(methods.contains(&"llm.chat"));
     assert!(methods.contains(&"fs.read"));
   }
+}
+
+#[cfg(test)]
+mod model_locality_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn llm_model_locality_reports_a_local_and_a_remote_model() {
+        for (model, local) in [("lmstudio:qwen", true), ("openai:gpt-4o", false)] {
+            let response = handle(RpcRequest {
+                id: serde_json::json!(1),
+                method: "llm.model_locality".to_string(),
+                params: serde_json::json!({ "model": model }),
+            })
+            .await;
+            assert!(response.error.is_none(), "{model}: {:?}", response.error.map(|e| e.message));
+            assert_eq!(response.result.unwrap()["is_local"], serde_json::json!(local), "{model}");
+        }
+    }
+
+    #[tokio::test]
+    async fn llm_model_locality_requires_a_model() {
+        let response = handle(RpcRequest {
+            id: serde_json::json!(1),
+            method: "llm.model_locality".to_string(),
+            params: serde_json::json!({}),
+        })
+        .await;
+        assert_eq!(response.error.map(|e| e.code), Some(-32602));
+    }
 }

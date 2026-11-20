@@ -19,11 +19,10 @@
  */
 
 import { bridgeChat } from '../llm/chat';
-import { modelForPrompt } from '../llm/prompt-model';
+import { promptActionForPrompt } from '../llm/prompt-model';
 import { getActiveChat, forgetChat, forgetChatsForTab } from '../agents/handlers/chat';
 import { requireAction } from '../agents/handlers/helpers';
 import type { RequestContext, ResponseSender } from '../agents/handlers/router-types';
-import { promptActionForModel } from '../policy/actions';
 import { readAgentBackendSetting, AGENT_BACKEND_STORAGE_KEY } from '../page-api/agent-backend-setting';
 import {
   ensureAgentChatSession,
@@ -202,7 +201,7 @@ export function registerPageChatHandlers(): void {
         }
 
         // The chat names no model, so it runs on the bridge's default.
-        const action = promptActionForModel(await modelForPrompt(undefined));
+        const action = await promptActionForPrompt(undefined);
         if (!(await requireAction(ctx, policySender, action, {
           reason: 'Send a message from this page\'s chat to your model',
         }))) {
