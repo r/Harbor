@@ -348,12 +348,40 @@ describe('AcpAgentBackend', () => {
             sessionId: ctx.params.sessionId,
             update: { sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: '', kind: 'execute' },
           });
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId: ctx.params.sessionId,
+            update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', status: 'completed' },
+          });
           return { stopReason: 'end_turn' };
         },
       });
       const backend = new AcpAgentBackend(AGENT_ID);
       const events = tokenEvents(await collect(backend, baseRequest()));
       expect(events).toContainEqual({ type: 'tool_call', tool: 'execute', args: {} });
+    });
+
+    it.each([undefined, {}])('announces one call when pending input %j arrives in a later update', async (rawInput) => {
+      registerFakeAgent({
+        onPrompt: async (ctx) => {
+          const sessionId = ctx.params.sessionId;
+          const toolCallId = 'echo-1';
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId, update: { sessionUpdate: 'tool_call', toolCallId, title: 'Echo', status: 'pending', rawInput },
+          });
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId, rawInput: { text: 'hello' } },
+          });
+          await ctx.client.notify(CLIENT_METHODS.session_update, {
+            sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: 'hello' },
+          });
+          return { stopReason: 'end_turn' };
+        },
+      });
+      const events = tokenEvents(await collect(new AcpAgentBackend(AGENT_ID), baseRequest()));
+      expect(events.filter(event => event.type === 'tool_call' || event.type === 'tool_result')).toEqual([
+        { type: 'tool_call', tool: 'Echo', args: { text: 'hello' } },
+        { type: 'tool_result', tool: 'Echo', result: 'hello' },
+      ]);
     });
 
     it('maps a completed tool_call_update to a tool_result event carrying content', async () => {
@@ -998,10 +1026,7 @@ describe('AcpAgentBackend', () => {
       const events = await collect(backend, baseRequest());
 
       expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_PERMISSION_DENIED' } });
-      // The announcement itself (the agent's own order) still reaches the
-      // page — it's just an announcement, not a decision — but nothing
-      // about its actual result does, since there was never an update.
-      expect(tokenEvents(events)).toContainEqual({ type: 'tool_call', tool: 'Read file', args: {} });
+      expect(tokenEvents(events).some((e) => e.type === 'tool_call')).toBe(false);
       expect(tokenEvents(events).some((e) => e.type === 'tool_result')).toBe(false);
     });
 
@@ -1195,7 +1220,7 @@ describe('AcpAgentBackend', () => {
         onPrompt: async (ctx) => {
           await ctx.client.notify(CLIENT_METHODS.session_update, {
             sessionId: ctx.params.sessionId,
-            update: { sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'Read file' },
+            update: { sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'Read file', rawInput: {} },
           });
           return { stopReason: 'end_turn' };
         },
