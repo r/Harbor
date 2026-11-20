@@ -5,6 +5,7 @@
  */
 
 import { harborRequest } from '../harbor-core';
+import type { AgentListEntry } from '../types';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 
@@ -283,8 +284,8 @@ export async function handleAgentsDiscover(ctx: RequestContext): HandlerResponse
 
 export async function handleAgentsList(ctx: RequestContext): HandlerResponse {
   try {
-    const result = await harborRequest<{ agents: unknown[] }>('agents.list', { origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
-    return successResponse(ctx.id, result);
+    const agents = await harborRequest<AgentListEntry[]>('agents.list', { origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
+    return successResponse(ctx.id, { agents });
   } catch (e) {
     return harborFailure(ctx.id, e, 'List failed');
   }

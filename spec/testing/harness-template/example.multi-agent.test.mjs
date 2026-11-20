@@ -35,6 +35,11 @@ describe('multi-agent flow against the mock', () => {
     mock.uninstall();
   });
 
+  it('lists basic same-origin entries without a discovery grant', async () => {
+    const entries = await globalThis.agent.agents.list();
+    expect(entries).toEqual([{ id: summarizer.id, name: 'Summarizer', status: 'active' }]);
+  });
+
   it('registers, discovers, invokes and messages another agent', async () => {
     const { agent } = globalThis;
     const permission = await agent.requestPermissions({

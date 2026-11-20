@@ -432,6 +432,9 @@ export interface AgentSummary {
   isRemote: boolean;
 }
 
+/** Basic identity and lifecycle state of an agent on the calling origin. */
+export type AgentListEntry = Pick<AgentSummary, 'id' | 'name' | 'status'>;
+
 /**
  * Query options for discovering agents.
  */
