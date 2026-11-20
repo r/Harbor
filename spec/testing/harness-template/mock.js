@@ -178,7 +178,7 @@ export function installWebAgentsMock(global) {
     },
     async list() {
       checkFeature();
-      return allAgents().map(summarize);
+      return allAgents().map(({ id, name, status }) => ({ id, name, status }));
     },
     async invoke(agentId, request) {
       checkFeature();

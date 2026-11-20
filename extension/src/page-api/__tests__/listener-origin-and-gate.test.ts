@@ -154,3 +154,29 @@ describe('page calls through harbor-core reach the real policy gate', () => {
     expect(records.length).toBeGreaterThan(0);
   });
 });
+
+
+describe('same-origin agent listing through the page port', () => {
+  beforeEach(async () => {
+    const { setFeatureFlags } = await import('../policy/feature-flags');
+    await setFeatureFlags({ multiAgent: true });
+  });
+
+  it('returns an empty array inside the envelope consumed by the injected API', async () => {
+    const { send, posted } = connectPort('https://empty.example/page');
+    send({ id: 'list-empty', type: 'agent.agents.list', payload: {} });
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toMatchObject({ ok: true, result: { agents: [] } });
+  });
+
+  it('lists only the sender origin with id, name and status, without a discovery grant', async () => {
+    const { registerAgent } = await import('../../multi-agent/registry');
+    const own = registerAgent({ name: 'Own agent', capabilities: ['search'], tags: ['private'] }, 'https://own.example', 9);
+    registerAgent({ name: 'Other agent' }, 'https://other.example', 10);
+    const { send, posted } = connectPort('https://own.example/page');
+    send({ id: 'list-own', type: 'agent.agents.list', payload: { origin: 'https://other.example' }, origin: 'https://other.example' });
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toMatchObject({ ok: true });
+    expect(posted[0].result).toEqual({ agents: [{ id: own.id, name: 'Own agent', status: 'active' }] });
+  });
+});

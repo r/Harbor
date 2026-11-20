@@ -11,7 +11,7 @@ Demos for multi-agent coordination and A2A communication.
 
 ### Discovery
 - `agent.agents.discover(query)` - Find agents by capability
-- `agent.agents.list()` - List all registered agents
+- `agent.agents.list()` - List identity and status of agents registered on this origin
 
 ### Communication
 - `agent.agents.invoke(agentId, request)` - Invoke another agent
