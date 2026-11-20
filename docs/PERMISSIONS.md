@@ -594,7 +594,7 @@ These are the policy engine's codes, and Harbor reports them as is wherever its 
 - `agent.run()` ends with them as its `error` event when its tool list is refused, or, on Harbor's own model, a model call.
 - `agent.browser.*` calls (page interaction, screenshots, reading the page, navigation, `fetch` and the tab calls) throw them.
 - `agent.agents.*` calls (registering, discovering, invoking and messaging agents, and orchestration) and `agent.chat.open()` throw them.
-- `agent.mcp.register()` and `agent.mcp.unregister()` don't go through the policy engine, because registering doesn't do anything yet: Harbor records the server but never connects to it, so none of its tools reach an agent. They still refuse a server on another origin, or another site's server, with `ERR_PERMISSION_DENIED`. Once Harbor connects registered servers, registering will be checked as `mcp.server.register` and need the `mcp:servers.register` grant.
+- `agent.mcp.register()` throws them. It's checked as `mcp.server.register` and needs the `mcp:servers.register` grant, which asks by default, before Harbor connects to the site's server. `agent.mcp.unregister()` isn't checked, since it only drops a connection. Both refuse a server on another origin, or another site's server, with `ERR_PERMISSION_DENIED`.
 
 When the person has chosen an ACP agent to answer, prompts go to that agent rather than through Harbor's policy engine, so its failures use the ACP codes (`ERR_AGENT_FAILED`, `ERR_AGENT_BUSY`, `ERR_AGENT_REFUSED`, `ERR_AGENT_LIMIT`). `agent.run()`'s tool list is still checked by the policy engine on either backend.
 

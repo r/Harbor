@@ -425,7 +425,7 @@ interface DeclaredMCPServer {
   title: string;
   description?: string;
   tools?: string[];
-  transport?: 'sse' | 'websocket';
+  transport?: 'sse' | 'websocket' | 'streamable-http';
 }
 ```
 
@@ -445,7 +445,14 @@ for (const server of servers) {
 
 Register a website's MCP server for the user's chatbot to use.
 
-**Status:** Harbor records the server but doesn't connect to it yet, so its tools aren't offered to agents. Until it does, Harbor doesn't require the `mcp:servers.register` permission for this call; request it anyway so your page keeps working once registration is connected.
+Harbor asks the person first (`mcp:servers.register`, remembered per site). Once it's allowed, Harbor connects to the server, asks it for its tools, and offers those tools to the person's agent for this tab only:
+
+- **Harbor's own agent** (`agent.run()`) lists them with the person's other tools, named `<serverId>/<tool>`. They still need `mcp:tools.list` and `mcp:tools.call`, and must be among the tools the site was granted.
+- **The person's own ACP agent** (goose, Claude Code, Codex and so on) gets the server in its session and connects to it directly, if it supports the transport (`streamable-http` or `sse`; no ACP agent takes `websocket`). Harbor's per-tool grants don't apply there; the agent's own permission prompts do.
+
+The server must be on the page's origin or on localhost. The tools Harbor offers are the ones the server reports, not the `tools` you list. The registration lasts as long as the page: Harbor disconnects when the tab closes, navigates to another origin, or calls `unregister()`. Other sites and other tabs never see the tools. `stdio` isn't supported.
+
+If the person refuses, the call rejects with the policy code (`ERR_PERMISSION_DENIED`, `ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`). If Harbor can't connect or list the tools, it rejects with `ERR_MCP_REGISTER`.
 
 **Signature:**
 ```typescript
@@ -458,8 +465,8 @@ interface MCPServerRegistration {
   url: string;          // Server endpoint (HTTPS or localhost)
   name: string;         // Human-readable name
   description?: string; // What the server provides
-  tools?: string[];     // Tool names for transparency
-  transport?: 'sse' | 'websocket';
+  tools?: string[];     // Tool names for transparency; Harbor offers what the server reports
+  transport?: 'sse' | 'websocket' | 'streamable-http'; // default 'sse'
 }
 ```
 
@@ -467,7 +474,8 @@ interface MCPServerRegistration {
 ```typescript
 interface MCPRegistrationResult {
   success: boolean;
-  serverId?: string;
+  serverId?: string;    // In Harbor: site:<host[:port]>:<name slug>
+  tools?: string[];     // In Harbor: the tools the server reported
   error?: {
     code: 'USER_DENIED' | 'INVALID_URL' | 'CONNECTION_FAILED' | 'NOT_SUPPORTED';
     message: string;
@@ -1507,7 +1515,7 @@ interface DeclaredMCPServer {
   title: string;
   description?: string;
   tools?: string[];
-  transport?: 'sse' | 'websocket';
+  transport?: 'sse' | 'websocket' | 'streamable-http';
 }
 
 interface MCPServerRegistration {
@@ -1515,12 +1523,13 @@ interface MCPServerRegistration {
   name: string;
   description?: string;
   tools?: string[];
-  transport?: 'sse' | 'websocket';
+  transport?: 'sse' | 'websocket' | 'streamable-http';
 }
 
 interface MCPRegistrationResult {
   success: boolean;
-  serverId?: string;
+  serverId?: string;    // In Harbor: site:<host[:port]>:<name slug>
+  tools?: string[];     // In Harbor: the tools the server reported
   error?: {
     code: 'USER_DENIED' | 'INVALID_URL' | 'CONNECTION_FAILED' | 'NOT_SUPPORTED';
     message: string;
