@@ -11,7 +11,7 @@
  * URL in Firefox, its `origin` in Chrome) — never from the message, which a
  * page or a compromised content script could otherwise forge.
  */
-import { harborRequest, harborStreamRequest, forgetAgentsInTab } from './harbor-core';
+import { harborRequest, harborStreamRequest, forgetAgentsInTab, onHarborSessionEnded } from './harbor-core';
 import { policyRefusalCode } from './policy-refusal';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
 import { type AgentBackend } from './agent-backend';
@@ -38,6 +38,7 @@ import {
   recordExplicitPrompt,
   forgetTextSession,
   forgetBuiltinTextSessions,
+  endExplicitTextSession,
   // Tab utilities
   restoreSpawnedTabs,
   handleTabRemoved,
@@ -290,6 +291,13 @@ export function initializePageApi(): void {
       void destroyAllAcpTextSessions(forgetTextSession);
     });
   }
+
+  // An agent.sessions session Harbor ends on its own (expired, or dropped
+  // for inactivity) ends the agent process behind it too, so it stops
+  // holding one of the site's agent slots.
+  onHarborSessionEnded((sessionId, origin) => {
+    void endExplicitTextSession(sessionId, origin);
+  });
 
   // Clean up spawned tabs when they are closed.
   browserAPI.tabs.onRemoved.addListener(async (tabId: number) => {

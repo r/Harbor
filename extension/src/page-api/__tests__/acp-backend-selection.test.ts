@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   bridge: { current: null as null | ReturnType<typeof import('./support/fake-acp-bridge').createFakeAcpBridge> },
 }));
 vi.mock('../harbor-core', () => ({
+  onHarborSessionEnded: vi.fn(() => () => {}),
   forgetAgentsInTab: vi.fn(),
   harborRequest: mocks.harborRequest,
   acpOpenStream: (agentId: string, workspace: string) => mocks.bridge.current!.acpOpenStream(agentId, workspace),

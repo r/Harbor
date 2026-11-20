@@ -13,6 +13,10 @@ import { policyRefusalCode } from '../policy-refusal';
 import { FEATURE_LABELS, getFeatureFlags } from '../policy/feature-flags';
 import { readAgentBackendSetting } from '../agent-backend-setting';
 import { isAcpTextSession } from '../acp-text-session-registry';
+import { acpBackendChangeSignal } from '../acp-backend-generation';
+
+/** What a page sees when the person switched agents while its session was being created. */
+export const AGENT_CHANGED_MESSAGE = 'The agent was changed. Create the session again.';
 
 // Loaded lazily (not a top-level import): acp-text-session.ts pulls in
 // acp-connection.ts -> agent-question.ts, which registers a
@@ -75,6 +79,9 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
   // now, so a later prompt/promptStreaming call has one ready. `model` and
   // `temperature`/`topK` are ignored silently on this backend — the agent
   // picks its own model and sampling.
+  // A switch while this runs would otherwise leave a session made for the
+  // old choice, registered after the switch's own cleanup already ran.
+  const backendChanged = acpBackendChangeSignal();
   const backendSetting = await readAgentBackendSetting();
   if (backendSetting) {
     const systemPrompt = typeof options.systemPrompt === 'string' ? options.systemPrompt : undefined;
@@ -88,6 +95,14 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
       const code = (e as { code?: string }).code ?? 'ERR_AGENT_FAILED';
       return errorResponse(ctx.id, code, e instanceof Error ? e.message : 'The agent failed to start');
     }
+  }
+
+  if (backendChanged.aborted) {
+    if (isAcpTextSession(sessionId)) {
+      const { destroyAcpTextSession } = await loadAcpTextSession();
+      await destroyAcpTextSession(sessionId);
+    }
+    return errorResponse(ctx.id, 'ERR_AGENT_FAILED', AGENT_CHANGED_MESSAGE);
   }
 
   textSessions.set(sessionId, {
@@ -122,10 +137,20 @@ export function registerExplicitTextSession(
   });
 }
 
-/** Drop the local state for an explicit session the origin terminated. */
-export function forgetExplicitTextSession(sessionId: string, origin: string): void {
+/**
+ * Ends an explicit session's local state once Harbor has ended it (the page
+ * terminated it, it expired, or Harbor dropped it), including the agent
+ * process behind it when it ran on the person's agent. A no-op for another
+ * origin's session or one already gone.
+ */
+export async function endExplicitTextSession(sessionId: string, origin: string): Promise<void> {
   const session = textSessions.get(sessionId);
-  if (session?.explicit && session.origin === origin) textSessions.delete(sessionId);
+  if (!session?.explicit || session.origin !== origin) return;
+  textSessions.delete(sessionId);
+  if (isAcpTextSession(sessionId)) {
+    const { destroyAcpTextSession } = await loadAcpTextSession();
+    await destroyAcpTextSession(sessionId);
+  }
 }
 
 /** Harbor's refusals from getValidatedSession: the session is gone for this origin. */
@@ -192,7 +217,7 @@ export async function resolveTextSession(
         const code = (e as { code?: string }).code ?? 'ERR_INTERNAL';
         return { code, message: `Could not check the session with Harbor: ${message}` };
       }
-      textSessions.delete(sessionId);
+      await endExplicitTextSession(sessionId, origin);
       return { code: 'ERR_SESSION_NOT_FOUND', message: 'Session not found' };
     }
     if (!hasLLM) {

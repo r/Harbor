@@ -9,9 +9,9 @@ import type { PermissionScope, CreateSessionOptions, SessionSummary } from '../t
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission, getPermissions } from './permission-handlers';
-import { registerExplicitTextSession, forgetExplicitTextSession } from './ai-handlers';
+import { registerExplicitTextSession, endExplicitTextSession, AGENT_CHANGED_MESSAGE } from './ai-handlers';
+import { acpBackendChangeSignal } from '../acp-backend-generation';
 import { readAgentBackendSetting } from '../agent-backend-setting';
-import { isAcpTextSession } from '../acp-text-session-registry';
 
 // Loaded lazily for the same reason ai-handlers.ts gives: this file is part
 // of the handlers/ barrel, and acp-text-session.ts pulls in a runtime
@@ -75,6 +75,9 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
     // agent session now so the first prompt has one ready. The session's
     // tool allowlist and budget still govern session.callTool(); the
     // agent's own tools are its own.
+    // A switch while this runs would otherwise leave a session made for the
+    // old choice, registered after the switch's own cleanup already ran.
+    const backendChanged = acpBackendChangeSignal();
     const backend = options.capabilities.llm ? await readAgentBackendSetting() : null;
     if (backend) {
       const systemPrompt = options.options?.systemPrompt;
@@ -97,6 +100,12 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
       temperature: options.options?.temperature,
       model: options.capabilities.llm?.model,
     });
+
+    if (options.capabilities.llm && backendChanged.aborted) {
+      await harborRequest('session.terminate', { sessionId: result.sessionId, origin: ctx.origin }).catch(() => {});
+      await endExplicitTextSession(result.sessionId, ctx.origin);
+      return errorResponse(ctx.id, 'ERR_AGENT_FAILED', AGENT_CHANGED_MESSAGE);
+    }
 
     return successResponse(ctx.id, {
       success: true,
@@ -173,13 +182,7 @@ export async function handleSessionsTerminate(ctx: RequestContext): HandlerRespo
       sessionId,
       origin: ctx.origin,
     });
-    if (result.terminated) {
-      forgetExplicitTextSession(sessionId, ctx.origin);
-      if (isAcpTextSession(sessionId)) {
-        const { destroyAcpTextSession } = await loadAcpTextSession();
-        await destroyAcpTextSession(sessionId);
-      }
-    }
+    if (result.terminated) await endExplicitTextSession(sessionId, ctx.origin);
 
     return successResponse(ctx.id, { terminated: result.terminated });
   } catch (e) {

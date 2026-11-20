@@ -494,6 +494,9 @@ class SessionRegistryImpl {
       // Remove old inactive sessions
       if (now - session.lastActiveAt > this.SESSION_MAX_AGE_MS) {
         sessionsToRemove.push(sessionId);
+        if (session.status !== 'terminated') {
+          this.emit({ type: 'session_terminated', sessionId, origin: session.origin });
+        }
       }
     }
 

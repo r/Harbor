@@ -24,6 +24,7 @@ import { ErrorCodes } from './types';
 import { requireAction } from '../agents/handlers/helpers';
 import type { RequestContext, ResponseSender } from '../agents/handlers/router-types';
 import { backendTagForSetting, isGrantedForBackend } from '../policy/backend-grant';
+import { SessionRegistry } from '../sessions';
 
 // =============================================================================
 // Types
@@ -396,4 +397,15 @@ export async function isModelPromptGrantedForAgent(
  */
 export function forgetAgentsInTab(tabId: number, registeredBefore?: number): void {
   forgetTabAgents(tabId, registeredBefore);
+}
+
+/**
+ * Calls `listener` whenever Harbor ends an `agent.sessions` session on its
+ * own: it expired, was dropped for inactivity, or was terminated. The page
+ * API uses this to end the agent process behind a session that has one.
+ */
+export function onHarborSessionEnded(listener: (sessionId: string, origin: string) => void): () => void {
+  return SessionRegistry.subscribe((event) => {
+    if (event.type === 'session_terminated') listener(event.sessionId, event.origin);
+  });
 }

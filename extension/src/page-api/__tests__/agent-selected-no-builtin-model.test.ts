@@ -42,8 +42,12 @@ vi.mock('../../policy/permissions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../policy/permissions')>()),
   showPermissionPrompt: vi.fn(),
 }));
+// The mocked module keeps its first module graph across vi.resetModules(),
+// so tests reach Harbor's session registry through it (`__sessionRegistry`),
+// not through a fresh import.
 vi.mock('../harbor-core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../harbor-core')>()),
+  __sessionRegistry: (await import('../../sessions')).SessionRegistry,
   acpOpenStream: (agentId: string, workspace: string) => mocks.bridge.current!.acpOpenStream(agentId, workspace),
   acpSend: (channel: string, message: unknown) => mocks.bridge.current!.acpSend(channel, message),
   acpClose: (channel: string) => {
@@ -221,6 +225,44 @@ describe('the agent behind an agent.sessions session', () => {
     expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
   });
 
+  /** Ages a session in Harbor's registry, then runs its periodic sweep. */
+  async function ageAndSweep(sessionId: string, change: (s: { lastActiveAt: number; capabilities: { limits?: { expiresAt?: number } } }) => void) {
+    const core = await import('../harbor-core') as unknown as { __sessionRegistry: { sessions: Map<string, never>; cleanupOldSessions(): void } };
+    const registry = core.__sessionRegistry;
+    change(registry.sessions.get(sessionId)!);
+    registry.cleanupOldSessions();
+  }
+
+  it('ends when the session expires in Harbor, freeing its agent slot', async () => {
+    await setAgent(AGENT_ID);
+    await grant(['model:prompt']);
+    const port = connectPort();
+    const created = await port.request('agent.sessions.create', { capabilities: { llm: {} }, limits: { ttlMinutes: 1 } });
+    expect(created.ok, created.error?.message).toBe(true);
+    const sessionId = (created.result as { sessionId: string }).sessionId;
+    expect(mocks.closedChannels).toEqual([]);
+    await ageAndSweep(sessionId, (s) => { s.capabilities.limits!.expiresAt = Date.now() - 1; });
+    await vi.waitFor(() => expect(mocks.closedChannels).toHaveLength(1));
+    const reply = await port.request('session.prompt', { sessionId, input: 'Hi' });
+    expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
+    // The site's agent slot is free again: it can start a new session.
+    const again = await port.request('agent.sessions.create', { capabilities: { llm: {} } });
+    expect(again.ok, again.error?.message).toBe(true);
+    const another = await port.request('agent.sessions.create', { capabilities: { llm: {} } });
+    expect(another.ok, another.error?.message).toBe(true);
+  });
+
+  it('ends when Harbor drops the session for inactivity', async () => {
+    await setAgent(AGENT_ID);
+    await grant(['model:prompt']);
+    const port = connectPort();
+    const created = await port.request('agent.sessions.create', { capabilities: { llm: {} } });
+    expect(created.ok, created.error?.message).toBe(true);
+    const sessionId = (created.result as { sessionId: string }).sessionId;
+    await ageAndSweep(sessionId, (s) => { s.lastActiveAt = Date.now() - 2 * 60 * 60_000; });
+    await vi.waitFor(() => expect(mocks.closedChannels).toHaveLength(1));
+  });
+
   it("failing to start doesn't leave a Harbor session behind", async () => {
     mocks.bridge.current!.registerAgent('broken-agent', buildFakeAgent('unused'), { failToStart: 'no such command' });
     await setAgent('broken-agent');
@@ -267,6 +309,40 @@ describe('sessions made on the built-in model before an agent was picked', () =>
     expect(reply.error?.code).toBe('ERR_SESSION_NOT_FOUND');
     const events = await port.stream('session.promptStreaming', { sessionId, input: 'Hi' });
     expect(events.at(-1)?.event?.error?.code).toBe('ERR_SESSION_NOT_FOUND');
+  });
+});
+
+describe('a session created while the person switches agents', () => {
+  /**
+   * Selects `agentId` while the create handler's own read of the agent
+   * setting is in flight, so that read still sees the old value. (The
+   * permission check reads the setting first; this waits for the handler.)
+   */
+  function switchDuringNextBackendRead(agentId: string) {
+    const local = getMockStorage().local;
+    const original = local.get.bind(local);
+    let done = false;
+    vi.spyOn(local, 'get').mockImplementation(async (keys?: unknown) => {
+      const fromCreate = /handleAiCreateTextSession|handleSessionsCreate/.test(new Error().stack ?? '');
+      const value = await original(keys as never);
+      if (!done && fromCreate && keys === 'harbor_agent_backend') {
+        done = true;
+        await local.set({ harbor_agent_backend: { type: 'acp', agentId } });
+      }
+      return value;
+    });
+  }
+
+  it.each([
+    ['ai.createTextSession', {}],
+    ['agent.sessions.create', { capabilities: { llm: {} } }],
+  ])("%s doesn't outlive the switch", async (type, payload) => {
+    await grant(['model:prompt']);
+    const port = connectPort();
+    switchDuringNextBackendRead(AGENT_ID);
+    const created = await port.request(type, payload);
+    expect(created.ok).toBe(false);
+    expect(created.error?.message).toMatch(/agent was changed/i);
   });
 });
 
