@@ -55,7 +55,7 @@ request, and no `window.ai` of its own:
 
 ```javascript
 await window.agent.chat.open({
-  systemPrompt: "You are Acme Shop's shopping assistant. Help the person find products on this page...",
+  systemPrompt: "You are Acme Shop's shopping assistant. Help the person choose from the products on this page, using anything you know about them...",
   style: { accentColor: '#ff9900', position: 'right' },
 });
 ```
