@@ -54,6 +54,8 @@ export class McpSseTransport implements McpTransport {
   private sessionEndpoint: string | null = null;
   /** In flight while `connect()` is waiting on the `endpoint` event; reused by concurrent callers. */
   private connectPromise: Promise<void> | null = null;
+  /** Rejects the in-flight connect(), so disconnect() can settle it. */
+  private rejectConnect: ((error: Error) => void) | null = null;
   /** Set by `disconnect()` so a disconnect already in progress doesn't schedule a reconnect once its `onerror`/`onclose` fires. */
   private intentionalDisconnect = false;
   /**
@@ -89,6 +91,7 @@ export class McpSseTransport implements McpTransport {
     this.intentionalDisconnect = false;
 
     this.connectPromise = new Promise<void>((resolve, reject) => {
+      this.rejectConnect = reject;
       try {
         const url = new URL(this.options.url);
 
@@ -195,6 +198,7 @@ export class McpSseTransport implements McpTransport {
       }
     }).finally(() => {
       this.connectPromise = null;
+      this.rejectConnect = null;
     });
 
     return this.connectPromise;
@@ -242,6 +246,10 @@ export class McpSseTransport implements McpTransport {
     }
     this.state = 'disconnected';
     this.sessionEndpoint = null;
+    // A connect() still waiting for the endpoint event ends now, rather
+    // than leaving its caller (and a request queued behind it) waiting forever.
+    this.rejectConnect?.(new Error('Connection closed'));
+    this.rejectConnect = null;
 
     // Reject all pending requests
     for (const [id, pending] of this.pending.entries()) {

@@ -37,11 +37,13 @@ import { LabelSet, type PolicyDecision } from '../../policy/engine';
 function auditOriginRuleDenial(ctx: RequestContext, reason: string): void {
   const decision: PolicyDecision = {
     effect: 'deny',
-    tier: 1,
+    // Tier 0 is the engine's hard floor, which this is: no rule or grant
+    // can allow a cross-origin (or public-to-loopback) registration.
+    tier: 0,
     source: 'safetyFloor',
     reason,
     outputLabels: LabelSet.empty(),
-    trace: [{ tier: 1, source: 'safetyFloor', outcome: 'deny', reason }],
+    trace: [{ tier: 0, source: 'safetyFloor', outcome: 'deny', reason }],
   };
   Audit.record(
     { origin: ctx.origin, action: 'mcp.server.register', correlationId: ctx.id, tabId: ctx.tabId },

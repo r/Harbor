@@ -155,11 +155,11 @@ describe('McpSseTransport', () => {
     expect(server.sseConnections).toHaveLength(1);
   });
 
-  it('disconnect() while still connecting leaves the state disconnected, with no later state flip or settlement once the endpoint timeout would have fired', async () => {
+  it('disconnect() while still connecting rejects that connect at once, and nothing flips the state later', async () => {
     vi.useFakeTimers();
     // Never sends an `endpoint` event, so connect() is still waiting on it
-    // when disconnect() runs — the endpoint timeout (this.timeout below)
-    // would otherwise fire later and flip state back to 'error'.
+    // when disconnect() runs. The connect must settle then, not hang, and
+    // the (cleared) endpoint timeout must not flip state back to 'error'.
     class NeverRespondingEventSource {
       onopen: (() => void) | null = null;
       onerror: ((e: unknown) => void) | null = null;
@@ -172,17 +172,17 @@ describe('McpSseTransport', () => {
 
     const transport = new McpSseTransport({ url: 'https://shop.example/mcp', transport: 'sse', timeout: 5000 });
     const connectPromise = transport.connect();
-    let settled = false;
-    connectPromise.then(() => { settled = true; }, () => { settled = true; });
+    let outcome: string | null = null;
+    connectPromise.then(() => { outcome = 'resolved'; }, (e: Error) => { outcome = e.message; });
 
     transport.disconnect();
+    await vi.advanceTimersByTimeAsync(0); // drain microtasks; the 5s endpoint timer can't fire yet
+    expect(outcome).toBe('Connection closed');
     expect(transport.getState()).toBe('disconnected');
 
     await vi.advanceTimersByTimeAsync(10_000); // well past the 5s endpoint timeout
-    await Promise.resolve(); // flush any microtask the (cleared) timer would have queued
-
     expect(transport.getState()).toBe('disconnected');
-    expect(settled).toBe(false); // no late reject/resolve from the abandoned attempt
+    expect(outcome).toBe('Connection closed');
   });
 });
 
