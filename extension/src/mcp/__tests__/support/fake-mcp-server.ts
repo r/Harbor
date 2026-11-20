@@ -1,9 +1,35 @@
 /**
  * A fake MCP server for site-registration tests: stubs `fetch`,
- * `EventSource` and `WebSocket` well enough to answer the real MCP
- * handshake (`initialize`, `notifications/initialized`, `tools/list`,
+ * `EventSource` and `WebSocket` wire-faithfully enough to answer the real
+ * MCP handshake (`initialize`, `notifications/initialized`, `tools/list`,
  * `tools/call`) over any of the three transports `mcp/site-servers.ts`
  * supports, without a real network call.
+ *
+ * "Wire-faithful" here means matching what
+ * `@modelcontextprotocol/sdk`'s own server transports actually do on the
+ * wire (confirmed by reading
+ * `demo/web-agents/bring-your-chatbot/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/server/{sse,webStandardStreamableHttp}.js`),
+ * not just whatever shape made the client code pass:
+ *
+ *   - SSE (`SSEServerTransport`): the initial GET opens an `EventSource`;
+ *     the server's first event is `event: endpoint` with a *plain relative
+ *     URL string* as `data` (not JSON), carrying `?sessionId=<id>`. Every
+ *     later request is POSTed to that exact URL. The POST response is
+ *     *always* `202 Accepted` with a plain-text body, whether the message
+ *     was a request or a notification — the real JSON-RPC response (if
+ *     any) arrives later as an `event: message` on the *original*
+ *     EventSource, not in the POST response. A POST with no matching
+ *     session, or to the bare SSE URL with no `sessionId` at all, fails.
+ *   - Streamable HTTP (`StreamableHTTPServerTransport`): every request is
+ *     its own POST. A request-only message (no `id`) gets `202` with *no
+ *     body at all*. A message with requests gets back either
+ *     `application/json` or (the SDK's own default) `text/event-stream`
+ *     framed as `event: message\ndata: ...\n\n` — this fake defaults to
+ *     the SSE-framed form for the same reason the SDK does, and can be
+ *     switched to the JSON form via `streamableHttpResponseMode: 'json'`.
+ *     Once a `Mcp-Session-Id` is minted (on `initialize`), every later
+ *     request must carry it back, or the fake 400s, the same way
+ *     `validateSession` does.
  *
  * Use `vi.unstubAllGlobals()` in `afterEach` to remove these.
  */
@@ -21,6 +47,14 @@ export interface FakeMcpServerOptions {
   onToolCall?: (name: string, args: Record<string, unknown>) => unknown;
   /** Make this MCP method's response an error, to exercise a failed connect. */
   failOn?: 'initialize' | 'tools/list';
+  /**
+   * How a streamable-HTTP request-response is framed. The real SDK
+   * defaults to SSE framing (`'sse'`) and only returns a plain
+   * `application/json` body when the server opts into
+   * `enableJsonResponse` — defaulting to `'sse'` here too, so a client
+   * that only ever handled the JSON form doesn't go untested.
+   */
+  streamableHttpResponseMode?: 'sse' | 'json';
 }
 
 export interface FakeMcpRequestLog {
@@ -30,17 +64,43 @@ export interface FakeMcpRequestLog {
   body?: { id?: string; method?: string; params?: unknown };
 }
 
+/** One SSE connection the fake has opened (`new EventSource(...)`). */
+export interface FakeSseConnection {
+  readonly sessionId: string;
+  readonly closed: boolean;
+  /**
+   * Simulates a network-level error, as a real `EventSource` would fire
+   * on `onerror` — it does *not* close the connection itself. A real
+   * browser `EventSource` keeps trying to reconnect after this unless
+   * application code calls `close()`; this fake's `addEventListener`
+   * plumbing doesn't model the reconnect itself (there is nothing to
+   * reconnect to that behaves differently), but `closed` lets a test
+   * assert whether the transport under test called `close()` in response.
+   */
+  simulateError(): void;
+}
+
 export interface FakeMcpServerHandle {
   /** Every transport-level send, across fetch and the WebSocket, in order. */
   requests: FakeMcpRequestLog[];
   /** The `Mcp-Session-Id` the fake streamable-HTTP server minted on `initialize`, if any. */
   sessionId: string | null;
+  /** Every SSE connection this fake has opened, in order (including closed ones). */
+  sseConnections: FakeSseConnection[];
 }
 
 function jsonResponse(body: unknown, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: { 'Content-Type': 'application/json', ...extraHeaders },
+  });
+}
+
+/** `event: message\ndata: ...\n\n` — the same framing both server transports use for a pushed response. */
+function sseFramedResponse(message: unknown, extraHeaders: Record<string, string> = {}): Response {
+  return new Response(`event: message\ndata: ${JSON.stringify(message)}\n\n`, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream', ...extraHeaders },
   });
 }
 
@@ -58,11 +118,77 @@ function rpcResult(opts: FakeMcpServerOptions, method: string | undefined, param
   return {};
 }
 
+function rpcMessage(opts: FakeMcpServerOptions, body: FakeMcpRequestLog['body']): { jsonrpc: '2.0'; id: string; result?: unknown; error?: { code: number; message: string } } {
+  const id = body?.id ?? '';
+  if (opts.failOn && body?.method === opts.failOn) {
+    return { jsonrpc: '2.0', id, error: { code: -32000, message: `${body?.method} failed` } };
+  }
+  return { jsonrpc: '2.0', id, result: rpcResult(opts, body?.method, body?.params) };
+}
+
+function safeParseUrl(url: string): URL | null {
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+}
+
 /** Installs the fake server's globals and returns a handle to inspect what it saw. */
 export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpServerHandle {
-  const handle: FakeMcpServerHandle = { requests: [], sessionId: null };
+  const handle: FakeMcpServerHandle = { requests: [], sessionId: null, sseConnections: [] };
 
-  // --- fetch: SSE's POST, streamable HTTP's POST/DELETE, and `notify()` on both ---
+  // --- SSE's own HTTP endpoint (the base URL every EventSource opened against) ---
+  const sseBaseUrls = new Set<string>();
+  const sseBySession = new Map<string, FakeEventSource>();
+
+  function handleSsePost(sessionId: string, method: string, body: FakeMcpRequestLog['body']): Response {
+    if (method !== 'POST') return new Response('Not found', { status: 404 });
+    const sse = sseBySession.get(sessionId);
+    if (!sse) return new Response('Session not found', { status: 404 });
+    if (!body?.method) return new Response('Invalid message', { status: 400 });
+
+    // The real SSEServerTransport.handlePostMessage *always* 202s the POST
+    // itself (a plain "Accepted" body, not JSON) whether the message was a
+    // notification or a request. A request's real JSON-RPC response (if
+    // any) is pushed later, over the SSE stream this session already has
+    // open — never in this POST's own response.
+    if (body.id) {
+      queueMicrotask(() => sse.dispatch('message', JSON.stringify(rpcMessage(opts, body))));
+    }
+    return new Response('Accepted', { status: 202 });
+  }
+
+  // --- Streamable HTTP's own HTTP endpoint ---
+  function handleStreamableHttpRequest(method: string, headers: Record<string, string>, body: FakeMcpRequestLog['body']): Response {
+    if (method === 'DELETE') return new Response(null, { status: 204 });
+    if (method !== 'POST') return new Response('Not found', { status: 404 });
+
+    const rpcMethod = body?.method;
+
+    // Mirrors `validateSession`: once a session exists, every later
+    // request (anything but `initialize`) must carry it back.
+    if (handle.sessionId && rpcMethod !== 'initialize' && headers['mcp-session-id'] !== handle.sessionId) {
+      return jsonResponse({ jsonrpc: '2.0', id: body?.id ?? null, error: { code: -32000, message: 'Bad Request: Mcp-Session-Id header is required' } }, {});
+    }
+
+    if (!body?.id) {
+      // Request-only messages get 202 with *no body at all* — not even a
+      // JSON envelope.
+      return new Response(null, { status: 202 });
+    }
+
+    if (rpcMethod === 'initialize' && !handle.sessionId) {
+      handle.sessionId = `sess-${Math.random().toString(36).slice(2)}`;
+    }
+    const extraHeaders: Record<string, string> = handle.sessionId ? { 'Mcp-Session-Id': handle.sessionId } : {};
+
+    const message = rpcMessage(opts, body);
+    return (opts.streamableHttpResponseMode ?? 'sse') === 'json'
+      ? jsonResponse(message, extraHeaders)
+      : sseFramedResponse(message, extraHeaders);
+  }
+
   vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?: RequestInit) => {
     const method = (init?.method ?? 'GET').toUpperCase();
     const headerEntries = init?.headers ? Object.fromEntries(new Headers(init.headers as HeadersInit).entries()) : {};
@@ -74,43 +200,66 @@ export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpSe
     }
     handle.requests.push({ url: String(url), method, headers: headerEntries, body });
 
-    if (method === 'DELETE') {
-      return new Response(null, { status: 204 });
+    const parsed = safeParseUrl(String(url));
+    const sessionIdParam = parsed?.searchParams.get('sessionId') ?? null;
+    const bareUrl = parsed ? `${parsed.origin}${parsed.pathname}` : String(url).split('?')[0];
+
+    if (sessionIdParam !== null) {
+      return handleSsePost(sessionIdParam, method, body);
+    }
+    if (method === 'POST' && sseBaseUrls.has(bareUrl)) {
+      // A POST to the bare SSE URL, with no session — the client never
+      // learned (or forgot) the real `endpoint` the server told it to use.
+      return new Response('Bad Request: no session', { status: 400 });
     }
 
-    const id = body?.id;
-    const rpcMethod = body?.method;
-
-    if (!id) {
-      // A notification (`notifications/initialized`): accepted, no body.
-      return new Response(null, { status: 202 });
-    }
-
-    if (opts.failOn && rpcMethod === opts.failOn) {
-      return jsonResponse({ jsonrpc: '2.0', id, error: { code: -32000, message: `${rpcMethod} failed` } });
-    }
-
-    const result = rpcResult(opts, rpcMethod, body?.params);
-    const extraHeaders: Record<string, string> = {};
-    if (rpcMethod === 'initialize' && !handle.sessionId) {
-      handle.sessionId = `sess-${Math.random().toString(36).slice(2)}`;
-      extraHeaders['Mcp-Session-Id'] = handle.sessionId;
-    }
-    return jsonResponse({ jsonrpc: '2.0', id, result }, extraHeaders);
+    return handleStreamableHttpRequest(method, headerEntries, body);
   }));
 
-  // --- EventSource: SSE's connection; responses arrive over fetch's POST above ---
+  // --- EventSource: SSE's own connection. The `endpoint` event is a plain
+  // relative URL string (not JSON) carrying the session id; every later
+  // response arrives as a `message` event on this same connection. ---
   class FakeEventSource {
     onopen: (() => void) | null = null;
     onerror: ((e: unknown) => void) | null = null;
+    readyState = 0;
+    closed = false;
+    readonly sessionId = `sess-${Math.random().toString(36).slice(2)}`;
+    private readonly listeners = new Map<string, Array<(e: { data: string }) => void>>();
+
     constructor(public readonly url: string) {
-      queueMicrotask(() => this.onopen?.());
+      const self = this;
+      sseBaseUrls.add(url);
+      sseBySession.set(this.sessionId, this);
+      handle.sseConnections.push({
+        sessionId: this.sessionId,
+        get closed() { return self.closed; },
+        simulateError: () => self.onerror?.(new Event('error')),
+      });
+      queueMicrotask(() => {
+        if (this.closed) return;
+        this.readyState = 1;
+        this.onopen?.();
+        this.dispatch('endpoint', `/mcp?sessionId=${this.sessionId}`);
+      });
     }
-    addEventListener(): void {
-      // No server-pushed events in this fake: every response comes back
-      // directly in the POST response body (handleMessage's fallback path).
+
+    addEventListener(type: string, cb: (e: { data: string }) => void): void {
+      const arr = this.listeners.get(type) ?? [];
+      arr.push(cb);
+      this.listeners.set(type, arr);
     }
-    close(): void {}
+
+    dispatch(type: string, data: string): void {
+      if (this.closed) return;
+      for (const cb of this.listeners.get(type) ?? []) cb({ data });
+    }
+
+    close(): void {
+      this.closed = true;
+      this.readyState = 2;
+      sseBySession.delete(this.sessionId);
+    }
   }
   vi.stubGlobal('EventSource', FakeEventSource);
 
@@ -133,12 +282,7 @@ export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpSe
       handle.requests.push({ url: this.url, method: 'WS', headers: {}, body: req });
       if (!req?.id) return; // a notification; no response expected
       queueMicrotask(() => {
-        if (opts.failOn && req.method === opts.failOn) {
-          this.onmessage?.({ data: JSON.stringify({ jsonrpc: '2.0', id: req.id, error: { code: -32000, message: `${req.method} failed` } }) });
-          return;
-        }
-        const result = rpcResult(opts, req.method, req.params);
-        this.onmessage?.({ data: JSON.stringify({ jsonrpc: '2.0', id: req.id, result }) });
+        this.onmessage?.({ data: JSON.stringify(rpcMessage(opts, req)) });
       });
     }
     close(): void {
