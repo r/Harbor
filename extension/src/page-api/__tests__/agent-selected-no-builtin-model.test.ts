@@ -457,3 +457,109 @@ describe("Harbor's extension API with an agent selected", () => {
     expect(events).toEqual([{ type: 'error', error: { code: 'ERR_AGENT_FAILED', message: expect.stringMatching(/agent/i) } }]);
   });
 });
+
+/**
+ * Selects `agentId` right after a read of the agent setting whose call stack
+ * matches `predicate`, so that read still sees the old value: a switch
+ * landing at that exact point.
+ */
+function switchAfterRead(predicate: (stack: string) => boolean, agentId: string) {
+  const local = getMockStorage().local;
+  const original = local.get.bind(local);
+  let done = false;
+  vi.spyOn(local, 'get').mockImplementation(async (keys?: unknown) => {
+    const stack = new Error().stack ?? '';
+    const value = await original(keys as never);
+    if (!done && keys === 'harbor_agent_backend' && predicate(stack)) {
+      done = true;
+      await local.set({ harbor_agent_backend: { type: 'acp', agentId } });
+    }
+    return value;
+  });
+}
+
+describe('an agent switch landing mid-call', () => {
+  it("doesn't let llm.chat reach the built-in model when it lands during the policy check", async () => {
+    await grant(['model:prompt']);
+    switchAfterRead(s => /builtinModelRefusal/.test(s), AGENT_ID);
+    const { routeExtensionApiMessage } = await import('../../extension-api');
+    const reply = await routeExtensionApiMessage(
+      { type: 'llm.chat', payload: { origin: ORIGIN, tabId: 9, messages: [{ role: 'user', content: 'Hi' }] } } as never,
+      { id: chrome.runtime.id },
+    );
+    expect(reply.ok).toBe(false);
+    expect(reply.code).toBe('ERR_AGENT_FAILED');
+  });
+
+  it("doesn't let llm.chatStream reach the built-in model when it lands during the policy check", async () => {
+    await grant(['model:prompt']);
+    switchAfterRead(s => /builtinModelRefusal/.test(s), AGENT_ID);
+    const { streamLlmChat } = await import('../../extension-api');
+    const events = [];
+    for await (const event of streamLlmChat({ origin: ORIGIN, tabId: 9, messages: [{ role: 'user', content: 'Hi' }] })) {
+      events.push(event);
+    }
+    expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'ERR_AGENT_FAILED' } });
+  });
+
+  it("doesn't start the agent for an agent.sessions session whose create was checked for the built-in model", async () => {
+    await grant(['model:prompt']);
+    const { __policy: Policy } = await import('../harbor-core') as unknown as { __policy: typeof import('../../policy/store').Policy };
+    const { compileRule } = await import('../../policy/rules');
+    Policy.__setForTesting([compileRule({ source: 'user', id: 'no-agent', effect: 'deny', principal: { origin: '*' }, action: 'model.prompt.agent' } as never)]);
+    const port = connectPort();
+    switchAfterRead(s => /promptCheck/.test(s), AGENT_ID);
+    const created = await port.request('agent.sessions.create', { capabilities: { llm: {} } });
+    expect(created.ok).toBe(false);
+    expect(created.error?.message).toMatch(/agent was changed/i);
+    expect(mocks.bridge.current!.openCalls).toEqual([]);
+  });
+
+  it.each([
+    ['ai.createTextSession', {}],
+    ['agent.sessions.create', { capabilities: { llm: {} } }],
+  ])('%s says the agent was changed when it lands while the agent is starting', async (type, payload) => {
+    let releaseInit!: () => void;
+    const initStarted = new Promise<void>((started) => {
+      mocks.bridge.current!.registerAgent('slow-agent', buildAgentApp({ name: 'slow' })
+        .onRequest(AGENT_METHODS.initialize, async () => {
+          started();
+          await new Promise<void>((r) => { releaseInit = r; });
+          return { protocolVersion: 1 };
+        })
+        .onRequest(AGENT_METHODS.session_new, async () => ({ sessionId: 's' }))
+        .onNotification(AGENT_METHODS.session_cancel, async () => {}));
+    });
+    await setAgent('slow-agent');
+    await grant(['model:prompt']);
+    const port = connectPort();
+    const pending = port.request(type, payload);
+    await initStarted;
+    await setAgent(AGENT_ID);
+    releaseInit();
+    const created = await pending;
+    expect(created.ok).toBe(false);
+    expect(created.error?.code).toBe('ERR_AGENT_FAILED');
+    expect(created.error?.message).toMatch(/agent was changed/i);
+  });
+});
+
+describe('prompts on an agent.sessions session that runs on an agent', () => {
+  it("count as the session's activity, so Harbor doesn't drop a session in use", async () => {
+    await setAgent(AGENT_ID);
+    await grant(['model:prompt']);
+    const port = connectPort();
+    const created = await port.request('agent.sessions.create', { capabilities: { llm: {} } });
+    const sessionId = (created.result as { sessionId: string }).sessionId;
+    const core = await import('../harbor-core') as unknown as { __sessionRegistry: { sessions: Map<string, { lastActiveAt: number; usage: { promptCount: number } }>; cleanupOldSessions(): void } };
+    const session = core.__sessionRegistry.sessions.get(sessionId)!;
+    session.lastActiveAt = Date.now() - 2 * 60 * 60_000;
+    expect((await port.request('session.prompt', { sessionId, input: 'Hi' })).ok).toBe(true);
+    const events = await port.stream('session.promptStreaming', { sessionId, input: 'Again' });
+    expect(events.at(-1)?.event?.type).toBe('done');
+    await vi.waitFor(() => expect(session.usage.promptCount).toBe(2));
+    core.__sessionRegistry.cleanupOldSessions();
+    expect(mocks.closedChannels).toEqual([]);
+    expect((await port.request('session.prompt', { sessionId, input: 'Still here?' })).ok).toBe(true);
+  });
+});

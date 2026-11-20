@@ -874,6 +874,12 @@ export async function routeExtensionApiMessage(
   const gateFailure = await gatePageCall(type as MessageType, payload);
   if (gateFailure) return gateFailure;
   if (options.signal?.aborted) return abandoned();
+  // And again after it: the person may have picked an agent while the
+  // check ran, which can wait on a prompt.
+  if (type === 'llm.chat') {
+    const refusal = await builtinModelRefusal();
+    if (refusal) return refusal;
+  }
 
   switch (type as MessageType) {
     // LLM Operations
@@ -1103,6 +1109,13 @@ export async function* streamLlmChat(
   if (signal?.aborted) {
     const { code, error } = abandoned();
     yield { type: 'error', error: { code, message: error ?? '' } };
+    return;
+  }
+  // And again after it: the person may have picked an agent while the
+  // check ran, which can wait on a prompt.
+  const lateRefusal = await builtinModelRefusal().catch((e: unknown) => failure(e));
+  if (lateRefusal) {
+    yield { type: 'error', error: { code: lateRefusal.code, message: lateRefusal.error ?? 'Refused' } };
     return;
   }
 

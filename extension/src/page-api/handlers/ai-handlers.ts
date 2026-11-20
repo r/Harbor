@@ -56,6 +56,11 @@ export async function handleAiCanCreateTextSession(ctx: RequestContext): Handler
 }
 
 export async function handleAiCreateTextSession(ctx: RequestContext): HandlerResponse {
+  // A switch of the person's agent while this runs would otherwise leave a
+  // session made for the old choice, registered after the switch's own
+  // cleanup already ran.
+  const backendChanged = acpBackendChangeSignal();
+
   console.log('[Web Agents API] handleAiCreateTextSession called', { origin: ctx.origin });
   
   // Check permission
@@ -79,9 +84,6 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
   // now, so a later prompt/promptStreaming call has one ready. `model` and
   // `temperature`/`topK` are ignored silently on this backend — the agent
   // picks its own model and sampling.
-  // A switch while this runs would otherwise leave a session made for the
-  // old choice, registered after the switch's own cleanup already ran.
-  const backendChanged = acpBackendChangeSignal();
   const backendSetting = await readAgentBackendSetting();
   if (backendSetting) {
     const systemPrompt = typeof options.systemPrompt === 'string' ? options.systemPrompt : undefined;
@@ -92,6 +94,8 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
       // way, the agent shouldn't keep starting once nobody's waiting.
       await createAcpTextSession(sessionId, backendSetting.agentId, ctx.origin, ctx.tabId, systemPrompt, ctx.signal);
     } catch (e) {
+      // A switch cancels an agent still starting; say why.
+      if (backendChanged.aborted) return errorResponse(ctx.id, 'ERR_AGENT_FAILED', AGENT_CHANGED_MESSAGE);
       const code = (e as { code?: string }).code ?? 'ERR_AGENT_FAILED';
       return errorResponse(ctx.id, code, e instanceof Error ? e.message : 'The agent failed to start');
     }
@@ -248,6 +252,8 @@ export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse 
     if (!result.ok) {
       return errorResponse(ctx.id, result.error.error?.code ?? 'ERR_AGENT_FAILED', result.error.error?.message ?? 'Agent run failed');
     }
+    // Counts as the session's activity, as a prompt on the built-in model does.
+    recordExplicitPrompt(session, input, result.text);
     return successResponse(ctx.id, result.text);
   }
 

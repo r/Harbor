@@ -44,6 +44,11 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
     requiredScopes.push('mcp:tools.call');
   }
 
+  // A switch of the person's agent while this runs (including during
+  // Harbor's own policy check of the create, which reads the setting)
+  // would otherwise leave a session checked and made for the old choice.
+  const backendChanged = acpBackendChangeSignal();
+
   // Check permissions
   for (const scope of requiredScopes) {
     if (!await hasPermission(ctx.origin, scope, ctx.tabId)) {
@@ -75,9 +80,10 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
     // agent session now so the first prompt has one ready. The session's
     // tool allowlist and budget still govern session.callTool(); the
     // agent's own tools are its own.
-    // A switch while this runs would otherwise leave a session made for the
-    // old choice, registered after the switch's own cleanup already ran.
-    const backendChanged = acpBackendChangeSignal();
+    if (options.capabilities.llm && backendChanged.aborted) {
+      await harborRequest('session.terminate', { sessionId: result.sessionId, origin: ctx.origin }).catch(() => {});
+      return errorResponse(ctx.id, 'ERR_AGENT_FAILED', AGENT_CHANGED_MESSAGE);
+    }
     const backend = options.capabilities.llm ? await readAgentBackendSetting() : null;
     if (backend) {
       const systemPrompt = options.options?.systemPrompt;
@@ -90,6 +96,8 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
       } catch (e) {
         // Don't leave a Harbor session behind that the page never got.
         await harborRequest('session.terminate', { sessionId: result.sessionId, origin: ctx.origin }).catch(() => {});
+        // A switch cancels an agent still starting; say why.
+        if (backendChanged.aborted) return errorResponse(ctx.id, 'ERR_AGENT_FAILED', AGENT_CHANGED_MESSAGE);
         const code = (e as { code?: string }).code ?? 'ERR_AGENT_FAILED';
         return errorResponse(ctx.id, code, e instanceof Error ? e.message : 'The agent failed to start');
       }

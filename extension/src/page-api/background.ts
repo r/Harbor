@@ -97,6 +97,8 @@ async function handleSessionPromptStreaming(
         sendEvent({ id: ctx.id, event: { type: 'token', token: chunk } });
       }, signal);
       if (result.ok) {
+        // Counts as the session's activity, as a prompt on the built-in model does.
+        recordExplicitPrompt(session, input, result.text);
         sendEvent({ id: ctx.id, event: { type: 'done' }, done: true });
       } else {
         sendEvent({ id: ctx.id, event: result.error, done: true });
