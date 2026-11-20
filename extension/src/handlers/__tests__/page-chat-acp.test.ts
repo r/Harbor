@@ -265,6 +265,9 @@ describe('page chat on the ACP agent backend', () => {
     expect(prompts).toHaveLength(2);
     expect(prompts[0].blocks.some((b) => b.text.includes('Shop helper'))).toBe(true);
     expect(prompts[1].blocks.some((b) => b.text.includes('Shop helper'))).toBe(false);
+    // Harbor's own framing leads the chat's first prompt, and only that one.
+    expect(prompts[0].blocks[0].text).toMatch(/working for the person/i);
+    expect(prompts[1].blocks.some((b) => /working for the person/i.test(b.text))).toBe(false);
   });
 
   it('never calls the model, and refuses, when model.prompt.agent is denied by a policy rule', async () => {
