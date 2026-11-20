@@ -10,20 +10,21 @@ import { consentScopeDescription, consentScopeRows } from './policy/agent-consen
 import { buildScopeItem } from './scope-item';
 import { escapeHtml } from './html-escape';
 import type { PermissionScope } from './agents/types';
+import type { IconName } from './icons';
 
 // Icons for each scope category
-const SCOPE_ICONS: Record<string, string> = {
-  'model:prompt': '🤖',
-  'model:tools': '🔧',
-  'model:list': '📋',
-  'mcp:tools.list': '🔌',
-  'mcp:tools.call': '⚡',
-  'mcp:servers.register': '📡',
-  'browser:activeTab.read': '📄',
-  'browser:activeTab.interact': '👆',
-  'browser:activeTab.screenshot': '📸',
-  'chat:open': '💬',
-  'web:fetch': '🌐',
+const SCOPE_ICONS: Record<string, IconName> = {
+  'model:prompt': 'message-circle',
+  'model:tools': 'wrench',
+  'model:list': 'list',
+  'mcp:tools.list': 'plug',
+  'mcp:tools.call': 'play',
+  'mcp:servers.register': 'server',
+  'browser:activeTab.read': 'file-text',
+  'browser:activeTab.interact': 'mouse-pointer-click',
+  'browser:activeTab.screenshot': 'camera',
+  'chat:open': 'message-circle',
+  'web:fetch': 'globe',
 };
 
 // =============================================================================
@@ -162,7 +163,7 @@ if (scopesList) {
     for (const row of consentScopeRows(scopes, agentName)) {
       const scope = row[0];
       const info = consentScopeDescription(scope, agentName);
-      const icon = SCOPE_ICONS[scope] || '🔐';
+      const icon = SCOPE_ICONS[scope] ?? 'shield';
 
       const item = info
         ? buildScopeItem(icon, info.title, info.description, info.risk)

@@ -13,6 +13,7 @@
 import { renderMarkdown } from './chat-markdown';
 import { browserAPI } from './browser-compat';
 import { connectPageChatPort } from './page-chat-port';
+import { icon, iconElement } from './icons';
 
 // Harbor's lighthouse mark (assets/icon.svg). The overlay lives in the host
 // page's DOM, so the badge draws it as a background image: page CSS such as
@@ -282,7 +283,7 @@ ${pageContext}
           const toolsInfo = document.createElement('div');
           toolsInfo.className = 'hpc-tools-used';
           const small = document.createElement('small');
-          small.textContent = `🔧 Used: ${response.toolsUsed.map(t => t.name.split('/').pop()).join(', ')}`;
+          small.append(iconElement('wrench', { size: 12 }), ` Used: ${response.toolsUsed.map(t => t.name.split('/').pop()).join(', ')}`);
           toolsInfo.appendChild(small);
           messageEl.appendChild(toolsInfo);
         }
@@ -440,11 +441,11 @@ function getSidebarHTML(isByocMode: boolean): string {
               <span class="hpc-status-dot" id="hpc-status-dot"></span>
               <span id="hpc-status-text">Ready</span>
             </span>
-            <button class="hpc-close-btn" id="hpc-close" title="Close">×</button>
+            <button class="hpc-close-btn" id="hpc-close" title="Close">${icon('x', { size: 16, label: 'Close' })}</button>
           </div>
         </div>
         <div class="hpc-trust-bar">
-          <span class="hpc-trust-badge">✓ Verified</span>
+          <span class="hpc-trust-badge">${icon('badge-check', { size: 13 })} Verified</span>
           <span class="hpc-trust-divider">•</span>
           <span class="hpc-trust-site">Chat provided by <strong>${window.location.hostname}</strong></span>
         </div>
@@ -459,12 +460,12 @@ function getSidebarHTML(isByocMode: boolean): string {
             <span class="hpc-status-dot" id="hpc-status-dot"></span>
             <span id="hpc-status-text">Disconnected</span>
           </span>
-          <button class="hpc-close-btn" id="hpc-close" title="Close">×</button>
+          <button class="hpc-close-btn" id="hpc-close" title="Close">${icon('x', { size: 16, label: 'Close' })}</button>
         </div>
       </div>`;
 
   return `
-    <button class="hpc-toggle" id="hpc-toggle" title="Toggle chat">💬</button>
+    <button class="hpc-toggle" id="hpc-toggle" title="Toggle chat">${icon('message-circle', { size: 24, label: 'Toggle chat' })}</button>
     <div class="hpc-panel">
       ${headerContent}
       <div class="hpc-setup" style="${isByocMode ? 'display: none;' : ''}">
@@ -477,7 +478,7 @@ function getSidebarHTML(isByocMode: boolean): string {
       </div>
       <div class="hpc-messages" id="hpc-messages">
         <div class="hpc-empty">
-          <h4>👋 Hi there!</h4>
+          <h4>Hi there!</h4>
           <p class="hpc-empty-desc">Ask me anything about <strong>${document.title || 'this page'}</strong></p>
           <div class="hpc-chips">
             <button class="hpc-chip">Summarize this page</button>
@@ -891,7 +892,16 @@ function getSidebarCSS(): string {
       border-bottom: 1px solid var(--hpc-border);
     }
     
+    #harbor-page-chat .icon {
+      display: inline-block;
+      flex-shrink: 0;
+      vertical-align: -0.15em;
+    }
+
     .hpc-trust-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       background: rgba(34, 197, 94, 0.15);
       color: var(--hpc-success);
       padding: 3px 10px;
@@ -928,7 +938,11 @@ function getSidebarCSS(): string {
     }
     
     .hpc-logo-verified::after {
-      content: '✓';
+      content: '';
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+      background-size: 8px 8px;
+      background-repeat: no-repeat;
+      background-position: center;
       position: absolute;
       bottom: -2px;
       right: -2px;

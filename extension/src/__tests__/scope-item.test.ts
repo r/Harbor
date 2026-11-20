@@ -9,11 +9,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 class FakeElement {
+  tag = '';
+  attrs: Record<string, string> = {};
   className = '';
   textContent = '';
   children: FakeElement[] = [];
   append(...nodes: FakeElement[]): void {
     this.children.push(...nodes);
+  }
+  setAttribute(name: string, value: string): void {
+    this.attrs[name] = value;
   }
   appendChild(node: FakeElement): FakeElement {
     this.children.push(node);
@@ -31,8 +36,15 @@ let created: FakeElement[] = [];
 beforeEach(() => {
   created = [];
   (globalThis as unknown as { document: unknown }).document = {
-    createElement: (_tag: string) => {
+    createElement: (tag: string) => {
       const el = new FakeElement();
+      el.tag = tag;
+      created.push(el);
+      return el;
+    },
+    createElementNS: (_ns: string, tag: string) => {
+      const el = new FakeElement();
+      el.tag = tag;
       created.push(el);
       return el;
     },
@@ -46,7 +58,7 @@ afterEach(() => {
 describe('buildScopeItem', () => {
   it('never sets innerHTML on any element it creates', async () => {
     const { buildScopeItem } = await import('../scope-item');
-    buildScopeItem('🤖', '<b>evil</b>', '<img src=x onerror=alert(1)>', 'low');
+    buildScopeItem('message-circle', '<b>evil</b>', '<img src=x onerror=alert(1)>', 'low');
     for (const el of created) {
       expect(Object.prototype.hasOwnProperty.call(el, 'innerHTML')).toBe(false);
     }
@@ -54,7 +66,7 @@ describe('buildScopeItem', () => {
 
   it('renders an agent name containing markup literally, as text', async () => {
     const { buildScopeItem } = await import('../scope-item');
-    const item = buildScopeItem('🤖', 'Requests go to <b>x</b>, your own agent', 'desc', 'low') as unknown as FakeElement;
+    const item = buildScopeItem('message-circle', 'Requests go to <b>x</b>, your own agent', 'desc', 'low') as unknown as FakeElement;
 
     // The literal string must appear somewhere as textContent — not split
     // into a real <b> element, which this fake document cannot create
@@ -65,13 +77,23 @@ describe('buildScopeItem', () => {
 
   it('renders the description literally too', async () => {
     const { buildScopeItem } = await import('../scope-item');
-    const item = buildScopeItem('🤖', 'title', 'This site gets <script>x</script> with its tools.', 'low') as unknown as FakeElement;
+    const item = buildScopeItem('message-circle', 'title', 'This site gets <script>x</script> with its tools.', 'low') as unknown as FakeElement;
     expect(item.allText).toContain('This site gets <script>x</script> with its tools.');
+  });
+
+  it('draws its icon as SVG nodes, not markup', async () => {
+    const { buildScopeItem } = await import('../scope-item');
+    buildScopeItem('wrench', 't', 'd');
+    const iconSlot = created.find((el) => el.className === 'scope-icon');
+    const svg = iconSlot?.children[0];
+    expect(svg?.tag).toBe('svg');
+    expect(svg?.attrs['aria-hidden']).toBe('true');
+    expect(svg?.children.length).toBeGreaterThan(0);
   });
 
   it('omits the risk badge entirely when no risk is given', async () => {
     const { buildScopeItem } = await import('../scope-item');
-    buildScopeItem('🤖', 't', 'd');
+    buildScopeItem('message-circle', 't', 'd');
     expect(created.some((el) => el.className.startsWith('risk-badge'))).toBe(false);
   });
 });
