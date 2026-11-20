@@ -37,7 +37,7 @@ import {
   resolveTextSession,
   recordExplicitPrompt,
   forgetTextSession,
-  forgetBuiltinTextSessions,
+  endModelSessionsForBackendSwitch,
   endExplicitTextSession,
   // Tab utilities
   restoreSpawnedTabs,
@@ -287,7 +287,7 @@ export function initializePageApi(): void {
     browserAPI.storage.onChanged.addListener((changes: Record<string, unknown>, area: string) => {
       if (area !== 'local' || !(AGENT_BACKEND_STORAGE_KEY in changes)) return;
       invalidateAcpBackendGeneration();
-      forgetBuiltinTextSessions();
+      endModelSessionsForBackendSwitch();
       void destroyAllAcpTextSessions(forgetTextSession);
     });
   }

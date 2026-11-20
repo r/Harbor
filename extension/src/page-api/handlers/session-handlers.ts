@@ -99,7 +99,7 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
       systemPrompt: options.options?.systemPrompt,
       temperature: options.options?.temperature,
       model: options.capabilities.llm?.model,
-    });
+    }, Boolean(options.capabilities.llm));
 
     if (options.capabilities.llm && backendChanged.aborted) {
       await harborRequest('session.terminate', { sessionId: result.sessionId, origin: ctx.origin }).catch(() => {});

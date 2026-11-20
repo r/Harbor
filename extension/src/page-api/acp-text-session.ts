@@ -1,9 +1,10 @@
 /**
- * Harbor Page API - window.ai text sessions on the ACP agent backend
+ * Harbor Page API - text sessions on the ACP agent backend
  *
  * When `harbor_agent_backend` names an ACP agent (agent-backend-selection.ts),
  * a `window.ai` text session (`ai.createTextSession` / `ai.languageModel.create`)
- * runs on that agent instead of Harbor's own `llm.chat`. See
+ * or an `agent.sessions` session with model access runs on that agent
+ * instead of Harbor's own `llm.chat`. See
  * docs/ACP_BACKEND_DESIGN.md section 2's `window.ai` bullets.
  *
  * One ACP session per text session, opened once at `createTextSession` and
@@ -25,8 +26,8 @@
  * exists — settling with a coded error instead of hanging, and killing the
  * agent process rather than leaking it.
  *
- * Only `agent_message_chunk` text reaches the page: `window.ai` has no
- * vocabulary for the agent's thinking or tool calls, so `session/update`
+ * Only `agent_message_chunk` text reaches the page: neither `window.ai` nor
+ * `session.prompt()` has vocabulary for the agent's thinking or tool calls, so `session/update`
  * notifications for those are dropped rather than relayed. `tool_call` and
  * `tool_call_update`, though, still re-check the site's `model:prompt`
  * grant mid-turn and cancel on a revoked one, exactly as `agent.run` does —

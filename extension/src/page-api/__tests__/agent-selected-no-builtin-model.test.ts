@@ -310,6 +310,33 @@ describe('sessions made on the built-in model before an agent was picked', () =>
     const events = await port.stream('session.promptStreaming', { sessionId, input: 'Hi' });
     expect(events.at(-1)?.event?.error?.code).toBe('ERR_SESSION_NOT_FOUND');
   });
+
+  it("an agent.sessions session with model access is ended in Harbor's registry too", async () => {
+    await grant(['model:prompt']);
+    const port = connectPort();
+    const created = await port.request('agent.sessions.create', { capabilities: { llm: {} } });
+    const sessionId = (created.result as { sessionId: string }).sessionId;
+    await setAgent(AGENT_ID);
+    await vi.waitFor(async () => {
+      const listed = (await port.request('agent.sessions.list')).result as Array<{ sessionId: string }>;
+      expect(listed.map(s => s.sessionId)).not.toContain(sessionId);
+    });
+  });
+
+  it('a tools-only agent.sessions session is left alone', async () => {
+    await grant(['mcp:tools.call']);
+    const port = connectPort();
+    const created = await port.request('agent.sessions.create', { capabilities: { tools: ['time/now'] } });
+    expect(created.ok, created.error?.message).toBe(true);
+    const sessionId = (created.result as { sessionId: string }).sessionId;
+    await setAgent(AGENT_ID);
+    await new Promise(r => setTimeout(r, 50));
+    const listed = (await port.request('agent.sessions.list')).result as Array<{ sessionId: string }>;
+    expect(listed.map(s => s.sessionId)).toContain(sessionId);
+    await grant(['model:prompt']);
+    const reply = await port.request('session.prompt', { sessionId, input: 'Hi' });
+    expect(reply.error?.message).toMatch(/does not have LLM access/);
+  });
 });
 
 describe('a session created while the person switches agents', () => {

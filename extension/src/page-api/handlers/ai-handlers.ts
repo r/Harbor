@@ -126,6 +126,7 @@ export function registerExplicitTextSession(
   sessionId: string,
   origin: string,
   options: Record<string, unknown>,
+  hasLLM = true,
 ): void {
   textSessions.set(sessionId, {
     sessionId,
@@ -134,6 +135,7 @@ export function registerExplicitTextSession(
     history: [],
     createdAt: Date.now(),
     explicit: true,
+    hasLLM,
   });
 }
 
@@ -297,15 +299,24 @@ export async function handleSessionDestroy(ctx: RequestContext): HandlerResponse
 }
 
 /**
- * Forgets every text session still on Harbor's built-in model, for a switch
- * of the person's agent (background.ts): a session made on the built-in
- * model doesn't outlive the switch, just as one made on an agent doesn't.
- * A later prompt on one gets "Session not found". Sessions on an agent are
- * left to destroyAllAcpTextSessions, which also ends their agent process.
+ * Ends the model sessions a switch of the person's agent leaves behind
+ * (background.ts), whichever backend they ran on, so none outlives the
+ * switch. A window.ai text session still on the built-in model is
+ * forgotten; a later prompt on it gets "Session not found". An
+ * agent.sessions session with model access is also terminated in Harbor's
+ * registry, so `agent.sessions.list()` and `get()` agree with that. A
+ * tools-only agent.sessions session uses no model and is left alone.
+ * Agent processes are ended by destroyAllAcpTextSessions.
  */
-export function forgetBuiltinTextSessions(): void {
-  for (const sessionId of [...textSessions.keys()]) {
-    if (!isAcpTextSession(sessionId)) textSessions.delete(sessionId);
+export function endModelSessionsForBackendSwitch(): void {
+  for (const [sessionId, session] of [...textSessions]) {
+    if (session.explicit) {
+      if (!session.hasLLM) continue;
+      textSessions.delete(sessionId);
+      void harborRequest('session.terminate', { sessionId, origin: session.origin }).catch(() => {});
+    } else if (!isAcpTextSession(sessionId)) {
+      textSessions.delete(sessionId);
+    }
   }
 }
 

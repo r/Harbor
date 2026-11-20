@@ -775,7 +775,7 @@ for await (const token of session.promptStreaming('Summarize your findings')) {
 await session.terminate();
 ```
 
-When the person has chosen their own agent instead of Harbor's built-in model, `prompt()` and `promptStreaming()` run on that agent, and `capabilities.llm`'s `provider`, `model` and `temperature` are ignored. The session's `tools` allowlist and `maxToolCalls` still govern `session.callTool()`, the tools your page calls itself. They don't limit the agent's own tools while it answers a prompt: those are the agent's, under its own settings. If the person switches agents, or switches back to the built-in model, the session can't be prompted any more (`ERR_SESSION_NOT_FOUND`); create a new one.
+When the person has chosen their own agent instead of Harbor's built-in model, `prompt()` and `promptStreaming()` run on that agent, and `capabilities.llm`'s `provider`, `model` and `temperature` are ignored. The session's `tools` allowlist and `maxToolCalls` still govern `session.callTool()`, the tools your page calls itself. They don't limit the agent's own tools while it answers a prompt: those are the agent's, under its own settings. If the person switches agents, or switches back to the built-in model, a session with model access ends: a prompt gets `ERR_SESSION_NOT_FOUND`, and it no longer appears in `agent.sessions.list()`. Create a new one. A tools-only session isn't affected. Like any session, one that expires or sits idle for an hour ends, and so does its agent.
 
 #### agent.sessions.list()
 
