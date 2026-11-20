@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(), hasPermission: vi.fn(), getFeatureFlags: vi.fn(),
   harborStreamRequest: vi.fn(), resolveTextSession: vi.fn(),
+  getPermissions: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
   onHarborSessionEnded: vi.fn(() => () => {}),
@@ -13,7 +14,7 @@ vi.mock('../policy/feature-flags', async (importOriginal) => ({
 }));
 vi.mock('../handlers', () => ({
   routeMessage: vi.fn(), isStreamingMessage: vi.fn(), hasPermission: mocks.hasPermission,
-  getPermissions: async () => ({ scopes: {}, allowedTools: [] }),
+  getPermissions: mocks.getPermissions,
   resolveTextSession: mocks.resolveTextSession, recordExplicitPrompt: vi.fn(),
   restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
   isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
@@ -27,6 +28,7 @@ beforeEach(async () => {
   vi.resetModules(); vi.clearAllMocks();
   mocks.getFeatureFlags.mockResolvedValue({ toolCalling: true });
   mocks.hasPermission.mockResolvedValue(true);
+  mocks.getPermissions.mockResolvedValue({ scopes: {}, allowedTools: [] });
   mocks.harborRequest.mockImplementation(async (method) => method === 'mcp.listTools'
     ? { tools: [] } : { content: 'The time is noon.' });
   const event = () => ({ addListener: vi.fn() });
@@ -52,6 +54,19 @@ async function run() {
 }
 
 describe('agent.run receiving boundary', () => {
+  it('offers the built-in model only installed tools on the site allowlist', async () => {
+    mocks.getPermissions.mockResolvedValue({ scopes: {}, allowedTools: ['clock/time'] });
+    mocks.harborRequest.mockImplementation(async (method) => method === 'mcp.listTools'
+      ? { tools: [{ serverId: 'clock', name: 'time' }, { serverId: 'private', name: 'read' }] }
+      : { content: 'Noon' });
+    await run();
+    expect(mocks.harborRequest).toHaveBeenCalledWith('mcp.listTools',
+      { origin: 'https://example.test', tabId: 1 }, expect.anything());
+    const modelCall = mocks.harborRequest.mock.calls.find(([method]) => method === 'llm.chat');
+    expect(modelCall?.[1].tools).toHaveLength(1);
+    expect(modelCall?.[1].tools[0].name).toBe('clock_time');
+  });
+
   it('rejects a direct transport request when Agentic Tool Use is off', async () => {
     mocks.getFeatureFlags.mockResolvedValue({ toolCalling: false });
     await run();

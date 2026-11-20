@@ -8,9 +8,10 @@
  *
  * Everything that applies to every backend stays in background.ts's
  * handleAgentRun: the `toolCalling` feature flag, the `model:prompt` /
- * `model:tools` grant checks before the run starts, listing Harbor's tools
- * and filtering them to the site's `allowedTools`, and delivering events to
- * the page. A backend runs the task against the model and the tools it's
+ * `model:tools` grant checks before the run starts, and delivering events to
+ * the page. For the built-in backend only, it also lists Harbor's tools
+ * and filters them to the site's `allowedTools`. A backend runs the task
+ * against the model and the tools it's
  * handed, stops promptly once its signal aborts, and re-checks the grants
  * that cover each step as it takes it: `model:prompt` before each model
  * call after the first, `mcp:tools.call` before each tool call.

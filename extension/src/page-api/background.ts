@@ -234,6 +234,10 @@ async function handleAgentRun(
       );
     }
 
+    // Tool discovery can wait on policy consent. If the person switched
+    // backends meanwhile, don't start the previously selected backend.
+    if (backendChangeSignal.aborted) throw new Error('The agent was changed.');
+
     // An ACP-backed run also ends if the person switches
     // `harbor_agent_backend` while it's still going on the old agent — not
     // just on the page's own abort/tab-close — by combining in the shared
