@@ -43,11 +43,14 @@ vi.mock('../../policy/permissions', async (importOriginal) => ({
   showPermissionPrompt: vi.fn(),
 }));
 // The mocked module keeps its first module graph across vi.resetModules(),
-// so tests reach Harbor's session registry through it (`__sessionRegistry`),
-// not through a fresh import.
+// so tests reach Harbor's session registry, audit log and policy store
+// through it (`__sessionRegistry`, `__audit`, `__policy`), not through a
+// fresh import.
 vi.mock('../harbor-core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../harbor-core')>()),
   __sessionRegistry: (await import('../../sessions')).SessionRegistry,
+  __audit: (await import('../../policy/audit')).Audit,
+  __policy: (await import('../../policy/store')).Policy,
   acpOpenStream: (agentId: string, workspace: string) => mocks.bridge.current!.acpOpenStream(agentId, workspace),
   acpSend: (channel: string, message: unknown) => mocks.bridge.current!.acpSend(channel, message),
   acpClose: (channel: string) => {
@@ -172,7 +175,7 @@ afterEach(async () => {
     ...bridgeStreamRequest.mock.calls.map(([method]) => method),
   ].filter(method => BUILTIN_MODEL_METHODS.includes(method));
   const directChats = bridgeChat.mock.calls.length;
-  const { Policy } = await import('../../policy/store');
+  const { __policy: Policy } = await import('../harbor-core') as unknown as { __policy: typeof import('../../policy/store').Policy };
   Policy.__reset();
   vi.resetModules();
   expect(builtinCalls, 'a path reached the built-in model on the bridge').toEqual([]);
@@ -207,6 +210,32 @@ describe('with an agent selected, agent.sessions run on it', () => {
     const events = await port.stream('session.promptStreaming', { sessionId, input: 'Hi' });
     expect(events.at(-1)?.event?.type).toBe('done');
     expect(streamedText(events)).toBe('From the agent.');
+  });
+});
+
+describe('creating an agent.sessions session with model access on an agent', () => {
+  it('is checked as a prompt to the agent, not to the built-in model', async () => {
+    await setAgent(AGENT_ID);
+    await grant(['model:prompt']);
+    const port = connectPort();
+    const created = await port.request('agent.sessions.create', { capabilities: { llm: {} } });
+    expect(created.ok, created.error?.message).toBe(true);
+    const { __audit: Audit } = await import('../harbor-core') as unknown as { __audit: typeof import('../../policy/audit').Audit };
+    const actions = Audit.query({ origin: ORIGIN }).map((r) => r.action);
+    expect(actions).toContain('model.prompt.agent');
+    expect(actions.filter(a => a.startsWith('model.prompt.') && a !== 'model.prompt.agent')).toEqual([]);
+    expect(bridgeRequest.mock.calls.map(([m]) => m)).not.toContain('llm.model_locality');
+  });
+
+  it('is refused by a rule denying prompts to the agent', async () => {
+    await setAgent(AGENT_ID);
+    await grant(['model:prompt']);
+    const { __policy: Policy } = await import('../harbor-core') as unknown as { __policy: typeof import('../../policy/store').Policy };
+    const { compileRule } = await import('../../policy/rules');
+    Policy.__setForTesting([compileRule({ source: 'user', id: 'no-agent', effect: 'deny', principal: { origin: '*' }, action: 'model.prompt.agent' } as never)]);
+    const created = await connectPort().request('agent.sessions.create', { capabilities: { llm: {} } });
+    expect(created.ok).toBe(false);
+    expect(mocks.bridge.current!.openCalls).toEqual([]);
   });
 });
 

@@ -670,7 +670,14 @@ const BROWSER_CAPABILITY_ACTIONS: Record<'read' | 'interact' | 'screenshot', Typ
   screenshot: 'browser.read.screenshot',
 };
 
+/**
+ * The action a page's prompt is checked as. With an agent selected, every
+ * prompt goes to the agent, so it's checked as `model.prompt.agent`, the
+ * action each agent turn is checked as too; otherwise by where the
+ * built-in model runs.
+ */
 async function promptCheck(model: unknown): Promise<PageCheck> {
+  if (await readAgentBackendSetting()) return { action: 'model.prompt.agent' };
   return { action: await promptActionForPrompt(model) };
 }
 
