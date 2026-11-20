@@ -23,7 +23,7 @@ import { agent as buildAgentApp, AGENT_METHODS, type StopReason } from '@agentcl
 import { resetMockBrowser } from '../../__tests__/test-setup';
 import { createFakeAcpBridge } from './support/fake-acp-bridge';
 import { installFakeMcpServer } from '../../mcp/__tests__/support/fake-mcp-server';
-import { siteServerId } from '../../mcp/site-servers';
+import { resetSiteMcpServersForTests, siteServerId } from '../../mcp/site-servers';
 
 const mocks = vi.hoisted(() => ({
   bridge: { current: null as null | ReturnType<typeof import('./support/fake-acp-bridge').createFakeAcpBridge> },
@@ -81,6 +81,11 @@ afterEach(async () => {
   Policy.__reset();
   const { Audit } = await import('../../policy/audit');
   Audit.clear();
+  // site-servers.ts isn't mocked in this file, so its registry is one
+  // real module shared across every test here (no vi.resetModules()) —
+  // without this, a server a prior test registered under the same tabId
+  // lingers and shows up in a later test's own mcpServers.
+  resetSiteMcpServersForTests();
 });
 
 type Posted = { id?: string; ok?: boolean; result?: unknown; error?: { message?: string }; event?: { type: string }; done?: boolean };
@@ -111,10 +116,10 @@ function connectPort(senderUrl: string, tabId = TAB) {
   return { send, reply, waitForRun };
 }
 
-async function registerSiteServer(port: ReturnType<typeof connectPort>): Promise<string> {
-  const reply = await port.reply(port.send('agent.mcp.register', { url: `${ORIGIN}/mcp`, name: 'Shop', transport: 'sse' }));
+async function registerSiteServer(port: ReturnType<typeof connectPort>, name = 'Shop'): Promise<string> {
+  const reply = await port.reply(port.send('agent.mcp.register', { url: `${ORIGIN}/mcp`, name, transport: 'sse' }));
   if (!reply.ok) throw new Error(`registration failed: ${JSON.stringify(reply)}`);
-  return siteServerId(ORIGIN, 'Shop');
+  return siteServerId(ORIGIN, name);
 }
 
 async function grantToolAccess(granted: { list?: boolean; call?: boolean } = { list: true, call: true }): Promise<void> {
@@ -210,26 +215,67 @@ describe("a site's registered MCP servers reaching the person's ACP agent", () =
   });
 });
 
+describe('the policy check runs per server, not all-or-nothing', () => {
+  it('a rule naming one serverId keeps only that server out of session/new, leaving the other', async () => {
+    const port = connectPort(`${ORIGIN}/page`);
+    const serverIdA = await registerSiteServer(port, 'Shop A');
+    const serverIdB = await registerSiteServer(port, 'Shop B');
+    await grantToolAccess({ list: true, call: true });
+    await loadRules([
+      { id: 'deny-a', effect: 'deny', principal: { origin: '*' }, action: 'tool.call', resource: { server: serverIdA } },
+    ]);
+
+    let sessionNewParams: unknown;
+    registerFakeAgent((params) => { sessionNewParams = params; });
+
+    const id = port.send('agent.run', { task: 'find headphones' });
+    await port.waitForRun(id);
+
+    const names = (sessionNewParams as { mcpServers: Array<{ name: string }> }).mcpServers.map((s) => s.name);
+    expect(names).toEqual(['Shop B']);
+    expect(serverIdA).not.toBe(serverIdB);
+  });
+
+  it('a wildcard rule over site:* still keeps every site server out', async () => {
+    const port = connectPort(`${ORIGIN}/page`);
+    await registerSiteServer(port, 'Shop A');
+    await registerSiteServer(port, 'Shop B');
+    await grantToolAccess({ list: true, call: true });
+    await loadRules([
+      { id: 'deny-all-sites', effect: 'deny', principal: { origin: '*' }, action: 'tool.call', resource: { server: 'site:*' } },
+    ]);
+
+    let sessionNewParams: unknown;
+    registerFakeAgent((params) => { sessionNewParams = params; });
+
+    const id = port.send('agent.run', { task: 'find headphones' });
+    await port.waitForRun(id);
+
+    expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([]);
+  });
+});
+
 describe('policyAllowsSiteToolsForAcp itself never prompts', () => {
-  it('returns false for a denying or asking rule without ever calling showPermissionPrompt', async () => {
-    await loadRules([{ id: 'ask-tool-list', effect: 'ask', principal: { origin: '*' }, action: 'tool.list' }]);
+  it('filters out a server a rule denies or asks about, without ever calling showPermissionPrompt', async () => {
+    await loadRules([{ id: 'ask-tool-list', effect: 'ask', principal: { origin: '*' }, action: 'tool.list', resource: { server: 'site:shop.example:shop' } }]);
 
     const { showPermissionPrompt, grantPermissions } = await import('../../policy/permissions');
     await grantPermissions(ORIGIN, ['mcp:tools.list', 'mcp:tools.call'], 'granted-always', TAB);
     vi.mocked(showPermissionPrompt).mockClear();
 
     const { policyAllowsSiteToolsForAcp } = await import('../harbor-core');
-    const allowed = await policyAllowsSiteToolsForAcp(ORIGIN, TAB);
+    const allowed = await policyAllowsSiteToolsForAcp(ORIGIN, TAB, ['site:shop.example:shop', 'site:shop.example:other']);
 
-    expect(allowed).toBe(false);
+    expect(allowed).toEqual(['site:shop.example:other']);
     expect(showPermissionPrompt).not.toHaveBeenCalled();
   });
 
-  it('returns true with no rule in the way', async () => {
+  it('keeps every candidate with no rule in the way', async () => {
     const { grantPermissions } = await import('../../policy/permissions');
     await grantPermissions(ORIGIN, ['mcp:tools.list', 'mcp:tools.call'], 'granted-always', TAB);
 
     const { policyAllowsSiteToolsForAcp } = await import('../harbor-core');
-    expect(await policyAllowsSiteToolsForAcp(ORIGIN, TAB)).toBe(true);
+    const ids = ['site:shop.example:shop', 'site:shop.example:other'];
+    expect(await policyAllowsSiteToolsForAcp(ORIGIN, TAB, ids)).toEqual(ids);
   });
 });

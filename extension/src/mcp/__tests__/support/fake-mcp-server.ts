@@ -56,13 +56,14 @@ export interface FakeMcpServerOptions {
    */
   streamableHttpResponseMode?: 'sse' | 'json';
   /**
-   * Delays the response to this one MCP method until the test calls
-   * `handle.release()` — lets a test act (close a tab, abort a signal)
-   * while a request is still genuinely in flight, not just scheduled on
-   * a microtask queue that's already drained by the time the test gets
-   * control back.
+   * Delays the response to this one MCP method — or, for `'disconnect'`,
+   * to streamable HTTP's own `DELETE` — until the test calls
+   * `handle.release()`. Lets a test act (close a tab, abort a signal,
+   * start a re-register) while a request is still genuinely in flight,
+   * not just scheduled on a microtask queue that's already drained by
+   * the time the test gets control back.
    */
-  holdResponseTo?: 'initialize' | 'tools/list';
+  holdResponseTo?: 'initialize' | 'tools/list' | 'disconnect';
 }
 
 export interface FakeMcpRequestLog {
@@ -199,7 +200,10 @@ export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpSe
 
   // --- Streamable HTTP's own HTTP endpoint ---
   async function handleStreamableHttpRequest(method: string, headers: Record<string, string>, body: FakeMcpRequestLog['body']): Promise<Response> {
-    if (method === 'DELETE') return new Response(null, { status: 204 });
+    if (method === 'DELETE') {
+      if (heldGate && opts.holdResponseTo === 'disconnect') await heldGate;
+      return new Response(null, { status: 204 });
+    }
     if (method !== 'POST') return new Response('Not found', { status: 404 });
 
     const rpcMethod = body?.method;

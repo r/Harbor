@@ -249,6 +249,39 @@ describe('registerSiteServer — abandoned mid-handshake', () => {
   });
 });
 
+describe('registerSiteServer — re-register race with a slow old disconnect', () => {
+  it('a tab forgotten while the old server\'s DELETE is still in flight leaves nothing registered, the new connection closed, and the re-register reporting abandonment', async () => {
+    // First registration: a real streamable-HTTP session, whose
+    // disconnect() is an async DELETE — the only one of the three
+    // transports with a teardown that can genuinely still be in flight
+    // (SSE/WebSocket's disconnect() is synchronous).
+    installFakeMcpServer({ tools: [{ name: 'v1-tool' }] });
+    const first = await registerSiteServer({
+      origin: ORIGIN, tabId: TAB, url: 'https://shop.example/mcp-http', name: 'Shop', transport: 'streamable-http',
+    });
+    expect(first.ok).toBe(true);
+
+    // Re-register the same name in the same tab: its own handshake runs
+    // against a *new* fake server instance, then it reaches the old
+    // session's disconnect — held, so the DELETE is genuinely pending
+    // when the tab is forgotten.
+    const server = installFakeMcpServer({ tools: [{ name: 'v2-tool' }], holdResponseTo: 'disconnect' });
+    const pending = registerSiteServer({
+      origin: ORIGIN, tabId: TAB, url: 'https://shop.example/mcp-http-v2', name: 'Shop', transport: 'streamable-http',
+    });
+
+    await vi.waitFor(() => expect(server.requests.some((r) => r.method === 'DELETE')).toBe(true));
+    forgetTabServers(TAB); // the tab closed while the old session's teardown was still in flight
+
+    server.release();
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    expect((result as { aborted?: boolean }).aborted).toBe(true);
+    expect(listSiteTools(ORIGIN, TAB)).toEqual([]);
+  });
+});
+
 describe('listSiteTools — scoped to the registering origin and tab', () => {
   beforeEach(async () => {
     installFakeMcpServer({ tools: [{ name: 'search', description: 'd', inputSchema: { type: 'object' } }] });
