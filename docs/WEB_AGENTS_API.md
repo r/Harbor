@@ -225,6 +225,8 @@ const { provider, model } = await window.ai.providers.getActive();
 console.log(`Using ${provider} with model ${model}`);
 ```
 
+When the person has chosen their own agent instead of Harbor's built-in model, `list()` returns that agent alone, as `{ id, type: 'agent', name, available: true, isDefault: true }`. `getActive()` returns `{ provider: <agent id>, model: null }`, and `listConfiguredModels()` and `getConfiguredModelsMetadata()` return empty lists: the agent picks its own model.
+
 ---
 
 ## window.agent API
@@ -772,6 +774,8 @@ for await (const token of session.promptStreaming('Summarize your findings')) {
 // Clean up
 await session.terminate();
 ```
+
+When the person has chosen their own agent instead of Harbor's built-in model, `prompt()` and `promptStreaming()` run on that agent, and `capabilities.llm`'s `provider`, `model` and `temperature` are ignored. The session's `tools` allowlist and `maxToolCalls` still govern `session.callTool()`, the tools your page calls itself. They don't limit the agent's own tools while it answers a prompt: those are the agent's, under its own settings. If the person switches agents, or switches back to the built-in model, the session can't be prompted any more (`ERR_SESSION_NOT_FOUND`); create a new one.
 
 #### agent.sessions.list()
 
