@@ -11,6 +11,43 @@ import type { RequestContext, ResponseSender } from './router-types';
 import { log, requireAction } from './helpers';
 import { browserAPI } from '../../browser-compat';
 import { isSiteMcpTransport, registerSiteServer, unregisterSiteServer } from '../../mcp/site-servers';
+import { Audit } from '../../policy/audit';
+import { LabelSet, type PolicyDecision } from '../../policy/engine';
+
+// =============================================================================
+// Auditing the D1 refusal (it never reaches requireAction/the engine)
+// =============================================================================
+
+/**
+ * D1's same-origin/loopback rule runs before `mcp.server.register`'s own
+ * gate — so the person is never asked to allow a registration that was
+ * always going to be refused — which means it never reaches
+ * `requireAction`/`evaluate()`, the normal path every other gated
+ * decision is audited through. It should still land in the audit log
+ * (the activity feed and the watchdog both read from there), so this
+ * records it by hand, matching `evaluate()`'s own `PolicyDecision` shape
+ * (see `policy/engine.ts`) as closely as a decision that never ran
+ * through the engine can: `source: 'safetyFloor'` (declared in
+ * `DecisionSource` but not assigned by any real tier today) is the
+ * closest honest label for "Harbor's own floor, not a rule, a grant or
+ * the watchdog". Input errors (missing fields, an unrecognized
+ * transport, a malformed URL) aren't audited — they're not a policy
+ * decision about an origin, just invalid input.
+ */
+function auditOriginRuleDenial(ctx: RequestContext, reason: string): void {
+  const decision: PolicyDecision = {
+    effect: 'deny',
+    tier: 1,
+    source: 'safetyFloor',
+    reason,
+    outputLabels: LabelSet.empty(),
+    trace: [{ tier: 1, source: 'safetyFloor', outcome: 'deny', reason }],
+  };
+  Audit.record(
+    { origin: ctx.origin, action: 'mcp.server.register', correlationId: ctx.id, tabId: ctx.tabId },
+    decision,
+  );
+}
 
 // =============================================================================
 // D1: same-origin (or matching-loopback) registration rule
@@ -181,10 +218,12 @@ export async function handleMcpRegister(
   // loopback page.
   if (!isAllowedServerUrl(pageOriginUrl, serverUrl)) {
     log('MCP register rejected - server URL not allowed from', ctx.origin);
+    const message = 'MCP server must be on the same origin, or localhost/127.0.0.1/::1 registered from a page on the same';
+    auditOriginRuleDenial(ctx, message);
     sender.sendResponse({
       id: ctx.id,
       ok: false,
-      error: { code: 'ERR_PERMISSION_DENIED', message: 'MCP server must be on the same origin, or localhost/127.0.0.1/::1 registered from a page on the same' },
+      error: { code: 'ERR_PERMISSION_DENIED', message },
     });
     return;
   }

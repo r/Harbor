@@ -56,6 +56,15 @@ export class McpSseTransport implements McpTransport {
   private connectPromise: Promise<void> | null = null;
   /** Set by `disconnect()` so a disconnect already in progress doesn't schedule a reconnect once its `onerror`/`onclose` fires. */
   private intentionalDisconnect = false;
+  /**
+   * The timer waiting on the `endpoint` event, while one is outstanding —
+   * an instance field (not a local inside `connect()`) so `disconnect()`
+   * can clear it: a `disconnect()` that lands while still connecting
+   * otherwise can't stop this timer, which then fires later and flips
+   * state from `disconnected` back to `error`, rejecting a promise
+   * nothing is still waiting on.
+   */
+  private endpointTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly options: RemoteTransportOptions) {
     this.timeout = options.timeout ?? 30000;
@@ -87,7 +96,9 @@ export class McpSseTransport implements McpTransport {
 
         // The server has up to `this.timeout` to send its `endpoint`
         // event once the connection opens; nothing can be sent before it.
-        const endpointTimeout = setTimeout(() => {
+        this.endpointTimeoutId = setTimeout(() => {
+          this.endpointTimeoutId = null;
+          if (this.intentionalDisconnect) return; // disconnect() already settled this attempt
           this.state = 'error';
           this.eventSource?.close();
           this.eventSource = null;
@@ -95,14 +106,16 @@ export class McpSseTransport implements McpTransport {
         }, this.timeout);
 
         this.eventSource.onopen = () => {
+          if (this.intentionalDisconnect) return;
           console.log('[RemoteTransport] SSE connection opened');
           // Not resolved yet: still waiting on the `endpoint` event below.
         };
 
         this.eventSource.onerror = (error) => {
+          if (this.intentionalDisconnect) return;
           console.error('[RemoteTransport] SSE error:', error);
           if (this.state === 'connecting') {
-            clearTimeout(endpointTimeout);
+            this.clearEndpointTimeout();
             this.state = 'error';
             this.eventSource?.close();
             this.eventSource = null;
@@ -127,6 +140,7 @@ export class McpSseTransport implements McpTransport {
         // `{endpoint: "..."}` JSON form is tolerated too, in case a
         // server sends that instead.
         this.eventSource.addEventListener('endpoint', (event: MessageEvent) => {
+          if (this.intentionalDisconnect) return;
           const endpoint = this.parseEndpointEvent(event.data);
           if (!endpoint) {
             console.error('[RemoteTransport] Could not parse the SSE endpoint event');
@@ -147,7 +161,7 @@ export class McpSseTransport implements McpTransport {
             const error = new Error(`Endpoint origin does not match connection origin: ${endpointOrigin}`);
             console.error('[RemoteTransport]', error.message);
             if (this.state === 'connecting') {
-              clearTimeout(endpointTimeout);
+              this.clearEndpointTimeout();
               this.state = 'error';
               this.eventSource?.close();
               this.eventSource = null;
@@ -158,7 +172,7 @@ export class McpSseTransport implements McpTransport {
           this.sessionEndpoint = endpoint;
           console.log('[RemoteTransport] Received the SSE session endpoint');
           if (this.state === 'connecting') {
-            clearTimeout(endpointTimeout);
+            this.clearEndpointTimeout();
             this.state = 'connected';
             this.reconnectAttempts = 0;
             resolve();
@@ -184,6 +198,13 @@ export class McpSseTransport implements McpTransport {
     });
 
     return this.connectPromise;
+  }
+
+  private clearEndpointTimeout(): void {
+    if (this.endpointTimeoutId !== null) {
+      clearTimeout(this.endpointTimeoutId);
+      this.endpointTimeoutId = null;
+    }
   }
 
   /**
@@ -214,6 +235,7 @@ export class McpSseTransport implements McpTransport {
    */
   disconnect(): void {
     this.intentionalDisconnect = true;
+    this.clearEndpointTimeout();
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
@@ -324,8 +346,10 @@ export class McpSseTransport implements McpTransport {
     }
 
     if (!message?.id) {
-      // Notification or malformed message
-      console.log('[RemoteTransport] Received notification:', message);
+      // Notification or malformed message. Not the message itself — it's
+      // the site's own server content from here on. See
+      // page-api/__tests__/no-payload-logs.test.ts.
+      console.log('[RemoteTransport] Received notification:', (message as unknown as { method?: string })?.method ?? '(no method)');
       return;
     }
 
@@ -393,6 +417,15 @@ export class McpWebSocketTransport implements McpTransport {
   private reconnectAttempts = 0;
   /** Set by `disconnect()` so its own `onclose` doesn't schedule a reconnect — a WebSocket always fires `onclose`, even for a close *we* asked for. */
   private intentionalDisconnect = false;
+  /**
+   * The timer waiting for the socket to open, while one is outstanding —
+   * an instance field, not a local inside `connect()`, so `disconnect()`
+   * can clear it the same way `McpSseTransport`'s endpoint timer is
+   * cleared (see its own comment): otherwise a `disconnect()` landing
+   * while still connecting can't stop this timer, which later fires
+   * anyway.
+   */
+  private connectTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly options: RemoteTransportOptions) {
     this.timeout = options.timeout ?? 30000;
@@ -401,7 +434,10 @@ export class McpWebSocketTransport implements McpTransport {
   }
 
   /**
-   * Connect to the remote server.
+   * Connect to the remote server. Bounded by `this.timeout`: without it,
+   * a WebSocket upgrade that never completes (the server accepts the TCP
+   * connection but never finishes the handshake, say) would hang
+   * `connect()` — and whatever's awaiting it — forever.
    */
   async connect(): Promise<void> {
     if (this.state === 'connected' || this.state === 'connecting') {
@@ -423,7 +459,18 @@ export class McpWebSocketTransport implements McpTransport {
 
         this.ws = new WebSocket(url.toString());
 
+        this.connectTimeoutId = setTimeout(() => {
+          this.connectTimeoutId = null;
+          if (this.intentionalDisconnect) return; // disconnect() already settled this attempt
+          this.state = 'error';
+          this.ws?.close();
+          this.ws = null;
+          reject(new Error(`Timed out waiting for the WebSocket to open after ${this.timeout}ms`));
+        }, this.timeout);
+
         this.ws.onopen = () => {
+          if (this.intentionalDisconnect) return;
+          this.clearConnectTimeout();
           // Not `url.toString()` — a site's own server URL can carry a
           // query string. See page-api/__tests__/no-payload-logs.test.ts.
           console.log('[RemoteTransport] WebSocket connection opened');
@@ -433,14 +480,17 @@ export class McpWebSocketTransport implements McpTransport {
         };
 
         this.ws.onerror = (error) => {
+          if (this.intentionalDisconnect) return;
           console.error('[RemoteTransport] WebSocket error:', error);
           if (this.state === 'connecting') {
+            this.clearConnectTimeout();
             this.state = 'error';
             reject(new Error('Failed to connect to remote server'));
           }
         };
 
         this.ws.onclose = () => {
+          if (this.intentionalDisconnect) return; // handled by disconnect() itself
           console.log('[RemoteTransport] WebSocket closed');
           this.handleDisconnect();
         };
@@ -456,11 +506,19 @@ export class McpWebSocketTransport implements McpTransport {
     });
   }
 
+  private clearConnectTimeout(): void {
+    if (this.connectTimeoutId !== null) {
+      clearTimeout(this.connectTimeoutId);
+      this.connectTimeoutId = null;
+    }
+  }
+
   /**
    * Disconnect from the remote server.
    */
   disconnect(): void {
     this.intentionalDisconnect = true;
+    this.clearConnectTimeout();
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -533,7 +591,9 @@ export class McpWebSocketTransport implements McpTransport {
     }
 
     if (!message?.id) {
-      console.log('[RemoteTransport] Received notification:', message);
+      // Not the message itself — it's the site's own server content from
+      // here on. See page-api/__tests__/no-payload-logs.test.ts.
+      console.log('[RemoteTransport] Received notification:', (message as unknown as { method?: string })?.method ?? '(no method)');
       return;
     }
 
