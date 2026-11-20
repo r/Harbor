@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The examples in `spec/examples/` (basic chat, provider selection, page analyzer, agent with tools) wait for Harbor's `agent-ready` event instead of checking for `window.agent` once at load, so they no longer report the API as unavailable when Harbor injects it a moment later.
 - A page chat (`agent.chat.open`) no longer stays registered after its tab closes or navigates to another document; a message for it is then refused the same as one for a chat that was never opened. A same-document change (a hash or `pushState`) no longer ends it by mistake.
 - A page can no longer close another site's chat. `agent.chat.close(chatId)` now checks that the chat belongs to the calling origin (and tab, when known) before closing it; a mismatch is refused the same as a chat id that doesn't exist. Chat ids are also no longer predictable.
 - Page chat's "tools used" line is built as text. It was inserted as HTML from tool names.
