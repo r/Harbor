@@ -65,6 +65,52 @@ describe('McpSseTransport', () => {
     expect(transport.isConnected()).toBe(true);
   });
 
+  it('refuses an endpoint whose resolved origin differs from the connection origin, and closes the connection', async () => {
+    let closed = false;
+    class CrossOriginEndpointEventSource {
+      onopen: (() => void) | null = null;
+      onerror: ((e: unknown) => void) | null = null;
+      private listeners = new Map<string, Array<(e: { data: string }) => void>>();
+      constructor(public readonly url: string) {
+        queueMicrotask(() => {
+          this.onopen?.();
+          // An absolute URL on a different origin than the connection itself.
+          this.dispatch('endpoint', 'https://evil.example/mcp?sessionId=x');
+        });
+      }
+      addEventListener(type: string, cb: (e: { data: string }) => void): void {
+        const arr = this.listeners.get(type) ?? [];
+        arr.push(cb);
+        this.listeners.set(type, arr);
+      }
+      dispatch(type: string, data: string): void {
+        for (const cb of this.listeners.get(type) ?? []) cb({ data });
+      }
+      close(): void { closed = true; }
+    }
+    vi.stubGlobal('EventSource', CrossOriginEndpointEventSource);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const transport = new McpSseTransport({ url: 'https://shop.example/mcp', transport: 'sse' });
+    await expect(transport.connect()).rejects.toThrow(/origin/i);
+    expect(closed).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('sends every request with redirect: "error", so a server cannot bounce Harbor\'s POSTs elsewhere', async () => {
+    const server = installFakeMcpServer({ tools: [] });
+    const transport = new McpSseTransport({ url: 'https://shop.example/mcp', transport: 'sse' });
+    await transport.connect();
+    await transport.send({ jsonrpc: '2.0', id: 'r1', method: 'tools/list' });
+    await transport.notify({ jsonrpc: '2.0', method: 'notifications/initialized' });
+
+    expect(server.requests.length).toBeGreaterThan(0);
+    for (const req of server.requests) {
+      expect(req.redirect).toBe('error');
+    }
+  });
+
   it('with autoReconnect disabled, closes the EventSource on error and never reconnects', async () => {
     vi.useFakeTimers();
     const server = installFakeMcpServer({ tools: [] });
@@ -188,5 +234,57 @@ describe('McpStreamableHttpTransport', () => {
     // not a JSON-RPC error result.
     const forgetful = new McpStreamableHttpTransport({ url: 'https://shop.example/mcp-http', transport: 'streamable-http' });
     await expect(forgetful.send({ jsonrpc: '2.0', id: 'r2', method: 'tools/list' })).rejects.toThrow();
+  });
+
+  it('sends every request with redirect: "error"', async () => {
+    const server = installFakeMcpServer({ tools: [] });
+    const transport = new McpStreamableHttpTransport({ url: 'https://shop.example/mcp-http', transport: 'streamable-http' });
+    await transport.send({ jsonrpc: '2.0', id: 'r1', method: 'initialize', params: {} });
+    await transport.notify({ jsonrpc: '2.0', method: 'notifications/initialized' });
+
+    expect(server.requests.length).toBeGreaterThan(0);
+    for (const req of server.requests) {
+      expect(req.redirect).toBe('error');
+    }
+  });
+
+  /**
+   * A real `fetch()` rejects on its own once the `AbortSignal` passed to
+   * it fires — this fake mock models that one behaviour (never resolving
+   * otherwise), so the timeout under test is the only thing that can end
+   * either call.
+   */
+  function neverRespondingFetch() {
+    return vi.fn((_url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        const err = new Error('The operation was aborted.');
+        err.name = 'AbortError';
+        reject(err);
+      });
+    }));
+  }
+
+  it('times out a request that never gets a response, instead of hanging forever', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', neverRespondingFetch());
+
+    const transport = new McpStreamableHttpTransport({ url: 'https://shop.example/mcp-http', transport: 'streamable-http', timeout: 5000 });
+    const send = transport.send({ jsonrpc: '2.0', id: 'r1', method: 'initialize', params: {} });
+
+    const assertion = expect(send).rejects.toThrow(/timed out/i);
+    await vi.advanceTimersByTimeAsync(5001);
+    await assertion;
+  });
+
+  it('times out notify() the same way', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', neverRespondingFetch());
+
+    const transport = new McpStreamableHttpTransport({ url: 'https://shop.example/mcp-http', transport: 'streamable-http', timeout: 5000 });
+    const notify = transport.notify({ jsonrpc: '2.0', method: 'notifications/initialized' });
+
+    const assertion = expect(notify).rejects.toThrow(/timed out/i);
+    await vi.advanceTimersByTimeAsync(5001);
+    await assertion;
   });
 });

@@ -129,6 +129,146 @@ async function grantToolAccess(origin: string, tabId: number, allowedTools: stri
   await grantPermissions(origin, ['mcp:tools.list', 'mcp:tools.call'], 'granted-always', tabId, allowedTools);
 }
 
+describe('H2: an omitted transport defaults to sse', () => {
+  it('connects via sse when transport is omitted entirely', async () => {
+    const page = connectPort(`${SHOP}/page`, TAB);
+    const reply = await page.request('agent.mcp.register', { url: `${SHOP}/mcp`, name: 'Shop' });
+    expect(reply.ok, reply.error?.message).toBe(true);
+    expect(reply.result).toMatchObject({ tools: ['search'] });
+  });
+});
+
+describe('validation that can fail runs before the permission prompt (and before any connection)', () => {
+  it('an unrecognized transport is refused without ever prompting or connecting', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const page = connectPort(`${SHOP}/page`, TAB);
+    const reply = await page.request('agent.mcp.register', { url: `${SHOP}/mcp`, name: 'Shop', transport: 'carrier-pigeon' });
+    expect(reply.ok).toBe(false);
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('stdio is refused without ever prompting or connecting', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const page = connectPort(`${SHOP}/page`, TAB);
+    const reply = await page.request('agent.mcp.register', { url: `${SHOP}/mcp`, name: 'Shop', transport: 'stdio' });
+    expect(reply.ok).toBe(false);
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('a cross-origin server URL is refused with ERR_PERMISSION_DENIED, without ever prompting or connecting', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const page = connectPort(`${SHOP}/page`, TAB);
+    const reply = await page.request('agent.mcp.register', { url: 'https://evil.example/mcp', name: 'Evil', transport: 'sse' });
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('a missing url is refused without ever prompting', async () => {
+    const page = connectPort(`${SHOP}/page`, TAB);
+    const reply = await page.request('agent.mcp.register', { name: 'No URL' });
+    expect(reply.ok).toBe(false);
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+  });
+
+  it('no tab context is refused without ever prompting', async () => {
+    const listeners: Array<(m: unknown) => void> = [];
+    const posted: Reply[] = [];
+    onConnect({
+      name: 'harbor-page-api',
+      sender: { url: `${SHOP}/page` }, // no tab
+      onMessage: { addListener: (l: (m: unknown) => void) => listeners.push(l) },
+      onDisconnect: { addListener: () => {} },
+      postMessage: (m: Reply) => posted.push(m),
+    });
+    listeners.forEach((l) => l({ id: 'r1', type: 'agent.mcp.register', payload: { url: `${SHOP}/mcp`, name: 'Shop', transport: 'sse' } }));
+    await vi.waitFor(() => expect(posted.some((p) => p.id === 'r1')).toBe(true));
+    expect(posted[0].ok).toBe(false);
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+  });
+});
+
+describe('D1: a site may register only a same-origin (or matching-loopback) server', () => {
+  it('allows a localhost page to register a localhost server on a different port (the BYOC demo shape)', async () => {
+    const page = connectPort('http://localhost:8000/page', TAB);
+    const reply = await page.request('agent.mcp.register', { url: 'http://localhost:3001/mcp', name: 'Shop', transport: 'sse' });
+    expect(reply.ok, reply.error?.message).toBe(true);
+  });
+
+  it('allows a localhost page to register a 127.0.0.1 server', async () => {
+    const page = connectPort('http://localhost:8000/page', TAB);
+    const reply = await page.request('agent.mcp.register', { url: 'http://127.0.0.1:3001/mcp', name: 'Shop', transport: 'sse' });
+    expect(reply.ok, reply.error?.message).toBe(true);
+  });
+
+  it('denies a localhost server when the registering page itself is not localhost', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const page = connectPort(`${SHOP}/page`, TAB);
+    const reply = await page.request('agent.mcp.register', { url: 'http://localhost:3001/mcp', name: 'Shop', transport: 'sse' });
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('treats a same-origin wss:// URL for websocket as same-origin', async () => {
+    const page = connectPort(`${SHOP}/page`, TAB); // https://shop.example
+    const reply = await page.request('agent.mcp.register', { url: 'wss://shop.example/mcp-ws', name: 'Shop', transport: 'websocket' });
+    expect(reply.ok, reply.error?.message).toBe(true);
+  });
+
+  it('denies a ws:// URL whose mapped origin differs from the page origin', async () => {
+    const page = connectPort(`${SHOP}/page`, TAB);
+    const reply = await page.request('agent.mcp.register', { url: 'ws://evil.example/mcp-ws', name: 'Shop', transport: 'websocket' });
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_PERMISSION_DENIED');
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+  });
+});
+
+describe('D3: agent.mcp.register follows the Tool Access feature flag; discover/unregister do not', () => {
+  it('is refused with ERR_FEATURE_DISABLED when Tool Access is off, before any gate or connection', async () => {
+    const { setFeatureFlags, DEFAULT_FLAGS } = await import('../policy/feature-flags');
+    await setFeatureFlags({ ...DEFAULT_FLAGS, toolAccess: false });
+
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const page = connectPort(`${SHOP}/page`, TAB);
+    const reply = await page.request('agent.mcp.register', { url: `${SHOP}/mcp`, name: 'Shop', transport: 'sse' });
+
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('ERR_FEATURE_DISABLED');
+    expect(showPermissionPrompt).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('leaves discover and unregister working when Tool Access is off', async () => {
+    const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> };
+    chromeGlobal.chrome.scripting = { executeScript: vi.fn(async () => [{ result: [] }]) };
+
+    const serverId = siteServerId(SHOP, 'Shop');
+    const page = connectPort(`${SHOP}/page`, TAB);
+    const registered = await page.request('agent.mcp.register', { url: `${SHOP}/mcp`, name: 'Shop', transport: 'sse' });
+    expect(registered.ok, registered.error?.message).toBe(true);
+
+    const { setFeatureFlags, DEFAULT_FLAGS } = await import('../policy/feature-flags');
+    await setFeatureFlags({ ...DEFAULT_FLAGS, toolAccess: false });
+
+    const unregistered = await page.request('agent.mcp.unregister', { serverId });
+    expect(unregistered.ok, unregistered.error?.message).toBe(true);
+
+    const discovered = await page.request('agent.mcp.discover', {});
+    expect(discovered.ok, discovered.error?.message).toBe(true);
+  });
+});
+
 describe('registering without a grant', () => {
   it('prompts, and a dismissal refuses it without connecting to the server', async () => {
     showPermissionPrompt.mockResolvedValueOnce({ granted: false });

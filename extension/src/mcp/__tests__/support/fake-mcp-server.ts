@@ -55,6 +55,14 @@ export interface FakeMcpServerOptions {
    * that only ever handled the JSON form doesn't go untested.
    */
   streamableHttpResponseMode?: 'sse' | 'json';
+  /**
+   * Delays the response to this one MCP method until the test calls
+   * `handle.release()` — lets a test act (close a tab, abort a signal)
+   * while a request is still genuinely in flight, not just scheduled on
+   * a microtask queue that's already drained by the time the test gets
+   * control back.
+   */
+  holdResponseTo?: 'initialize' | 'tools/list';
 }
 
 export interface FakeMcpRequestLog {
@@ -62,6 +70,8 @@ export interface FakeMcpRequestLog {
   method: string;
   headers: Record<string, string>;
   body?: { id?: string; method?: string; params?: unknown };
+  /** `fetch`'s own `redirect` option, e.g. `'error'` so a server can't bounce a request elsewhere. `undefined` for a WebSocket send, which has no such concept. */
+  redirect?: string;
 }
 
 /** One SSE connection the fake has opened (`new EventSource(...)`). */
@@ -91,6 +101,8 @@ export interface FakeMcpServerHandle {
   webSocketOpenCount: number;
   /** Every WebSocket this fake has opened, in order. */
   webSocketConnections: FakeWsConnection[];
+  /** Releases the response `holdResponseTo` is holding back. A no-op if nothing is held, or already released. */
+  release(): void;
 }
 
 /** One WebSocket connection the fake has opened (`new WebSocket(...)`). */
@@ -146,7 +158,23 @@ function safeParseUrl(url: string): URL | null {
 
 /** Installs the fake server's globals and returns a handle to inspect what it saw. */
 export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpServerHandle {
-  const handle: FakeMcpServerHandle = { requests: [], sessionId: null, sseConnections: [], webSocketOpenCount: 0, webSocketConnections: [] };
+  let releaseHeld: (() => void) | null = null;
+  const heldGate: Promise<void> | null = opts.holdResponseTo
+    ? new Promise<void>((resolve) => { releaseHeld = resolve; })
+    : null;
+  /** Awaited before responding to `opts.holdResponseTo`; resolves immediately for every other method. */
+  async function waitIfHeld(method: string | undefined): Promise<void> {
+    if (heldGate && method === opts.holdResponseTo) await heldGate;
+  }
+
+  const handle: FakeMcpServerHandle = {
+    requests: [],
+    sessionId: null,
+    sseConnections: [],
+    webSocketOpenCount: 0,
+    webSocketConnections: [],
+    release: () => releaseHeld?.(),
+  };
 
   // --- SSE's own HTTP endpoint (the base URL every EventSource opened against) ---
   const sseBaseUrls = new Set<string>();
@@ -164,13 +192,13 @@ export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpSe
     // any) is pushed later, over the SSE stream this session already has
     // open — never in this POST's own response.
     if (body.id) {
-      queueMicrotask(() => sse.dispatch('message', JSON.stringify(rpcMessage(opts, body))));
+      waitIfHeld(body.method).then(() => sse.dispatch('message', JSON.stringify(rpcMessage(opts, body))));
     }
     return new Response('Accepted', { status: 202 });
   }
 
   // --- Streamable HTTP's own HTTP endpoint ---
-  function handleStreamableHttpRequest(method: string, headers: Record<string, string>, body: FakeMcpRequestLog['body']): Response {
+  async function handleStreamableHttpRequest(method: string, headers: Record<string, string>, body: FakeMcpRequestLog['body']): Promise<Response> {
     if (method === 'DELETE') return new Response(null, { status: 204 });
     if (method !== 'POST') return new Response('Not found', { status: 404 });
 
@@ -187,6 +215,8 @@ export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpSe
       // JSON envelope.
       return new Response(null, { status: 202 });
     }
+
+    await waitIfHeld(rpcMethod);
 
     if (rpcMethod === 'initialize' && !handle.sessionId) {
       handle.sessionId = `sess-${Math.random().toString(36).slice(2)}`;
@@ -208,7 +238,7 @@ export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpSe
     } catch {
       body = undefined;
     }
-    handle.requests.push({ url: String(url), method, headers: headerEntries, body });
+    handle.requests.push({ url: String(url), method, headers: headerEntries, body, redirect: init?.redirect });
 
     const parsed = safeParseUrl(String(url));
     const sessionIdParam = parsed?.searchParams.get('sessionId') ?? null;
@@ -298,7 +328,7 @@ export function installFakeMcpServer(opts: FakeMcpServerOptions = {}): FakeMcpSe
       const req = JSON.parse(data) as FakeMcpRequestLog['body'];
       handle.requests.push({ url: this.url, method: 'WS', headers: {}, body: req });
       if (!req?.id) return; // a notification; no response expected
-      queueMicrotask(() => {
+      waitIfHeld(req.method).then(() => {
         this.onmessage?.({ data: JSON.stringify(rpcMessage(opts, req)) });
       });
     }

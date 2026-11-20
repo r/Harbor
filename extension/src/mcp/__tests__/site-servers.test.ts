@@ -155,6 +155,98 @@ describe('registerSiteServer — real tools over each transport', () => {
     const tools = listSiteTools(ORIGIN, TAB);
     expect(tools.map((t) => t.name)).toEqual(['v2-tool']);
   });
+
+  it('keeps only tools/list entries that are objects with a non-empty string name', async () => {
+    installFakeMcpServer({
+      // @ts-expect-error -- deliberately malformed, as a hostile or buggy server might send
+      tools: [{ name: 'search' }, { name: '' }, { description: 'no name' }, 'not-an-object', null, 42],
+    });
+
+    const result = await registerSiteServer({
+      origin: ORIGIN, tabId: TAB, url: 'https://shop.example/mcp', name: 'Shop', transport: 'sse',
+    });
+
+    expect(result).toMatchObject({ ok: true, tools: ['search'] });
+    expect(listSiteTools(ORIGIN, TAB).map((t) => t.name)).toEqual(['search']);
+  });
+});
+
+describe('registerSiteServer — abandoned mid-handshake', () => {
+  it("disconnects and registers nothing when the tab closes while tools/list is still in flight", async () => {
+    const server = installFakeMcpServer({ tools: [{ name: 'search' }], holdResponseTo: 'tools/list' });
+
+    const pending = registerSiteServer({
+      origin: ORIGIN, tabId: TAB, url: 'https://shop.example/mcp', name: 'Shop', transport: 'sse',
+    });
+
+    // Let `initialize` and `notifications/initialized` run; `tools/list`
+    // is still held, so the handshake hasn't resolved yet.
+    await vi.waitFor(() => expect(server.requests.some((r) => r.body?.method === 'tools/list')).toBe(true));
+
+    forgetTabServers(TAB); // the tab closed while the handshake was still running
+
+    server.release();
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    expect(listSiteTools(ORIGIN, TAB)).toEqual([]);
+    expect(server.sseConnections[0]?.closed).toBe(true);
+  });
+
+  it("disconnects and registers nothing when the tab navigates to a different origin mid-handshake", async () => {
+    const server = installFakeMcpServer({ tools: [{ name: 'search' }], holdResponseTo: 'tools/list' });
+
+    const pending = registerSiteServer({
+      origin: ORIGIN, tabId: TAB, url: 'https://shop.example/mcp', name: 'Shop', transport: 'sse',
+    });
+
+    await vi.waitFor(() => expect(server.requests.some((r) => r.body?.method === 'tools/list')).toBe(true));
+
+    forgetTabServersIfOriginChanged(TAB, 'https://elsewhere.example/page');
+
+    server.release();
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    expect(listSiteTools(ORIGIN, TAB)).toEqual([]);
+    expect(server.sseConnections[0]?.closed).toBe(true);
+  });
+
+  it('does not abandon the registration on a same-origin URL change (hash/pushState) mid-handshake', async () => {
+    const server = installFakeMcpServer({ tools: [{ name: 'search' }], holdResponseTo: 'tools/list' });
+
+    const pending = registerSiteServer({
+      origin: ORIGIN, tabId: TAB, url: 'https://shop.example/mcp', name: 'Shop', transport: 'sse',
+    });
+
+    await vi.waitFor(() => expect(server.requests.some((r) => r.body?.method === 'tools/list')).toBe(true));
+
+    forgetTabServersIfOriginChanged(TAB, `${ORIGIN}/page#section`);
+
+    server.release();
+    const result = await pending;
+
+    expect(result.ok).toBe(true);
+    expect(listSiteTools(ORIGIN, TAB).map((t) => t.name)).toEqual(['search']);
+  });
+
+  it('is abandoned when the caller\'s own signal aborts mid-handshake, even if the tab is still open', async () => {
+    const server = installFakeMcpServer({ tools: [{ name: 'search' }], holdResponseTo: 'tools/list' });
+    const controller = new AbortController();
+
+    const pending = registerSiteServer({
+      origin: ORIGIN, tabId: TAB, url: 'https://shop.example/mcp', name: 'Shop', transport: 'sse', signal: controller.signal,
+    });
+
+    await vi.waitFor(() => expect(server.requests.some((r) => r.body?.method === 'tools/list')).toBe(true));
+    controller.abort();
+
+    server.release();
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    expect(listSiteTools(ORIGIN, TAB)).toEqual([]);
+  });
 });
 
 describe('listSiteTools — scoped to the registering origin and tab', () => {
