@@ -481,47 +481,9 @@ async function summarizePage() {
 
 #### The Permission Prompt
 
-When you call `requestPermissions()`, users see a popup window containing:
+Harbor names the requesting site and highlights the reason it supplied. When a site asks to use a selected agent, Harbor names that agent and explains its access to tools and memory. Requests for other capabilities list the scopes involved. Requested tools can be selected individually.
 
-1. **Origin Badge**: The requesting website's origin (e.g., `https://example.com`)
-2. **Reason** (if provided): Your explanation of why permissions are needed
-3. **Requested Permissions**: Each scope with:
-   - Icon (🤖 for model:prompt, ⚡ for mcp:tools.call, etc.)
-   - Title (e.g., "Text Generation", "Execute Tools")
-   - Description of what it allows
-   - Risk badge (low/medium/high)
-4. **Tools List** (if tools specified): Checkboxes for each requested tool
-5. **Grant Duration**: Radio buttons for "This time only" vs "Always allow"
-6. **Action Buttons**: "Deny" and "Allow"
-
-```
-┌─────────────────────────────────────────┐
-│  [W] Permission Request                 │
-├─────────────────────────────────────────┤
-│  https://example.com                    │
-│                                         │
-│  "To help you research this topic"      │
-│                                         │
-│  REQUESTED PERMISSIONS                  │
-│  ┌─────────────────────────────────────┐│
-│  │ 🤖 Text Generation          [LOW]  ││
-│  │ Generate text using AI models       ││
-│  └─────────────────────────────────────┘│
-│  ┌─────────────────────────────────────┐│
-│  │ ⚡ Execute Tools           [MEDIUM] ││
-│  │ Call MCP tools to perform actions   ││
-│  └─────────────────────────────────────┘│
-│                                         │
-│  REQUESTED TOOLS                        │
-│  ☑ time-wasm/time.now                  │
-│  ☑ web-search/search                   │
-│                                         │
-│  GRANT DURATION                         │
-│  ○ This time only  ● Always allow      │
-│                                         │
-│  [ Deny ]              [ Allow ]        │
-└─────────────────────────────────────────┘
-```
+The person can deny the request, allow it for ten minutes, or grant ongoing access using a separate action below the temporary choice. They can revoke the decision in the sidebar.
 
 #### Security Model
 

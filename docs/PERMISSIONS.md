@@ -137,10 +137,10 @@ The `destructive` and `identity` effects exist in the type, and rules can name t
 
 ### Grants
 
-When the engine asks, the person answers in Harbor's permission prompt, which offers **This time only** (the default) or **Always allow**, then **Allow** or **Deny**:
+When the engine asks, the person answers in Harbor's permission prompt, with a direct choice to deny, allow temporarily, or grant ongoing access:
 
-- *This time only* lasts ten minutes, in the tab that asked. Another tab on the same site is asked again.
-- *Always allow* lasts until the person revokes the site in the sidebar.
+- Temporary access lasts ten minutes in the requesting tab. If concurrent requests from the same origin share a prompt, each requesting tab receives its own grant.
+- Ongoing access lasts until the person revokes the site in the sidebar.
 - *Deny* is remembered until revoked when the prompt came from `agent.requestPermissions()`. A prompt the engine raises on its own (an `ask` rule, a watchdog restriction, a page's chat) stores only a grant; denying it refuses that one call and stores nothing.
 
 Persisting a grant only after repeated trusted use, and a separate session-length grant, are designed but not built.
@@ -821,9 +821,9 @@ When a site asks for something you haven't decided on, Harbor opens a prompt tha
 - the site asking, and its **reason** in its own words (treat it as the site's claim, not Harbor's);
 - each capability it wants, with what it means and how risky it is;
 - for tools, which tools; for an agent, which sites it covers;
-- whether it should hold **This time only** (the default) or **Always allow**.
+- separate actions to deny the request, allow it temporarily, or let the site use the requested capabilities without asking.
 
-**Allow** with *This time only* lasts about ten minutes, in the tab that asked. *Always allow* lasts until you revoke it in **Site permissions**. **Deny** is remembered, so the site doesn't keep asking; revoke it to be asked again.
+The primary action grants ten minutes of access in the requesting tab. Ongoing access lasts until you revoke it in **Site permissions**. **Deny** is remembered, so the site doesn't keep asking; revoke it to be asked again.
 
 ## Why did Harbor decide that?
 
@@ -833,7 +833,7 @@ Open **Activity** and click **Why?** on the row. It shows the reason, the resour
 
 A few things to check first, in order:
 
-1. **Did you deny it, or did a grant run out?** Look the site up in **Site permissions**. A *This time only* grant ends after about ten minutes; the next call asks again.
+1. **Did you deny it, or did a grant run out?** Look the site up in **Site permissions**. A temporary grant ends after about ten minutes; the next call asks again.
 2. **Is a whole capability switched off?** Check **Browser agent capabilities**.
 3. **What did the engine say?** Find the call in **Activity** and open **Why?**. It names the tier and rule that fired.
 4. **Does the session hold what the site is using?** A session only has what it asked for and you granted. Anything else fails with `ERR_PERMISSION_DENIED`. **Agent sessions** shows what each session can do.
@@ -860,7 +860,7 @@ The engine in Parts 1–3 supports more than the sidebar shows. These are design
 - **Editing your own policy.** The engine reads a user policy (`harbor_policy_v2` in the extension's local storage) below any managed policy, but nothing in Harbor writes it: there is no editor, import, export, or preset (Conservative, Balanced, Permissive and so on).
 - **Rules from a prompt or from Activity.** No "Always allow if it matches a rule…" in the prompt, no "Make this automatic" or "Always deny" in Activity, and no promoting a site's grant to a global rule.
 - **Destination-aware and sensitive-action prompts.** Egress and sensitive actions go through the same permission prompt above, without the dedicated layouts the design describes.
-- **Session-length grants.** The prompt offers *This time only* and *Always allow*; there is no *Allow for this session*, and it doesn't offer to pin a grant after a few uses.
+- **Session-length grants.** The prompt offers temporary and ongoing access; there is no *Allow for this session*, and it doesn't offer to pin a grant after a few uses.
 - **Sensitive domains, budgets, containment badges, Pause, and a toolbar icon that shows state.**
 
 ---
@@ -905,11 +905,11 @@ Because they're not the same thing, even though v1 treated them as one. A local 
 
 **Q: Why doesn't the prompt default to "Always allow"?**
 
-Because reads can feed exfiltration. Reading a tab is harmless on its own; reading a tab and then sending the contents to a remote LLM is exfiltration. The prompt defaults to *This time only*, which lasts about ten minutes in that tab; you choose *Always allow* yourself.
+Because reads can feed exfiltration. Reading a tab is harmless on its own; reading a tab and then sending the contents to a remote LLM is exfiltration. The primary allow button grants ten minutes of access. The separate action beneath it grants ongoing access.
 
 **Q: Why isn't there a single "Auto-approve everything safe" toggle?**
 
-Because "safe" depends on what your trusted infrastructure looks like. The design answers this with policy presets (a Permissive one among them), but those aren't built yet; see [Not built yet](#not-built-yet). Today, *Always allow* on a site you trust is the closest thing.
+Because "safe" depends on what your trusted infrastructure looks like. The design answers this with policy presets (a Permissive one among them), but those aren't built yet; see [Not built yet](#not-built-yet). Today, granting ongoing access to a site you trust is the closest thing.
 
 **Q: Can a malicious site spoof a `reason` or a manifest to look harmless?**
 

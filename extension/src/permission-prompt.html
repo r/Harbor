@@ -11,10 +11,14 @@
   <main class="container permission">
     <header class="header">
       <div class="logo"><svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><rect width="64" height="64" fill="#00d230"/><path d="M33 17L64 6V27.5L34 23Z" fill="#efffce"/><path d="M26 7.5L37 17H15Z" fill="#151b17"/><rect x="18" y="17" width="16" height="7" fill="#151b17"/><rect x="22" y="17.75" width="8" height="4.5" fill="#efffce"/><rect x="14" y="24" width="24" height="4" fill="#151b17"/><path d="M20 28H32.5L38 52H14Z" fill="#151b17"/><path d="M18.68 33.26L33.05 30.39L34.71 37.65L16.61 41.57Z" fill="#efffce"/><path d="M0 57Q8 53 13.5 51.5H38.5Q45 53 49 55.5Q56 53.5 64 53.5V64H0Z" fill="#151b17"/></svg></div>
-      <h1>Permission request</h1>
+      <h1 id="heading">Permission request</h1>
     </header>
 
-    <div class="origin-badge" id="origin"></div>
+    <div class="reason" id="reason-container" hidden>
+      <div class="reason-label" id="reason-label"></div>
+      <blockquote id="reason" dir="auto"></blockquote>
+    </div>
+    <p id="agent-warning" hidden></p>
 
     <!-- Session context (for explicit sessions) -->
     <div class="session-context" id="session-context" style="display: none;">
@@ -22,11 +26,7 @@
       <div class="session-badges" id="session-badges"></div>
     </div>
 
-    <div class="reason" id="reason-container" style="display: none;">
-      <span id="reason"></span>
-    </div>
-
-    <h2>Requested permissions</h2>
+    <h2 id="scopes-heading">Requested permissions</h2>
     <div class="scopes-list" id="scopes-list"></div>
 
     <div class="tools-section" id="tools-section" style="display: none;">
@@ -39,23 +39,12 @@
       <div class="tools-list" id="agent-sites-list"></div>
     </div>
 
-    <fieldset class="grant-section">
-      <legend>Grant duration</legend>
-      <div class="grant-type">
-        <div class="grant-option">
-          <input type="radio" name="grant-type" id="grant-once" value="once" checked>
-          <label for="grant-once">This time only</label>
-        </div>
-        <div class="grant-option">
-          <input type="radio" name="grant-type" id="grant-always" value="always">
-          <label for="grant-always">Always allow</label>
-        </div>
-      </div>
-    </fieldset>
-
     <div class="actions">
-      <button class="btn btn-secondary" id="btn-deny">Deny</button>
-      <button class="btn btn-primary" id="btn-grant">Allow</button>
+      <button type="button" class="btn btn-secondary" id="btn-deny">Deny</button>
+      <button type="button" class="btn btn-primary" id="btn-grant">Allow for 10 minutes in this tab</button>
+    </div>
+    <div class="persistent-action">
+      <button type="button" class="btn-link" id="btn-always">Allow without asking</button>
     </div>
   </main>
 
