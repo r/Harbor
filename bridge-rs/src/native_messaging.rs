@@ -220,6 +220,10 @@ pub async fn run_native_messaging() {
     let (host_request_tx, mut host_request_rx) = mpsc::channel::<HostRequestItem>(32);
     let pending_host: Arc<RwLock<HashMap<String, tokio::sync::oneshot::Sender<Result<serde_json::Value, serde_json::Value>>>>> =
         Arc::new(RwLock::new(HashMap::new()));
+    // The page-tools HTTP listener runs on its own task, not on this
+    // function's call stack, so it needs its own way to reach this same
+    // host_request channel. See `page_tools::set_host_request_sender`.
+    crate::page_tools::set_host_request_sender(host_request_tx.clone());
 
     // Spawn stdin reader task
     tokio::task::spawn_blocking(move || {
