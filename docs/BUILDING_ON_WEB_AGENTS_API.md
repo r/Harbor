@@ -122,16 +122,22 @@ const session = await window.agent.requestCapabilities({
     { action: 'browser.read.activeTab' },
     { action: 'tool.call', server: 'time-wasm', toolNames: ['time.now'] },
   ],
+  optional: [
+    { action: 'browser.write.interact' },
+  ],
   budget: { maxToolCalls: 30, ttlMinutes: 15 },
 });
 
-await session.tools.call('time-wasm', 'time.now', {});
+await session.callTool('time-wasm/time.now', {});
+if (session.capabilities.browser.interact) {
+  // The site holds the grant to click and fill on the page.
+}
 ```
 
 Need more later — e.g. write access once the user clicks "Run"? Ask
 for it with `agent.requestPermissions()`, which shows the prompt, then
 call `agent.requestCapabilities()` again for a new session.
-`requestCapabilities()` doesn't ask for grants itself.
+`requestCapabilities()` doesn't ask for grants itself. A required capability the site hasn't been granted fails the request with `ERR_PERMISSION_DENIED`; an optional one is left out of the session, so check `session.capabilities` before using it.
 
 ### Legacy: `agent.requestPermissions()` (origin-level scopes)
 

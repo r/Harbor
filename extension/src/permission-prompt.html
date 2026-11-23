@@ -81,8 +81,6 @@
     .section-title {
       font-size: var(--text-xs);
       font-weight: var(--weight-semibold);
-      text-transform: uppercase;
-      letter-spacing: var(--tracking-wide);
       margin-bottom: var(--space-2);
       color: var(--color-text-muted);
     }
@@ -109,7 +107,8 @@
     }
 
     .scope-icon {
-      font-size: var(--text-base);
+      display: inline-flex;
+      color: var(--color-accent-primary);
     }
 
     .scope-title {
@@ -129,8 +128,6 @@
       padding: 2px 6px;
       border-radius: var(--radius-sm);
       font-weight: var(--weight-semibold);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
     }
 
     .risk-low {
@@ -284,22 +281,20 @@
       padding: 2px 8px;
       border-radius: var(--radius-sm);
       font-weight: var(--weight-medium);
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
     }
 
     .session-badge.llm {
-      background: rgba(99, 102, 241, 0.15);
+      background: var(--color-accent-primary-subtle);
       color: var(--color-accent-primary);
     }
 
     .session-badge.tools {
-      background: rgba(234, 179, 8, 0.15);
+      background: var(--color-warning-subtle);
       color: var(--color-warning);
     }
 
     .session-badge.browser {
-      background: rgba(16, 185, 129, 0.15);
+      background: var(--color-success-subtle);
       color: var(--color-success);
     }
 

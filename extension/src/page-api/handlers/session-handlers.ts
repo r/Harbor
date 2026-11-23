@@ -9,6 +9,7 @@ import type { PermissionScope, CreateSessionOptions, SessionSummary } from '../t
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
 import { hasPermission, getPermissions } from './permission-handlers';
+import { policyRefusalCode } from '../policy-refusal';
 import { registerExplicitTextSession, endExplicitTextSession, AGENT_CHANGED_MESSAGE } from './ai-handlers';
 import { acpBackendChangeSignal } from '../acp-backend-generation';
 import { readAgentBackendSetting } from '../agent-backend-setting';
@@ -121,9 +122,11 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
       capabilities: result.capabilities,
     });
   } catch (e) {
+    // Keep the policy engine's code (a deny rule, a quarantine, a declined
+    // prompt), as every other page handler does.
     return errorResponse(
       ctx.id,
-      'ERR_INTERNAL',
+      policyRefusalCode(e) ?? 'ERR_INTERNAL',
       e instanceof Error ? e.message : 'Session creation failed'
     );
   }

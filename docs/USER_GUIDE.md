@@ -25,15 +25,15 @@ Harbor is a browser extension that implements the **Web Agent API** — a propos
 
 ## Installation and First-Time Setup
 
-Follow **[the canonical Quickstart](../QUICKSTART.md)** for requirements, installation, model configuration, permissions and demo verification. It covers all browsers and explicitly adds and tests a default model under **LLM Providers → Configured Models** before the first agent run.
+Follow **[the canonical Quickstart](../QUICKSTART.md)** for requirements, installation, model configuration, permissions and demo verification. It covers all browsers and explicitly adds and tests a default model under **Settings → Harbor's built-in model → Model** before the first agent run.
 
 Once setup is verified, continue here for everyday use and server management.
 
 ### Bring your own agent (optional)
 
-The sidebar's **Agent** panel, next to LLM Providers, lets you run sites on an agent you already use instead of Harbor's built-in model: pick a preset (goose, Claude Code, Codex) or add a custom command line, then select it under "Run sites on." Harbor starts the agent without your shell environment, so give its tools their own keys in the agent's own settings — each preset links to its own settings docs for that. Press "Check" to confirm the agent starts; it reports "Ready (\<agent name\> vN)" using the name you gave it here, not whatever package name the agent itself reports. A site still asks for the same permissions either way; selecting an agent only changes who answers.
+The sidebar's welcome card names the agent sites run on. **Settings → Your agent** (also reached with **Change** on that card) lets you run sites on an agent you already use instead of Harbor's built-in model: pick a preset (goose, Claude Code, Codex) or add a custom command line, then select it under "Run sites on." Harbor starts the agent without your shell environment, so give its tools their own keys in the agent's own settings — each preset links to its own settings docs for that. Press "Check" to confirm the agent starts; it reports "Ready (\<agent name\> vN)" using the name you gave it here, not whatever package name the agent itself reports. A site still asks for the same permissions either way; selecting an agent only changes who answers.
 
-Once you've selected an agent, everything a site asks of a model goes to it, including a site's own chat (the kind opened with `agent.chat.open`, as in [Bring Your Own Chatbot](../demo/web-agents/bring-your-chatbot/)). Nothing uses Harbor's built-in model then, so the **LLM Providers** panel is hidden. Selecting Harbor's built-in model again brings it back. Switching ends any conversation a site had open, so the site starts a new one on whatever you picked.
+Once you've selected an agent, everything a site asks of a model goes to it, including a site's own chat (the kind opened with `agent.chat.open`, as in [Bring Your Own Chatbot](../demo/web-agents/bring-your-chatbot/)). Nothing uses Harbor's built-in model then, so Settings hides the **Harbor's built-in model** group (Model, Tools and App credentials). Selecting Harbor's built-in model again brings it back. Switching ends any conversation a site had open, so the site starts a new one on whatever you picked.
 
 ### Install Your First MCP Server
 

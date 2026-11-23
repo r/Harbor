@@ -19,37 +19,6 @@ import { browserAPI } from './browser-compat';
 import { optionLabel } from './agent-question-label';
 
 // =============================================================================
-// Theme (kept in sync with the sidebar, same as permission-prompt.ts, but
-// duplicated rather than shared — these two pages are deliberately separate).
-// =============================================================================
-
-type Theme = 'light' | 'dark' | 'system';
-
-function getSystemTheme(): 'light' | 'dark' {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function applyTheme(theme: Theme): void {
-  document.documentElement.setAttribute('data-theme', theme === 'system' ? getSystemTheme() : theme);
-}
-
-function initTheme(): void {
-  const saved = localStorage.getItem('harbor-theme') as Theme | null;
-  applyTheme(saved || 'system');
-
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const current = localStorage.getItem('harbor-theme') as Theme | null;
-    if (current === 'system' || !current) applyTheme('system');
-  });
-
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'harbor-theme' && e.newValue) applyTheme(e.newValue as Theme);
-  });
-}
-
-initTheme();
-
-// =============================================================================
 // The question
 // =============================================================================
 
