@@ -12,14 +12,23 @@
  *   Tier 2  Sensitivity gate  (attaches labels, may force preview)
  *   Tier 3  Information-flow check  (label set vs destination's accepts)
  *   Tier 4  Watchdog containment    (per-session anomaly response)
- *   Tier 6  Policy allow rule       (managed → user → origin-grant)
- *   Tier 7  Policy ask rule         (managed → user → origin-grant)
+ *   Tier 6  Policy rule, ends in allow     (most cautious match; managed → user)
+ *   Tier 7  Policy rule, any other effect  (most cautious match; managed → user)
  *   Tier 8  Per-origin grant        (Allow always / once / deny)
  *   Tier 9  Default for action's effect
  *
  * Tier 5 was the capability-token check. No caller ever passed a token to
  * it, so tokens were removed; the ladder goes from Tier 4 to Tier 6 and the
  * other tier numbers are unchanged.
+ *
+ * Tiers 6 and 7: within one source's rules (managed, then user), every
+ * rule that matches the request is considered, and the most cautious
+ * effect wins — deny > preview > ask > allow. The first source with any
+ * matching rule decides; a narrower allow in a later source can't carve
+ * an exception out of a broader deny in an earlier one. See
+ * `mostCautiousMatch` below and `docs/PERMISSIONS.md`'s precedence
+ * paragraph. Per-origin grants (Tier 8) are a separate, single-outcome
+ * resolver and aren't part of this document-rule lookup.
  *
  * Tiers 1–4 are the safety floor: they always run, and a higher-tier
  * `allow` cannot defeat a lower-tier `deny` from this band. That is the
@@ -228,14 +237,15 @@ function defaultEffectForAction(meta: ActionMeta): DecisionEffect {
  * "Higher" effect on the safety scale (more cautious wins).
  * deny > preview > ask > allow
  */
+const EFFECT_RANK: Record<DecisionEffect, number> = {
+  allow: 0,
+  ask: 1,
+  preview: 2,
+  deny: 3,
+};
+
 function moreCautious(a: DecisionEffect, b: DecisionEffect): DecisionEffect {
-  const rank: Record<DecisionEffect, number> = {
-    allow: 0,
-    ask: 1,
-    preview: 2,
-    deny: 3,
-  };
-  return rank[a] >= rank[b] ? a : b;
+  return EFFECT_RANK[a] >= EFFECT_RANK[b] ? a : b;
 }
 
 function ruleEffectToDecision(effect: RuleEffect): DecisionEffect {
@@ -438,15 +448,20 @@ export async function evaluate(req: PolicyRequest): Promise<PolicyDecision> {
     });
   }
 
-  // Tier 6 + 7: Find the first matching policy rule (managed and user
-  // sources are already merged in priority order by the store).
+  // Tier 6 + 7: within a source's rules, every matching rule is considered
+  // and the most cautious effect wins. The first source with any matching
+  // rule decides: managed, then user.
   const matchInput = toMatchInput(req, meta, {
     trustedManifest: manifestTrusted,
     labels: labelsAfterTier2,
   });
-  const rule = findFirstRule(Policy.rules(), matchInput);
-  if (rule) {
-    const effect = applyForcedMin(ruleEffectToDecision(rule.effect), forcedMin);
+  const allRules = Policy.rules();
+  const match =
+    mostCautiousMatch(allRules, 'managed', matchInput) ??
+    mostCautiousMatch(allRules, 'user', matchInput);
+  if (match) {
+    const { rule, effect: ruleDecisionEffect } = match;
+    const effect = applyForcedMin(ruleDecisionEffect, forcedMin);
     const tier = effect === 'allow' ? 6 : 7;
     trace.push({
       tier: tier as 6 | 7,
@@ -573,11 +588,29 @@ async function checkRulesByEffect(
   return null;
 }
 
-function findFirstRule(rules: readonly CompiledRule[], input: RuleMatchInput): CompiledRule | null {
+/**
+ * Among one source's compiled rules, find every rule that matches the
+ * request and return the most cautious effect (deny > preview > ask >
+ * allow). Ties keep the first rule in the source's own order — the order
+ * `compileDocument` produced: short-form `deny`, `ask`, `preview`,
+ * `allow`, then typed `rules` in document order — so a rule's id stays
+ * deterministic across loads.
+ */
+function mostCautiousMatch(
+  rules: readonly CompiledRule[],
+  source: 'managed' | 'user',
+  input: RuleMatchInput,
+): { rule: CompiledRule; effect: DecisionEffect } | null {
+  let best: { rule: CompiledRule; effect: DecisionEffect } | null = null;
   for (const rule of rules) {
-    if (ruleMatches(rule, input)) return rule;
+    if ((rule.source ?? 'user') !== source) continue;
+    if (!ruleMatches(rule, input)) continue;
+    const effect = ruleEffectToDecision(rule.effect);
+    if (!best || EFFECT_RANK[effect] > EFFECT_RANK[best.effect]) {
+      best = { rule, effect };
+    }
   }
-  return null;
+  return best;
 }
 
 function finalize(

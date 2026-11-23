@@ -1,22 +1,24 @@
 /**
  * Policy Store
  *
- * Loads and merges declarative policy documents from up to three sources:
+ * Loads and merges declarative policy documents from up to two sources:
  *
  *   1. **Managed** — `browser.storage.managed`, populated by an enterprise
  *      admin via Firefox `policies.json` or Chrome's enterprise policies.
  *      Highest precedence; cannot be overridden by the user.
  *   2. **User** — `browser.storage.local` under `harbor_policy_v2`,
  *      authored via the sidebar editor or imported as JSON.
- *   3. **Origin grants** (legacy "Allow always / once / deny" decisions).
- *      Lowest precedence. Compiled from `origin-grants.ts` into typed
- *      rules on load.
  *
- * The merge order is the same as the precedence order: managed first,
- * user second, origin grants third. The PolicyEngine evaluates rules
- * top-down within and across sources; the first match wins.
+ * `rules()` returns only these two sources' compiled rules, managed first.
+ * Per-origin grants ("Allow always / once / deny" decisions) are lowest
+ * precedence, but aren't part of this list: they're resolved separately,
+ * by the engine's Tier 8 `OriginGrantResolver` (`origin-grants.ts`), as a
+ * single allow/deny/no-opinion outcome rather than a set of rules.
  *
- * See `docs/PERMISSIONS.md` (Part 1: How it works → "The policy file").
+ * Within each source, the PolicyEngine (`engine.ts`) considers every rule
+ * that matches a request and takes the most cautious effect; the first
+ * source with any matching rule decides. See `docs/PERMISSIONS.md` (Part
+ * 1: How it works → "The policy file").
  */
 
 import { browserAPI } from '../browser-compat';
@@ -120,7 +122,7 @@ export async function saveUserPolicy(doc: PolicyDocument): Promise<void> {
 function compileShorthand(
   entry: string | Rule,
   effect: RuleEffect,
-  source: 'managed' | 'user' | 'originGrant',
+  source: 'managed' | 'user',
   index: number,
 ): Rule | null {
   if (typeof entry === 'string') {
@@ -152,13 +154,16 @@ function compileShorthand(
  *   4. `allow` array
  *   5. Explicit `rules` array (in document order)
  *
- * The convenience arrays come first because they're the most common case
- * for site-author quick-fix rules. Explicit `rules` come last so they can
- * override the broader policy patterns.
+ * The engine (`engine.ts`) considers every rule that matches a request and
+ * takes the most cautious effect, so this order no longer decides which
+ * rule "wins" when two matching rules disagree — a narrow `allow` later in
+ * the list still loses to an earlier, broader `deny`. It only breaks a tie
+ * between two matching rules of the *same* effect, keeping the first one
+ * in this order, so a rule's id is deterministic across loads.
  */
 function compileDocument(
   doc: PolicyDocument,
-  source: 'managed' | 'user' | 'originGrant',
+  source: 'managed' | 'user',
 ): CompiledRule[] {
   const rules: Rule[] = [];
 
@@ -217,9 +222,9 @@ class PolicyStore {
   private listeners = new Set<() => void>();
 
   /**
-   * Load (or reload) policy from disk. Origin-grant rules are appended
-   * separately by `appendOriginGrantRules` because they're computed
-   * dynamically from the origin-grant store.
+   * Load (or reload) policy from disk. Per-origin grants aren't loaded
+   * here: they're resolved separately, at request time, by the engine's
+   * Tier 8 `OriginGrantResolver` (see `origin-grants.ts`).
    */
   async load(): Promise<void> {
     const [managed, user] = await Promise.all([loadManaged(), loadUser()]);

@@ -5,7 +5,6 @@ import {
   type RuleMatchInput,
   compileRule,
   ruleMatches,
-  findFirstMatchingRule,
   globToRegExp,
   parseDSLString,
 } from '../rules';
@@ -231,25 +230,6 @@ describe('Rule matching', () => {
     expect(ruleMatches(legacy('plan'), githubInput)).toBe(false);
     expect(ruleMatches(legacy('watch'), githubInput)).toBe(false);
     expect(ruleMatches(legacy('execute'), githubInput)).toBe(true);
-  });
-});
-
-describe('findFirstMatchingRule', () => {
-  it('returns the first matching rule by order', () => {
-    const r1 = compile({ id: 'a', effect: 'deny', principal: { origin: '*' }, action: 'tool.call' });
-    const r2 = compile({ id: 'b', effect: 'allow', principal: { origin: '*' }, action: 'tool.call' });
-    const found = findFirstMatchingRule([r1, r2], githubInput);
-    expect(found?.id).toBe('a');
-  });
-
-  it('returns null when nothing matches', () => {
-    const r1 = compile({
-      id: 'a',
-      effect: 'deny',
-      principal: { origin: 'https://other.com' },
-      action: 'tool.call',
-    });
-    expect(findFirstMatchingRule([r1], githubInput)).toBeNull();
   });
 });
 
