@@ -15,6 +15,7 @@ import { initializeExtensionApi } from './extension-api';
 import { initializeRouter } from './agents/background-router';
 import { initializeHandlers } from './handlers';
 import { initializePageApi } from './page-api/background';
+import { initializeAgentTabs } from './handlers/agent-tabs-handlers';
 
 console.log(`[Harbor] Extension starting on ${getBrowserName()}...`);
 console.log('[Harbor] Browser features:', getFeatureSummary());
@@ -51,6 +52,7 @@ initializeMcpHost();
 initializeExtensionApi();
 initializeRouter();
 initializePageApi();
+initializeAgentTabs();
 cleanupExpiredGrants();
 
 // Register all message handlers

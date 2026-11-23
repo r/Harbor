@@ -70,3 +70,22 @@ describe("the bridge's page-tools endpoint", () => {
     spy.mockRestore();
   });
 });
+
+describe('the bridge relaying an outside agent (agent_tabs.request)', () => {
+  const req = (context?: { origin?: string }) => ({
+    type: 'host_request', id: '1', method: 'agent_tabs.request',
+    params: { agentId: 'a1', agentName: 'goose', op: 'list_pages', params: {} }, context,
+  }) as never;
+
+  it('is refused unless it comes from the bridge relay', async () => {
+    for (const context of [undefined, {}, { origin: 'harbor-extension' }, { origin: 'harbor-bridge-page-tools' }, { origin: 'https://tale.example' }]) {
+      await expect(handleHostRequest(req(context))).rejects.toThrow();
+    }
+  });
+
+  it('answers from the bridge relay, and every op is refused while the setting is off (the default)', async () => {
+    const result = await handleHostRequest(req({ origin: 'harbor-bridge-agent-tabs' })) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/Agents outside the browser/);
+  });
+});
