@@ -134,6 +134,15 @@ describe('agent.requestCapabilities with optional capabilities', () => {
     expect(created(requests)).toEqual({ tools: ['github/*'], browser: [] });
   });
 
+  it('asks only for screenshot access for a screenshot, which is the one grant a screenshot needs', async () => {
+    const { agent, requests } = loadPage(harborHolding({ 'browser:activeTab.screenshot': 'granted-always' }));
+    await agent.requestCapabilities({
+      require: [{ action: 'browser.read.screenshot' }],
+      optional: [{ action: 'browser.read.screenshot' }],
+    });
+    expect(created(requests).browser).toEqual(['screenshot']);
+  });
+
   it("doesn't look up grants when nothing is optional", async () => {
     const { agent, requests } = loadPage(harborHolding({}));
     await agent.requestCapabilities({ require: [{ action: 'model.prompt.local' }] });

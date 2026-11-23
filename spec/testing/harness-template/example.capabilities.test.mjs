@@ -119,3 +119,15 @@ describe('requestCapabilities checks grants before policy, as Harbor does', () =
       .rejects.toMatchObject({ code: 'ERR_QUARANTINED' });
   });
 });
+
+describe('screenshots in the mock', () => {
+  let mock;
+  beforeEach(() => { mock = installWebAgentsMock(globalThis); });
+  afterEach(() => { mock.uninstall(); });
+
+  it('makes a screenshot session from the screenshot grant alone', async () => {
+    mock.permissions.grantScopes(['browser:activeTab.screenshot']);
+    const session = await globalThis.agent.requestCapabilities({ require: [{ action: 'browser.read.screenshot' }] });
+    expect(session.capabilities.browser).toEqual({ readActiveTab: false, interact: false, screenshot: true });
+  });
+});
