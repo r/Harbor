@@ -19,6 +19,18 @@ import type { TypedAction } from '../policy/actions';
 import { routeAgentMessage } from '../agents/background-router';
 import { forgetTabAgents } from '../agents/handlers/multi-agent';
 import { forgetTabServers, forgetTabServersIfOriginChanged, listSiteServersForAcp as listSiteServersForAcpImpl, type SiteMcpServerDescriptor } from '../mcp/site-servers';
+// The page's own tools (document.modelContext), relayed to its port: see
+// docs/PAGE_TOOLS_FOR_AGENTS.md.
+export {
+  syncPageTools,
+  resolvePageToolResult,
+  forgetPageToolsForConnection,
+  forgetPageToolsInTab,
+  listPageTools,
+  callPageTool,
+  pageToolServerId,
+  type PageToolDescriptor,
+} from '../mcp/page-tools';
 import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
