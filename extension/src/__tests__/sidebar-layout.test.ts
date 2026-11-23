@@ -68,6 +68,31 @@ describe('sidebar layout', () => {
     ]);
   });
 
+  it('hides the whole built-in model group, not just the model, while sites run on your own agent', () => {
+    inOrder(['builtin-model-group', 'llm-panel', 'servers-panel', 'oauth-panel', 'developer-panel']);
+    expect(ts).toMatch(/builtinModelGroup\.hidden = selectedAgentId !== null/);
+  });
+
+  it('keeps the bridge, reload and tool tester inside Developer, each as its own section', () => {
+    const developer = html.slice(at('developer-panel'), html.indexOf('</section>', at('tool-tester-panel')));
+    for (const id of ['setup-status-panel', 'open-debugging-link', 'reload-extension-btn', 'tool-tester-panel']) {
+      expect(developer, id).toContain(`id="${id}"`);
+    }
+    inOrder(['setup-status-panel', 'reload-panel', 'reload-extension-btn', 'tool-tester-panel']);
+    expect(tag('reload-panel')).toMatch(/class="panel"/);
+  });
+
+  it('opens Settings from the Settings row and from Change, and comes back from Back', () => {
+    expect(ts).toMatch(/getElementById\('open-settings'\)[^\n]*showView\('settings'\)/);
+    expect(ts).toMatch(/getElementById\('welcome-change-agent'\)[^\n]*showView\('settings'\)/);
+    expect(ts).toMatch(/getElementById\('settings-back'\)[^\n]*showView\('main'\)/);
+  });
+
+  it('names no protocols in what people read or hover', () => {
+    const body = html.slice(html.indexOf('<body')).replace(/<!--[\s\S]*?-->/g, '');
+    expect(body).not.toMatch(/\b(MCP|ACP|OAuth)\b/);
+  });
+
   it('calls the built-in model\'s section "Model", not "LLM Providers"', () => {
     expect(html).not.toContain('LLM Providers');
     expect(html.slice(at('llm-panel'), at('servers-panel'))).toMatch(/>Model</);

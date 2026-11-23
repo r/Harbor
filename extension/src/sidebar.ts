@@ -2039,7 +2039,7 @@ function renderOAuthProviders(providers: Record<string, { configured: boolean; c
     btn.addEventListener('click', async () => {
       const provider = (btn as HTMLElement).dataset.provider;
       if (!provider) return;
-      if (!confirm(`Remove ${provider} OAuth credentials?`)) return;
+      if (!confirm(`Remove your ${provider} sign-in details?`)) return;
       
       (btn as HTMLButtonElement).disabled = true;
       try {

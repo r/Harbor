@@ -1303,8 +1303,8 @@
           </div>
           <div class="panel-header-right">
             <button class="btn btn-ghost btn-sm" id="open-directory-btn" title="Browse tools you can install"><i data-icon="book-open"></i> Directory</button>
-            <button class="btn btn-secondary btn-sm" id="add-remote" title="Add remote MCP server (SSE/WebSocket)">+ Remote</button>
-            <button class="btn btn-secondary btn-sm" id="add" title="Load MCP server (.json manifest or .wasm)">+ File</button>
+            <button class="btn btn-secondary btn-sm" id="add-remote" title="Add a tool server by its address">+ Remote</button>
+            <button class="btn btn-secondary btn-sm" id="add" title="Load a tool server from a file (.json manifest or .wasm)">+ File</button>
             <input id="file" type="file" accept=".wasm,.json" hidden />
           </div>
         </div>
@@ -1321,7 +1321,7 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="remote-server-name">Name</label>
-              <input type="text" class="form-input" id="remote-server-name" placeholder="My MCP Server" />
+              <input type="text" class="form-input" id="remote-server-name" placeholder="My tool server" />
             </div>
             <div class="form-group">
               <label class="form-label" for="remote-server-transport">Transport</label>
@@ -1335,7 +1335,7 @@
               <input type="text" class="form-input" id="remote-server-auth" placeholder="Bearer your-token" />
             </div>
             <div class="form-hint" style="margin-bottom: var(--space-2);">
-              Enter the URL of an MCP server that supports SSE or WebSocket transport.
+              Enter the address of a tool server that supports SSE or WebSocket.
             </div>
             <div class="form-actions">
               <button class="btn btn-secondary btn-sm" id="remote-server-test">Test connection</button>
@@ -1412,7 +1412,7 @@
         </div>
       </div>
 
-        <div class="panel-body">
+        <div class="panel" id="reload-panel">
           <button class="btn btn-secondary btn-sm" id="reload-extension-btn" type="button"><i data-icon="rotate-cw"></i> Reload Harbor</button>
         </div>
 
