@@ -92,9 +92,18 @@
       .welcome-sea {
         position: absolute;
         top: 6px;
-        right: -4px;
-        width: 150px;
+        left: 0;
+        width: 100%;
         height: 64px;
+      }
+      .welcome-sun {
+        position: absolute;
+        top: 26px;
+        right: 22px;
+        width: 20px;
+        height: 20px;
+        border-radius: var(--radius-full);
+        background: var(--color-action);
       }
       .welcome h1 {
         position: relative;
@@ -1026,7 +1035,8 @@
       </div>
 
       <section class="welcome" id="welcome-card">
-        <svg class="welcome-sea" viewBox="0 0 150 64" aria-hidden="true" focusable="false"><defs><radialGradient id="welcome-sea-fade" cx="0.8" cy="0.55" r="0.75"><stop offset="0.35" stop-color="#fff"/><stop offset="1" stop-color="#000"/></radialGradient><mask id="welcome-sea-mask"><rect width="150" height="64" fill="url(#welcome-sea-fade)"/></mask></defs><circle cx="118" cy="30" r="10" fill="var(--color-action)"/><g mask="url(#welcome-sea-mask)" fill="var(--color-accent-primary)"><path d="M0 44 Q19 38 38 44 T75 44 T113 44 T150 44 V64 H0Z" opacity=".2"/><path d="M0 52 Q19 46 38 52 T75 52 T113 52 T150 52 V64 H0Z" opacity=".3"/></g></svg>
+        <svg class="welcome-sea" viewBox="0 0 360 64" preserveAspectRatio="none" aria-hidden="true" focusable="false"><defs><linearGradient id="welcome-sea-fade" x1="0" x2="0" y1="0" y2="1"><stop offset="0.5" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient><mask id="welcome-sea-mask"><rect width="360" height="64" fill="url(#welcome-sea-fade)"/></mask></defs><g mask="url(#welcome-sea-mask)" fill="var(--color-accent-primary)"><path d="M0 44 Q22.5 38 45 44 T90 44 T135 44 T180 44 T225 44 T270 44 T315 44 T360 44 V64 H0Z" opacity=".16"/><path d="M0 52 Q22.5 46 45 52 T90 52 T135 52 T180 52 T225 52 T270 52 T315 52 T360 52 V64 H0Z" opacity=".26"/></g></svg>
+        <span class="welcome-sun" aria-hidden="true"></span>
         <h1 id="welcome-title">Calm seas today</h1>
         <p>I'll keep watch while you browse, and check with you before a site asks for more.</p>
         <div class="welcome-agent">
