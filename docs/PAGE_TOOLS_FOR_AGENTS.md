@@ -20,7 +20,12 @@ URL. Their handlers can only run in the page.
 
 - **Surface.** The calling page's tools go to the agent work that page starts:
   `agent.run()` and `agent.chat.open()`. `window.ai` text sessions stay
-  tool-less. There's no new sidebar chat.
+  tool-less. This is a deliberate v1 cut. Harbor has no chat the person
+  starts: the sidebar's Agent panel only picks and configures the agent.
+  Building one is its own subsystem (UI, session lifetime, consent copy) and
+  is tracked separately. A site that wants a reader to ask about the page
+  feature-detects Harbor and offers its own control that calls
+  `agent.chat.open()`. Without Harbor, it shows nothing.
 - **Which tab.** The tab that started the run or chat. It stays fixed when the
   person switches tabs. Tools from other tabs are never offered.
 - **ACP transport.** The bridge hosts a per-session MCP endpoint on
@@ -78,9 +83,14 @@ tab's list.
 **Lifetime.** A tab's entry is dropped when:
 
 - the tab closes (`tabs.onRemoved`);
-- the tab navigates, same-origin included, because the handlers die with the
-  document. This uses the same navigation hook that drops site servers and
-  page chats.
+- the document goes away (a reload, a real navigation, same-origin included),
+  because the handlers die with it. This is detected by the page's port
+  disconnecting, the signal page chats use (`handlers/page-chat-handlers.ts`),
+  **not** `tabs.onUpdated`'s `url` field, which site servers use. That field
+  also fires for same-document hash and `pushState`/`replaceState` changes,
+  which aren't navigations. A site that updates its address as the person
+  reads would otherwise lose its tools mid-session. Tests cover a hash change
+  and a `pushState` keeping the tools.
 
 Each drop bumps the generation number. Calls carry the generation they
 started under, so a result from an old document is never delivered as one
@@ -88,23 +98,26 @@ from a new document.
 
 ## 2. Gate
 
-Page tools use the gate site servers use (`harbor-core.ts`). At session
-start (list):
+Page tools need **no grant of their own**. Site servers need
+`mcp:tools.list` and `mcp:tools.call`, but those grants also let a page list
+and call the person's installed MCP servers. Asking for them just so a page
+can offer its own functions would over-ask, and the prompt would describe the
+wrong thing. A page offering its own tools gains no reach it didn't already
+have: it already writes the task text, and tool output is treated as untrusted
+(§4). So page tools ride on the grant the page already needs to start
+`agent.run` or `agent.chat.open()`.
 
-1. The origin holds `mcp:tools.list` and `mcp:tools.call`.
-2. The policy engine allows `tool.list` for the `page:<host>` server.
-
-If either fails, no page tools are offered (for ACP, no endpoint is opened),
-and the refusal is written to the audit log with the reason.
+At session start (list), the policy engine must allow `tool.list` for the
+`page:<host>` server. If it doesn't, no page tools are offered (for ACP, no
+endpoint is opened), and the refusal is written to the audit log.
 
 At each call:
 
-1. The grants are checked again, since they may have been revoked mid-session.
-2. The site's tool allowlist names the tool, when the site has one.
-3. The policy engine allows `tool.call`.
-4. The session's tool budget has room. A refused call spends no budget,
+1. The site's tool allowlist names the tool, when the site has one.
+2. The policy engine allows `tool.call` for `page:<host>`.
+3. The session's tool budget has room. A refused call spends no budget,
    which matches the existing rule.
-5. The audit log records the call and its outcome.
+4. The audit log records the call and its outcome.
 
 **Names.** The person sees where a tool came from:
 
@@ -146,7 +159,8 @@ A tool result is page content, like a browser capture:
 - the built-in agent gets it as a tool-result message, never as system or
   developer content, with no extra framing that would raise its authority;
 - an ACP agent gets it as MCP `content: [{ type: 'text', text }]`; non-string
-  results are JSON-stringified;
+  results are JSON-stringified into `text` and also sent as
+  `structuredContent` when the result is a plain object;
 - Harbor never puts page-tool output into the "working for you" preamble or
   any other Harbor-authored text.
 
@@ -155,7 +169,11 @@ A tool result is page content, like a browser capture:
 **Lifetime.** The endpoint is per ACP session:
 
 - the background asks the bridge to open one (`page_tools.open`) just before
-  `session/new`, and only if the gate passed, the tab has at least one tool,
+  `session/new`. A page-started run first waits for any `page_tools.sync` the
+  page has already queued, so tools registered just before the call aren't
+  missed. The page flushes its debounced sync before sending `agent.run` or
+  `chat.open`.
+  The endpoint is opened only if the gate passed, the tab has at least one tool,
   and the agent's `initialize` reply declares `mcpCapabilities.http`;
 - it closes the endpoint when the session ends, the run is cancelled, or the
   page chat closes. Dropping the tab's tools closes it too.
