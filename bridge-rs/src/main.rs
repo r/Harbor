@@ -6,6 +6,7 @@ mod llm;
 mod mcp;
 mod native_messaging;
 mod oauth;
+mod page_tools;
 mod paths;
 mod rpc;
 
