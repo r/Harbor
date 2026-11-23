@@ -186,7 +186,12 @@ try {
 
   // --- Select Claude Code as the agent backend, in Settings -> Your agent.
   await sval(`document.getElementById('open-settings').click(); true`);
-  await sleep(300);
+  // The agent list loads from the bridge after the sidebar opens; wait for it.
+  for (let waited = 0; waited < 15_000; waited += 250) {
+    const ready = await sval(`Array.from(document.getElementById('agent-backend-select').options).some(o => o.value === 'claude-code')`);
+    if (ready === true) break;
+    await sleep(250);
+  }
   await sval(`
     (() => {
       const select = document.getElementById('agent-backend-select');
