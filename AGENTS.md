@@ -15,7 +15,7 @@ This file provides guidance for AI coding assistants working on the Harbor codeb
 Harbor ships as **one extension** (`extension/dist-firefox/`):
 
 - Background service for LLM providers, MCP servers, native bridge
-- Injects `window.ai`, `window.agent` and `navigator.modelContext` into web pages (`extension/src/page-api/`)
+- Injects `window.ai`, `window.agent` and `document.modelContext` into web pages (`extension/src/page-api/`)
 
 That one extension must be loaded for demos and tests to work properly.
 

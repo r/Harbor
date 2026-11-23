@@ -220,7 +220,7 @@ const result = await window.agent.tools.call({
 });
 ```
 
-Page-defined tools (via `navigator.modelContext`) appear with `serverId: 'page'` and a `page/` prefix.
+Page-defined tools (via `document.modelContext`) appear with `serverId: 'page'` and a `page/` prefix.
 
 ---
 
@@ -630,7 +630,7 @@ async function getAIResponse(prompt) {
 
 ```
 extension/src/page-api/
-├── injected.ts            # window.ai/agent/navigator.modelContext (this doc's source of truth)
+├── injected.ts            # window.ai/agent/document.modelContext (this doc's source of truth)
 ├── content-script.ts      # Page ↔ background relay
 ├── background.ts          # Port listener; origin from the connecting port's sender
 ├── harbor-core.ts         # In-process call into the rest of Harbor

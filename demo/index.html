@@ -162,7 +162,7 @@
       <h1 class="demo-title">Web Agent API <span class="demo-text-gradient">Demos</span></h1>
       <p class="demo-subtitle">
         Choose your LLM. Choose your MCP servers. Choose your tools.
-        The Web Agent API (<code>window.ai</code>, <code>window.agent</code>, <code>navigator.modelContext</code>)
+        The Web Agent API (<code>window.ai</code>, <code>window.agent</code>, <code>document.modelContext</code>)
         gives you the building blocks &mdash; every integration decision is yours.
       </p>
     </header>
@@ -350,13 +350,13 @@
     <div class="extension-note">
       <strong>Note:</strong> These demos require a Web Agent API implementation (like Harbor) to be installed.
       You choose the LLM backend (Ollama, llamafile, cloud providers) and which MCP servers to connect.
-      The implementation provides <code>window.ai</code>, <code>window.agent</code>, and <code>navigator.modelContext</code>.
+      The implementation provides <code>window.ai</code>, <code>window.agent</code>, and <code>document.modelContext</code>.
     </div>
 
     <div class="build-with-ai-note" style="margin-top: var(--demo-space-6); padding: var(--demo-space-5); background: linear-gradient(135deg, var(--demo-bg-surface) 0%, color-mix(in srgb, var(--demo-accent-primary) 8%, transparent) 100%); border: 1px solid var(--demo-border-default); border-radius: var(--demo-radius-lg); font-size: var(--demo-text-sm);">
       <strong style="color: var(--demo-text-primary);">Aligned with the W3C WebMCP proposal</strong>
       <p style="margin: var(--demo-space-2) 0 0; color: var(--demo-text-secondary);">
-        Harbor implements <code>navigator.modelContext</code> from the
+        Harbor implements <code>document.modelContext</code> from the
         <a href="https://github.com/webmachinelearning/webmcp" style="color: var(--demo-accent-primary); font-weight: 600;">W3C WebMCP proposal</a>
         &mdash; the emerging standard for pages to register JavaScript tools that AI agents can call.
         Same API shape proposed by Google and Microsoft, available today.

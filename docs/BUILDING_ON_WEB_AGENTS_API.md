@@ -2,11 +2,11 @@
 
 **Use this document in another project** when you want to build on the Web Agent API. Copy it into your repo (e.g. `docs/` or `.cursor/`) and point your AI assistant at it so it has clear examples, API surface, and capabilities.
 
-The Web Agent API is provided by **Harbor**: a single browser extension that injects `window.ai`, `window.agent`, and `navigator.modelContext` into web pages. Your app runs in the browser and calls these APIs; you do **not** need to clone or build Harbor itself. For the full vision and proposal, see the [whitepaper (PDF)](../whitepaper.pdf).
+The Web Agent API is provided by **Harbor**: a single browser extension that injects `window.ai`, `window.agent`, and `document.modelContext` into web pages. Your app runs in the browser and calls these APIs; you do **not** need to clone or build Harbor itself. For the full vision and proposal, see the [whitepaper (PDF)](../whitepaper.pdf).
 
 **The core idea: you choose everything.** Choose the LLM (Ollama, llamafile, OpenAI, Anthropic — whatever the user has configured). Choose the MCP servers (Brave Search, GitHub, filesystem, or your own). Choose the integration style (manual tool calls, autonomous agents, or page-registered tools). The API gives you building blocks, not opinions.
 
-**Standards-aligned.** Harbor implements `navigator.modelContext` from the [W3C WebMCP proposal](https://github.com/webmachinelearning/webmcp) — the emerging standard (incubating at the W3C Web Machine Learning CG, published by engineers at Google and Microsoft) for pages to register client-side JavaScript tools that AI agents can call. Same API shape the standards track is converging on, available today.
+**Standards-aligned.** Harbor implements `document.modelContext` from the [W3C WebMCP proposal](https://github.com/webmachinelearning/webmcp) — the emerging standard (incubating at the W3C Web Machine Learning CG, published by engineers at Google and Microsoft) for pages to register client-side JavaScript tools that AI agents can call. Same API shape the standards track is converging on, available today.
 
 ---
 
@@ -222,7 +222,7 @@ const result = await window.agent.tools.call({
 
 ## document.modelContext — page tools (WebMCP)
 
-Register your own JavaScript functions as tools the AI can call. This implements `registerTool()` from the [W3C WebMCP draft](https://webmachinelearning.github.io/webmcp/). The draft puts `modelContext` on `document`. Harbor exposes the same object as `navigator.modelContext` too, and keeps `addTool()`/`removeTool()` as older aliases.
+Register your own JavaScript functions as tools the AI can call. This implements `registerTool()` from the [W3C WebMCP draft](https://webmachinelearning.github.io/webmcp/). The draft puts `modelContext` on `document`. `navigator.modelContext` is the same object, kept as Harbor's older name; `addTool`/`removeTool` are older aliases of `registerTool` and of aborting its signal. Both keep working.
 
 ```javascript
 // Register a page tool. It runs in page context, so no server is needed.

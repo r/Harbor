@@ -74,7 +74,7 @@ The developer **chooses** what to build:
 - Which tools to integrate (search, files, your own custom tools)
 - How much autonomy the AI gets (manual tool calls vs. autonomous `agent.run()`)
 - Which provider/model to request (or defer to the user's default)
-- What page tools to expose via `navigator.modelContext`
+- What page tools to expose via `document.modelContext`
 
 The developer doesn't need to manage:
 - API keys or authentication
@@ -150,14 +150,16 @@ for await (const event of window.agent.run({
 }
 ```
 
-**`navigator.modelContext`** — Register your own tools (W3C WebMCP). Choose what capabilities your page provides to the AI.
+**`document.modelContext`** — Register your own tools (W3C WebMCP). Choose what capabilities your page provides to the AI.
 ```javascript
-navigator.modelContext.addTool({
+await document.modelContext.registerTool({
   name: 'search_products',
   description: 'Search the product catalog',
-  handler: async (args) => searchCatalog(args.query),
+  execute: async (args) => searchCatalog(args.query),
 });
 ```
+
+`navigator.modelContext` is the same object, kept as Harbor's older name; `addTool`/`removeTool` are older aliases of `registerTool` and of aborting its signal. Both keep working.
 
 ### For AI/Tool Providers
 
@@ -187,7 +189,7 @@ Developers are not locked into any model, provider, or tool ecosystem:
 
 - **Choose your LLM** — Ollama, llamafile, OpenAI, Anthropic, or any provider the user has configured. Specify one explicitly or use the default.
 - **Choose your MCP servers** — Brave Search, GitHub, filesystem, databases, or build your own. Pick the tools that fit your application.
-- **Choose your integration style** — Call tools manually with `agent.tools.call()`, let the LLM drive with `agent.run()`, or register page tools via `navigator.modelContext`. Mix and match.
+- **Choose your integration style** — Call tools manually with `agent.tools.call()`, let the LLM drive with `agent.run()`, or register page tools via `document.modelContext`. Mix and match.
 - **Choose your scope** — Request only the permissions your app needs. Nothing more.
 
 ### 2. User Consent Required

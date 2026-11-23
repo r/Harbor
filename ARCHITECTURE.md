@@ -5,7 +5,7 @@ This document describes the architecture of Harbor, a single browser extension.
 Harbor brings AI and MCP (Model Context Protocol) capabilities to web applications:
 
 - **Infrastructure** — LLM connections, MCP server hosting, and the native bridge
-- **Page API** (`extension/src/page-api/`) — Implements the **[Web Agent API](spec/)** specification, exposing `window.ai`, `window.agent` and `navigator.modelContext` to web pages
+- **Page API** (`extension/src/page-api/`) — Implements the **[Web Agent API](spec/)** specification, exposing `window.ai`, `window.agent` and `document.modelContext` to web pages
 
 > **Related Documentation:**
 > - [Web Agent API Spec](spec/) — The API specification Harbor's page API implements
@@ -22,7 +22,7 @@ Harbor provides:
 
 | Capability | Provided By | Description |
 |------------|-------------|-------------|
-| **Web Agent API** | Page API | `window.ai`, `window.agent` and `navigator.modelContext` for web pages |
+| **Web Agent API** | Page API | `window.ai`, `window.agent` and `document.modelContext` for web pages |
 | **Permission System** | Harbor | Per-origin capability grants with user consent; Harbor's page API checks them before every page call |
 | **MCP Server Management** | Harbor | Install, run, and connect to MCP servers |
 | **In-Browser MCP Execution** | Harbor | Run MCP servers as WASM or JavaScript directly in the browser |
@@ -554,8 +554,8 @@ function createStreamIterable(type, payload) {
 
 | Directory/File | Purpose |
 |----------------|---------|
-| **`page-api/`** | **The Web Agent API: injects and serves `window.ai`, `window.agent` and `navigator.modelContext`** |
-| `page-api/injected.ts` | `window.ai` / `window.agent` / `navigator.modelContext` creation, in the page |
+| **`page-api/`** | **The Web Agent API: injects and serves `window.ai`, `window.agent` and `document.modelContext`** |
+| `page-api/injected.ts` | `window.ai` / `window.agent` / `document.modelContext` creation, in the page |
 | `page-api/content-script.ts` | Content script bridge between the injected script and `background.ts` |
 | `page-api/background.ts` | Port listener; derives the page's origin from `port.sender`, wires streaming (`session.promptStreaming`, `agent.run`) |
 | `page-api/harbor-core.ts` | The seam: in-process call into `extension-api.ts` and `agents/background-router.ts` — the only file under `page-api/` allowed to import from outside it |

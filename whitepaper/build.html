@@ -162,11 +162,11 @@ const writeSession = await agent.requestCapabilities({
       Pages can declare JavaScript-backed tools the user's agent can call. No
       server, no auth — the function lives in the page.
     </p>
-    <pre class="ex-code" style="white-space: pre">navigator.modelContext.addTool({
+    <pre class="ex-code" style="white-space: pre">document.modelContext.registerTool({
   name:        "search_archive",
   description: "Search our 20-year archive",
   inputSchema: { type: "object", properties: { query: { type: "string" } } },
-  handler:     ({ query }) =&gt; searchArchive(query),
+  execute:     ({ query }) =&gt; searchArchive(query),
 });</pre>
 
     <hr/>

@@ -38,7 +38,7 @@ The sidebar shows the bridge as connected within a few seconds.
 
 ## What Works and What Doesn't
 
-Safari gets the same extension as Firefox and Chrome, including the page API (`window.ai`, `window.agent`, `navigator.modelContext`) and Harbor's permission prompts. These parts differ:
+Safari gets the same extension as Firefox and Chrome, including the page API (`window.ai`, `window.agent`, `document.modelContext`) and Harbor's permission prompts. These parts differ:
 
 - **No streaming.** The HTTP bridge returns a whole response at once, so streamed calls arrive as a single chunk.
 - **No DNS check.** A public host name that points at a local address isn't caught, as in Chrome.
