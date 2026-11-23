@@ -21,6 +21,7 @@ import type { CreateSessionOptions, SessionSummary } from './sessions';
 import { Audit } from './policy/audit';
 import { simulate, replay } from './policy/simulator';
 import { Watchdog } from './policy/watchdog';
+import type { LabelFlow } from './policy/label-flow';
 import { requireAction } from './agents/handlers/helpers';
 import type { RequestContext, ResponseSender } from './agents/handlers/router-types';
 import { type TypedAction } from './policy/actions';
@@ -753,6 +754,7 @@ async function gatePageCall(
   type: MessageType,
   payload: unknown,
   requestId?: string,
+  labelFlow?: LabelFlow,
 ): Promise<ExtensionApiResponse | null> {
   const checksFor = PAGE_GATES[type];
   if (!checksFor) return null;
@@ -771,6 +773,7 @@ async function gatePageCall(
       tabId: typeof p.tabId === 'number' ? p.tabId : undefined,
     },
     await checksFor(p),
+    { labelFlow },
   );
 }
 
@@ -785,7 +788,7 @@ export async function gatePageAction(
   call: { id: string; type: string; origin: string; tabId?: number },
   action: TypedAction,
   resource?: PolicyResource,
-  options: { pageFetch?: boolean } = {},
+  options: { pageFetch?: boolean; labelFlow?: LabelFlow } = {},
 ): Promise<{ code: string; message: string } | null> {
   if (!call.origin) {
     return { code: ErrorCodes.PERMISSION_DENIED, message: `${call.type} requires the calling page's origin` };
@@ -802,7 +805,7 @@ export async function gatePageAction(
     // A page opening, navigating to or fetching a sensitive domain isn't
     // moving data there it didn't already have, so the host is recorded and
     // matched by rules but not classified.
-    { classifyHost: false, pageFetch: options.pageFetch },
+    { ...options, classifyHost: false },
   );
   if (!refusal) return null;
   return {
@@ -814,7 +817,7 @@ export async function gatePageAction(
 async function runPageChecks(
   ctx: RequestContext,
   checks: PageCheck[],
-  options: { classifyHost?: boolean; pageFetch?: boolean } = {},
+  options: { classifyHost?: boolean; pageFetch?: boolean; labelFlow?: LabelFlow } = {},
 ): Promise<ExtensionApiResponse | null> {
   let denied: ExtensionApiResponse | null = null;
   const sender: ResponseSender = {
@@ -871,7 +874,7 @@ export async function routeExtensionApiMessage(
   // own giving-up needs a way to reach it (see
   // page-api/handlers/permission-handlers.ts and
   // policy/permissions.ts's showPermissionPrompt).
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; labelFlow?: LabelFlow } = {},
 ): Promise<ExtensionApiResponse> {
   const { type, payload } = message;
   const { signal } = options;
@@ -902,7 +905,7 @@ export async function routeExtensionApiMessage(
     if (refusal) return refusal;
   }
 
-  const gateFailure = await gatePageCall(type as MessageType, payload);
+  const gateFailure = await gatePageCall(type as MessageType, payload, undefined, options.labelFlow);
   if (gateFailure) return gateFailure;
   if (options.signal?.aborted) return abandoned();
   // And again after it: the person may have picked an agent while the
@@ -1110,6 +1113,7 @@ export async function* streamLlmChat(
   payload: unknown,
   requestId?: string,
   signal?: AbortSignal,
+  labelFlow?: LabelFlow,
 ): AsyncGenerator<ChatStreamEvent> {
   const { messages, model, max_tokens, temperature, system, tools } = (payload || {}) as {
     messages?: Array<{ role: string; content: string }>;
@@ -1132,7 +1136,7 @@ export async function* streamLlmChat(
   }
 
   // Fail closed, so a gate error can't leave the page's stream waiting forever.
-  const gateFailure = await gatePageCall('llm.chatStream', payload, requestId).catch((e: unknown) => failure(e));
+  const gateFailure = await gatePageCall('llm.chatStream', payload, requestId, labelFlow).catch((e: unknown) => failure(e));
   if (gateFailure) {
     yield { type: 'error', error: { code: gateFailure.code, message: gateFailure.error ?? 'Permission denied' } };
     return;
