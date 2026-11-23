@@ -16,6 +16,12 @@ import { SCOPE_DESCRIPTIONS } from '../permissions';
 import { consentScopeDescription, consentScopeRows } from '../agent-consent-copy';
 
 describe('consentScopeDescription', () => {
+  it('describes every built-in permission without protocol or implementation acronyms', () => {
+    for (const { title, description } of Object.values(SCOPE_DESCRIPTIONS)) {
+      expect(title + ' ' + description).not.toMatch(/\b(?:ACP|MCP|A2A|HTTP|CORS)\b/i);
+    }
+  });
+
   it('returns the built-in wording unchanged when no agent is selected', () => {
     expect(consentScopeDescription('model:prompt', null)).toEqual(SCOPE_DESCRIPTIONS['model:prompt']);
     expect(consentScopeDescription('model:tools', null)).toEqual(SCOPE_DESCRIPTIONS['model:tools']);

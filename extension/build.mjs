@@ -130,6 +130,7 @@ async function copyStatic() {
   await copyFile('src/sidebar.html', `${outDir}/sidebar.html`);
   await copyFile('src/permission-prompt.html', `${outDir}/permission-prompt.html`);
   await copyFile('src/agent-question.html', `${outDir}/agent-question.html`);
+  await copyFile('src/consent-popup.css', `${outDir}/consent-popup.css`);
   await copyFile('src/design-tokens.css', `${outDir}/design-tokens.css`);
   await copyFile('src/js-runtime/sandbox.html', `${outDir}/js-runtime/sandbox.html`).catch(() => {});
   await copyFile('src/js-runtime/builtin-echo-worker.js', `${outDir}/js-runtime/builtin-echo-worker.js`);

@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The permission request and agent question popups use Harbor’s site typography, colors and buttons in both system themes. The permission prompt highlights the site’s stated reason and offers separate actions to deny, allow temporarily, or grant ongoing access.
+
 - Agent runs and sessions carry sensitivity labels from site tools into later calls. Harbor checks the destination before sending data to a model or tool. Separate sessions in the same tab keep independent labels.
 
 - Every tool a site offers your agent, from its page or its MCP server, now reaches the agent with an origin the site can't forge. The description is prefixed "From <host>:", and the tool and its results carry `harbor/provenance` metadata with the site's origin. A site can't make its tools look like another site's. See "Tool spoofing" in docs/PERMISSIONS.md, and a draft proposal to make this a standard ACP field in docs/rfds/provenance.md.
