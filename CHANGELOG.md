@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A policy refusal while creating a session (`agent.sessions.create()` or `agent.requestCapabilities()`: a deny rule, a quarantined site, a declined prompt) reached the page as `ERR_INTERNAL`. It now keeps the policy engine's code (`ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`, `ERR_PERMISSION_DENIED`), as other page calls already did.
 - `agent.requestCapabilities()` left out nothing: an `optional` capability the site hadn't been granted failed the whole request, as if it were required. It's now left out of the session quietly, and `session.capabilities` shows what the session got. `docs/BUILDING_ON_WEB_AGENTS_API.md`'s example also called `session.tools.call(...)`, which doesn't exist; it now uses `session.callTool(...)`.
 - The generated test harness now matches Harbor when an app reads `session.promptStreaming()`: it yields text chunks and throws a coded error on failure.
 
