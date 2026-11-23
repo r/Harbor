@@ -18,7 +18,7 @@ import { gatePageAction, routeExtensionApiMessage, streamLlmChat } from '../exte
 import type { TypedAction } from '../policy/actions';
 import { routeAgentMessage } from '../agents/background-router';
 import { forgetTabAgents } from '../agents/handlers/multi-agent';
-import { callSiteTool, forgetTabServers, forgetTabServersIfOriginChanged, isSiteServerId, listSiteServersForAcp as listSiteServersForAcpImpl, listSiteTools, type SiteMcpServerDescriptor } from '../mcp/site-servers';
+import { callSiteTool, forgetTabServers, forgetTabServersIfOriginChanged, isSiteServerId, listSiteTools, type SiteMcpServerDescriptor } from '../mcp/site-servers';
 // The page's own tools (document.modelContext), relayed to its port: see
 // docs/PAGE_TOOLS_FOR_AGENTS.md.
 export {
@@ -386,55 +386,6 @@ export async function requireAgentPromptAction(origin: string, tabId?: number): 
 }
 
 /**
- * Which of `serverIds` the policy engine currently allows `tool.list` and
- * `tool.call` for, with no prompt — used by `acp-backend.ts` to decide
- * which of the origin/tab's site-registered MCP servers to pass into
- * `session/new` (HBR-134, D2). Checked per server, with
- * `resource: { server: serverId } }`, so a rule naming one server (or a
- * glob like `site:*`) only filters that one out — the engine's resource
- * matching (`policy/rules.ts`) is what gives `site:*` its meaning here.
- *
- * `upstreamConsent: 'origin-grant'` means the caller's own
- * `mcp:tools.list`/`mcp:tools.call` grant check (`hasPermission`) stands
- * in for the engine's own Tier 9 default (an un-ruled `tool.call`
- * defaults to `preview`) — the same deal a page's `mcp.listTools`/
- * `mcp.callTool` calls get through `gatePageCall`. A *rule* that denies,
- * asks or previews either action for a server still isn't covered by
- * that consent, and `noPrompt: true` turns what would otherwise be a
- * prompt into an outright refusal for that one server instead: this
- * silently decides what to offer the agent, never something to interrupt
- * a run for.
- *
- * Harbor's own origin-grant store is checked separately by the caller —
- * this is only the policy engine's rule evaluation and audit trail, the
- * same split `requireAgentPromptAction` draws for `model:prompt`.
- */
-export async function policyAllowsSiteToolsForAcp(
-  origin: string,
-  tabId: number | undefined,
-  serverIds: readonly string[],
-): Promise<string[]> {
-  const ctx: RequestContext = {
-    id: crypto.randomUUID(),
-    type: 'session.prompt',
-    payload: {},
-    origin,
-    tabId,
-  };
-  const options = { upstreamConsent: 'origin-grant' as const, noPrompt: true };
-  const allowed: string[] = [];
-  for (const serverId of serverIds) {
-    const resource = { server: serverId };
-    const listDenial = await checkAction(ctx, 'tool.list', { ...options, resource });
-    if (listDenial) continue;
-    const callDenial = await checkAction(ctx, 'tool.call', { ...options, resource });
-    if (callDenial) continue;
-    allowed.push(serverId);
-  }
-  return allowed;
-}
-
-/**
  * Whether `origin` holds a live `model:prompt` grant recorded for the ACP
  * agent `agentId` specifically — never a live read of whatever backend is
  * currently selected. acp-text-session.ts's own `agentId` is fixed for
@@ -480,17 +431,6 @@ export function forgetSiteServersInTab(tabId: number): void {
  */
 export function forgetSiteServersOnNavigation(tabId: number, url: string): void {
   forgetTabServersIfOriginChanged(tabId, url);
-}
-
-/**
- * The origin/tab's site-registered MCP servers, as candidates for
- * `page-api/acp-connection.ts`'s `initializeAcpSession` to offer the
- * person's own ACP agent in `session/new` (filtered there by what the
- * agent's `initialize` response says it can actually use).
- */
-export function listSiteServersForAcp(origin: string, tabId?: number): SiteMcpServerDescriptor[] {
-  if (tabId === undefined) return [];
-  return listSiteServersForAcpImpl(origin, tabId);
 }
 
 /**
@@ -619,8 +559,10 @@ export async function openPageToolEndpointForAcp(
   tabId: number | undefined,
   options: { maxCalls?: number } = {},
 ): Promise<(SiteMcpServerDescriptor & { endpointId: string }) | null> {
+  if (tabId === undefined) return null;
   const listing = await pageToolsForAgent(origin, tabId);
-  if (!listing || tabId === undefined) return null;
+  const siteTools = await siteToolsForAgent(origin, tabId);
+  if (!listing && siteTools.length === 0) return null;
   let opened: { endpointId?: unknown; url?: unknown };
   try {
     opened = await rpcRequest<{ endpointId?: unknown; url?: unknown }>('page_tools.open', {});
@@ -636,8 +578,11 @@ export async function openPageToolEndpointForAcp(
     if (typeof endpointId === 'string') await rpcRequest('page_tools.close', { endpointId }).catch(() => {});
     return null;
   }
-  pageToolEndpoints.set(endpointId, { origin, tabId, generation: listing.generation, maxCalls: options.maxCalls, calls: 0 });
-  return { serverId: listing.serverId, name: listing.serverId, url, transport: 'streamable-http', endpointId };
+  pageToolEndpoints.set(endpointId, { origin, tabId, generation: listing?.generation ?? -1, maxCalls: options.maxCalls, calls: 0 });
+  // One MCP server for everything the site offers, named by its host: the
+  // page's own tools under their names, its registered servers' tools as
+  // `<server>__<tool>` (see siteToolEndpointName).
+  return { serverId: pageToolServerId(origin), name: hostOf(origin), url, transport: 'streamable-http', endpointId };
 }
 
 /** Closes an endpoint opened by `openPageToolEndpointForAcp`. Idempotent. */
@@ -681,8 +626,14 @@ export async function handlePageToolsHostRequest(method: string, params: unknown
   if (method === 'page_tools.list') {
     if (!endpoint) return { tools: [] };
     const listing = listPageTools(endpoint.tabId, endpoint.origin);
-    if (!listing || listing.generation !== endpoint.generation) return { tools: [] };
-    return { tools: listing.tools };
+    const pageTools = listing && listing.generation === endpoint.generation ? listing.tools : [];
+    const siteTools = (await siteToolsForAgent(endpoint.origin, endpoint.tabId)).map((t) => ({
+      name: siteToolEndpointName(t.serverId, t.name),
+      description: t.description ?? '',
+      inputSchema: (t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : { type: 'object' }) as Record<string, unknown>,
+    }));
+    const pageNames = new Set(pageTools.map((t) => t.name));
+    return { tools: [...pageTools, ...siteTools.filter((t) => !pageNames.has(t.name))] };
   }
 
   if (method === 'page_tools.call') {
@@ -698,6 +649,18 @@ export async function handlePageToolsHostRequest(method: string, params: unknown
     endpoint.calls++;
     let allowed = false;
     try {
+      const site = pageNameIsSiteTool(endpoint, name) ? await resolveSiteToolName(endpoint.origin, endpoint.tabId, name) : null;
+      if (site) {
+        const result = await callSiteToolForAgent({
+          origin: endpoint.origin,
+          tabId: endpoint.tabId,
+          serverId: site.serverId,
+          name: site.tool,
+          input,
+          onAllowed: () => { allowed = true; },
+        });
+        return pageToolCallResult(result);
+      }
       const result = await callPageToolForAgent({
         origin: endpoint.origin,
         tabId: endpoint.tabId,
@@ -783,4 +746,31 @@ export async function callSiteToolForAgent(call: {
   const result = await callSiteTool(call.origin, call.tabId, call.serverId, call.name, call.input);
   if (!result.ok) throw Object.assign(new Error(result.error), { code: 'ERR_TOOL_FAILED' });
   return result.result;
+}
+
+function hostOf(origin: string): string {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return 'site';
+  }
+}
+
+/** `site:<host>:<name>` + tool → `<name>__<tool>`, within MCP's tool-name alphabet. */
+function siteToolEndpointName(serverId: string, tool: string): string {
+  const serverName = serverId.slice(serverId.lastIndexOf(':') + 1) || 'site';
+  return `${serverName}__${tool}`.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 128);
+}
+
+/** Whether `name` isn't one of the page's own tools on this endpoint (page tools win a name clash). */
+function pageNameIsSiteTool(endpoint: PageToolEndpoint, name: string): boolean {
+  const listing = listPageTools(endpoint.tabId, endpoint.origin);
+  return !(listing && listing.generation === endpoint.generation && listing.tools.some((t) => t.name === name));
+}
+
+async function resolveSiteToolName(origin: string, tabId: number, name: string): Promise<{ serverId: string; tool: string } | null> {
+  for (const t of await siteToolsForAgent(origin, tabId)) {
+    if (siteToolEndpointName(t.serverId, t.name) === name) return { serverId: t.serverId, tool: t.name };
+  }
+  return null;
 }

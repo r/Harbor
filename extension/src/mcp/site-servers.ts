@@ -391,20 +391,6 @@ export async function callSiteTool(
   }
 }
 
-/**
- * The candidate MCP servers to offer the person's own ACP agent for this
- * origin/tab's `agent.run` (`page-api/acp-backend.ts`). The caller filters
- * by the agent's own declared capabilities — this just reports what's live.
- */
-export function listSiteServersForAcp(origin: string, tabId: number): SiteMcpServerDescriptor[] {
-  const out: SiteMcpServerDescriptor[] = [];
-  for (const entry of registry.values()) {
-    if (entry.tabId !== tabId || entry.origin !== origin) continue;
-    out.push({ serverId: entry.serverId, name: entry.name, url: entry.url, transport: entry.transport });
-  }
-  return out;
-}
-
 // =============================================================================
 // Lifetime — per tab, nothing persisted
 // =============================================================================

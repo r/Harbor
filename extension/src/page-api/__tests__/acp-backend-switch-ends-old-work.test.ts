@@ -40,8 +40,6 @@ vi.mock('../harbor-core', () => ({
   isModelPromptGrantedForAgent: async () => true,
   // This file is about ending old work on a backend switch, not
   // site-registered MCP servers — no origin here registered any.
-  listSiteServersForAcp: () => [],
-  policyAllowsSiteToolsForAcp: async () => true,
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../policy/feature-flags')>()),

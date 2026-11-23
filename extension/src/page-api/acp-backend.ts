@@ -18,23 +18,13 @@
  * is the same role: a client-side connection over the stream, read through
  * a `ClientContext`.
  *
- * Tools: this backend still offers the agent none of Harbor's own
- * (installed-server) tools, so `AgentRunRequest.tools` is ignored here —
- * only the origin/tab's own site-registered MCP servers
- * (`mcp/site-servers.ts`, via harbor-core.ts's `listSiteServersForAcp`)
- * are candidates for `session/new`, and only when the origin holds both
- * `mcp:tools.list` and `mcp:tools.call` (otherwise none of them are);
- * among those, each server is then checked on its own against the
- * policy engine (`siteServerCandidatesForAcp` below) — a rule naming one
- * server (or a glob) only filters that one out, not every site server
- * the origin registered. What's left is then further filtered to only
- * the ones the agent's own `initialize` response says it can use
- * (`acp-connection.ts`'s `initializeAcpSession`). `AgentRunRequest.
- * maxToolCalls` is ignored too: Harbor gates whether a site may use the
- * user's agent at all, not how the agent works once it's running —
- * there's no tool-call budget on this backend, and no per-tool allowlist
- * either, for either kind of tool (a maintainer decision; see
- * docs/ACP_BACKEND_DESIGN.md).
+ * Tools: this backend offers the agent none of the person's installed MCP
+ * servers, so `AgentRunRequest.tools` is ignored here. What the site offers
+ * (its page's own tools and its registered MCP servers' tools) reaches the
+ * agent through one Harbor-hosted MCP endpoint (`openPageToolEndpointForAcp`,
+ * docs/PAGE_TOOLS_FOR_AGENTS.md), where every call is policy-checked,
+ * audited and held to `AgentRunRequest.maxToolCalls`. A site server's URL is
+ * never handed to the agent.
  */
 import {
   client,
@@ -44,7 +34,7 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk';
 
-import { acpClose, acpOpenStream, closePageToolEndpoint, listSiteServersForAcp, openPageToolEndpointForAcp, policyAllowsSiteToolsForAcp, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
+import { acpClose, acpOpenStream, closePageToolEndpoint, openPageToolEndpointForAcp, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
 import type { SiteMcpServerDescriptor } from '../mcp/site-servers';
 import { hasPermission } from './handlers';
 import { PER_SITE_AGENT_LIMIT, tryAcquireAgentSlot, releaseAgentSlot } from './acp-agent-limits';
@@ -81,28 +71,6 @@ export const ACP_RUN_TIMEOUT_MS = ACP_TURN_TIMEOUT_MS;
 function hasToolInput(input: unknown, status: string | null | undefined): boolean {
   if (input == null) return false;
   return status !== 'pending' || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length > 0;
-}
-
-/**
- * The origin/tab's site-registered MCP servers that may be passed into
- * `session/new` (HBR-134, D2): none of them at all unless the origin
- * holds *both* `mcp:tools.list` and `mcp:tools.call` (Harbor's own
- * origin-grant store, the same check `background.ts`'s `handleAgentRun`
- * makes for the built-in backend's own tools) — that's an all-or-nothing
- * gate on the *origin*, not a per-server one, since Harbor's grant store
- * itself isn't per-server. Past that, each candidate is checked on its
- * own against the policy engine with no prompt
- * (`policyAllowsSiteToolsForAcp`), so a rule naming one server (or a
- * glob) only filters that one out. The per-tool allowlist still doesn't
- * apply to an ACP agent's own tool use (unchanged maintainer decision).
- */
-async function siteServerCandidatesForAcp(origin: string, tabId?: number): Promise<SiteMcpServerDescriptor[]> {
-  if (!await hasPermission(origin, 'mcp:tools.list', tabId)) return [];
-  if (!await hasPermission(origin, 'mcp:tools.call', tabId)) return [];
-  const candidates = listSiteServersForAcp(origin, tabId);
-  if (candidates.length === 0) return [];
-  const allowedIds = new Set(await policyAllowsSiteToolsForAcp(origin, tabId, candidates.map((c) => c.serverId)));
-  return candidates.filter((c) => allowedIds.has(c.serverId));
 }
 
 export class AcpAgentBackend implements AgentBackend {
@@ -348,13 +316,13 @@ export class AcpAgentBackend implements AgentBackend {
       await app.connectWith(stream, async (ctx) => {
         connectionCtx = ctx;
 
-        const siteServers = await siteServerCandidatesForAcp(origin, tabId);
-        // The calling page's own tools, through the bridge's MCP endpoint
+        // Everything the site offers (its page's tools and its registered
+        // servers' tools), through the bridge's MCP endpoint
         // (docs/PAGE_TOOLS_FOR_AGENTS.md §5), held to this run's tool budget.
         // Closed in the `finally` below, however the run ends.
         const pageEndpoint = await openPageToolEndpointForAcp(origin, tabId, { maxCalls: req.maxToolCalls });
         if (pageEndpoint) pageEndpointId = pageEndpoint.endpointId;
-        const initialized = await initializeAcpSession(ctx, cwd, requestAbort.signal, pageEndpoint ? [...siteServers, pageEndpoint] : siteServers);
+        const initialized = await initializeAcpSession(ctx, cwd, requestAbort.signal, pageEndpoint ? [pageEndpoint] : []);
         if (!initialized.ok) {
           send(initialized.error);
           return;

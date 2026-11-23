@@ -13,10 +13,6 @@ import { agent as buildAgentApp, AGENT_METHODS, CLIENT_METHODS, type AgentApp, t
 const mocks = vi.hoisted(() => ({
   hasPermission: vi.fn(),
   askAgentQuestion: vi.fn(),
-  // The origin/tab's site-registered MCP servers this run would be handed
-  // (see "site-registered MCP servers" below) — defaults to none, same as
-  // a run whose origin/tab never registered any.
-  listSiteServersForAcp: vi.fn((_origin?: string, _tabId?: number) => [] as Array<{ serverId: string; name: string; url: string; transport: string }>),
   bridge: { current: null as null | ReturnType<typeof import('./support/fake-acp-bridge').createFakeAcpBridge> },
 }));
 
@@ -34,13 +30,6 @@ vi.mock('../harbor-core', () => ({
   // acp-model-prompt-agent-policy.test.ts; here it's a pass-through so
   // these tests keep exercising everything else unchanged.
   requireAgentPromptAction: async () => true,
-  listSiteServersForAcp: (origin: string, tabId?: number) => mocks.listSiteServersForAcp(origin, tabId),
-  // D2's own grant+policy gate for whether to pass site servers at all is
-  // covered in acp-site-mcp-servers-policy.test.ts; here it's a
-  // pass-through (every candidate id comes back allowed) so these tests
-  // (which drive `listSiteServersForAcp` directly) keep exercising only
-  // the capability filter in front of it.
-  policyAllowsSiteToolsForAcp: async (_origin: string, _tabId: number | undefined, serverIds: readonly string[]) => [...serverIds],
 }));
 // The dialog itself (the popup window, its message validation, the
 // liveness timeout, window-closed handling) is covered on its own, without
@@ -132,8 +121,6 @@ beforeEach(() => {
   mocks.hasPermission.mockReset();
   mocks.hasPermission.mockResolvedValue(true);
   mocks.askAgentQuestion.mockReset();
-  mocks.listSiteServersForAcp.mockReset();
-  mocks.listSiteServersForAcp.mockReturnValue([]);
 });
 
 afterEach(() => {
@@ -183,76 +170,6 @@ describe('AcpAgentBackend', () => {
     expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([]);
   });
 
-  describe('site-registered MCP servers (session/new mcpServers)', () => {
-    const SITE_SERVERS = [
-      { serverId: 'site:a.example:shop', name: 'shop', url: 'https://a.example/mcp-http', transport: 'streamable-http' },
-      { serverId: 'site:a.example:events', name: 'events', url: 'https://a.example/mcp-sse', transport: 'sse' },
-      { serverId: 'site:a.example:ws', name: 'ws', url: 'wss://a.example/mcp-ws', transport: 'websocket' },
-    ];
-
-    it("offers only what the agent's own initialize response says it supports", async () => {
-      mocks.listSiteServersForAcp.mockReturnValue(SITE_SERVERS);
-      let sessionNewParams: unknown;
-      registerFakeAgent({
-        initializeResponse: { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true, sse: false } } },
-        onSessionNew: (params) => { sessionNewParams = params; },
-        onPrompt: async () => ({ stopReason: 'end_turn' }),
-      });
-
-      const backend = new AcpAgentBackend(AGENT_ID);
-      await collect(backend, baseRequest());
-
-      // http is supported -> the streamable-http server is offered as 'http'.
-      // sse is not supported -> the sse server is dropped.
-      // websocket has no ACP form at all -> always dropped.
-      expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([
-        { type: 'http', name: 'shop', url: 'https://a.example/mcp-http', headers: [] },
-      ]);
-    });
-
-    it('offers the sse server too once the agent advertises sse support', async () => {
-      mocks.listSiteServersForAcp.mockReturnValue(SITE_SERVERS);
-      let sessionNewParams: unknown;
-      registerFakeAgent({
-        initializeResponse: { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true, sse: true } } },
-        onSessionNew: (params) => { sessionNewParams = params; },
-        onPrompt: async () => ({ stopReason: 'end_turn' }),
-      });
-
-      const backend = new AcpAgentBackend(AGENT_ID);
-      await collect(backend, baseRequest());
-
-      expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([
-        { type: 'http', name: 'shop', url: 'https://a.example/mcp-http', headers: [] },
-        { type: 'sse', name: 'events', url: 'https://a.example/mcp-sse', headers: [] },
-      ]);
-    });
-
-    it('offers nothing when the agent declares no mcpCapabilities at all', async () => {
-      mocks.listSiteServersForAcp.mockReturnValue(SITE_SERVERS);
-      let sessionNewParams: unknown;
-      registerFakeAgent({
-        initializeResponse: { protocolVersion: 1 },
-        onSessionNew: (params) => { sessionNewParams = params; },
-        onPrompt: async () => ({ stopReason: 'end_turn' }),
-      });
-
-      const backend = new AcpAgentBackend(AGENT_ID);
-      await collect(backend, baseRequest());
-
-      expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([]);
-    });
-
-    it("asks harbor-core for this run's own origin and tab, not any other", async () => {
-      mocks.listSiteServersForAcp.mockReturnValue([]);
-      registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
-
-      const backend = new AcpAgentBackend(AGENT_ID);
-      await collect(backend, baseRequest({ origin: 'https://b.example', tabId: 42 }));
-
-      expect(mocks.listSiteServersForAcp).toHaveBeenCalledWith('https://b.example', 42);
-    });
-  });
 
   it('sends the task as the user message and the systemPrompt labelled as instructions from the origin', async () => {
     let promptBlocks: Array<{ type: string; text: string }> = [];

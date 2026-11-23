@@ -122,7 +122,7 @@ describe("agent.run on the person's ACP agent", () => {
     const id = port.send('agent.run', { task: 'Take me to p3' });
     await port.waitForRun(id);
 
-    expect(mcpServersOf(sessionNew)).toEqual([{ type: 'http', name: 'page:tale.example', url: ENDPOINT_URL, headers: [] }]);
+    expect(mcpServersOf(sessionNew)).toEqual([{ type: 'http', name: 'tale.example', url: ENDPOINT_URL, headers: [] }]);
     await vi.waitFor(() => expect(mocks.rpcRequest).toHaveBeenCalledWith('page_tools.close', { endpointId: 'pt-1-xyz' }));
   });
 
@@ -157,7 +157,7 @@ describe('ACP text sessions', () => {
     const { AcpTextSession } = await import('../acp-text-session');
     const session = new AcpTextSession(AGENT_ID, ORIGIN, TAB, undefined, 'page-chat');
     await session.open();
-    expect(mcpServersOf(sessionNew)).toEqual([{ type: 'http', name: 'page:tale.example', url: ENDPOINT_URL, headers: [] }]);
+    expect(mcpServersOf(sessionNew)).toEqual([{ type: 'http', name: 'tale.example', url: ENDPOINT_URL, headers: [] }]);
     await session.destroy();
     expect(mocks.rpcRequest).toHaveBeenCalledWith('page_tools.close', { endpointId: 'pt-1-xyz' });
   });

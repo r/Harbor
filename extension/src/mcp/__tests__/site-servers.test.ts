@@ -6,7 +6,7 @@
  * `page-api/__tests__/late-agent-call.test.ts` for the gate itself).
  *
  * Drives `registerSiteServer`/`unregisterSiteServer`/`listSiteTools`/
- * `callSiteTool`/`listSiteServersForAcp`/`forgetTabServers`/
+ * `callSiteTool`/`forgetTabServers`/
  * `forgetTabServersIfOriginChanged` directly against a fake MCP server
  * (stubbed `fetch`/`EventSource`/`WebSocket` — see
  * `support/fake-mcp-server.ts`), since those are this module's real public
@@ -19,7 +19,6 @@ import {
   forgetTabServers,
   forgetTabServersIfOriginChanged,
   isSiteServerId,
-  listSiteServersForAcp,
   listSiteTools,
   registerSiteServer,
   resetSiteMcpServersForTests,
@@ -402,18 +401,3 @@ describe('per-tab lifetime', () => {
   });
 });
 
-describe('listSiteServersForAcp', () => {
-  it('reports the origin/tab\'s servers as ACP candidates, by transport', async () => {
-    installFakeMcpServer({ tools: [{ name: 'search' }] });
-    await registerSiteServer({ origin: ORIGIN, tabId: TAB, url: 'https://shop.example/mcp', name: 'Shop', transport: 'sse' });
-
-    const candidates = listSiteServersForAcp(ORIGIN, TAB);
-    expect(candidates).toEqual([
-      { serverId: siteServerId(ORIGIN, 'Shop'), name: 'Shop', url: 'https://shop.example/mcp', transport: 'sse' },
-    ]);
-  });
-
-  it('reports nothing for an origin/tab that registered no servers', () => {
-    expect(listSiteServersForAcp(ORIGIN, TAB)).toEqual([]);
-  });
-});

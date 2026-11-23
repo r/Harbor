@@ -9,10 +9,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetMockBrowser } from '../../__tests__/test-setup';
 
-const mocks = vi.hoisted(() => ({ rpcRequest: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpcRequest: vi.fn(), listSiteTools: vi.fn(), callSiteTool: vi.fn() }));
 vi.mock('../../llm/native-bridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../llm/native-bridge')>()),
   rpcRequest: mocks.rpcRequest,
+}));
+vi.mock('../../mcp/site-servers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../mcp/site-servers')>()),
+  listSiteTools: mocks.listSiteTools,
+  callSiteTool: mocks.callSiteTool,
 }));
 
 const ORIGIN = 'https://tale.example';
@@ -47,6 +52,9 @@ beforeEach(async () => {
     if (method === 'page_tools.close') return { closed: true };
     throw new Error(`unexpected ${method}`);
   });
+  mocks.listSiteTools.mockReset();
+  mocks.listSiteTools.mockReturnValue([]);
+  mocks.callSiteTool.mockReset();
   core = await import('../harbor-core');
   registry = await import('../../mcp/page-tools');
   registry.__resetPageToolsForTests();
@@ -69,7 +77,7 @@ describe('opening an endpoint for an ACP session', () => {
     const endpoint = await core.openPageToolEndpointForAcp(ORIGIN, TAB);
     expect(mocks.rpcRequest).toHaveBeenCalledWith('page_tools.open', {});
     expect(endpoint).toMatchObject({
-      serverId: 'page:tale.example', name: 'page:tale.example', transport: 'streamable-http',
+      serverId: 'page:tale.example', name: 'tale.example', transport: 'streamable-http',
       url: 'http://127.0.0.1:4555/mcp/token1', endpointId: 'pt-1',
     });
   });
@@ -201,5 +209,45 @@ describe("answering the bridge's host requests", () => {
     expect(posted.find((m) => m.type === 'page_tools.call')).toMatchObject({ input: {} });
     await answerNextCall({ ok: true, result: 'ok' });
     await result;
+  });
+});
+
+describe("the site's own MCP server tools, through the same endpoint", () => {
+  const SITE = [{ serverId: 'site:tale.example:tale', name: 'read_tale', description: 'Read up to an anchor', inputSchema: { type: 'object' } }];
+
+  it('opens an endpoint for a site that has server tools and no page tools', async () => {
+    mocks.listSiteTools.mockReturnValue(SITE);
+    const endpoint = await core.openPageToolEndpointForAcp(ORIGIN, TAB);
+    expect(endpoint).toMatchObject({ name: 'tale.example', transport: 'streamable-http' });
+  });
+
+  it('lists page tools by name and site tools as <server>__<tool>', async () => {
+    syncPage();
+    mocks.listSiteTools.mockReturnValue(SITE);
+    const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB))!;
+    const listed = await core.handlePageToolsHostRequest('page_tools.list', { endpointId }) as { tools: Array<{ name: string }> };
+    expect(listed.tools.map((t) => t.name)).toEqual(['go_to', 'reading_position', 'tale__read_tale']);
+  });
+
+  it('calls a site tool through Harbor\'s own connection to the server, policy-checked and budgeted', async () => {
+    mocks.listSiteTools.mockReturnValue(SITE);
+    mocks.callSiteTool.mockResolvedValue({ ok: true, result: { content: [{ type: 'text', text: 'Once upon a time' }] } });
+    const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB, { maxCalls: 1 }))!;
+    const r = await core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'tale__read_tale', arguments: { upTo: 'p4' } });
+    expect(mocks.callSiteTool).toHaveBeenCalledWith(ORIGIN, TAB, 'site:tale.example:tale', 'read_tale', { upTo: 'p4' });
+    expect(r).toEqual({ content: [{ type: 'text', text: JSON.stringify({ content: [{ type: 'text', text: 'Once upon a time' }] }) }], structuredContent: { content: [{ type: 'text', text: 'Once upon a time' }] } });
+    const over = await core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'tale__read_tale', arguments: {} });
+    expect(over).toMatchObject({ isError: true });
+  });
+
+  it('leaves out a server policy refuses', async () => {
+    mocks.listSiteTools.mockReturnValue(SITE);
+    const { Policy } = await import('../../policy/store');
+    const { compileRule } = await import('../../policy/rules');
+    Policy.__setForTesting([compileRule({ source: 'user', id: 'x', effect: 'deny', principal: { origin: '*' }, action: 'tool.list', resource: { server: 'site:*' } } as never)]);
+    syncPage();
+    const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB))!;
+    const listed = await core.handlePageToolsHostRequest('page_tools.list', { endpointId }) as { tools: Array<{ name: string }> };
+    expect(listed.tools.map((t) => t.name)).toEqual(['go_to', 'reading_position']);
   });
 });
