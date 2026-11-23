@@ -116,7 +116,14 @@ async function copyStatic() {
   // Remove dist/ prefix from paths since we're loading from dist/
   manifest = manifest.replace(/["']dist\//g, '"');
   await writeFile(`${outDir}/manifest.json`, manifest);
-  
+
+  // Chrome declares storage.managed_schema (manifest.chrome.json) so
+  // chrome.storage.managed can receive an enterprise policy; the schema
+  // file it points at has to ship next to the manifest.
+  if (isChrome) {
+    await copyFile('managed-schema.json', `${outDir}/managed-schema.json`);
+  }
+
   // Copy assets (icons, wasm files, etc.)
   await cp('assets', `${outDir}/assets`, { recursive: true });
   

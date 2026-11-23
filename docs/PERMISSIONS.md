@@ -177,7 +177,7 @@ So Tier 3 never fires today, and a site can't yet be stopped from reading a sens
 
 ## The policy file
 
-`harbor-policy.json` is a declarative document the user (or an organization) writes once. The engine reads two copies: a **managed** policy from the browser's managed storage under the key `policy` (Firefox `policies.json` or MDM; Chrome needs a `storage.managed_schema` in the extension's manifest, which Harbor doesn't declare yet), and a **user** policy from the extension's local storage, under `harbor_policy_v2`. Nothing in Harbor writes the user policy yet: there's no editor, import or export.
+`harbor-policy.json` is a declarative document the user (or an organization) writes once. The engine reads two copies: a **managed** policy from the browser's managed storage under the key `policy` (Firefox `policies.json` "3rdparty" takes it as an object; Chrome's managed-storage schema format has no union types and can't describe a rule document, so the Chrome build's schema, `managed-schema.json`, declares `policy` as a string instead, and an admin sets it to the document serialized with `JSON.stringify`), and a **user** policy from the extension's local storage, under `harbor_policy_v2`. Nothing in Harbor writes the user policy yet: there's no editor, import or export.
 
 The schema is **typed**: every rule is `{id, effect, principal, action, resource, context}` (`extension/src/policy/rules.ts`).
 
@@ -909,7 +909,7 @@ One limit applies to requests from web pages. The engine gates their calls to th
 
 **Q: Can my organization centrally manage this?**
 
-Yes. Ship a `harbor-managed-policy.json` via Firefox's `policies.json`, Chrome enterprise policies, or your MDM. It loads at the highest precedence and cannot be overridden by user policy or per-origin grants. Use this for company-wide deny rules, trusted-origin allowlists, label-egress restrictions, signed-publisher allowlists, and budget caps.
+Yes. Set the `policy` key in Harbor's managed storage: on Firefox, via `policies.json`'s `3rdparty` section (keyed by the extension ID), with `policy` as an object; on Chrome, via your MDM's enterprise policy for the extension, with `policy` as the same document serialized as a JSON string (Chrome's managed-storage schema format has no union types, so it can't declare the document's fields directly — `managed-schema.json` just declares `policy` as a string). It loads at the highest precedence and cannot be overridden by user policy or per-origin grants. Use this for company-wide deny rules, trusted-origin allowlists, label-egress restrictions, signed-publisher allowlists, and budget caps.
 
 **Q: Does the LLM-classifier "auto mode" exist for Harbor?**
 

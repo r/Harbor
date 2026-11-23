@@ -122,6 +122,41 @@ describe('Policy.load', () => {
     expect(rules[1].source).toBe('user');
   });
 
+  it('loads the same rules whether the managed policy arrives as an object (Firefox) or a JSON string (Chrome)', async () => {
+    const doc: PolicyDocument = {
+      version: 2,
+      deny: ['Egress(third_party)'],
+      allow: ['Tool(github.list_repos)'],
+    };
+
+    storage.managed.data['policy'] = doc;
+    await Policy.load();
+    const asObject = Policy.rules().map((r) => ({ effect: r.effect, source: r.source }));
+
+    resetMockBrowser();
+    Policy.__reset();
+    storage.managed.data['policy'] = JSON.stringify(doc);
+    await Policy.load();
+    const asString = Policy.rules().map((r) => ({ effect: r.effect, source: r.source }));
+
+    expect(asString).toEqual(asObject);
+    expect(asString.length).toBeGreaterThan(0);
+  });
+
+  it('treats a managed policy string that is not valid JSON as no policy, like an invalid object document', async () => {
+    storage.managed.data['policy'] = '{not valid json';
+    await Policy.load();
+    expect(Policy.rules().length).toBe(0);
+    expect(Policy.state().managed).toBeNull();
+  });
+
+  it('treats a managed policy string that parses to the wrong version as no policy', async () => {
+    storage.managed.data['policy'] = JSON.stringify({ version: 1, allow: ['Tool(*)'] });
+    await Policy.load();
+    expect(Policy.rules().length).toBe(0);
+    expect(Policy.state().managed).toBeNull();
+  });
+
 });
 
 // =============================================================================

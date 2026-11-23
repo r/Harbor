@@ -1,0 +1,12 @@
+{
+  "title": "Harbor managed policy",
+  "description": "Enterprise policy for the Harbor extension. Chrome's managed-storage schema format requires exactly one type per node and has no union types, so a Harbor policy document — whose rules mix strings, arrays and objects — can't be declared here field by field. Instead, set `policy` to that document serialized as a JSON string, the same one Firefox's policies.json \"3rdparty\" key takes as an object. See docs/PERMISSIONS.md (\"The policy file\") for the document's shape and examples.",
+  "type": "object",
+  "properties": {
+    "policy": {
+      "title": "Policy document (JSON string)",
+      "description": "A Harbor policy document, encoded as a JSON string. Loaded at the highest precedence; cannot be overridden by the user's own policy or by per-origin grants. Example: {\"version\":2,\"deny\":[\"Egress(third_party)\"]}",
+      "type": "string"
+    }
+  }
+}
