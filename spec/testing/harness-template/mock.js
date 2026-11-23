@@ -89,7 +89,7 @@ export function installWebAgentsMock(global) {
   function scopesForTypedAction(action) {
     if (action.startsWith('model.prompt')) return ['model:prompt'];
     if (action === 'tool.call') return ['mcp:tools.call'];
-    if (action === 'browser.read.screenshot') return ['browser:activeTab.read', 'browser:activeTab.screenshot'];
+    if (action === 'browser.read.screenshot') return ['browser:activeTab.screenshot'];
     if (action.startsWith('browser.read.')) return ['browser:activeTab.read'];
     if (action.startsWith('browser.write.')) return ['browser:activeTab.interact'];
     return [];
@@ -97,9 +97,10 @@ export function installWebAgentsMock(global) {
 
   // Like Harbor: an optional capability the site hasn't been granted is left
   // out; a required one it lacks refuses the whole session. Harbor checks
-  // model:prompt for model access and mcp:tools.call for tools, then its
-  // policy engine. Unlike Harbor, the mock doesn't narrow tools to the site's
-  // tool allowlist or fail on a browser grant the site denied.
+  // model:prompt for model access, mcp:tools.call for tools, and the
+  // matching browser:activeTab.* grant for each requested browser
+  // capability, then its policy engine. Unlike Harbor, the mock doesn't
+  // narrow tools to the site's tool allowlist.
   async function requestCapabilities(opts = {}) {
     const optional = (opts.optional || []).filter(r => scopesForTypedAction(r.action).every(s => state.granted.has(s)));
     const all = [...(opts.require || []), ...optional];
@@ -114,12 +115,23 @@ export function installWebAgentsMock(global) {
         throw createApiError('ERR_PERMISSION_DENIED', `Permission ${scope} required`);
       }
     }
+    // A required browser capability needs its grant the same way. An
+    // optional one that lacked its grant was already filtered out of
+    // `all` above, so this only ever refuses a `require` entry.
+    for (const r of all) {
+      if (!r.action.startsWith('browser.')) continue;
+      for (const scope of scopesForTypedAction(r.action)) {
+        if (!state.granted.has(scope)) {
+          throw createApiError('ERR_PERMISSION_DENIED', `Permission ${scope} required`);
+        }
+      }
+    }
     checkPolicy();
     const capabilities = {
       llm: { allowed: llm },
       tools: { allowed: tools.length > 0, allowedTools: tools },
       browser: {
-        readActiveTab: all.some(r => r.action.startsWith('browser.read.')),
+        readActiveTab: all.some(r => r.action.startsWith('browser.read.') && r.action !== 'browser.read.screenshot'),
         interact: all.some(r => r.action.startsWith('browser.write.')),
         screenshot: all.some(r => r.action === 'browser.read.screenshot'),
       },

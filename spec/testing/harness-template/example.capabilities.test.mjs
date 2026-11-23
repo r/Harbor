@@ -54,6 +54,20 @@ describe('agent.requestCapabilities() in the mock', () => {
       require: [{ action: 'tool.call', server: 'github' }],
     })).rejects.toMatchObject({ code: 'ERR_PERMISSION_DENIED' });
   });
+
+  it('refuses the session when a required browser capability is missing', async () => {
+    await expect(globalThis.agent.requestCapabilities({
+      require: [{ action: 'browser.read.activeTab' }],
+    })).rejects.toMatchObject({ code: 'ERR_PERMISSION_DENIED' });
+  });
+
+  it('makes a session when the required browser capability is held', async () => {
+    mock.permissions.grantScopes(['browser:activeTab.interact']);
+    const session = await globalThis.agent.requestCapabilities({
+      require: [{ action: 'browser.write.interact' }],
+    });
+    expect(session.capabilities.browser.interact).toBe(true);
+  });
 });
 
 describe('policy refusals in the mock', () => {
@@ -103,5 +117,17 @@ describe('requestCapabilities checks grants before policy, as Harbor does', () =
     mock.policy.refuse('ERR_QUARANTINED');
     await expect(globalThis.agent.requestCapabilities({ require: [{ action: 'model.prompt.local' }] }))
       .rejects.toMatchObject({ code: 'ERR_QUARANTINED' });
+  });
+});
+
+describe('screenshots in the mock', () => {
+  let mock;
+  beforeEach(() => { mock = installWebAgentsMock(globalThis); });
+  afterEach(() => { mock.uninstall(); });
+
+  it('makes a screenshot session from the screenshot grant alone', async () => {
+    mock.permissions.grantScopes(['browser:activeTab.screenshot']);
+    const session = await globalThis.agent.requestCapabilities({ require: [{ action: 'browser.read.screenshot' }] });
+    expect(session.capabilities.browser).toEqual({ readActiveTab: false, interact: false, screenshot: true });
   });
 });

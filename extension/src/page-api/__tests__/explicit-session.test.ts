@@ -163,6 +163,32 @@ describe('creating an explicit session', () => {
   });
 });
 
+describe('creating an explicit session with browser capabilities', () => {
+  it.each([
+    ['read', 'browser:activeTab.read'],
+    ['interact', 'browser:activeTab.interact'],
+    ['screenshot', 'browser:activeTab.screenshot'],
+  ] as const)('refuses to create a session requesting browser %s without its grant', async (access, scope) => {
+    mocks.hasPermission.mockImplementation(async (_origin: string, s: string) => s !== scope);
+    const res = await handleSessionsCreate(ctx('agent.sessions.create', { capabilities: { browser: [access] } }));
+    expect(res).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED', message: `Permission ${scope} required` } });
+    // Refused before Harbor's own session.create ever runs, so it never
+    // reaches the audit log that call would otherwise write to.
+    expect(mocks.harborRequest.mock.calls.map(([method]) => method)).not.toContain('session.create');
+  });
+
+  it('creates a session requesting browser access the origin has granted', async () => {
+    mocks.hasPermission.mockResolvedValue(true);
+    const res = await handleSessionsCreate(ctx('agent.sessions.create', { capabilities: { browser: ['read', 'interact'] } }));
+    expect(res).toMatchObject({ ok: true });
+    expect(mocks.hasPermission).toHaveBeenCalledWith(ORIGIN, 'browser:activeTab.read', undefined);
+    expect(mocks.hasPermission).toHaveBeenCalledWith(ORIGIN, 'browser:activeTab.interact', undefined);
+    expect(mocks.harborRequest).toHaveBeenCalledWith('session.create', expect.objectContaining({
+      origin: ORIGIN,
+    }), expect.anything());
+  });
+});
+
 describe('Harbor returns no session', () => {
   it('refuses to create an explicit session instead of recording one with no ID', async () => {
     mocks.harborRequest.mockImplementation(async () => ({}));
