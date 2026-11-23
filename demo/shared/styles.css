@@ -1,68 +1,44 @@
-/*
- * Web Agent API Demo - Design System
- * A clean, modern design inspired by open web aesthetics
- */
-
-/* ============================================
-   FONTS
-   ============================================ */
-/* 
- * To use these fonts, add to your HTML <head>:
- * <link rel="preconnect" href="https://fonts.googleapis.com">
- * <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
- * <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
- */
-
-/* ============================================
-   CSS CUSTOM PROPERTIES (Design Tokens)
-   ============================================ */
+/* Harbor demo pages share the public site's type, ink, rules and report green. */
 :root {
-  /* ---- Color Palette ---- */
-  /* Background layers (darkest to lighter) */
-  --demo-bg-base: #15141a;
-  --demo-bg-subtle: #1c1b22;
-  --demo-bg-elevated: #23222b;
-  --demo-bg-surface: #2b2a33;
-  --demo-bg-overlay: #32313c;
-  
-  /* Text colors */
-  --demo-text-primary: #fbfbfe;
-  --demo-text-secondary: #b1b1b3;
-  --demo-text-muted: #7c7c7e;
-  --demo-text-faint: #52525e;
-  
-  /* Border colors */
-  --demo-border-subtle: rgba(255, 255, 255, 0.06);
-  --demo-border-default: rgba(255, 255, 255, 0.10);
-  --demo-border-strong: rgba(255, 255, 255, 0.18);
-  
-  /* Accent colors - Firefox orange gradient */
-  --demo-accent-primary: #ff9400;
-  --demo-accent-secondary: #ff7139;
-  --demo-accent-tertiary: #e64040;
-  --demo-accent-glow: rgba(255, 148, 0, 0.15);
-  
-  /* Semantic colors */
-  --demo-success: #30e60b;
-  --demo-success-dim: rgba(48, 230, 11, 0.12);
-  --demo-warning: #ffbd4f;
-  --demo-warning-dim: rgba(255, 189, 79, 0.12);
-  --demo-error: #ff6b6b;
-  --demo-error-dim: rgba(255, 107, 107, 0.12);
-  --demo-info: #00ddff;
-  --demo-info-dim: rgba(0, 221, 255, 0.12);
-  
-  /* ---- Typography ---- */
-  --demo-font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --demo-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
-  
+  color-scheme: light dark;
+  --demo-bg-base: light-dark(#ffffff, oklch(15% 0.010 250));
+  --demo-bg-subtle: light-dark(#f6f8f5, oklch(18% 0.012 250));
+  --demo-bg-elevated: light-dark(#f6f8f5, oklch(21% 0.013 250));
+  --demo-bg-surface: light-dark(#ffffff, oklch(18% 0.012 250));
+  --demo-bg-overlay: light-dark(#e9f5e7, oklch(24% 0.014 250));
+  --demo-text-primary: light-dark(#151b17, oklch(95% 0.004 250));
+  --demo-text-secondary: light-dark(#344338, oklch(78% 0.008 250));
+  --demo-text-muted: light-dark(#4e6054, oklch(60% 0.010 250));
+  --demo-text-faint: light-dark(#4e6054, oklch(60% 0.010 250));
+  --demo-text-inverse: light-dark(#ffffff, oklch(15% 0.010 250));
+  --demo-border-subtle: light-dark(#dde3db, oklch(24% 0.012 250));
+  --demo-border-default: light-dark(#c4ccc2, oklch(28% 0.013 250));
+  --demo-border-strong: light-dark(#748171, oklch(40% 0.015 250));
+  --demo-accent-primary: light-dark(#176435, oklch(84% 0.17 145));
+  --demo-accent-secondary: light-dark(#0f4a26, oklch(90% 0.15 145));
+  --demo-accent-tertiary: light-dark(#176435, oklch(84% 0.17 145));
+  --demo-accent-glow: light-dark(#d6ffcd, oklch(72% 0.15 145 / 0.18));
+  --demo-action: light-dark(#00d230, oklch(84% 0.17 145));
+  --demo-action-hover: light-dark(#00b829, oklch(90% 0.15 145));
+  --demo-action-ink: #101912;
+  --demo-success: light-dark(#176435, oklch(84% 0.17 145));
+  --demo-success-dim: light-dark(rgb(23 100 53 / 0.10), oklch(72% 0.15 145 / 0.16));
+  --demo-error: light-dark(#b42318, oklch(72% 0.17 25));
+  --demo-error-dim: light-dark(rgb(180 35 24 / 0.08), oklch(72% 0.17 25 / 0.14));
+  --demo-warning: light-dark(#8a5a00, oklch(85% 0.14 85));
+  --demo-warning-dim: light-dark(rgb(138 90 0 / 0.10), oklch(85% 0.14 85 / 0.14));
+  --demo-info: light-dark(#1d5d7a, oklch(80% 0.09 230));
+  --demo-info-dim: light-dark(rgb(29 93 122 / 0.10), oklch(80% 0.09 230 / 0.14));
+  --demo-font-sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --demo-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --demo-font-display: "Helvetica Neue", Arial, sans-serif;
   --demo-text-xs: 0.75rem;    /* 12px */
   --demo-text-sm: 0.875rem;   /* 14px */
   --demo-text-base: 1rem;     /* 16px */
   --demo-text-lg: 1.125rem;   /* 18px */
   --demo-text-xl: 1.25rem;    /* 20px */
   --demo-text-2xl: 1.5rem;    /* 24px */
-  --demo-text-3xl: 2rem;      /* 32px */
+  --demo-text-3xl: clamp(2rem, 5vw, 3.2rem);
   --demo-text-4xl: 2.5rem;    /* 40px */
   
   --demo-weight-normal: 400;
@@ -98,7 +74,7 @@
   --demo-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
   --demo-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
   --demo-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45);
-  --demo-shadow-glow: 0 0 30px var(--demo-accent-glow);
+  --demo-shadow-glow: none;
   
   /* ---- Transitions ---- */
   --demo-transition-fast: 150ms ease;
@@ -106,30 +82,8 @@
   --demo-transition-slow: 300ms ease;
 }
 
-/* Light theme overrides */
-[data-theme="light"] {
-  --demo-bg-base: #ffffff;
-  --demo-bg-subtle: #f9f9fb;
-  --demo-bg-elevated: #f0f0f4;
-  --demo-bg-surface: #ffffff;
-  --demo-bg-overlay: #e0e0e6;
-  
-  --demo-text-primary: #15141a;
-  --demo-text-secondary: #5b5b66;
-  --demo-text-muted: #8f8f9d;
-  --demo-text-faint: #c0c0c7;
-  
-  --demo-border-subtle: rgba(0, 0, 0, 0.05);
-  --demo-border-default: rgba(0, 0, 0, 0.10);
-  --demo-border-strong: rgba(0, 0, 0, 0.15);
-  
-  --demo-accent-primary: #e66000;
-  --demo-accent-secondary: #d45a00;
-  
-  --demo-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --demo-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.10);
-  --demo-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.15);
-}
+html[data-theme="light"] { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
 
 /* ============================================
    RESET & BASE
@@ -159,35 +113,10 @@ body {
 }
 
 /* ============================================
-   BACKGROUND PATTERNS
-   ============================================ */
-/* Subtle dot pattern */
-.demo-bg-grid::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 32px 32px;
-  pointer-events: none;
-  z-index: -1;
-}
-
-/* Gradient glow effect */
-.demo-bg-glow::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: 
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255, 148, 0, 0.08), transparent),
-    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(255, 113, 57, 0.05), transparent);
-  pointer-events: none;
-  z-index: -1;
-}
-
-/* ============================================
    TYPOGRAPHY
    ============================================ */
 h1, h2, h3, h4, h5, h6 {
+  font-family: var(--demo-font-display);
   font-weight: var(--demo-weight-bold);
   line-height: var(--demo-leading-tight);
   letter-spacing: -0.02em;
@@ -220,13 +149,7 @@ code {
   border-radius: var(--demo-radius-sm);
 }
 
-/* Gradient text effect */
-.demo-text-gradient {
-  background: linear-gradient(90deg, var(--demo-accent-primary), var(--demo-accent-secondary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
+.demo-text-gradient { color: var(--demo-accent-primary); }
 
 /* ============================================
    LAYOUT COMPONENTS
@@ -263,7 +186,7 @@ code {
 
 .demo-card-interactive:hover {
   border-color: var(--demo-accent-primary);
-  box-shadow: 0 0 0 1px var(--demo-accent-primary), var(--demo-shadow-glow);
+  box-shadow: 0 0 0 1px var(--demo-accent-primary);
   transform: translateY(-2px);
 }
 
@@ -279,7 +202,7 @@ code {
 .demo-card-icon {
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-secondary));
+  background: var(--demo-accent-glow);
   border-radius: var(--demo-radius-md);
   display: flex;
   align-items: center;
@@ -317,15 +240,13 @@ code {
 }
 
 .demo-btn-primary {
-  background: linear-gradient(90deg, var(--demo-accent-primary), var(--demo-accent-secondary));
-  color: white;
+  background: var(--demo-action);
+  color: var(--demo-action-ink);
   box-shadow: var(--demo-shadow-sm);
 }
 
 .demo-btn-primary:hover:not(:disabled) {
-  filter: brightness(1.1);
-  box-shadow: var(--demo-shadow-glow);
-  transform: translateY(-1px);
+  background: var(--demo-action-hover);
 }
 
 .demo-btn-secondary {
@@ -433,12 +354,12 @@ code {
 }
 
 /* Syntax highlighting */
-.demo-code .keyword { color: #ff7eb6; }
-.demo-code .string { color: #42be65; }
+.demo-code .keyword { color: var(--demo-info); }
+.demo-code .string { color: var(--demo-success); }
 .demo-code .comment { color: var(--demo-text-muted); }
-.demo-code .property { color: #ffab70; }
-.demo-code .method { color: #82cfff; }
-.demo-code .number { color: #ff9500; }
+.demo-code .property { color: var(--demo-warning); }
+.demo-code .method { color: var(--demo-accent-primary); }
+.demo-code .number { color: var(--demo-warning); }
 
 /* ============================================
    INPUTS
@@ -567,7 +488,7 @@ textarea.demo-input {
 .demo-logo {
   width: 64px;
   height: 64px;
-  background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-secondary));
+  background: var(--demo-accent-glow);
   border-radius: var(--demo-radius-lg);
   display: flex;
   align-items: center;
@@ -653,7 +574,7 @@ textarea.demo-input {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--demo-accent-primary), var(--demo-accent-secondary));
+  background: var(--demo-accent-primary);
   transition: width 0.4s ease;
   border-radius: 2px;
 }
@@ -711,18 +632,18 @@ textarea.demo-input {
 
 .step.active .step-icon {
   background: var(--demo-accent-primary);
-  color: white;
+  color: var(--demo-text-inverse);
   box-shadow: var(--demo-shadow-glow);
 }
 
 .step.completed .step-icon {
   background: var(--demo-success);
-  color: white;
+  color: var(--demo-text-inverse);
 }
 
 .step.error .step-icon {
   background: var(--demo-error);
-  color: white;
+  color: var(--demo-text-inverse);
 }
 
 .step-content {
@@ -765,17 +686,14 @@ textarea.demo-input {
   color: var(--demo-text-secondary);
 }
 
-.step.waiting .step-code {
-  opacity: 0.5;
-}
 
 /* Code syntax highlighting */
-.step-code .keyword { color: #ff7eb6; }
-.step-code .string { color: #42be65; }
+.step-code .keyword { color: var(--demo-info); }
+.step-code .string { color: var(--demo-success); }
 .step-code .comment { color: var(--demo-text-muted); }
-.step-code .property { color: #ffab70; }
-.step-code .method { color: #82cfff; }
-.step-code .number { color: #ff9500; }
+.step-code .property { color: var(--demo-warning); }
+.step-code .method { color: var(--demo-accent-primary); }
+.step-code .number { color: var(--demo-warning); }
 
 .step-output {
   margin-top: var(--demo-space-3);
@@ -814,7 +732,7 @@ textarea.demo-input {
   width: 14px;
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border-top-color: var(--demo-text-inverse);
   border-radius: 50%;
   animation: demo-spin 0.8s linear infinite;
 }
@@ -860,8 +778,8 @@ textarea.demo-input {
 }
 
 .message.user .message-avatar {
-  background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-secondary));
-  color: white;
+  background: var(--demo-accent-primary);
+  color: var(--demo-text-inverse);
 }
 
 .message.assistant .message-avatar {
@@ -1024,10 +942,10 @@ textarea.demo-input {
 .send-btn {
   width: 36px;
   height: 36px;
-  background: linear-gradient(90deg, var(--demo-accent-primary), var(--demo-accent-secondary));
+  background: var(--demo-action);
   border: none;
   border-radius: var(--demo-radius-md);
-  color: white;
+  color: var(--demo-action-ink);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1037,7 +955,7 @@ textarea.demo-input {
 }
 
 .send-btn:hover:not(:disabled) {
-  filter: brightness(1.1);
+  background: var(--demo-action-hover);
 }
 
 .send-btn:disabled {
@@ -1084,4 +1002,19 @@ textarea.demo-input {
   background: var(--demo-bg-overlay);
   border-color: var(--demo-border-strong);
   color: var(--demo-text-primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--demo-accent-primary);
+  outline-offset: 3px;
+}
+
+.input-wrapper textarea { min-width: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

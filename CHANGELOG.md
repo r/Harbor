@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The demo directory and examples use Harbor’s public-site typography and green palette, with layouts for phones and system light and dark themes.
+
 - Every tool a site offers your agent, from its page or its MCP server, now reaches the agent with an origin the site can't forge. The description is prefixed "From <host>:", and the tool and its results carry `harbor/provenance` metadata with the site's origin. A site can't make its tools look like another site's. See "Tool spoofing" in docs/PERMISSIONS.md, and a draft proposal to make this a standard ACP field in docs/rfds/provenance.md.
 
 - A site's registered MCP server tools now get the same gate as its page tools, on both Harbor's own model and your agent: no `mcp:tools.list`/`mcp:tools.call` grant and no per-tool allowlist (those would also open your own MCP servers), and a policy check on every server and call. On your ACP agent, they go through Harbor, so each call is checked, counted against the run's budget and audited; your agent no longer gets the server's URL, so WebSocket servers work too. A site's chat on your agent now gets them as well.

@@ -6,7 +6,7 @@ These demos require **Harbor**, an implementation of the Web Agent API.
 
 ## Live Demo
 
-These demos are published via GitHub Pages at: **https://[your-org].github.io/harbor/demo/**
+Open the [Harbor demo directory](https://r.github.io/Harbor/demo/). The demos follow your system’s light or dark appearance. Shared colors, typography and controls live in `shared/styles.css`.
 
 ## Available Demos
 
