@@ -28,6 +28,11 @@ const inOrder = (ids: string[]) => {
 };
 
 describe('sidebar layout', () => {
+  it("leaves the name to the browser's own sidebar header", () => {
+    // Firefox's sidebar and Chrome's side panel already title it "Harbor".
+    expect(html.slice(html.indexOf("<body"))).not.toMatch(/>\s*Harbor\s*</);
+  });
+
   it('has a main view and a settings view', () => {
     inOrder(['main-view', 'settings-view']);
     expect(tag('settings-view')).toMatch(/\shidden[\s>]/);
