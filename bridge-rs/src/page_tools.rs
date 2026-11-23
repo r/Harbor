@@ -61,7 +61,10 @@ static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// `host_response`. Never leaves the bridge, so it only needs to be unique,
 /// not unguessable.
 fn new_request_id() -> String {
-    format!("page-tools-{:x}", REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed))
+    format!(
+        "page-tools-{:x}",
+        REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 struct Inner {
@@ -414,7 +417,12 @@ async fn relay_list(
     state: &Arc<PageToolsState>,
     endpoint_id: &str,
 ) -> Result<Value, (i64, String)> {
-    match send_host_request(state, "page_tools.list", json!({ "endpointId": endpoint_id })).await
+    match send_host_request(
+        state,
+        "page_tools.list",
+        json!({ "endpointId": endpoint_id }),
+    )
+    .await
     {
         Ok(value) => {
             let tools: Vec<Value> = value
@@ -434,7 +442,10 @@ async fn relay_call(state: &Arc<PageToolsState>, endpoint_id: &str, params: Valu
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
 
     match send_host_request(
         state,
@@ -534,7 +545,8 @@ mod tests {
         let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
             .expect("connect");
-        let mut request = format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
+        let mut request =
+            format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
         if let Some(ct) = content_type {
             request.push_str(&format!("Content-Type: {ct}\r\n"));
         }
@@ -542,7 +554,10 @@ mod tests {
             request.push_str(&format!("Origin: {o}\r\n"));
         }
         request.push_str(&format!("Content-Length: {}\r\n\r\n", body.len()));
-        stream.write_all(request.as_bytes()).await.expect("write head");
+        stream
+            .write_all(request.as_bytes())
+            .await
+            .expect("write head");
         stream.write_all(body).await.expect("write body");
         let mut buf = vec![0u8; 512];
         let n = stream.read(&mut buf).await.expect("read response");
@@ -572,7 +587,10 @@ mod tests {
         let (id_b, port_b, token_b) = open_for_test(&state).await;
         assert_ne!(id_a, id_b);
         assert_ne!(token_a, token_b);
-        assert_eq!(port_a, port_b, "a second open should reuse the one listener");
+        assert_eq!(
+            port_a, port_b,
+            "a second open should reuse the one listener"
+        );
     }
 
     #[tokio::test]
@@ -582,8 +600,15 @@ mod tests {
         // "pt-<counter>-<random>"; the random part is base64url, so it may
         // itself contain '-'. Take everything after the second '-'.
         let random = id.splitn(3, '-').nth(2).unwrap_or("");
-        assert_eq!(random.len(), 16, "endpoint id {id:?} has no 16-character random part");
-        assert!(!id.contains(&token), "the endpoint id must not reveal the URL token");
+        assert_eq!(
+            random.len(),
+            16,
+            "endpoint id {id:?} has no 16-character random part"
+        );
+        assert!(
+            !id.contains(&token),
+            "the endpoint id must not reveal the URL token"
+        );
     }
 
     #[tokio::test]
@@ -591,10 +616,14 @@ mod tests {
         let state = test_state();
         let (endpoint_id, _port, _token) = open_for_test(&state).await;
 
-        let first = close_on(&state, json!({ "endpointId": endpoint_id })).await.unwrap();
+        let first = close_on(&state, json!({ "endpointId": endpoint_id }))
+            .await
+            .unwrap();
         assert_eq!(first, json!({ "closed": true }));
 
-        let second = close_on(&state, json!({ "endpointId": endpoint_id })).await.unwrap();
+        let second = close_on(&state, json!({ "endpointId": endpoint_id }))
+            .await
+            .unwrap();
         assert_eq!(second, json!({ "closed": false }));
 
         let unknown = close_on(&state, json!({ "endpointId": "pt-never-opened" }))
@@ -607,7 +636,9 @@ mod tests {
     async fn a_closed_token_404s() {
         let state = test_state();
         let (endpoint_id, port, token) = open_for_test(&state).await;
-        close_on(&state, json!({ "endpointId": endpoint_id })).await.unwrap();
+        close_on(&state, json!({ "endpointId": endpoint_id }))
+            .await
+            .unwrap();
 
         let client = reqwest::Client::new();
         let resp = client
@@ -775,12 +806,15 @@ mod tests {
             let resp: Value = client
                 .post(&url)
                 .header("content-type", "application/json")
-                .body(json!({
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "initialize",
-                    "params": { "protocolVersion": requested },
-                }).to_string())
+                .body(
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": { "protocolVersion": requested },
+                    })
+                    .to_string(),
+                )
                 .send()
                 .await
                 .unwrap()
@@ -792,7 +826,10 @@ mod tests {
                 resp["result"]["capabilities"]["tools"]["listChanged"],
                 json!(false)
             );
-            assert_eq!(resp["result"]["serverInfo"]["name"], json!("harbor-page-tools"));
+            assert_eq!(
+                resp["result"]["serverInfo"]["name"],
+                json!("harbor-page-tools")
+            );
         }
     }
 
@@ -890,10 +927,8 @@ mod tests {
     async fn tools_list_defaults_a_missing_input_schema() {
         let state = test_state();
         let (endpoint_id, _port, _token) = open_for_test(&state).await;
-        let _handle = fake_extension_answering(
-            &state,
-            Ok(json!({ "tools": [{ "name": "bare" }] })),
-        );
+        let _handle =
+            fake_extension_answering(&state, Ok(json!({ "tools": [{ "name": "bare" }] })));
 
         let result = relay_list(&state, &endpoint_id).await.unwrap();
         let tools = result["tools"].as_array().unwrap();
@@ -916,12 +951,15 @@ mod tests {
         let resp: Value = client
             .post(format!("http://127.0.0.1:{}/mcp/{}", port, token))
             .header("content-type", "application/json")
-            .body(json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": { "name": "doit", "arguments": { "x": 1 } },
-            }).to_string())
+            .body(
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": { "name": "doit", "arguments": { "x": 1 } },
+                })
+                .to_string(),
+            )
             .send()
             .await
             .unwrap()
@@ -940,7 +978,12 @@ mod tests {
         let (endpoint_id, _port, _token) = open_for_test(&state).await;
         let _handle = fake_extension_answering(&state, Err(json!("the handler threw")));
 
-        let result = relay_call(&state, &endpoint_id, json!({ "name": "doit", "arguments": {} })).await;
+        let result = relay_call(
+            &state,
+            &endpoint_id,
+            json!({ "name": "doit", "arguments": {} }),
+        )
+        .await;
         assert_eq!(result["isError"], json!(true));
         assert_eq!(result["content"][0]["text"], json!("Page tool call failed"));
     }
@@ -963,7 +1006,12 @@ mod tests {
             drop(response_tx);
         });
 
-        let result = relay_call(&state, &endpoint_id, json!({ "name": "doit", "arguments": {} })).await;
+        let result = relay_call(
+            &state,
+            &endpoint_id,
+            json!({ "name": "doit", "arguments": {} }),
+        )
+        .await;
         assert_eq!(result["isError"], json!(true));
         assert_eq!(result["content"][0]["text"], json!("Page tool call failed"));
     }
@@ -1003,7 +1051,12 @@ mod tests {
         let state = test_state();
         let (endpoint_id, _port, _token) = open_for_test(&state).await;
 
-        let call_result = relay_call(&state, &endpoint_id, json!({ "name": "doit", "arguments": {} })).await;
+        let call_result = relay_call(
+            &state,
+            &endpoint_id,
+            json!({ "name": "doit", "arguments": {} }),
+        )
+        .await;
         assert_eq!(call_result["isError"], json!(true));
 
         let list_result = relay_list(&state, &endpoint_id).await;
