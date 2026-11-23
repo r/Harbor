@@ -687,9 +687,9 @@ Page tool errors produce `ERR_TOOL_FAILED` errors, matching the behavior of MCP 
 
 #### Page tools and the person's agent
 
-A page's tools also reach the agent work that page starts: `agent.run()` and `agent.chat.open()`. The handlers still run in the page; only each tool's name, description and input schema leave it.
+A page's tools also reach the agent work that page starts: `agent.run()`, and `agent.chat.open()` when the person has chosen their own agent. Page chat on Harbor's built-in model sends each message straight to the model, with no tools. The handlers still run in the page; only each tool's name, description and input schema leave it.
 
-- **Harbor's built-in agent** sees them as `page:<host>/<tool>`, beside Harbor's installed tools.
+- **Harbor's built-in agent** sees them in `agent.run()` as `page:<host>/<tool>`, beside Harbor's installed tools.
 - **The person's own ACP agent** (goose, Claude Code, Codex) gets them as an MCP server named `page:<host>`, which Harbor serves on `127.0.0.1` for that session only. The agent needs to support HTTP MCP servers.
 - **No grant of their own.** The grant that lets the page start the run or chat covers them. `mcp:tools.list` and `mcp:tools.call` aren't needed, since those would also open the person's own MCP servers. A policy rule can still refuse them (`tool.list` or `tool.call` on the `page:<host>` server), and every check is in the audit log.
 - **Lifetime.** Tools last as long as the page's document. A reload or real navigation drops them, and a call in flight then fails with `ERR_TOOL_FAILED`. A same-document hash or `pushState` change keeps them. A call also fails with `ERR_TOOL_FAILED` when the handler throws (its message is passed on), the result is over 1 MB, or the page doesn't answer within 60 seconds. Calls are never retried.
