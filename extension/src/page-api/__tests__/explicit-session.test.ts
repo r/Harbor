@@ -170,3 +170,24 @@ describe('Harbor returns no session', () => {
     expect(res).toMatchObject({ ok: false, error: { code: 'ERR_INTERNAL', message: 'Harbor did not create a session' } });
   });
 });
+
+describe("Harbor's policy check refuses the session", () => {
+  it.each(['ERR_BLOCKED_BY_POLICY', 'ERR_QUARANTINED', 'ERR_PERMISSION_DENIED'])(
+    'reports %s to the page instead of ERR_INTERNAL',
+    async (code) => {
+      mocks.harborRequest.mockImplementation(async () => {
+        throw Object.assign(new Error('Refused by policy'), { code });
+      });
+      const res = await handleSessionsCreate(ctx('agent.sessions.create', { capabilities: { llm: {} } }));
+      expect(res).toMatchObject({ ok: false, error: { code, message: 'Refused by policy' } });
+    },
+  );
+
+  it('still reports any other failure as ERR_INTERNAL', async () => {
+    mocks.harborRequest.mockImplementation(async () => {
+      throw Object.assign(new Error('disk full'), { code: 'ERR_SOMETHING_ELSE' });
+    });
+    const res = await handleSessionsCreate(ctx('agent.sessions.create', { capabilities: { llm: {} } }));
+    expect(res).toMatchObject({ ok: false, error: { code: 'ERR_INTERNAL' } });
+  });
+});

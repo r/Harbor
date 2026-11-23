@@ -9,6 +9,7 @@
  */
 
 import { browserAPI } from './browser-compat';
+import { hydrateIcons, icon, type IconName } from './icons';
 import { loadFromUrl, loadFromFile, type LoadResult } from './storage/package-loader';
 // NOTE: Feature flags are enforced by Web Agents API extension, not Harbor
 
@@ -21,7 +22,7 @@ type BundledServer = {
   description: string;
   version: string;
   runtime: 'js' | 'wasm' | 'remote';
-  icon: string;
+  icon: IconName;
   tags: string[];
   manifestUrl?: string;
   wasmUrl?: string;
@@ -58,7 +59,7 @@ const BUNDLED_SERVERS: BundledServer[] = [
     description: 'Provides tools for getting the current time and converting between timezones. A simple WASM-based MCP server.',
     version: '1.0.0',
     runtime: 'wasm',
-    icon: '🕐',
+    icon: 'clock',
     tags: ['time', 'datetime', 'timezone', 'wasm'],
     wasmUrl: 'assets/mcp-time.wasm',
     tools: [
@@ -72,7 +73,7 @@ const BUNDLED_SERVERS: BundledServer[] = [
     description: 'A simple demo server that echoes back input and reverses strings. Useful for testing MCP tool calls.',
     version: '1.0.0',
     runtime: 'js',
-    icon: '🔊',
+    icon: 'volume-2',
     tags: ['demo', 'test', 'echo'],
     tools: [
       { name: 'echo', description: 'Echo back the input message' },
@@ -85,7 +86,7 @@ const BUNDLED_SERVERS: BundledServer[] = [
     description: 'Read and send emails via Gmail API. Supports searching, reading, sending emails and managing labels. Requires Google OAuth.',
     version: '1.0.0',
     runtime: 'js',
-    icon: '📧',
+    icon: 'mail',
     tags: ['gmail', 'email', 'google', 'oauth'],
     manifestUrl: 'bundled/gmail-harbor/manifest.json',
     tools: [
@@ -111,7 +112,6 @@ const STORAGE_KEY = 'harbor_wasm_servers';
 
 // DOM elements
 const list = document.getElementById('list') as HTMLDivElement;
-const themeToggle = document.getElementById('theme-toggle') as HTMLButtonElement;
 const installUrlInput = document.getElementById('install-url') as HTMLInputElement;
 const installUrlBtn = document.getElementById('install-url-btn') as HTMLButtonElement;
 const dropZone = document.getElementById('drop-zone') as HTMLDivElement;
@@ -134,7 +134,7 @@ function renderServerCard(server: BundledServer): HTMLElement {
 
   const iconContainer = document.createElement('div');
   iconContainer.className = 'server-card-icon';
-  iconContainer.textContent = server.icon;
+  iconContainer.innerHTML = icon(server.icon, { size: 22 });
 
   const info = document.createElement('div');
   info.className = 'server-card-info';
@@ -508,7 +508,7 @@ function renderServerList(): void {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
     empty.innerHTML = `
-      <div class="empty-icon">📦</div>
+      <div class="empty-icon">${icon('package', { size: 32 })}</div>
       <div class="empty-title">No bundled servers</div>
       <div class="empty-desc">No MCP servers are bundled with this version of Harbor.</div>
     `;
@@ -683,63 +683,13 @@ function setupUrlInstall(): void {
   });
 }
 
-// Theme management
-type Theme = 'light' | 'dark' | 'system';
-
-function getSystemTheme(): 'light' | 'dark' {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function applyTheme(theme: Theme): void {
-  const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
-  document.documentElement.setAttribute('data-theme', effectiveTheme);
-  localStorage.setItem('harbor-theme', theme);
-  updateThemeToggle(theme);
-}
-
-function updateThemeToggle(theme: Theme): void {
-  if (!themeToggle) return;
-  const icons: Record<Theme, string> = { light: '☀️', dark: '🌙', system: '🖥️' };
-  themeToggle.textContent = icons[theme];
-  themeToggle.title = `Theme: ${theme} (click to change)`;
-}
-
-function initTheme(): void {
-  const saved = localStorage.getItem('harbor-theme') as Theme | null;
-  const theme = saved || 'system';
-  applyTheme(theme);
-
-  // Listen for system theme changes
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const current = localStorage.getItem('harbor-theme') as Theme | null;
-    if (current === 'system' || !current) {
-      applyTheme('system');
-    }
-  });
-
-  // Listen for theme changes from other tabs/windows (sidebar)
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'harbor-theme' && e.newValue) {
-      applyTheme(e.newValue as Theme);
-    }
-  });
-}
-
-function cycleTheme(): void {
-  const current = (localStorage.getItem('harbor-theme') as Theme | null) || 'system';
-  const order: Theme[] = ['system', 'light', 'dark'];
-  const next = order[(order.indexOf(current) + 1) % order.length];
-  applyTheme(next);
-}
-
 // Initialize when DOM is ready
 function init(): void {
   console.log('[Directory] Initializing...');
   console.log('[Directory] list element:', list);
   console.log('[Directory] BUNDLED_SERVERS:', BUNDLED_SERVERS.length);
 
-  initTheme();
-  themeToggle?.addEventListener('click', cycleTheme);
+  hydrateIcons();
 
   // Setup URL and file install handlers
   setupUrlInstall();

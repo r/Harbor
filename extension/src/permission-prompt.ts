@@ -10,60 +10,22 @@ import { consentScopeDescription, consentScopeRows } from './policy/agent-consen
 import { buildScopeItem } from './scope-item';
 import { escapeHtml } from './html-escape';
 import type { PermissionScope } from './agents/types';
+import type { IconName } from './icons';
 
 // Icons for each scope category
-const SCOPE_ICONS: Record<string, string> = {
-  'model:prompt': '🤖',
-  'model:tools': '🔧',
-  'model:list': '📋',
-  'mcp:tools.list': '🔌',
-  'mcp:tools.call': '⚡',
-  'mcp:servers.register': '📡',
-  'browser:activeTab.read': '📄',
-  'browser:activeTab.interact': '👆',
-  'browser:activeTab.screenshot': '📸',
-  'chat:open': '💬',
-  'web:fetch': '🌐',
+const SCOPE_ICONS: Record<string, IconName> = {
+  'model:prompt': 'message-circle',
+  'model:tools': 'wrench',
+  'model:list': 'list',
+  'mcp:tools.list': 'plug',
+  'mcp:tools.call': 'play',
+  'mcp:servers.register': 'server',
+  'browser:activeTab.read': 'file-text',
+  'browser:activeTab.interact': 'mouse-pointer-click',
+  'browser:activeTab.screenshot': 'camera',
+  'chat:open': 'message-circle',
+  'web:fetch': 'globe',
 };
-
-// =============================================================================
-// Theme Management (synced with sidebar)
-// =============================================================================
-
-type Theme = 'light' | 'dark' | 'system';
-
-function getSystemTheme(): 'light' | 'dark' {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function applyTheme(theme: Theme): void {
-  const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
-  document.documentElement.setAttribute('data-theme', effectiveTheme);
-}
-
-function initTheme(): void {
-  const saved = localStorage.getItem('harbor-theme') as Theme | null;
-  const theme = saved || 'system';
-  applyTheme(theme);
-
-  // Listen for system theme changes
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const current = localStorage.getItem('harbor-theme') as Theme | null;
-    if (current === 'system' || !current) {
-      applyTheme('system');
-    }
-  });
-
-  // Listen for theme changes from other windows (sidebar)
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'harbor-theme' && e.newValue) {
-      applyTheme(e.newValue as Theme);
-    }
-  });
-}
-
-// Initialize theme immediately
-initTheme();
 
 // =============================================================================
 // Permission Prompt Logic
@@ -162,7 +124,7 @@ if (scopesList) {
     for (const row of consentScopeRows(scopes, agentName)) {
       const scope = row[0];
       const info = consentScopeDescription(scope, agentName);
-      const icon = SCOPE_ICONS[scope] || '🔐';
+      const icon = SCOPE_ICONS[scope] ?? 'shield';
 
       const item = info
         ? buildScopeItem(icon, info.title, info.description, info.risk)

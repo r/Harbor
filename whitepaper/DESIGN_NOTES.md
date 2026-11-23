@@ -15,3 +15,5 @@ The homepage pairs its headline with a coastal print made of CSS shapes. The tex
 ## Editing
 
 Edit shared styles in `styles.css` and article content directly in the four HTML files. Check both themes, the narrow navigation and code overflow in Firefox when changing these components.
+
+The extension's pages share this palette and type through `extension/src/design-tokens.css`. When a site color changes, change the matching token there too.

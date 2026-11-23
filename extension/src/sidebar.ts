@@ -2,6 +2,7 @@
 export {};
 
 import { browserAPI } from './browser-compat';
+import { hydrateIcons, icon } from './icons';
 import { configuredModelActions, modelsAvailableToAdd, type ConfiguredModel } from './sidebar-models';
 import { getFeatureFlags, setFeatureFlags, type FeatureFlags } from './page-api/policy/feature-flags';
 import {
@@ -73,9 +74,6 @@ type ModelInfo = {
   owned_by?: string;
 };
 
-// Header elements
-const headerLogo = document.getElementById('header-logo') as HTMLDivElement;
-
 // Server elements
 const serversEl = document.getElementById('servers') as HTMLDivElement;
 const serversListEl = document.getElementById('servers-list') as HTMLDivElement;
@@ -101,9 +99,10 @@ const serverSecretsSaveBtn = document.getElementById('server-secrets-save') as H
 const serverSecretsCancelBtn = document.getElementById('server-secrets-cancel') as HTMLButtonElement;
 const serverSecretsCancelBtn2 = document.getElementById('server-secrets-cancel-btn') as HTMLButtonElement;
 
-// Bridge status elements
-const bridgeStatusIndicator = document.getElementById('bridge-status-indicator') as HTMLDivElement;
-const bridgeStatusText = document.getElementById('bridge-status-text') as HTMLSpanElement;
+// Bridge notice: shown in the main view only while Harbor can't reach its bridge
+const bridgeNotice = document.getElementById('bridge-notice') as HTMLDivElement;
+const bridgeNoticeError = document.getElementById('bridge-notice-error') as HTMLParagraphElement;
+const welcomeTitle = document.getElementById('welcome-title') as HTMLHeadingElement;
 
 // Setup status panel
 const setupStatusList = document.getElementById('setup-status-list') as HTMLDivElement;
@@ -111,6 +110,7 @@ const setupStatusBody = document.getElementById('setup-status-body') as HTMLDivE
 const setupStatusToggle = document.getElementById('setup-status-toggle') as HTMLSpanElement;
 const setupStatusHeader = document.getElementById('setup-status-header') as HTMLDivElement;
 const openDebuggingLink = document.getElementById('open-debugging-link') as HTMLAnchorElement;
+const DEBUGGING_URL = 'about:debugging#/runtime/this-firefox';
 
 // LLM elements
 const llmPanelHeader = document.getElementById('llm-panel-header') as HTMLDivElement;
@@ -118,7 +118,7 @@ const llmPanelToggle = document.getElementById('llm-panel-toggle') as HTMLSpanEl
 const llmPanelBody = document.getElementById('llm-panel-body') as HTMLDivElement;
 const llmStatusIndicator = document.getElementById('llm-status-indicator') as HTMLDivElement;
 const llmStatusText = document.getElementById('llm-status-text') as HTMLSpanElement;
-const llmPanel = document.getElementById('llm-panel') as HTMLDivElement;
+const builtinModelGroup = document.getElementById('builtin-model-group') as HTMLDivElement;
 const configuredModelsEl = document.getElementById('configured-models') as HTMLDivElement;
 const availableModelsSelect = document.getElementById('available-models') as HTMLSelectElement;
 const addModelBtn = document.getElementById('add-model-btn') as HTMLButtonElement;
@@ -160,75 +160,24 @@ let cachedAvailableModels: ModelInfo[] = [];
 // Bridge status polling
 const BRIDGE_STATUS_POLL_INTERVAL = 5000; // 5 seconds
 
+hydrateIcons();
+
 // =============================================================================
-// Theme Management
+// Views: the main view, and Settings with everything technical
 // =============================================================================
 
-type Theme = 'light' | 'dark' | 'system';
+const mainView = document.getElementById('main-view') as HTMLElement;
+const settingsView = document.getElementById('settings-view') as HTMLElement;
 
-function getSystemTheme(): 'light' | 'dark' {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+function showView(view: 'main' | 'settings'): void {
+  mainView.hidden = view !== 'main';
+  settingsView.hidden = view !== 'settings';
+  window.scrollTo(0, 0);
 }
 
-function applyTheme(theme: Theme): void {
-  const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
-  document.documentElement.setAttribute('data-theme', effectiveTheme);
-  localStorage.setItem('harbor-theme', theme);
-  updateThemeToggle(theme);
-}
-
-function updateThemeToggle(theme: Theme): void {
-  const btn = document.getElementById('theme-toggle');
-  if (!btn) return;
-  
-  const icons: Record<Theme, string> = { light: '☀️', dark: '🌙', system: '🖥️' };
-  btn.textContent = icons[theme];
-  btn.title = `Theme: ${theme} (click to change)`;
-}
-
-function initTheme(): void {
-  // Safari: Always use system theme and hide the toggle button
-  const isSafariBrowser = typeof browser !== 'undefined' && 
-    navigator.userAgent.includes('Safari') && 
-    !navigator.userAgent.includes('Chrome');
-  
-  if (isSafariBrowser) {
-    // Hide theme toggle button in Safari
-    const themeBtn = document.getElementById('theme-toggle');
-    if (themeBtn) themeBtn.style.display = 'none';
-    
-    // Always follow system theme
-    applyTheme('system');
-    
-    // Listen for system theme changes
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      applyTheme('system');
-    });
-    return;
-  }
-  
-  const saved = localStorage.getItem('harbor-theme') as Theme | null;
-  const theme = saved || 'system';
-  applyTheme(theme);
-  
-  // Listen for system theme changes
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const current = localStorage.getItem('harbor-theme') as Theme | null;
-    if (current === 'system' || !current) {
-      applyTheme('system');
-    }
-  });
-}
-
-function cycleTheme(): void {
-  const current = localStorage.getItem('harbor-theme') as Theme | null || 'system';
-  const order: Theme[] = ['system', 'light', 'dark'];
-  const next = order[(order.indexOf(current) + 1) % order.length];
-  applyTheme(next);
-}
-
-// Initialize theme on load
-initTheme();
+document.getElementById('open-settings')?.addEventListener('click', () => showView('settings'));
+document.getElementById('welcome-change-agent')?.addEventListener('click', () => showView('settings'));
+document.getElementById('settings-back')?.addEventListener('click', () => showView('main'));
 
 // =============================================================================
 // Toast notification helper
@@ -246,38 +195,11 @@ function showToast(message: string, type: 'info' | 'error' | 'success' = 'info',
   setTimeout(() => toast.remove(), duration);
 }
 
-// =============================================================================
-// Header Logo - Open about:debugging or copy to clipboard
-// =============================================================================
-
-const DEBUGGING_URL = 'about:debugging#/runtime/this-firefox';
-
-headerLogo.addEventListener('click', async () => {
-  try {
-    // Try to open the URL in a new tab
-    // Note: Firefox extensions cannot directly open about: URLs via tabs.create
-    // So we copy to clipboard as the fallback
-    await navigator.clipboard.writeText(DEBUGGING_URL);
-    showToast('Copied debugging URL to clipboard');
-  } catch (err) {
-    console.error('[Sidebar] Failed to copy to clipboard:', err);
-    showToast('Failed to copy URL');
-  }
-});
-
 function updateBridgeStatusUI(connected: boolean, error?: string | null): void {
-  if (connected) {
-    bridgeStatusIndicator.className = 'status-indicator connected';
-    bridgeStatusText.className = 'status-text connected';
-    bridgeStatusText.textContent = 'Connected';
-  } else {
-    bridgeStatusIndicator.className = 'status-indicator disconnected';
-    bridgeStatusText.className = 'status-text disconnected';
-    bridgeStatusText.textContent = 'Disconnected';
-    if (error) {
-      bridgeStatusText.title = error;
-    }
-  }
+  bridgeNotice.hidden = connected;
+  welcomeTitle.textContent = connected ? 'Calm seas today' : 'Waiting at the dock';
+  bridgeNoticeError.textContent = error ?? '';
+  bridgeNoticeError.hidden = connected || !error;
 }
 
 let lastBridgeConnected = false;
@@ -315,9 +237,7 @@ async function checkBridgeStatus(): Promise<void> {
   try {
     const response = await browserAPI.runtime.sendMessage({ type: 'bridge_check_health' }) as BridgeStatus;
     lastBridgeError = response.error ?? null;
-    // Debug: show response in title attribute
     const debugInfo = `connected: ${response.connected}, bridgeReady: ${response.bridgeReady}, error: ${response.error || 'none'}`;
-    bridgeStatusText.title = debugInfo;
     console.log('[Sidebar] Bridge status:', debugInfo);
 
     // Only consider fully ready when both connected AND bridgeReady
@@ -344,8 +264,6 @@ async function checkBridgeStatus(): Promise<void> {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[Sidebar] Failed to check bridge status:', errorMsg);
     lastBridgeError = errorMsg;
-    // Show error in UI for debugging
-    bridgeStatusText.title = `Error: ${errorMsg}`;
     updateBridgeStatusUI(false, errorMsg);
     renderSetupStatus();
     lastBridgeConnected = false;
@@ -623,9 +541,6 @@ if (serverSecretsSaveBtn) serverSecretsSaveBtn.addEventListener('click', saveSer
 if (serverSecretsCancelBtn) serverSecretsCancelBtn.addEventListener('click', closeServerSecretsForm);
 if (serverSecretsCancelBtn2) serverSecretsCancelBtn2.addEventListener('click', closeServerSecretsForm);
 
-// Theme toggle
-const themeToggle = document.getElementById('theme-toggle');
-themeToggle?.addEventListener('click', cycleTheme);
 
 addBtn.addEventListener('click', () => {
   fileInput.click();
@@ -766,7 +681,7 @@ remoteServerTestBtn?.addEventListener('click', async () => {
   }
 
   remoteServerTestBtn.disabled = false;
-  remoteServerTestBtn.textContent = 'Test Connection';
+  remoteServerTestBtn.textContent = 'Test connection';
 });
 
 // Save remote server
@@ -810,7 +725,7 @@ remoteServerSaveBtn?.addEventListener('click', async () => {
   }
 
   remoteServerSaveBtn.disabled = false;
-  remoteServerSaveBtn.textContent = 'Add Server';
+  remoteServerSaveBtn.textContent = 'Add server';
 });
 
 // Auto-refresh servers when storage changes (e.g., from Directory page)
@@ -1038,12 +953,12 @@ function renderConfiguredModels(models: ConfiguredModel[]): void {
         }) as { ok: boolean; response?: string; error?: string };
         
         if (result.ok) {
-          showToast(`✓ Model works! Response: "${result.response?.slice(0, 50)}..."`, 'success');
+          showToast(`Model works! Response: "${result.response?.slice(0, 50)}..."`, 'success');
         } else {
-          showToast(`✗ Test failed: ${result.error}`, 'error');
+          showToast(`Test failed: ${result.error}`, 'error');
         }
       } catch (err) {
-        showToast(`✗ Test failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+        showToast(`Test failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
       } finally {
         btn.textContent = originalText;
         (btn as HTMLButtonElement).disabled = false;
@@ -1109,16 +1024,16 @@ function renderProviders(providers: ProviderInfo[]): void {
     let statusText = '';
     let statusClass = '';
     if (isAvailable) {
-      statusText = '● Running';
+      statusText = 'Running';
       statusClass = 'available';
     } else if (provider.is_local) {
-      statusText = '○ Not detected';
+      statusText = 'Not detected';
       statusClass = 'unavailable';
     } else if (needsConfig) {
-      statusText = '○ Needs API key';
+      statusText = 'Needs API key';
       statusClass = 'needs-config';
     } else {
-      statusText = '● Ready';
+      statusText = 'Ready';
       statusClass = 'available';
     }
     
@@ -1172,7 +1087,7 @@ refreshModelsBtn.addEventListener('click', async () => {
     showToast('Models refreshed', 'success');
   } finally {
     refreshModelsBtn.disabled = false;
-    refreshModelsBtn.textContent = '↻';
+    refreshModelsBtn.innerHTML = icon('refresh-cw');
   }
 });
 
@@ -1322,6 +1237,22 @@ function setAgentControlsEnabled(enabled: boolean): void {
   agentFormCheck.disabled = !enabled;
 }
 
+const welcomeAgentName = document.getElementById('welcome-agent-name') as HTMLElement;
+const welcomeAvatarHarbor = document.getElementById('welcome-avatar-harbor') as HTMLElement;
+const welcomeAvatarAgent = document.getElementById('welcome-avatar-agent') as HTMLElement;
+
+/**
+ * Names the agent sites run on in the welcome card, from the "Run sites on"
+ * choice: the lighthouse for Harbor's built-in model, a sparkle for your own.
+ */
+function updateWelcomeAgent(): void {
+  const selected = agentBackendSelect.selectedOptions[0];
+  const ownAgent = Boolean(selected && selected.value);
+  welcomeAgentName.textContent = ownAgent ? selected.textContent : 'Built-in model';
+  welcomeAvatarHarbor.hidden = ownAgent;
+  welcomeAvatarAgent.hidden = !ownAgent;
+}
+
 function renderAgentBackendOptions(): void {
   const selectedId = agentPanel.currentSelection;
   agentBackendSelect.innerHTML = '<option value="">Harbor (built-in model)</option>';
@@ -1332,6 +1263,7 @@ function renderAgentBackendOptions(): void {
     agentBackendSelect.appendChild(option);
   }
   agentBackendSelect.value = selectedId ?? '';
+  updateWelcomeAgent();
   agentCheckBtn.disabled = !agentPanel.isLoaded || !selectedId;
 }
 
@@ -1359,19 +1291,19 @@ function renderConfiguredAgents(): void {
     const checkBtn = document.createElement('button');
     checkBtn.className = 'btn btn-ghost btn-sm';
     checkBtn.title = 'Check';
-    checkBtn.textContent = '⚡';
+    checkBtn.innerHTML = icon('zap');
     checkBtn.disabled = !agentPanel.isLoaded || checkingAgentIds.has(agent.id);
     checkBtn.addEventListener('click', () => runAgentCheck(agent, agentCheckStatus, checkBtn));
     const editBtn = document.createElement('button');
     editBtn.className = 'btn btn-ghost btn-sm';
     editBtn.title = 'Edit';
-    editBtn.textContent = '✎';
+    editBtn.innerHTML = icon('pencil');
     editBtn.disabled = !agentPanel.isLoaded;
     editBtn.addEventListener('click', () => openAgentForm(agent));
     const removeBtn = document.createElement('button');
     removeBtn.className = 'btn btn-ghost btn-sm';
     removeBtn.title = 'Remove';
-    removeBtn.textContent = '✕';
+    removeBtn.innerHTML = icon('x');
     removeBtn.disabled = !agentPanel.isLoaded;
     removeBtn.addEventListener('click', () => removeAgent(agent.id));
     actions.append(checkBtn, editBtn, removeBtn);
@@ -1406,7 +1338,8 @@ async function loadAgentSettings(): Promise<void> {
  * changes, including an agent being removed out from under it.
  */
 function updateLlmPanelForAgentSelection(selectedAgentId: string | null): void {
-  llmPanel.hidden = selectedAgentId !== null;
+  builtinModelGroup.hidden = selectedAgentId !== null;
+  updateWelcomeAgent();
 }
 
 /**
@@ -1683,7 +1616,7 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
         const label = scope.split(':')[1] || scope;
         const isOnce = status === 'granted-once';
         const badgeClass = isOnce ? 'permission-scope-badge temporary' : 'permission-scope-badge';
-        const suffix = isOnce ? ' <span class="permission-temp-label">⏱</span>' : '';
+        const suffix = isOnce ? ` <span class="permission-temp-label" title="This time only">${icon('clock', { size: 11, label: 'This time only' })}</span>` : '';
         return `<span class="${badgeClass}">${escapeHtml(label)} (${escapeHtml(backendTagLabel(backendTag))})${suffix}</span>`;
       })
     );
@@ -1693,13 +1626,13 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
         const label = scope.split(':')[1] || scope;
         const isOnce = status === 'granted-once';
         const badgeClass = isOnce ? 'permission-scope-badge temporary' : 'permission-scope-badge';
-        const suffix = isOnce ? ' <span class="permission-temp-label">⏱</span>' : '';
+        const suffix = isOnce ? ` <span class="permission-temp-label" title="This time only">${icon('clock', { size: 11, label: 'This time only' })}</span>` : '';
         return `<span class="${badgeClass}">${escapeHtml(label)}${suffix}</span>`;
       }),
       ...backendAllowBadges,
       ...deniedScopes.map((scope) => {
         const label = scope.split(':')[1] || scope;
-        return `<span class="permission-scope-badge denied">${escapeHtml(label)} ✕</span>`;
+        return `<span class="permission-scope-badge denied">${escapeHtml(label)} ${icon('x', { size: 11, label: 'denied' })}</span>`;
       }),
     ].join('');
 
@@ -1723,7 +1656,7 @@ function renderPermissions(permissions: PermissionStatusEntry[]): void {
       const siteBadges = [
         ...(perm.agentOrigins ?? []).map((site) => `<span class="permission-tool-badge">${escapeHtml(site)}</span>`),
         ...(perm.deniedAgentOrigins ?? []).map(
-          (site) => `<span class="permission-scope-badge denied">${escapeHtml(site)} ✕</span>`,
+          (site) => `<span class="permission-scope-badge denied">${escapeHtml(site)} ${icon('x', { size: 11, label: 'denied' })}</span>`,
         ),
       ].join('');
       agentSitesHtml = `
@@ -1848,13 +1781,13 @@ function fmtTime(ts: number): string {
 
 function effectBadge(effect: string): string {
   const colorMap: Record<string, string> = {
-    allow: '#16a34a',
-    ask: '#ca8a04',
-    preview: '#0891b2',
-    deny: '#dc2626',
+    allow: 'var(--color-success)',
+    ask: 'var(--color-warning)',
+    preview: 'var(--color-info)',
+    deny: 'var(--color-error)',
   };
-  const c = colorMap[effect] ?? '#6b7280';
-  return `<span style="background:${c};color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(effect)}</span>`;
+  const c = colorMap[effect] ?? 'var(--color-text-muted)';
+  return `<span style="background:${c};color:var(--color-text-inverse);padding:1px 8px;border-radius:999px;font-size:10px;font-weight:600;">${escapeHtml(effect)}</span>`;
 }
 
 function renderTrace(trace: AuditTraceStep[] | undefined): string {
@@ -1967,12 +1900,12 @@ async function loadActivity(): Promise<void> {
     }
     // Render newest first.
     const rows = recordsResp.records.slice().reverse().map((r) => {
-      const labels = r.labelsOut.length ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">⛳ ${escapeHtml(r.labelsOut.join(','))}</span>` : '';
+      const labels = r.labelsOut.length ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">${icon('tag', { size: 10 })} ${escapeHtml(r.labelsOut.join(','))}</span>` : '';
       const tier = `<span style="font-size:10px;color:var(--color-text-muted);">tier ${r.tier}</span>`;
       const rule = r.rule ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">rule:${escapeHtml(r.rule.id)}</span>` : '';
       const recordJson = encodeURIComponent(JSON.stringify(r));
       return `
-        <div class="activity-row" data-record-id="${escapeHtml(r.id)}" data-record-json="${recordJson}" style="padding:6px 0;border-bottom:1px solid var(--color-border);cursor:pointer;">
+        <div class="activity-row" data-record-id="${escapeHtml(r.id)}" data-record-json="${recordJson}" style="padding:6px 0;border-bottom:1px solid var(--color-border-subtle);cursor:pointer;">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
             <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
               ${effectBadge(r.effect)}
@@ -1982,7 +1915,7 @@ async function loadActivity(): Promise<void> {
             <span style="font-size:10px;color:var(--color-text-muted);flex-shrink:0;">${fmtTime(r.timestamp)}</span>
           </div>
           <div style="font-size:11px;color:var(--color-text-muted);margin-top:2px;">${escapeHtml(r.reason)} · ${tier}${rule}${labels} · <a class="activity-why-link" data-record-id="${escapeHtml(r.id)}" style="color:var(--color-accent-primary);text-decoration:underline;cursor:pointer;">Why?</a></div>
-          <div class="activity-detail" data-detail-for="${escapeHtml(r.id)}" style="display:none;margin-top:6px;padding:6px;background:var(--color-bg-tertiary);border-radius:4px;font-size:11px;"></div>
+          <div class="activity-detail" data-detail-for="${escapeHtml(r.id)}" style="display:none;margin-top:6px;padding:6px;background:var(--color-surface-tertiary);border-radius:4px;font-size:11px;"></div>
         </div>`;
     }).join('');
     activityList.innerHTML = rows;
@@ -2038,17 +1971,15 @@ loadActivity();
 // OAuth App Credentials Panel
 // =============================================================================
 
-const oauthProviderConfigs: Array<{ id: string; name: string; icon: string; helpUrl: string }> = [
+const oauthProviderConfigs: Array<{ id: string; name: string; helpUrl: string }> = [
   {
     id: 'google',
     name: 'Google',
-    icon: '🔵',
     helpUrl: 'https://console.cloud.google.com/apis/credentials',
   },
   {
     id: 'github',
     name: 'GitHub',
-    icon: '⚫',
     helpUrl: 'https://github.com/settings/developers',
   },
 ];
@@ -2102,17 +2033,17 @@ function renderOAuthProviders(providers: Record<string, { configured: boolean; c
     el.className = `detected-provider ${isConfigured ? 'available' : 'needs-config'}`;
     
     const statusText = isConfigured 
-      ? `✓ Configured${status?.client_id_preview ? ` (${status.client_id_preview})` : ''}`
-      : '○ Not configured';
+      ? `Configured${status?.client_id_preview ? ` (${status.client_id_preview})` : ''}`
+      : 'Not configured';
     const statusClass = isConfigured ? 'available' : 'needs-config';
     
     const actionHtml = isConfigured
-      ? `<button class="btn btn-ghost btn-sm oauth-remove-btn" data-provider="${config.id}" title="Remove credentials">✕</button>`
+      ? `<button class="btn btn-ghost btn-sm oauth-remove-btn" data-provider="${config.id}" title="Remove credentials">${icon('x', { label: 'Remove credentials' })}</button>`
       : `<button class="btn btn-secondary btn-sm oauth-configure-btn" data-provider="${config.id}">Configure</button>`;
     
     el.innerHTML = `
       <div class="detected-provider-info">
-        <div class="detected-provider-name">${config.icon} ${config.name}</div>
+        <div class="detected-provider-name">${config.name}</div>
         <div class="detected-provider-status ${statusClass}">${statusText}</div>
       </div>
       <div class="detected-provider-action">${actionHtml}</div>
@@ -2134,7 +2065,7 @@ function renderOAuthProviders(providers: Record<string, { configured: boolean; c
     btn.addEventListener('click', async () => {
       const provider = (btn as HTMLElement).dataset.provider;
       if (!provider) return;
-      if (!confirm(`Remove ${provider} OAuth credentials?`)) return;
+      if (!confirm(`Remove your ${provider} sign-in details?`)) return;
       
       (btn as HTMLButtonElement).disabled = true;
       try {
@@ -2185,7 +2116,7 @@ oauthConfigSaveBtn?.addEventListener('click', async () => {
   const clientSecret = oauthClientSecretInput.value.trim();
   
   if (!clientId || !clientSecret) {
-    showToast('Please enter both Client ID and Client Secret', 'error');
+    showToast('Please enter both the client ID and the client secret', 'error');
     return;
   }
   
@@ -2315,17 +2246,11 @@ initFeatureFlags().catch((err) => console.error('[Sidebar] Failed to load featur
 setupFeatureFlagListeners();
 
 // =============================================================================
-// Quick Actions Panel
+// Directory and reload
 // =============================================================================
 
-const quickActionsHeader = document.getElementById('quick-actions-header') as HTMLDivElement;
-const quickActionsToggle = document.getElementById('quick-actions-toggle') as HTMLSpanElement;
-const quickActionsBody = document.getElementById('quick-actions-body') as HTMLDivElement;
 const openDirectoryBtn = document.getElementById('open-directory-btn') as HTMLButtonElement;
 const reloadExtensionBtn = document.getElementById('reload-extension-btn') as HTMLButtonElement;
-
-// Set up panel toggle
-setupPanelToggle(quickActionsHeader, quickActionsToggle, quickActionsBody);
 
 // Open Directory button - opens the MCP server directory
 openDirectoryBtn.addEventListener('click', async () => {
@@ -2374,18 +2299,18 @@ function renderSearchResultParsed(data: Record<string, unknown>): string {
   const parts: string[] = [];
   if (query) parts.push(`<div class="form-label" style="margin-bottom: var(--space-1);">Query: ${escapeHtml(query)}</div>`);
   if (articles.length > 0) {
-    parts.push('<table style="width:100%; border-collapse: collapse; margin-bottom: var(--space-2);"><thead><tr><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--border);">Title</th><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--border);">Author</th><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--border);">Date</th></tr></thead><tbody>');
+    parts.push('<table style="width:100%; border-collapse: collapse; margin-bottom: var(--space-2);"><thead><tr><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">Title</th><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">Author</th><th style="text-align:left; padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">Date</th></tr></thead><tbody>');
     for (const a of articles.slice(0, 20)) {
       const row = a as Record<string, unknown>;
       const title = escapeHtml(String(row.title ?? ''));
       const author = escapeHtml(String(row.author ?? ''));
       const date = escapeHtml(String(row.date ?? row.dateISO ?? ''));
-      parts.push(`<tr><td style="padding: 4px 6px; border-bottom: 1px solid var(--border);">${title}</td><td style="padding: 4px 6px; border-bottom: 1px solid var(--border);">${author}</td><td style="padding: 4px 6px; border-bottom: 1px solid var(--border);">${date}</td></tr>`);
+      parts.push(`<tr><td style="padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">${title}</td><td style="padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">${author}</td><td style="padding: 4px 6px; border-bottom: 1px solid var(--color-border-default);">${date}</td></tr>`);
     }
     parts.push('</tbody></table>');
-    if (articles.length > 20) parts.push(`<div style="color: var(--text-muted);">… and ${articles.length - 20} more</div>`);
+    if (articles.length > 20) parts.push(`<div style="color: var(--color-text-muted);">… and ${articles.length - 20} more</div>`);
   }
-  if (urls.length > 0) parts.push(`<div style="color: var(--text-muted);">Article URLs: ${urls.length}</div>`);
+  if (urls.length > 0) parts.push(`<div style="color: var(--color-text-muted);">Article URLs: ${urls.length}</div>`);
   return parts.join('');
 }
 
@@ -2623,7 +2548,7 @@ toolTesterRunBtn.addEventListener('click', async () => {
   }
   
   toolTesterRunBtn.disabled = false;
-  toolTesterRunBtn.textContent = 'Run Tool';
+  toolTesterRunBtn.textContent = 'Run tool';
 });
 
 toolTesterCopyBtn?.addEventListener('click', async () => {
@@ -2671,6 +2596,8 @@ type SessionSummary = {
   };
 };
 
+/** Shown only when there are sessions to list. */
+const sessionsPanel = document.getElementById('sessions-panel') as HTMLDivElement;
 const sessionsPanelHeader = document.getElementById('sessions-panel-header') as HTMLDivElement;
 const sessionsPanelToggle = document.getElementById('sessions-panel-toggle') as HTMLSpanElement;
 const sessionsList = document.getElementById('sessions-list') as HTMLDivElement;
@@ -2686,6 +2613,7 @@ async function loadSessions(): Promise<void> {
       error?: string;
     };
 
+    sessionsPanel.hidden = !(response?.ok && response.sessions && response.sessions.length > 0);
     if (response?.ok && response.sessions) {
       renderSessions(response.sessions);
       
@@ -2705,6 +2633,7 @@ async function loadSessions(): Promise<void> {
     }
   } catch (err) {
     console.error('[Sidebar] Failed to load sessions:', err);
+    sessionsPanel.hidden = true;
     sessionsList.innerHTML = '<div class="empty-state">Failed to load sessions.</div>';
   }
 }
@@ -2735,7 +2664,7 @@ function renderSessions(sessions: SessionSummary[]): void {
   sessionsList.innerHTML = sorted.map((session) => {
     const typeClass = session.type === 'explicit' ? 'explicit' : 'implicit';
     const statusClass = session.status === 'terminated' ? 'terminated' : '';
-    const displayName = session.name || (session.type === 'implicit' ? 'Anonymous Session' : 'Agent Session');
+    const displayName = session.name || (session.type === 'implicit' ? 'Anonymous session' : 'Agent session');
     
     // Build capability badges
     const capBadges: string[] = [];
@@ -2768,8 +2697,8 @@ function renderSessions(sessions: SessionSummary[]): void {
           ${capBadges.length > 0 ? capBadges.join('') : '<span style="color: var(--color-text-muted); font-size: 10px;">No capabilities</span>'}
         </div>
         <div class="session-stats">
-          <span class="session-stat">💬 ${session.usage.promptCount} prompts</span>
-          <span class="session-stat">⚡ ${session.usage.toolCallCount} tool calls</span>
+          <span class="session-stat">${icon('message-circle', { size: 12 })} ${session.usage.promptCount} prompts</span>
+          <span class="session-stat">${icon('wrench', { size: 12 })} ${session.usage.toolCallCount} tool calls</span>
         </div>
         ${session.status === 'active' ? `
           <div class="session-actions" style="display:flex;gap:6px;align-items:center;">
