@@ -162,6 +162,23 @@ describe('a capability session retains trusted output labels', () => {
     expect((await request('session.prompt', { sessionId, input: 'dummy input' })).ok).toBe(true);
   });
 
+  it('refuses a session that expires during flow lookup before reserving a slot', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+    const { SessionRegistry } = await import('../../sessions');
+    const reserve = vi.spyOn(SessionRegistry, 'reserveToolCall');
+    vi.spyOn(SessionRegistry, 'getLabelFlow').mockImplementationOnce(() => {
+      SessionRegistry.getValidatedSession(sessionId, ORIGIN).capabilities.limits = { expiresAt: Date.now() - 1 };
+      throw Object.assign(new Error('Session has expired'), { code: 'ERR_SESSION_NOT_FOUND' });
+    });
+    try {
+      expectPolicyRefusal(await request('agent.tools.call', { tool: TOOL, args: {}, sessionId }), 'ERR_SESSION_NOT_FOUND');
+      expect(reserve).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it('ignores a spoofed session id from another origin, and refuses an expired one', async () => {
     const request = connectPort(`${ORIGIN}/page`);
     const sessionId = await createSession(request, 5);
