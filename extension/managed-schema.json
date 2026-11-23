@@ -1,77 +1,12 @@
 {
   "title": "Harbor managed policy",
-  "description": "Enterprise policy for the Harbor extension. Set the `policy` property to the same document an admin would ship via Firefox's policies.json \"3rdparty\" key. See docs/PERMISSIONS.md (\"The policy file\") for the full schema and examples.",
+  "description": "Enterprise policy for the Harbor extension. Chrome's managed-storage schema format requires exactly one type per node and has no union types, so a Harbor policy document — whose rules mix strings, arrays and objects — can't be declared here field by field. Instead, set `policy` to that document serialized as a JSON string, the same one Firefox's policies.json \"3rdparty\" key takes as an object. See docs/PERMISSIONS.md (\"The policy file\") for the document's shape and examples.",
   "type": "object",
   "properties": {
     "policy": {
-      "title": "Policy document",
-      "description": "A Harbor policy document (extension/src/policy/store.ts PolicyDocument). Loaded at the highest precedence; cannot be overridden by the user's own policy or by per-origin grants.",
-      "type": "object",
-      "properties": {
-        "version": {
-          "title": "Schema version",
-          "description": "Must be 2, the only version Harbor's policy engine currently reads.",
-          "type": "integer"
-        },
-        "title": {
-          "title": "Title",
-          "description": "Optional human-readable name for this policy document.",
-          "type": "string"
-        },
-        "rules": {
-          "title": "Typed rules",
-          "description": "Rules in priority order; the first match wins. Each rule is {id, effect, principal, action, resource, context} — see extension/src/policy/rules.ts.",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": true
-          }
-        },
-        "allow": {
-          "title": "Allow (short form)",
-          "description": "Short strings (e.g. \"Tool(github.*)\") or typed rule objects that resolve to the allow effect. Items are left unconstrained here (no \"type\") because this restricted schema format can't express a string-or-object union.",
-          "type": "array",
-          "items": {}
-        },
-        "ask": {
-          "title": "Ask (short form)",
-          "description": "Short strings or typed rule objects that resolve to the ask effect. Items are left unconstrained here (no \"type\") because this restricted schema format can't express a string-or-object union.",
-          "type": "array",
-          "items": {}
-        },
-        "deny": {
-          "title": "Deny (short form)",
-          "description": "Short strings or typed rule objects that resolve to the deny effect. Items are left unconstrained here (no \"type\") because this restricted schema format can't express a string-or-object union.",
-          "type": "array",
-          "items": {}
-        },
-        "preview": {
-          "title": "Preview (short form)",
-          "description": "Short strings or typed rule objects that resolve to the preview effect. Items are left unconstrained here (no \"type\") because this restricted schema format can't express a string-or-object union.",
-          "type": "array",
-          "items": {}
-        },
-        "pinnedManifests": {
-          "title": "Pinned manifests",
-          "description": "Trusted-manifest pins loaded into the Pin registry: {serverId, hash}.",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": true
-          }
-        },
-        "trustedPublishers": {
-          "title": "Trusted publishers",
-          "description": "Publisher keys accepted ahead of time: {name, publicKey, algorithm, allowedServerGlob}.",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": true
-          }
-        }
-      },
-      "additionalProperties": false
+      "title": "Policy document (JSON string)",
+      "description": "A Harbor policy document (extension/src/policy/store.ts PolicyDocument), encoded as a JSON string. Loaded at the highest precedence; cannot be overridden by the user's own policy or by per-origin grants. Example: {\"version\":2,\"deny\":[\"Egress(third_party)\"]}",
+      "type": "string"
     }
-  },
-  "additionalProperties": false
+  }
 }

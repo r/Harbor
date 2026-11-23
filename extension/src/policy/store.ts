@@ -5,6 +5,10 @@
  *
  *   1. **Managed** — `browser.storage.managed`, populated by an enterprise
  *      admin via Firefox `policies.json` or Chrome's enterprise policies.
+ *      Firefox delivers `policy` as an object; Chrome's managed-storage
+ *      schema format can't describe a rule document (no union types, and
+ *      a rule's `action` is a string, array or object), so Chrome
+ *      delivers it as a JSON string instead, which `loadManaged` parses.
  *      Highest precedence; cannot be overridden by the user.
  *   2. **User** — `browser.storage.local` under `harbor_policy_v2`,
  *      authored via the sidebar editor or imported as JSON.
@@ -68,12 +72,22 @@ const USER_POLICY_KEY = 'harbor_policy_v2';
  * Load the managed policy document. Returns `null` if no managed policy is
  * present. Errors are swallowed and treated as "no policy" — managed
  * storage may not be available in all browser contexts.
+ *
+ * Firefox's `policies.json` delivers `policy` as an object. Chrome's
+ * `storage.managed_schema` has no way to describe a rule document (no
+ * union types, and a rule's `action` can be a string, an array or an
+ * object), so Chrome's schema (`extension/managed-schema.json`) declares
+ * `policy` as a plain string, and an admin sets it to the document
+ * serialized with `JSON.stringify`. A string that fails to parse, or
+ * parses to something that isn't a version-2 document, is handled the
+ * same as an invalid object document: treated as "no managed policy".
  */
 async function loadManaged(): Promise<PolicyDocument | null> {
   try {
     if (!browserAPI.storage.managed) return null;
     const result = await browserAPI.storage.managed.get('policy');
-    const policy = (result.policy ?? null) as PolicyDocument | null;
+    const raw = result.policy;
+    const policy = (typeof raw === 'string' ? JSON.parse(raw) : raw ?? null) as PolicyDocument | null;
     return policy && policy.version === 2 ? policy : null;
   } catch {
     return null;
