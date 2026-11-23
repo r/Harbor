@@ -6,7 +6,7 @@ import {
   setWatchdogResolver,
   type PolicyRequest,
 } from '../engine';
-import { Policy } from '../store';
+import { Policy, __testing as storeTesting, type PolicyDocument } from '../store';
 import { compileRule, type Rule } from '../rules';
 import { LabelSet } from '../labels';
 
@@ -226,6 +226,81 @@ describe('Tier 6+7: policy rules', () => {
     const decision = await evaluate({ ...baseReq, action: 'tool.list' });
     expect(decision.effect).toBe('ask');
     expect(decision.rule?.id).toBe('legacy-attenuate');
+  });
+});
+
+// =============================================================================
+// Tier 6 + 7: the most cautious matching rule wins (HBR-161)
+// =============================================================================
+
+describe('Tier 6+7: the most cautious matching rule wins', () => {
+  it('a short-form allow array entry does not override a typed deny rule', async () => {
+    // Today, `compileDocument` puts the short-form `allow` array before the
+    // typed `rules` array, so a naive first-match scan hits the allow
+    // before the deny. The deny must win regardless of array order.
+    const doc: PolicyDocument = {
+      version: 2,
+      allow: ['Tool(*)'],
+      rules: [{ id: 'typed-deny', effect: 'deny', principal: { origin: '*' }, action: 'tool.call' }],
+    };
+    Policy.__setForTesting(storeTesting.compileDocument(doc, 'user'));
+
+    const decision = await evaluate({
+      origin: 'https://example.com',
+      action: 'tool.call',
+      resource: { server: 'github', tool: 'create_pr' },
+    });
+    expect(decision.effect).toBe('deny');
+    expect(decision.rule?.id).toBe('typed-deny');
+    expect(decision.tier).toBe(7);
+  });
+
+  it('an earlier typed allow does not beat a later typed deny', async () => {
+    loadRules([
+      { id: 't-allow', effect: 'allow', principal: { origin: '*' }, action: 'tool.call', source: 'user' },
+      { id: 't-deny', effect: 'deny', principal: { origin: '*' }, action: 'tool.call', source: 'user' },
+    ]);
+    const decision = await evaluate({
+      origin: 'https://example.com',
+      action: 'tool.call',
+      resource: { server: 'github', tool: 'create_pr' },
+    });
+    expect(decision.effect).toBe('deny');
+    expect(decision.rule?.id).toBe('t-deny');
+  });
+
+  it('an allow and a preview both matching resolve to preview, the more cautious of the two', async () => {
+    loadRules([
+      { id: 't-allow', effect: 'allow', principal: { origin: '*' }, action: 'browser.write.navigate', source: 'user' },
+      { id: 't-preview', effect: 'preview', principal: { origin: '*' }, action: 'browser.write.navigate', source: 'user' },
+    ]);
+    const decision = await evaluate({ origin: 'https://example.com', action: 'browser.write.navigate' });
+    expect(decision.effect).toBe('preview');
+    expect(decision.rule?.id).toBe('t-preview');
+    expect(decision.tier).toBe(7);
+  });
+
+  it('ties between rules of equal effect pick the first rule in document order, so the id is stable', async () => {
+    loadRules([
+      { id: 'first-allow', effect: 'allow', principal: { origin: '*' }, action: 'tool.list', source: 'user' },
+      { id: 'second-allow', effect: 'allow', principal: { origin: '*' }, action: 'tool.list', source: 'user' },
+    ]);
+    const decision = await evaluate({ ...baseReq, action: 'tool.list' });
+    expect(decision.effect).toBe('allow');
+    expect(decision.rule?.id).toBe('first-allow');
+  });
+
+  it('a managed allow still wins over a user deny for the same request (today\'s cross-source precedence, unchanged)', async () => {
+    // Uses browser.read.activeTab (not tool.call) so Tier 2's forced-preview
+    // minimum for irreversible writes doesn't mask the rule's own effect.
+    loadRules([
+      { id: 'managed-allow', effect: 'allow', principal: { origin: '*' }, action: 'browser.read.activeTab', source: 'managed' },
+      { id: 'user-deny', effect: 'deny', principal: { origin: '*' }, action: 'browser.read.activeTab', source: 'user' },
+    ]);
+    const decision = await evaluate({ origin: 'https://example.com', action: 'browser.read.activeTab' });
+    expect(decision.effect).toBe('allow');
+    expect(decision.source).toBe('managed');
+    expect(decision.rule?.id).toBe('managed-allow');
   });
 });
 
