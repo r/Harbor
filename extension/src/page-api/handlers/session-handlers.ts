@@ -21,6 +21,16 @@ async function loadAcpTextSession() {
   return import('../acp-text-session');
 }
 
+// Mirrors the mapping policy/permissions.ts's checkSessionCapability uses
+// for a live session's own browser calls: a session that reports a browser
+// capability needs the matching grant from the moment it's created, not
+// just when that capability is next used.
+const BROWSER_CAPABILITY_SCOPES: Record<'read' | 'interact' | 'screenshot', PermissionScope> = {
+  read: 'browser:activeTab.read',
+  interact: 'browser:activeTab.interact',
+  screenshot: 'browser:activeTab.screenshot',
+};
+
 // =============================================================================
 // Handlers
 // =============================================================================
@@ -43,6 +53,9 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
   }
   if (options.capabilities.tools && options.capabilities.tools.length > 0) {
     requiredScopes.push('mcp:tools.call');
+  }
+  for (const access of options.capabilities.browser ?? []) {
+    requiredScopes.push(BROWSER_CAPABILITY_SCOPES[access]);
   }
 
   // A switch of the person's agent while this runs (including during

@@ -97,9 +97,10 @@ export function installWebAgentsMock(global) {
 
   // Like Harbor: an optional capability the site hasn't been granted is left
   // out; a required one it lacks refuses the whole session. Harbor checks
-  // model:prompt for model access and mcp:tools.call for tools, then its
-  // policy engine. Unlike Harbor, the mock doesn't narrow tools to the site's
-  // tool allowlist or fail on a browser grant the site denied.
+  // model:prompt for model access, mcp:tools.call for tools, and the
+  // matching browser:activeTab.* grant for each requested browser
+  // capability, then its policy engine. Unlike Harbor, the mock doesn't
+  // narrow tools to the site's tool allowlist.
   async function requestCapabilities(opts = {}) {
     const optional = (opts.optional || []).filter(r => scopesForTypedAction(r.action).every(s => state.granted.has(s)));
     const all = [...(opts.require || []), ...optional];
@@ -112,6 +113,17 @@ export function installWebAgentsMock(global) {
     for (const [needed, scope] of [[llm, 'model:prompt'], [tools.length > 0, 'mcp:tools.call']]) {
       if (needed && !state.granted.has(scope)) {
         throw createApiError('ERR_PERMISSION_DENIED', `Permission ${scope} required`);
+      }
+    }
+    // A required browser capability needs its grant the same way. An
+    // optional one that lacked its grant was already filtered out of
+    // `all` above, so this only ever refuses a `require` entry.
+    for (const r of all) {
+      if (!r.action.startsWith('browser.')) continue;
+      for (const scope of scopesForTypedAction(r.action)) {
+        if (!state.granted.has(scope)) {
+          throw createApiError('ERR_PERMISSION_DENIED', `Permission ${scope} required`);
+        }
       }
     }
     checkPolicy();
