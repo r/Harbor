@@ -34,7 +34,7 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk';
 
-import { acpClose, acpOpenStream, closePageToolEndpoint, openPageToolEndpointForAcp, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
+import { createLabelFlow, acpClose, acpOpenStream, closePageToolEndpoint, openPageToolEndpointForAcp, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
 import type { SiteMcpServerDescriptor } from '../mcp/site-servers';
 import { hasPermission } from './handlers';
 import { PER_SITE_AGENT_LIMIT, tryAcquireAgentSlot, releaseAgentSlot } from './acp-agent-limits';
@@ -146,6 +146,7 @@ export class AcpAgentBackend implements AgentBackend {
     signal: AbortSignal,
   ): Promise<void> {
     const { origin, tabId, task, systemPrompt } = req;
+    const labelFlow = createLabelFlow();
 
     const scrub = buildPathScrubber(cwd);
 
@@ -320,7 +321,7 @@ export class AcpAgentBackend implements AgentBackend {
         // servers' tools), through the bridge's MCP endpoint
         // (docs/PAGE_TOOLS_FOR_AGENTS.md §5), held to this run's tool budget.
         // Closed in the `finally` below, however the run ends.
-        const pageEndpoint = await openPageToolEndpointForAcp(origin, tabId, { maxCalls: req.maxToolCalls });
+        const pageEndpoint = await openPageToolEndpointForAcp(origin, tabId, { maxCalls: req.maxToolCalls, labelFlow });
         if (pageEndpoint) pageEndpointId = pageEndpoint.endpointId;
         const initialized = await initializeAcpSession(ctx, cwd, requestAbort.signal, pageEndpoint ? [pageEndpoint] : []);
         if (!initialized.ok) {
@@ -342,7 +343,7 @@ export class AcpAgentBackend implements AgentBackend {
         // rule engine and the audit log, exactly as a prompt to Harbor's
         // own model does — in addition to, not instead of, the origin-grant
         // check just above.
-        if (!await requireAgentPromptAction(origin, tabId)) {
+        if (!await requireAgentPromptAction(origin, tabId, labelFlow)) {
           triggerCancel('permission-denied', ctx);
           send(cancelReasonEvent('permission-denied'));
           return;

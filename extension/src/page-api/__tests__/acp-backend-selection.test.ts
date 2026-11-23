@@ -1,3 +1,4 @@
+import { LabelFlow } from '../../policy/label-flow';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { agent as buildAgentApp, AGENT_METHODS, type StopReason } from '@agentclientprotocol/sdk';
 
@@ -16,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   bridge: { current: null as null | ReturnType<typeof import('./support/fake-acp-bridge').createFakeAcpBridge> },
 }));
 vi.mock('../harbor-core', () => ({
+  createLabelFlow: () => new LabelFlow(),
+  checkAgentPromptAction: async () => null,
   describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),

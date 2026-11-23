@@ -1,3 +1,4 @@
+import { LabelFlow } from '../../policy/label-flow';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -6,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getPermissions: vi.fn(), pageToolsForAgent: vi.fn(), siteToolsForAgent: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
+  createLabelFlow: () => new LabelFlow(),
   describedBySite: (origin: string, d?: string) => `From ${new URL(origin).host}: ${d}`,
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),

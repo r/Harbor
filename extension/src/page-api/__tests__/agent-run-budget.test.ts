@@ -1,3 +1,4 @@
+import { LabelFlow } from '../../policy/label-flow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // agent.run's maxToolCalls caps the tool calls a run makes. The cap has to
@@ -6,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ harborRequest: vi.fn(), hasPermission: vi.fn() }));
 vi.mock('../harbor-core', () => ({
+  createLabelFlow: () => new LabelFlow(),
   describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
