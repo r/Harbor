@@ -25,6 +25,7 @@
     "@wasmer/wasmfs": "latest",
     "buffer": "latest",
     "dompurify": "3.4.18",
+    "lucide": "1.77.0",
     "marked": "18.2.1",
     "zod": "4.6.7"
   },

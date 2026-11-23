@@ -1,3 +1,5 @@
+import { icon } from './icons';
+
 export type ConfiguredModel = {
   name: string;
   model_id: string;
@@ -8,9 +10,9 @@ export type ConfiguredModel = {
 /** Actions for a saved model or a model discovered automatically by the bridge. */
 export function configuredModelActions(model: ConfiguredModel): string {
   return `
-    <button class="btn btn-ghost btn-sm test-model-btn" data-model="${model.model_id}" title="Test connection">⚡</button>
-    ${!model.automatic && !model.is_default ? `<button class="btn btn-ghost btn-sm set-default-model-btn" data-name="${model.name}" title="Set as default">★</button>` : ''}
-    ${!model.automatic ? `<button class="btn btn-ghost btn-sm remove-model-btn" data-name="${model.name}" title="Remove">✕</button>` : ''}
+    <button class="btn btn-ghost btn-sm test-model-btn" data-model="${model.model_id}" title="Test connection">${icon('zap')}</button>
+    ${!model.automatic && !model.is_default ? `<button class="btn btn-ghost btn-sm set-default-model-btn" data-name="${model.name}" title="Set as default">${icon('star')}</button>` : ''}
+    ${!model.automatic ? `<button class="btn btn-ghost btn-sm remove-model-btn" data-name="${model.name}" title="Remove">${icon('x')}</button>` : ''}
   `;
 }
 
