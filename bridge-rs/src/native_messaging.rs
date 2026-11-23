@@ -224,6 +224,12 @@ pub async fn run_native_messaging() {
     // function's call stack, so it needs its own way to reach this same
     // host_request channel. See `page_tools::set_host_request_sender`.
     crate::page_tools::set_host_request_sender(host_request_tx.clone());
+    // The agent-tabs Unix socket listener, by contrast, is started directly
+    // here (not lazily, like page-tools' HTTP listener) because nothing
+    // outside this function ever needs to reach it - see `agent_tabs.rs`'s
+    // module doc. It is therefore never started at all in `--http-server`
+    // mode, since that mode never calls `run_native_messaging`.
+    tokio::spawn(crate::agent_tabs::start_listener(host_request_tx.clone()));
 
     // Spawn stdin reader task
     tokio::task::spawn_blocking(move || {

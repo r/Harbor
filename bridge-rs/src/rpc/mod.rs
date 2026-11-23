@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{acp, fs, js, llm, mcp, oauth, page_tools};
+use crate::{acp, agent_tabs, fs, js, llm, mcp, oauth, page_tools};
 
 // =============================================================================
 // Types
@@ -126,6 +126,9 @@ fn get_handlers() -> &'static HashMap<&'static str, RpcHandler> {
     // Bridge-hosted MCP endpoint for page tools
     register_page_tools_handlers(&mut handlers);
 
+    // Agent-tabs socket info (for the sidebar's connect snippet)
+    register_agent_tabs_handlers(&mut handlers);
+
     handlers
   })
 }
@@ -233,6 +236,16 @@ fn register_acp_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
 fn register_page_tools_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
   handlers.insert("page_tools.open", |_| Box::pin(page_tools::open()));
   handlers.insert("page_tools.close", |p| Box::pin(page_tools::close(p)));
+}
+
+/// `agent_tabs.*` methods, like `acp.*` and `page_tools.*`, are also
+/// rejected outright over the HTTP/WebSocket (Safari) surface; see
+/// `http_server::is_agent_tabs_method`. The relay itself
+/// (`agent_tabs.request`, bridge -> extension) never goes through this
+/// registry at all - it's a `host_request`, not an RPC the extension sends
+/// the bridge - so `agent_tabs.info` is the only method registered here.
+fn register_agent_tabs_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
+  handlers.insert("agent_tabs.info", |_| Box::pin(agent_tabs::info()));
 }
 
 // =============================================================================

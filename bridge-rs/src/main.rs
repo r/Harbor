@@ -1,4 +1,5 @@
 mod acp;
+mod agent_tabs;
 mod fs;
 mod http_server;
 mod js;

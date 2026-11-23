@@ -184,6 +184,9 @@ build_bridge() {
     
     # Copy binary to payload
     cp "$BUILD_DIR/harbor-bridge" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
+    # harbor-mcp: the command the person adds to their own agent. It must sit
+    # next to harbor-bridge, which reports its path to the sidebar.
+    cp "target/$RUST_TARGET/release/harbor-mcp" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
     if [ -f "target/$RUST_TARGET/release/harbor-apple-model" ]; then
         cp "target/$RUST_TARGET/release/harbor-apple-model" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
     fi
@@ -219,8 +222,14 @@ build_universal() {
         "target/x86_64-apple-darwin/release/harbor-bridge" \
         -output "$BUILD_DIR/harbor-bridge"
     
-    # Copy to payload
+    lipo -create \
+        "target/aarch64-apple-darwin/release/harbor-mcp" \
+        "target/x86_64-apple-darwin/release/harbor-mcp" \
+        -output "$BUILD_DIR/harbor-mcp"
+
+    # Copy to payload (harbor-mcp next to harbor-bridge, which reports its path)
     cp "$BUILD_DIR/harbor-bridge" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
+    cp "$BUILD_DIR/harbor-mcp" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
     if [ -f "target/aarch64-apple-darwin/release/harbor-apple-model" ]; then
         cp "target/aarch64-apple-darwin/release/harbor-apple-model" "$PAYLOAD_DIR/Library/Application Support/Harbor/"
     fi
@@ -323,6 +332,13 @@ sign_binaries() {
         echo "    ✓ harbor-bridge signed"
     fi
     
+    local HARBOR_MCP="$PAYLOAD_DIR/Library/Application Support/Harbor/harbor-mcp"
+    if [ -f "$HARBOR_MCP" ]; then
+        echo "  Signing harbor-mcp..."
+        codesign --force --options runtime --timestamp --sign "$APP_SIGN_IDENTITY" "$HARBOR_MCP"
+        echo "    ✓ harbor-mcp signed"
+    fi
+
     local APPLE_MODEL="$PAYLOAD_DIR/Library/Application Support/Harbor/harbor-apple-model"
     if [ -f "$APPLE_MODEL" ]; then
         codesign --force --options runtime --timestamp --sign "$APP_SIGN_IDENTITY" "$APPLE_MODEL"

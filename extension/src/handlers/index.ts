@@ -16,6 +16,7 @@ import { registerRemoteServerHandlers } from './remote-server-handlers';
 import { registerPageChatHandlers } from './page-chat-handlers';
 import { registerAuditHandlers } from './audit-handlers';
 import { registerAcpAgentHandlers } from './acp-agent-handlers';
+import { registerOutsideAgentHandlers } from './agent-tabs-handlers';
 
 /**
  * Initialize all message handlers.
@@ -32,6 +33,7 @@ export function initializeHandlers(): void {
   registerPageChatHandlers();
   registerAuditHandlers();
   registerAcpAgentHandlers();
+  registerOutsideAgentHandlers();
 
   console.log('[Harbor] All message handlers registered');
 }
