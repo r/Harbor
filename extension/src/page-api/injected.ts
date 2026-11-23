@@ -1755,10 +1755,10 @@ const agentApi = Object.freeze({
     budget?: { maxToolCalls?: number; ttlMinutes?: number };
   }): Promise<AgentSession> {
     // An optional capability the site hasn't been granted is left out
-    // quietly (no prompt); what's required is always sent, so Harbor's
-    // session.create still refuses an ungranted one. The background checks
-    // every capability the session ends up with, so this only decides what
-    // the site asks for.
+    // quietly (no prompt); what's required is always sent. This only
+    // decides what the site asks for: session.create refuses model access or
+    // tools without their grants, and each browser call checks its own grant
+    // when it's made.
     let optional = opts.optional ?? [];
     if (optional.length > 0) {
       const held = await sendRequest<{ scopes?: Record<string, string> }>('agent.permissions.list');
