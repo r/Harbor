@@ -45,7 +45,6 @@
     .catalog-entry p { margin: 0; max-width: 68ch; font-size: var(--demo-text-sm); line-height: 1.6; color: var(--demo-text-secondary); }
     .catalog-entry code { overflow-wrap: anywhere; }
     .catalog-arrow { font-size: 1.25rem; color: var(--demo-accent-primary); }
-    .catalog-label { padding: 3px 7px; border: 1px solid var(--demo-border-default); color: var(--demo-accent-primary); font: .7rem var(--demo-font-mono); letter-spacing: 0; }
     .catalog-notes { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; border-top: 1px solid var(--demo-border-default); padding: 40px 0; }
     .catalog-notes h2 { font-size: 1.125rem; margin: 0 0 12px; }
     .catalog-notes p { font-size: var(--demo-text-sm); color: var(--demo-text-secondary); line-height: 1.7; margin: 0; }
@@ -100,9 +99,9 @@
         <p>Start with a model call, connect a tool, or let a page open your agent’s chat.</p>
       </div>
       <ul class="catalog-list">
-        <li><a class="catalog-entry" href="web-agents/getting-started/"><div><h3>Getting Started <span class="catalog-label">Start here</span></h3><p>An interactive walkthrough: detect the API, request permissions, and make your first tool call.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="web-agents/getting-started/"><div><h3>Getting Started</h3><p>Detect the API, request permissions and make your first tool call.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
         <li><a class="catalog-entry" href="web-agents/summarizer/"><div><h3>Page Summarizer</h3><p>Summarize a page with <code>window.ai.createTextSession()</code>. Includes a bookmarklet to try on other pages.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
-        <li><a class="catalog-entry" href="web-agents/summarizer/chrome-compat.html"><div><h3>Chrome Compat Demo <span class="catalog-label">API variant</span></h3><p>The summarizer using the Chrome-compatible <code>window.ai.languageModel.create()</code> API style.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="web-agents/summarizer/chrome-compat.html"><div><h3>Page Summarizer (Chrome API)</h3><p>The summarizer using the Chrome-compatible <code>window.ai.languageModel.create()</code> API style.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
         <li><a class="catalog-entry" href="web-agents/time-agent/"><div><h3>Time Agent</h3><p>A small MCP example: call the <code>time.now</code> tool and inspect the result.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
         <li><a class="catalog-entry" href="web-agents/bring-your-chatbot/"><div><h3>Bring Your Own Chatbot</h3><p>A shop page opens your agent’s chat with <code>agent.chat.open()</code>, using the model you configured in Harbor.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
         <li><a class="catalog-entry" href="web-agents/page-tools/"><div><h3>Page Tools</h3><p>A page offers its own functions with <code>document.modelContext.registerTool()</code>, and your agent calls them.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
@@ -113,10 +112,10 @@
     <section class="catalog-section" aria-labelledby="browser-heading">
       <div class="catalog-section-intro">
         <h2 id="browser-heading">Browser actions</h2>
-        <p>Explore permissioned browser control: a stopgap for pages that do not offer tools.</p>
+        <p>Try clicking, filling forms and navigating with your agent on pages that have yet to offer tools.</p>
       </div>
       <ul class="catalog-list">
-        <li><a class="catalog-entry" href="web-agent-control/basic-actions/"><div><h3>Basic Actions <span class="catalog-label">Start here</span></h3><p>Practice <code>click</code>, <code>fill</code>, and <code>select</code> on a simple form.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="web-agent-control/basic-actions/"><div><h3>Basic Actions</h3><p>Practice <code>click</code>, <code>fill</code>, and <code>select</code> on a simple form.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
         <li><a class="catalog-entry" href="web-agent-control/multi-step-form/"><div><h3>Multi-step Form</h3><p>Validate fields, advance between steps, and use <code>waitForSelector</code>.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
         <li><a class="catalog-entry" href="web-agent-control/research-agent/"><div><h3>Research Agent</h3><p>Search the web, fetch result pages, and synthesize findings with <code>agent.browser.fetch()</code> and <code>DOMParser</code>. Falls back to Wikipedia if Google blocks search.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
       </ul>
@@ -128,18 +127,18 @@
         <p>Follow a task as several agents pass work between them.</p>
       </div>
       <ul class="catalog-list">
-        <li><a class="catalog-entry" href="multi-web-agent/research-writer/"><div><h3>Research Pipeline <span class="catalog-label">4 agents</span></h3><p>A sequence diagram follows an Orchestrator, Searcher, Reader, and Writer as they research a topic and turn findings into an article.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="multi-web-agent/research-writer/"><div><h3>Research Pipeline</h3><p>A sequence diagram follows an Orchestrator, Searcher, Reader, and Writer as they research a topic and turn findings into an article.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
       </ul>
     </section>
 
     <div class="catalog-notes">
       <section aria-labelledby="webmcp-heading">
-        <h2 id="webmcp-heading">The page-side tools: WebMCP</h2>
+        <h2 id="webmcp-heading">How pages offer tools</h2>
         <p>Harbor implements <code>document.modelContext</code> from the <a href="https://github.com/webmachinelearning/webmcp">W3C WebMCP proposal</a>. Pages register JavaScript tools that agents can call. The Web Agent API also lets pages ask to use the person’s chosen AI.</p>
       </section>
       <section aria-labelledby="build-heading">
         <h2 id="build-heading">Build your own example</h2>
-        <p>Give your coding assistant the <a href="../docs/BUILDING_ON_WEB_AGENTS_API.md">starter guide</a> for the API, examples, and capabilities. Add it to your project and start building a page that works with the visitor’s AI.</p>
+        <p>Give your coding assistant the <a href="https://github.com/r/Harbor/blob/main/docs/BUILDING_ON_WEB_AGENTS_API.md">starter guide</a> for the API, examples, and capabilities. Add it to your project and start building a page that works with the visitor’s AI.</p>
       </section>
     </div>
   </main>
@@ -149,7 +148,7 @@
       <div class="catalog-footer-links">
         <a href="https://github.com/r/harbor">GitHub</a>
         <a href="https://github.com/webmachinelearning/webmcp">W3C WebMCP proposal</a>
-        <a href="../docs/BUILDING_ON_WEB_AGENTS_API.md">Starter guide</a>
+        <a href="https://github.com/r/Harbor/blob/main/docs/BUILDING_ON_WEB_AGENTS_API.md">Starter guide</a>
       </div>
     </div>
   </footer>
