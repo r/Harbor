@@ -122,7 +122,7 @@ export async function saveUserPolicy(doc: PolicyDocument): Promise<void> {
 function compileShorthand(
   entry: string | Rule,
   effect: RuleEffect,
-  source: 'managed' | 'user' | 'originGrant',
+  source: 'managed' | 'user',
   index: number,
 ): Rule | null {
   if (typeof entry === 'string') {
@@ -163,7 +163,7 @@ function compileShorthand(
  */
 function compileDocument(
   doc: PolicyDocument,
-  source: 'managed' | 'user' | 'originGrant',
+  source: 'managed' | 'user',
 ): CompiledRule[] {
   const rules: Rule[] = [];
 

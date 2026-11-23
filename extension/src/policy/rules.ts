@@ -143,8 +143,8 @@ export interface Rule {
   context?: ContextPredicate;
   /** When the rule was authored / loaded. Used for diagnostics. */
   loadedAt?: number;
-  /** Where this rule came from — `managed`, `user`, `originGrant`. */
-  source?: 'managed' | 'user' | 'originGrant';
+  /** Where this rule came from: the `managed` or `user` policy document. */
+  source?: 'managed' | 'user';
   /** Optional human comment, surfaced in the activity feed. */
   comment?: string;
 }
@@ -318,20 +318,6 @@ export function ruleMatches(rule: CompiledRule, input: RuleMatchInput): boolean 
   }
 
   return true;
-}
-
-/**
- * Find the first matching rule from an ordered list, or `null`.
- * Order matters: managed → user → originGrant; within each tier, source order.
- */
-export function findFirstMatchingRule(
-  rules: readonly CompiledRule[],
-  input: RuleMatchInput,
-): CompiledRule | null {
-  for (const rule of rules) {
-    if (ruleMatches(rule, input)) return rule;
-  }
-  return null;
 }
 
 // =============================================================================
