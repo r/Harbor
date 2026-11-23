@@ -36,7 +36,17 @@ export function describeOutsideAgents(state: OutsideAgentsState) {
   const agents = state.agents ?? [];
   return {
     enabled: state.enabled === true,
-    commandText: command ?? "Harbor's bridge isn't connected, so the command isn't available yet.",
+    commandText: command === null
+      ? "Harbor's bridge isn't connected, so the command isn't available yet."
+      : [
+        command,
+        '',
+        'goose (one session):',
+        `goose session --with-extension "harbor:${command}"`,
+        '',
+        'Claude Code:',
+        `claude mcp add harbor -- ${command}`,
+      ].join('\n'),
     canCopy: command !== null,
     shareLabel: tab?.shared ? 'Stop sharing this tab' : 'Share this tab with your agent',
     canShare: state.enabled === true && tab?.shareable === true,

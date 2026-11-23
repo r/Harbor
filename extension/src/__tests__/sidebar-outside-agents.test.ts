@@ -4,7 +4,10 @@ import { describeOutsideAgents } from '../sidebar-outside-agents';
 describe("the Agent panel's outside-agent section", () => {
   it('starts off, and sharing is disabled until the setting is on', () => {
     const view = describeOutsideAgents({ ok: true, enabled: false, mcpCommand: '/opt/harbor-mcp', activeTab: { url: 'https://a.example/', title: 'A', shareable: true, shared: false }, agents: [] });
-    expect(view).toMatchObject({ enabled: false, canShare: false, canCopy: true, commandText: '/opt/harbor-mcp', listText: 'No agent has connected yet.' });
+    expect(view).toMatchObject({ enabled: false, canShare: false, canCopy: true, listText: 'No agent has connected yet.' });
+    expect(view.commandText.split('\n')[0]).toBe('/opt/harbor-mcp');
+    expect(view.commandText).toContain('goose session --with-extension "harbor:/opt/harbor-mcp"');
+    expect(view.commandText).toContain('claude mcp add harbor -- /opt/harbor-mcp');
     expect(view.shareHint).toMatch(/Turn this on/);
   });
 
