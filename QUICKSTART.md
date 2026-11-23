@@ -147,15 +147,15 @@ After [building everything](#build-everything) with `npm run build:safari`, foll
 
 ## Verify Your Setup
 
-Open the **Harbor** sidebar using its toolbar icon or Firefox's sidebar selector. Confirm **Bridge: Connected**. If disconnected, see [Troubleshooting](#troubleshooting).
+Open the **Harbor** sidebar using its toolbar icon or Firefox's sidebar selector. It opens on a welcome card. If Harbor can't reach its bridge, a notice above the card says so; see [Troubleshooting](#troubleshooting). **Settings → Developer → Bridge** shows the connection either way.
 
 ### Configure a Model
 
 When Apple Intelligence is available, you can use it immediately. To use another model, configure it below. Harbor honors your saved default.
 
-1. In the Harbor sidebar, expand **LLM Providers** and find **Configured Models**.
+1. In the Harbor sidebar, open **Settings → Harbor's built-in model → Model** and find **Your models**. (This section is hidden while sites run on your own agent; choose **Harbor (built-in model)** under **Your agent** first.)
 2. In **Select a model to add...**, select the Ollama model you downloaded (for example, `llama3.2`). If it is missing, click the refresh button next to **Add** and check that Ollama is running.
-3. Click **Add**. Confirm the model now appears under **Configured Models**. The header should show a model count rather than **No models configured**.
+3. Click **Add**. Confirm the model now appears under **Your models**. The header should show a model count rather than **No models configured**.
 4. Confirm the model has the **Default** badge. If necessary, click its star button (**Set as default**); the demos use the default when no model is specified.
 5. Click the lightning button (**Test connection**) next to the model and confirm the **Model works!** message before opening the demo.
 

@@ -932,8 +932,8 @@ If a site is hammering you with prompts, that's almost always a sign the site is
 
 | You can... | Where |
 |---|---|
-| See every active agent session | Sidebar → Sessions |
-| Stop a session immediately | Sidebar → Sessions → Stop, or sidebar header Stop All |
+| See every active agent session | Sidebar → Agent sessions (shown while there are any) |
+| Stop a session immediately | Sidebar → Agent sessions → Terminate |
 | Reset a quarantined site | Not in the sidebar yet; the `watchdog.resetOrigin` message clears it |
 | Edit your policy file | Sidebar → Policy |
 | Add a rule from a recent action | Sidebar → Activity → "Make this automatic" |

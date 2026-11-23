@@ -117,7 +117,7 @@ npx tsc --noEmit -p extension
 - A skip or a timeout is not a pass.
 - GitHub Actions only deploys the Pages site, so local evidence is the merge gate.
 
-**Rendered checks.** For anything visible in the browser, run Firefox in a fresh temporary profile with Harbor's `dist-firefox` build loaded, the bridge registered, and a local model. Use the demo server for page-level checks (`cd demo && npm start`, on port 8000). Check the sidebar for "Bridge: Connected", exercise the real interaction, and read the browser console. A Chrome or Safari bug needs that browser, or it's reported as unverified.
+**Rendered checks.** For anything visible in the browser, run Firefox in a fresh temporary profile with Harbor's `dist-firefox` build loaded, the bridge registered, and a local model. Use the demo server for page-level checks (`cd demo && npm start`, on port 8000). Check that the sidebar shows no bridge notice (**Settings → Developer → Bridge** reads Connected), exercise the real interaction, and read the browser console. A Chrome or Safari bug needs that browser, or it's reported as unverified.
 
 **Size.** Estimate the unit before coding. At the first full review, record `git diff --shortstat <base>...HEAD` over owned paths. If owned changes pass twice the estimate, or 1.5× that first-review figure, pause and audit: check acceptance, group causes, then keep, defer or discard. Neither baseline moves.
 
