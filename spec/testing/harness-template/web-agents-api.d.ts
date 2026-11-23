@@ -202,6 +202,30 @@ interface AgentsApi {
   };
 }
 
+/** One typed action in agent.requestCapabilities(). */
+interface CapabilityRequest {
+  action: string;
+  server?: string;
+  toolNames?: string[];
+}
+
+interface SessionCapabilities {
+  llm: { allowed: boolean; provider?: string; model?: string };
+  tools: { allowed: boolean; allowedTools: string[] };
+  browser: { readActiveTab: boolean; interact: boolean; screenshot: boolean };
+  limits?: { maxToolCalls?: number; expiresAt?: number };
+}
+
+interface AgentSession {
+  readonly sessionId: string;
+  readonly capabilities: SessionCapabilities;
+  prompt(input: string): Promise<string>;
+  promptStreaming(input: string): AsyncIterable<string>;
+  callTool(tool: string, args?: Record<string, unknown>): Promise<unknown>;
+  listAllowedTools(): string[];
+  terminate(): Promise<void>;
+}
+
 declare global {
   interface Window {
     ai: {
@@ -217,6 +241,18 @@ declare global {
         /** Required with agents:crossOrigin: the sites whose agents to reach. */
         agentOrigins?: string[];
       }): Promise<PermissionGrantResult>;
+      /**
+       * Make a session from grants the site already holds. An optional
+       * capability it hasn't been granted is left out; a required one it
+       * lacks fails the request with ERR_PERMISSION_DENIED. Doesn't prompt.
+       */
+      requestCapabilities(options: {
+        require: CapabilityRequest[];
+        optional?: CapabilityRequest[];
+        budget?: { maxToolCalls?: number; ttlMinutes?: number };
+        name?: string;
+        reason?: string;
+      }): Promise<AgentSession>;
       permissions: { list(): Promise<PermissionStatus> };
       tools: {
         list(): Promise<ToolDescriptor[]>;

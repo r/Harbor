@@ -1733,7 +1733,9 @@ const agentApi = Object.freeze({
    * canonical session-creation API documented in `docs/PERMISSIONS.md`;
    * it translates a flat list of typed-action requests into the legacy
    * capability shape that `agent.sessions.create` understands and returns
-   * the resulting `AgentSession`.
+   * the resulting `AgentSession`. It doesn't prompt: a required action
+   * the origin hasn't been granted fails the request, and an optional one
+   * is left out of the session.
    *
    * @example
    * const session = await agent.requestCapabilities({

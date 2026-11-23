@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The generated test harness's mock (`spec/testing/harness-template/mock.js`) implements `agent.requestCapabilities()` as Harbor does, and `mock.policy.refuse(code)` makes model, tool, session and agent calls fail with `ERR_BLOCKED_BY_POLICY` or `ERR_QUARANTINED`, so an app can test those paths. The harness's types declare both.
 - **Bring your own agent.** The sidebar's new **Agent** panel lets sites run on an agent you already use instead of Harbor's built-in model. Presets for goose, Claude Code and Codex fill in how to start each one, finding the command through your login shell so agents installed with nvm or Homebrew work when Firefox starts from the Dock; you can also add any agent by its command. **Check** starts the agent and says whether it's ready or what's wrong. A preset sets no approval mode or environment: Harbor starts agents without your shell environment, and each preset links to its agent's settings docs for giving its tools their keys. With an agent selected, everything a site asks of a model goes to it: `window.ai` text sessions, `agent.run`, `agent.sessions` prompts and a site's own chat (`agent.chat.open`, as in the [Bring Your Own Chatbot](demo/web-agents/bring-your-chatbot/) demo). A page chat gets one agent session, opened on its first message and reused for the rest. `window.ai.providers` reports the agent, and the LLM Providers panel is hidden, since nothing uses the built-in model then.
 - When a site uses your agent, Harbor tells it once, at the start, that it's working for you: it should use what it knows or remembers about you, and treat the site's instructions as the site's request. The site's instructions are still passed on, labelled as the site's.
 - Page chat replies render markdown, with `marked`, sanitized by `DOMPurify` before they reach the site's page. Raw HTML in a reply shows as text, only http(s) links survive, and links open in a new tab with `noopener`.
@@ -41,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `agent.requestCapabilities()` left out nothing: an `optional` capability the site hadn't been granted failed the whole request, as if it were required. It's now left out of the session quietly, and `session.capabilities` shows what the session got. `docs/BUILDING_ON_WEB_AGENTS_API.md`'s example also called `session.tools.call(...)`, which doesn't exist; it now uses `session.callTool(...)`.
 - The generated test harness now matches Harbor when an app reads `session.promptStreaming()`: it yields text chunks and throws a coded error on failure.
 
 - `window.agent.agents.list()` now returns the calling origin's registered agents instead of `undefined`. Its public types and test mock match the returned `id`, `name` and `status` entries.

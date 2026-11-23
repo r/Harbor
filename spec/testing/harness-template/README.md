@@ -39,6 +39,8 @@ Like Harbor, `requestPermissions()` grants exactly the scopes it names. `grantAl
 
 Set `mock.ai.textSessionStreamTokens` to the text chunks your app should receive. A `for await` loop over `session.promptStreaming()` yields each nonempty string and ends after the last chunk. Setting `mock.ai.nextError` makes the loop throw an error with the configured `code` and `message`.
 
+`agent.requestCapabilities()` makes a session from the scopes the site holds, as Harbor does: an optional capability it lacks is left out, a required one fails the request. `mock.policy.refuse('ERR_BLOCKED_BY_POLICY')` (or `'ERR_QUARANTINED'`) makes model, tool, session and agent calls fail the way Harbor's policy engine would, until `mock.policy.reset()`. `example.capabilities.test.mjs` shows both.
+
 See `mock.js` for the full control API (e.g. `mock.agent.toolsList`, `mock.agent.toolCallResult`).
 
 ### Multi-agent (`agent.agents`)
