@@ -129,8 +129,8 @@ mock.uninstall();
 | Permissions denied | `mock.permissions.denyAll()` |
 | Scopes the site already holds | `mock.permissions.grantScopes(['model:prompt', 'mcp:tools.list'])` |
 | `session.prompt()` return value | `mock.ai.textSessionResponse = '…'` |
-| `session.promptStreaming()` tokens | `mock.ai.textSessionStreamTokens = ['a', 'b', 'c']` |
-| Next session error | `mock.ai.nextError = { code: 'ERR_MODEL_FAILED', message: '…' }` |
+| `session.promptStreaming()` string chunks | `mock.ai.textSessionStreamTokens = ['a', 'b', 'c']` |
+| Error thrown by `prompt()` or while reading `promptStreaming()` | `mock.ai.nextError = { code: 'ERR_MODEL_FAILED', message: '…' }` |
 | `agent.tools.list()` | `mock.agent.toolsList = [{ name: '…', description: '…', … }]` |
 | `agent.tools.call()` result | `mock.agent.toolCallResult = { … }` |
 | `agent.tools.call()` error | `mock.agent.toolCallError = { code: 'ERR_TOOL_NOT_FOUND', message: '…' }` |
