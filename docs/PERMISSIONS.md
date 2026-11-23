@@ -139,7 +139,7 @@ The `destructive` and `identity` effects exist in the type, and rules can name t
 
 When the engine asks, the person answers in Harbor's permission prompt, with a direct choice to deny, allow temporarily, or grant ongoing access:
 
-- Temporary access lasts ten minutes in the requesting tab. If concurrent requests from the same origin share a prompt, each requesting tab receives its own grant.
+- Temporary access lasts ten minutes. Harbor restricts it to the requesting tab when the request carries a tab ID. If concurrent requests from the same origin share a prompt, each requesting tab receives its own grant.
 - Ongoing access lasts until the person revokes the site in the sidebar.
 - *Deny* is remembered until revoked when the prompt came from `agent.requestPermissions()`. A prompt the engine raises on its own (an `ask` rule, a watchdog restriction, a page's chat) stores only a grant; denying it refuses that one call and stores nothing.
 
@@ -823,7 +823,7 @@ When a site asks for something you haven't decided on, Harbor opens a prompt tha
 - for tools, which tools; for an agent, which sites it covers;
 - separate actions to deny the request, allow it temporarily, or let the site use the requested capabilities without asking.
 
-The primary action grants ten minutes of access in the requesting tab. Ongoing access lasts until you revoke it in **Site permissions**. **Deny** is remembered, so the site doesn't keep asking; revoke it to be asked again.
+The primary action grants ten minutes of access. Ongoing access lasts until you revoke it in **Site permissions**. **Deny** is remembered, so the site doesn't keep asking; revoke it to be asked again.
 
 ## Why did Harbor decide that?
 

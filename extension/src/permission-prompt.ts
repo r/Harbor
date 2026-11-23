@@ -213,9 +213,6 @@ btnDeny?.addEventListener('click', () => {
 
 // Each button maps directly to the grant named on it.
 const btnAllow = document.getElementById('btn-grant');
-if (btnAllow && params.get('merged') === '1') {
-  btnAllow.textContent = 'Allow for 10 minutes';
-}
 btnAllow?.addEventListener('click', () => allow('granted-once'));
 btnAlways?.addEventListener('click', () => allow('granted-always'));
 

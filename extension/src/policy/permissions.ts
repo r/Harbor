@@ -659,7 +659,6 @@ export interface SessionPromptContext {
 }
 
 function buildPromptUrl(opts: {
-  merged?: boolean;
   origin: string;
   scopes: PermissionScope[];
   reason?: string;
@@ -679,7 +678,6 @@ function buildPromptUrl(opts: {
     // docs/ACP_BACKEND_DESIGN.md).
     backendTag: opts.backendTag,
   });
-  if (opts.merged) params.set('merged', '1');
   if (opts.reason) params.set('reason', opts.reason);
   // Names where a model:prompt/model:tools request actually goes when the
   // person has selected an ACP agent — permission-prompt.ts switches those
@@ -767,7 +765,6 @@ export async function showPermissionPrompt(
     promptBackendTag = backendTag;
 
     const promptUrl = buildPromptUrl({
-      merged: true,
       origin,
       scopes: promptScopes,
       reason: promptReason,
