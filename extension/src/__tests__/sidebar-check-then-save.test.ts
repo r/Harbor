@@ -70,6 +70,8 @@ function makeDocument() {
     return elementsById.get(id)!;
   }
   const doc = makeElement() as unknown as Record<string, unknown>;
+  // A real select exposes an empty collection even when no backend is selected.
+  Object.assign(getElementById('agent-backend-select'), { selectedOptions: [] });
   doc.getElementById = getElementById;
   doc.createElement = () => makeElement();
   doc.body = makeElement();
