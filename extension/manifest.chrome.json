@@ -16,6 +16,9 @@
     "nativeMessaging",
     "cookies"
   ],
+  "storage": {
+    "managed_schema": "managed-schema.json"
+  },
   "host_permissions": [
     "http://localhost/*",
     "https://*/*"
