@@ -18,7 +18,7 @@ import { gatePageAction, routeExtensionApiMessage, streamLlmChat } from '../exte
 import type { TypedAction } from '../policy/actions';
 import { routeAgentMessage } from '../agents/background-router';
 import { forgetTabAgents } from '../agents/handlers/multi-agent';
-import { forgetTabServers, forgetTabServersIfOriginChanged, listSiteServersForAcp as listSiteServersForAcpImpl, type SiteMcpServerDescriptor } from '../mcp/site-servers';
+import { callSiteTool, forgetTabServers, forgetTabServersIfOriginChanged, isSiteServerId, listSiteServersForAcp as listSiteServersForAcpImpl, listSiteTools, type SiteMcpServerDescriptor } from '../mcp/site-servers';
 // The page's own tools (document.modelContext), relayed to its port: see
 // docs/PAGE_TOOLS_FOR_AGENTS.md.
 export {
@@ -718,4 +718,69 @@ export async function handlePageToolsHostRequest(method: string, params: unknown
 
 export function __resetPageToolEndpointsForTests(): void {
   pageToolEndpoints.clear();
+}
+
+// =============================================================================
+// The site's own MCP server tools, for agent work that site started
+// =============================================================================
+
+/**
+ * A site's own registered MCP server tools get the same gate as its page
+ * tools (docs/PERMISSIONS.md): no grant of their own and no per-tool
+ * allowlist, since mcp:tools.list/mcp:tools.call would also open the
+ * person's installed servers. Each server's tools are offered only if the
+ * policy engine allows `tool.list` for it, with no prompt (a rule that asks
+ * refuses). Every check is in the audit log.
+ */
+export async function siteToolsForAgent(
+  origin: string,
+  tabId: number | undefined,
+): Promise<Array<{ serverId: string; name: string; description?: string; inputSchema?: unknown }>> {
+  if (tabId === undefined) return [];
+  const tools = listSiteTools(origin, tabId);
+  const allowed = new Map<string, boolean>();
+  const out: typeof tools = [];
+  for (const tool of tools) {
+    if (!allowed.has(tool.serverId)) {
+      const denial = await checkAction(pageToolPolicyContext(origin, tabId), 'tool.list', {
+        upstreamConsent: 'origin-grant',
+        noPrompt: true,
+        resource: { server: tool.serverId },
+      });
+      allowed.set(tool.serverId, denial === null);
+    }
+    if (allowed.get(tool.serverId)) out.push(tool);
+  }
+  return out;
+}
+
+/**
+ * Call one of a site's own MCP server tools for agent work that site
+ * started: policy-checks `tool.call` for that server and tool (audited, no
+ * prompt), then calls the server through Harbor's own connection to it.
+ * Rejects with the refusal's code, or `ERR_TOOL_FAILED`.
+ */
+export async function callSiteToolForAgent(call: {
+  origin: string;
+  tabId: number | undefined;
+  serverId: string;
+  name: string;
+  input: Record<string, unknown>;
+  signal?: AbortSignal;
+  /** Called once the policy check has allowed the call, before it runs. */
+  onAllowed?: () => void;
+}): Promise<unknown> {
+  if (call.tabId === undefined || !isSiteServerId(call.serverId)) {
+    throw Object.assign(new Error('No such site tool'), { code: 'ERR_TOOL_FAILED' });
+  }
+  const denial = await checkAction(pageToolPolicyContext(call.origin, call.tabId, call.signal), 'tool.call', {
+    upstreamConsent: 'origin-grant',
+    noPrompt: true,
+    resource: { server: call.serverId, tool: call.name },
+  });
+  if (denial) throw Object.assign(new Error(denial.message), { code: denial.code });
+  call.onAllowed?.();
+  const result = await callSiteTool(call.origin, call.tabId, call.serverId, call.name, call.input);
+  if (!result.ok) throw Object.assign(new Error(result.error), { code: 'ERR_TOOL_FAILED' });
+  return result.result;
 }

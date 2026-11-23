@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const harborRequest = vi.fn(async (_type: string, _payload: Record<string, unknown>) => ({}) as never);
 vi.mock('../harbor-core', () => ({
+  siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   pageToolsForAgent: vi.fn(async () => null), harborRequest: (type: string, payload: Record<string, unknown>) => harborRequest(type, payload) }));

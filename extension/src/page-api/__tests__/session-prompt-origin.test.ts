@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ harborRequest: vi.fn() }));
 vi.mock('../harbor-core', () => ({
+  siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   pageToolsForAgent: vi.fn(async () => null),

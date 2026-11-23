@@ -16,7 +16,7 @@
  * that cover each step as it takes it: `model:prompt` before each model
  * call after the first, `mcp:tools.call` before each tool call.
  */
-import { harborRequest, callPageToolForAgent } from './harbor-core';
+import { harborRequest, callPageToolForAgent, callSiteToolForAgent } from './harbor-core';
 import { hasPermission } from './handlers';
 import { toolResultText } from './tool-messages';
 import { policyRefusalCode } from './policy-refusal';
@@ -39,6 +39,16 @@ export interface AgentBackendTool {
 /** The page's own tools (document.modelContext) appear under `page:<host>`. */
 function isPageToolServer(serverId: string | undefined): boolean {
   return typeof serverId === 'string' && serverId.startsWith('page:');
+}
+
+/** A site's own registered MCP servers appear under `site:<host>:<name>`. */
+function isSiteToolServer(serverId: string | undefined): boolean {
+  return typeof serverId === 'string' && serverId.startsWith('site:');
+}
+
+/** The site's own tools, page or server: no MCP grant needed, policy-checked per call. */
+function isSitesOwnTool(serverId: string | undefined): boolean {
+  return isPageToolServer(serverId) || isSiteToolServer(serverId);
 }
 
 export interface AgentRunRequest {
@@ -182,7 +192,7 @@ export const builtinAgentBackend: AgentBackend = {
         // installed tools still need mcp:tools.call.
         // A name the run didn't offer counts as an installed tool here, so it
         // still needs the grant (failing closed).
-        const callsMcpTools = toolCalls.some(tc => !isPageToolServer(llmTools.find(t => t.name === tc.function.name)?._serverId));
+        const callsMcpTools = toolCalls.some(tc => !isSitesOwnTool(llmTools.find(t => t.name === tc.function.name)?._serverId));
         if (callsMcpTools && !await hasPermission(origin, 'mcp:tools.call', tabId)) {
           messages.push({ role: 'assistant', content: responseContent || 'I need to use tools but permission was denied.' });
           messages.push({ role: 'user', content: 'Tool calling is not permitted. Please provide an answer without using tools.' });
@@ -244,6 +254,15 @@ export const builtinAgentBackend: AgentBackend = {
                 origin,
                 tabId,
                 generation: toolInfo?._generation ?? -1,
+                name: actualToolName,
+                input: args,
+                signal,
+              });
+            } else if (isSiteToolServer(serverId)) {
+              toolResult = await callSiteToolForAgent({
+                origin,
+                tabId,
+                serverId,
                 name: actualToolName,
                 input: args,
                 signal,
