@@ -175,6 +175,14 @@ describe('run-scoped labels at the model boundary', () => {
     expect(port.posted.some(p => p.type === 'page_tools.call')).toBe(false);
   });
 
+  it('does not label a missing site tool when no server content was received', async () => {
+    const core = await import('../harbor-core');
+    const labelFlow = core.createLabelFlow();
+    await expect(core.callSiteToolForAgent({ origin: ORIGIN, tabId: 9,
+      serverId: 'site:accounts.google.com:missing', name: 'read_dummy', input: {}, labelFlow })).rejects.toThrow('not found');
+    expect(labelFlow.labels.isEmpty()).toBe(true);
+  });
+
   it('starts a fresh flow for a later run on the same tab and origin', async () => {
     const { bridgeChat } = await import('../../llm/chat');
     vi.mocked(bridgeChat).mockResolvedValueOnce(toolReply() as never).mockResolvedValue({ content: 'clean run' } as never);
