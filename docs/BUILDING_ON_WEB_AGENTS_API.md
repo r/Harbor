@@ -512,6 +512,8 @@ Sites can declare an MCP server and open a chat that uses the user’s model plu
 - **Open chat:** `agent.chat.open({ systemPrompt, tools, style })`
 - **Unregister:** `agent.mcp.unregister(serverId)`
 
+Your server's tools reach the person's agent the same way your page's tools do: no `mcp:tools.*` permission to ask for, a policy check on every call, and Harbor makes the calls itself, so the person's agent never gets your server's URL.
+
 ---
 
 ## Testing your app

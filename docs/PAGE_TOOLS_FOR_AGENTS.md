@@ -129,7 +129,8 @@ the site may use, and page tools aren't the person's.
 
 - On the built-in agent, a page tool is named `page:<host>/<tool>`, beside the
   existing `site:<host>:<name>/<tool>`.
-- On ACP, the MCP server is named `page:<host>`, and its tools keep their bare
+- On ACP, the endpoint is one MCP server named by the site's host, also carrying
+  the site's registered MCP servers' tools as `<server>__<tool>`. Page tools keep their bare
   names. Each agent shows server and tool together in its own way.
 
 `<host>` includes a non-default port, as site server names do.
