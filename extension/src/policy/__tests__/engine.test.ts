@@ -302,6 +302,18 @@ describe('Tier 6+7: the most cautious matching rule wins', () => {
     expect(decision.source).toBe('managed');
     expect(decision.rule?.id).toBe('managed-allow');
   });
+
+  it('a managed ask decides over a user allow, and only managed rules are weighed against each other', async () => {
+    loadRules([
+      { id: 'user-allow', effect: 'allow', principal: { origin: '*' }, action: 'browser.read.activeTab', source: 'user' },
+      { id: 'managed-ask', effect: 'ask', principal: { origin: '*' }, action: 'browser.read.activeTab', source: 'managed' },
+      { id: 'managed-allow', effect: 'allow', principal: { origin: '*' }, action: 'browser.read.activeTab', source: 'managed' },
+    ]);
+    const decision = await evaluate({ origin: 'https://example.com', action: 'browser.read.activeTab' });
+    expect(decision.effect).toBe('ask');
+    expect(decision.source).toBe('managed');
+    expect(decision.rule?.id).toBe('managed-ask');
+  });
 });
 
 // =============================================================================
