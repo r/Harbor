@@ -241,7 +241,7 @@ await document.modelContext.registerTool({
 const tools = await window.agent.tools.list();
 // → [...mcpTools, { name: 'page/search_products', serverId: 'page', ... }]
 
-// Call a page tool. It runs locally and never leaves the page.
+// Call a page tool yourself. It runs here, in the page.
 const results = await window.agent.tools.call({
   tool: 'page/search_products',
   args: { query: 'red shoes', limit: 5 },
@@ -253,7 +253,7 @@ registration.abort();
 
 To support browsers both with and without a native implementation, feature-detect: `const mc = document.modelContext ?? navigator.modelContext;`.
 
-Page tools run in your page's JavaScript context. They never cross the extension boundary — no network, no MCP server needed. Choose what your page exposes; the user's AI calls it.
+Page tools run in your page's JavaScript context, with no network or MCP server needed. The person's agent can call them too, during the `agent.run()` or `agent.chat.open()` your page starts: Harbor's built-in agent sees them as `page:<host>/<tool>`, and the person's own ACP agent (goose, Claude Code, Codex) gets them as an MCP server named `page:<host>`. Only the name, description and input schema leave the page. They need no permission beyond the one that starts the run or chat. They last as long as the document: a reload drops them, and a hash or `pushState` change doesn't. Treat what your tools return as something an agent will read: return data, not instructions. See [WEB_AGENTS_API.md](WEB_AGENTS_API.md#page-tools-and-the-persons-agent).
 
 ---
 

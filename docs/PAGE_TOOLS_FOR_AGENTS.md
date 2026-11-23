@@ -1,6 +1,6 @@
 # Page tools for the person's agent: design
 
-Status: proposed, for maintainer review before it's built.
+Status: built. This doc records the design and the decisions behind it.
 
 ## Problem
 
@@ -258,6 +258,6 @@ already act as the agent. Other local users can't guess the token.
    Code in Firefox.
 6. Demo and docs: a `demo/` page that registers with both `registerTool` and
    `addTool`; `WEB_AGENTS_API.md`, `LLMS.txt`, `BUILDING_ON_WEB_AGENTS_API.md`
-   ("page tools never leave the page" stops being true) and `PERMISSIONS.md`.
+   and `PERMISSIONS.md`.
 
 The estimate is 1,500–2,500 changed lines, about half of them tests.
