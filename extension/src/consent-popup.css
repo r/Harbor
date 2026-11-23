@@ -40,9 +40,6 @@ h2 {
 }
 
 /* The quote is the site's stated purpose; the scope explanation is Harbor's. */
-.reason {
-  border-inline-start: 3px solid var(--color-border-strong);
-}
 .reason-label {
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
