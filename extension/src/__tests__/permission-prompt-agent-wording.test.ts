@@ -27,6 +27,7 @@ class FakeElement {
   type = '';
   htmlFor = '';
   children: FakeElement[] = [];
+  setAttribute(): void {}
   append(...nodes: FakeElement[]): void { this.children.push(...nodes); }
   appendChild(node: FakeElement): FakeElement { this.children.push(node); return node; }
   addEventListener(): void { /* no-op: this test never clicks a button */ }
@@ -50,6 +51,7 @@ function makeFakeDom(search: string) {
     documentElement: { setAttribute: () => {} },
     getElementById: (id: string) => byId.get(id) ?? null,
     createElement: () => new FakeElement(),
+    createElementNS: () => new FakeElement(),
     querySelectorAll: () => [],
     addEventListener: () => {},
   };

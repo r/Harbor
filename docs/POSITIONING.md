@@ -1,7 +1,7 @@
 # Harbor Positioning (2026)
 
 **Status:** Internal reference — drives website copy, talks, and external materials.
-**Last updated:** November 2026 (one extension; bring your own agent; what Harbor is; agent-to-company protocols). The landscape tables are from May 2026.
+**Last updated:** November 2026 (one extension; bring your own agent; what Harbor is; agent-to-company protocols; how Harbor sounds). The landscape tables are from May 2026.
 
 This document captures the current landscape, why Harbor still matters in it, and the language we use to describe the difference. Read it before you write a deck, a blog post, or a landing page about Harbor.
 
@@ -240,6 +240,22 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 - "Harbor is a Mozilla product." (It isn't.)
 - "Replace ChatGPT/Claude/Gemini with Harbor." (We're not a model.)
 - "Harbor is secure because it has fewer features." (We have a positive security story; lead with it.)
+
+---
+
+## How Harbor sounds
+
+Harbor sounds like the trusted captain of a dolphin-spotting tour. The captain has done this a thousand times, so you can relax. They keep watch, tell you plainly what's happening, and check with you before anything changes course. The trip is a pleasure, and you might see something wonderful. The captain is there so you can enjoy the water.
+
+This applies to everything a person sees: the sidebar, the permission prompts, the directory, the demos and the site.
+
+- **Calm and sure.** Short sentences, no alarm. "Calm seas today", not "Bridge: Connected".
+- **Plain about safety.** When something matters, the captain says exactly what it is. A permission prompt names the site, the person's agent and what the site gets, in ordinary words, with no metaphor in the grant itself.
+- **The person's agent is theirs.** Say "your agent", and name it ("goose"). Not "helper", "assistant" or "AI".
+- **Warm, first person where it helps.** Harbor may speak as "I" in welcomes and status ("I'll keep watch while you browse"), never in consent text.
+- **Delight is in the setting, not the jokes.** Open water, a horizon, a low sun, a ripple: the feeling that something might surface. Never draw the dolphin, use mascots or emoji, or pun.
+- **Calm screens.** One thing at a time on the first screen: who's helping, what this site can do, what happened. Technical controls live in Settings. Icons come from one library (Lucide), never emoji.
+- **No protocol names.** People see their agent's name, not ACP, MCP or "the bridge", except in Settings, where the technical words are useful.
 
 ---
 

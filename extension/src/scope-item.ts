@@ -6,8 +6,11 @@
  * `<b>x</b>` must render literally, not as markup. Split out from
  * permission-prompt.ts (which runs page-level side effects at import time)
  * so this is testable on its own, with just a `document.createElement`.
+ * The icon is built as DOM nodes too (iconElement), never as markup.
  */
-export function buildScopeItem(icon: string, title: string, description: string, risk?: string): HTMLElement {
+import { iconElement, type IconName } from './icons';
+
+export function buildScopeItem(icon: IconName, title: string, description: string, risk?: string): HTMLElement {
   const item = document.createElement('div');
   item.className = 'scope-item';
 
@@ -15,7 +18,7 @@ export function buildScopeItem(icon: string, title: string, description: string,
   header.className = 'scope-header';
   const iconEl = document.createElement('span');
   iconEl.className = 'scope-icon';
-  iconEl.textContent = icon;
+  iconEl.appendChild(iconElement(icon, { size: 18 }));
   const titleEl = document.createElement('span');
   titleEl.className = 'scope-title';
   titleEl.textContent = title;
