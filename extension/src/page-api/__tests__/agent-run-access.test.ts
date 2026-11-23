@@ -3,10 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(), hasPermission: vi.fn(), getFeatureFlags: vi.fn(),
   harborStreamRequest: vi.fn(), resolveTextSession: vi.fn(),
-  getPermissions: vi.fn(),
+  getPermissions: vi.fn(), pageToolsForAgent: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
+  openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
+  syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   onHarborSessionEnded: vi.fn(() => () => {}),
+  pageToolsForAgent: mocks.pageToolsForAgent,
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
@@ -29,6 +32,7 @@ beforeEach(async () => {
   mocks.getFeatureFlags.mockResolvedValue({ toolCalling: true });
   mocks.hasPermission.mockResolvedValue(true);
   mocks.getPermissions.mockResolvedValue({ scopes: {}, allowedTools: [] });
+  mocks.pageToolsForAgent.mockResolvedValue(null);
   mocks.harborRequest.mockImplementation(async (method) => method === 'mcp.listTools'
     ? { tools: [] } : { content: 'The time is noon.' });
   const event = () => ({ addListener: vi.fn() });
@@ -65,6 +69,18 @@ describe('agent.run receiving boundary', () => {
     const modelCall = mocks.harborRequest.mock.calls.find(([method]) => method === 'llm.chat');
     expect(modelCall?.[1].tools).toHaveLength(1);
     expect(modelCall?.[1].tools[0].name).toBe('clock_time');
+  });
+
+  it("offers the built-in model the calling page's own tools, with no MCP grants", async () => {
+    mocks.hasPermission.mockImplementation(async (_origin, scope) => !String(scope).startsWith('mcp:'));
+    mocks.pageToolsForAgent.mockResolvedValue({
+      serverId: 'page:example.test', generation: 3,
+      tools: [{ name: 'go_to', description: 'Scroll to an anchor', inputSchema: { type: 'object' } }],
+    });
+    await run();
+    expect(mocks.pageToolsForAgent).toHaveBeenCalledWith('https://example.test', 1);
+    const modelCall = mocks.harborRequest.mock.calls.find(([method]) => method === 'llm.chat');
+    expect(modelCall?.[1].tools.map((t: { name: string }) => t.name)).toEqual(['page_example_test_go_to']);
   });
 
   it('rejects a direct transport request when Agentic Tool Use is off', async () => {

@@ -176,11 +176,95 @@ interface PageToolDescriptor {
   name: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
-  handler: (args: Record<string, unknown>) => unknown | Promise<unknown>;
+  handler: (args: Record<string, unknown>, options?: { signal: AbortSignal }) => unknown | Promise<unknown>;
+}
+
+/** A tool as the WebMCP draft's registerTool() takes it. `handler` is Harbor's older name for `execute`. */
+interface ModelContextTool {
+  name: string;
+  title?: string;
+  description: string;
+  inputSchema?: Record<string, unknown>;
+  execute?: (input: Record<string, unknown>, options: { signal: AbortSignal }) => unknown | Promise<unknown>;
+  handler?: (input: Record<string, unknown>, options: { signal: AbortSignal }) => unknown | Promise<unknown>;
+}
+
+interface ModelContextRegisterToolOptions {
+  signal?: AbortSignal;
+  exposedTo?: string[];
 }
 
 /** Registry of page-provided tools, keyed by name. */
 const pageTools = new Map<string, PageToolDescriptor>();
+
+// The background hears about page tools so the person's agent can call them
+// (docs/PAGE_TOOLS_FOR_AGENTS.md). Only descriptors leave the page; the
+// handlers stay here and run when the background relays a call. Changes
+// made together are sent as one `page_tools.sync` with the whole list. A
+// page that never registers a tool sends nothing.
+const PAGE_TOOL_NAME_PATTERN = /^[A-Za-z0-9_.-]{1,128}$/;
+let pageToolSyncPending = false;
+let pageToolsEverSynced = false;
+
+function schedulePageToolSync(): void {
+  if (pageToolSyncPending) return;
+  pageToolSyncPending = true;
+  void Promise.resolve().then(flushPageToolSync);
+}
+
+/** Send a pending tool-list change now, ahead of a request that needs it. */
+function flushPageToolSync(): void {
+  if (!pageToolSyncPending) return;
+  pageToolSyncPending = false;
+  if (pageTools.size === 0 && !pageToolsEverSynced) return;
+  pageToolsEverSynced = true;
+  const tools = Array.from(pageTools.values())
+    // addTool never checked names; a name the agent can't be offered stays
+    // usable through window.agent.tools on this page only.
+    .filter(t => PAGE_TOOL_NAME_PATTERN.test(t.name))
+    .map(t => ({
+      name: t.name,
+      description: typeof t.description === 'string' && t.description ? t.description : t.name,
+      ...(t.inputSchema && typeof t.inputSchema === 'object' && !Array.isArray(t.inputSchema)
+        ? { inputSchema: t.inputSchema }
+        : {}),
+    }));
+  sendRequest('page_tools.sync', { tools }).catch(() => {
+    // The background refused or isn't there; the page's own tools still work.
+  });
+}
+
+const pageToolCallControllers = new Map<string, AbortController>();
+
+async function runPageToolCall(callId: string, name: string, input: unknown): Promise<void> {
+  const reply = (body: { ok: true; result: unknown } | { ok: false; error: { message: string } }) => {
+    try {
+      window.postMessage({ channel: CHANNEL, pageToolResult: { callId, ...body } }, '*');
+    } catch {
+      window.postMessage({
+        channel: CHANNEL,
+        pageToolResult: { callId, ok: false, error: { message: "The page tool's result can't be sent" } },
+      }, '*');
+    }
+  };
+  const descriptor = pageTools.get(name);
+  if (!descriptor) {
+    reply({ ok: false, error: { message: `Page tool "${name}" not found` } });
+    return;
+  }
+  const controller = new AbortController();
+  pageToolCallControllers.set(callId, controller);
+  const args = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {};
+  try {
+    const result = await Promise.resolve(descriptor.handler(args, { signal: controller.signal }));
+    reply({ ok: true, result });
+  } catch (e) {
+    const message = e && typeof (e as { message?: unknown }).message === 'string' ? (e as { message: string }).message : String(e);
+    reply({ ok: false, error: { message } });
+  } finally {
+    pageToolCallControllers.delete(callId);
+  }
+}
 
 // Session types
 interface SessionCapabilities {
@@ -273,9 +357,24 @@ window.addEventListener('message', (event: MessageEvent) => {
     channel?: string;
     response?: TransportResponse;
     streamEvent?: TransportStreamEvent;
+    pageToolCall?: { callId?: unknown; name?: unknown; input?: unknown };
+    pageToolCancel?: { callId?: unknown };
   };
 
   if (data?.channel !== CHANNEL) return;
+
+  // The person's agent calling one of this page's tools, relayed by the
+  // content script from the background.
+  if (data.pageToolCall) {
+    const { callId, name, input } = data.pageToolCall;
+    if (typeof callId === 'string' && typeof name === 'string') void runPageToolCall(callId, name, input);
+    return;
+  }
+  if (data.pageToolCancel) {
+    const { callId } = data.pageToolCancel;
+    if (typeof callId === 'string') pageToolCallControllers.get(callId)?.abort();
+    return;
+  }
 
   // Handle regular response
   if (data.response) {
@@ -1469,7 +1568,7 @@ const agentApi = Object.freeze({
 
             // Execute the handler in page context
             try {
-              return await Promise.resolve(descriptor.handler(args));
+              return await Promise.resolve(descriptor.handler(args, { signal: new AbortController().signal }));
             } catch (e) {
               const err = new Error(e instanceof Error ? e.message : 'Page tool failed');
               (err as Error & { code?: string }).code = 'ERR_TOOL_FAILED';
@@ -1567,6 +1666,7 @@ const agentApi = Object.freeze({
         position?: 'right' | 'left';
       };
     }): Promise<{ success: boolean; chatId?: string; error?: { code: string; message: string } }> {
+      flushPageToolSync();
       return sendRequest('agent.chat.open', options);
     },
 
@@ -1613,6 +1713,8 @@ const agentApi = Object.freeze({
           | { type: 'final'; output: string }
           | { type: 'error'; error: { code: string; message: string } };
 
+        // The background needs the page's current tools before the run starts.
+        flushPageToolSync();
         const tokenStream = createStreamIterable<StreamToken>('agent.run', options);
 
         return {
@@ -1904,14 +2006,73 @@ const agentApi = Object.freeze({
 // =============================================================================
 
 /**
- * navigator.modelContext — Web MCP compatibility surface.
+ * navigator.modelContext / document.modelContext — the WebMCP surface
+ * (https://webmachinelearning.github.io/webmcp/). The draft puts it on
+ * `document`; Harbor also keeps it on `navigator`, where it started.
  *
  * Pages call:
- *   navigator.modelContext.addTool({ name, description, inputSchema, handler })
- *   navigator.modelContext.removeTool(name)
+ *   await document.modelContext.registerTool(
+ *     { name, description, inputSchema, execute(input, { signal }) },
+ *     { signal },             // abort to unregister
+ *   )
+ *   navigator.modelContext.addTool({ name, description, inputSchema, handler })  // older alias
+ *   navigator.modelContext.removeTool(name)                                       // older alias
  *   navigator.modelContext.tools  // current snapshot
  */
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9_.-]{1,128}$/;
+
+function registerPageTool(tool: ModelContextTool, options: ModelContextRegisterToolOptions = {}): void {
+  const execute = tool?.execute ?? tool?.handler;
+  if (!tool || typeof execute !== 'function') {
+    throw new TypeError('registerTool requires { name, description, execute }');
+  }
+  const { signal, exposedTo } = options ?? {};
+  if (exposedTo !== undefined && (!Array.isArray(exposedTo) || exposedTo.length > 0)) {
+    // Harbor offers a page's tools only to agent work that page starts.
+    throw new DOMException('registerTool: exposedTo is not supported', 'NotSupportedError');
+  }
+  if (typeof tool.name !== 'string' || !TOOL_NAME_PATTERN.test(tool.name)) {
+    throw new DOMException(
+      'registerTool: name must be 1-128 ASCII letters, digits, "_", "-" or "."',
+      'InvalidStateError',
+    );
+  }
+  if (typeof tool.description !== 'string' || tool.description === '') {
+    throw new DOMException('registerTool: description must not be empty', 'InvalidStateError');
+  }
+  if (pageTools.has(tool.name)) {
+    throw new DOMException(`registerTool: a tool named "${tool.name}" is already registered`, 'InvalidStateError');
+  }
+  if (signal?.aborted) {
+    throw signal.reason;
+  }
+  const entry: PageToolDescriptor = {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    handler: (args, callOptions) => execute.call(tool, args, callOptions ?? { signal: new AbortController().signal }),
+  };
+  pageTools.set(tool.name, entry);
+  schedulePageToolSync();
+  signal?.addEventListener('abort', () => {
+    // Only this registration: a same-named tool registered later stays.
+    if (pageTools.get(entry.name) === entry) {
+      pageTools.delete(entry.name);
+      schedulePageToolSync();
+    }
+  }, { once: true });
+}
+
 const modelContext = Object.freeze({
+  registerTool(tool: ModelContextTool, options?: ModelContextRegisterToolOptions): Promise<undefined> {
+    try {
+      registerPageTool(tool, options);
+      return Promise.resolve(undefined);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  },
+
   addTool(descriptor: PageToolDescriptor): void {
     if (!descriptor.name || typeof descriptor.handler !== 'function') {
       throw new TypeError('addTool requires { name: string, handler: function }');
@@ -1920,10 +2081,13 @@ const modelContext = Object.freeze({
       console.warn(`[Web Agents API] page tool "${descriptor.name}" replaced`);
     }
     pageTools.set(descriptor.name, descriptor);
+    schedulePageToolSync();
   },
 
   removeTool(name: string): boolean {
-    return pageTools.delete(name);
+    const removed = pageTools.delete(name);
+    if (removed) schedulePageToolSync();
+    return removed;
   },
 
   get tools(): PageToolDescriptor[] {
@@ -1995,6 +2159,18 @@ try {
     }
   } catch (e) {
     console.debug('[Web Agents API] Could not define navigator.modelContext:', e);
+  }
+  try {
+    if (!Object.getOwnPropertyDescriptor(document, 'modelContext')) {
+      Object.defineProperty(document, 'modelContext', {
+        value: modelContext,
+        writable: false,
+        enumerable: true,
+        configurable: false,
+      });
+    }
+  } catch (e) {
+    console.debug('[Web Agents API] Could not define document.modelContext:', e);
   }
 
   // Dispatch ready event with feature flags info

@@ -165,6 +165,20 @@ fn is_acp_method(method: &str) -> bool {
     method.starts_with("acp.")
 }
 
+/// `page_tools.*` methods are refused over HTTP/WebSocket for the same
+/// reason `acp.*` is (see `is_acp_method` above): the page-tools endpoint
+/// that `page_tools.open` starts is tracked only for the native messaging
+/// connection's lifetime, which this surface has no equivalent of. Checked
+/// alongside `is_acp_method` in both the HTTP and WebSocket RPC paths below.
+fn is_page_tools_method(method: &str) -> bool {
+    method.starts_with("page_tools.")
+}
+
+/// Either of the two bridge-only method families refused over this surface.
+fn is_rejected_over_http(method: &str) -> bool {
+    is_acp_method(method) || is_page_tools_method(method)
+}
+
 fn acp_rejected_over_http(method: &str) -> HttpRpcErrorResponse {
     HttpRpcErrorResponse {
         code: -32601,
@@ -193,7 +207,7 @@ async fn rpc_handler(
         request.id
     );
 
-    if is_acp_method(&request.method) {
+    if is_rejected_over_http(&request.method) {
         return (
             StatusCode::OK,
             Json(HttpRpcResponse {
@@ -331,7 +345,7 @@ async fn handle_ws_message(msg: WsMessage, state: &Arc<RwLock<ServerState>>) {
         WsMessage::Rpc { id, method, params } => {
             tracing::info!("WebSocket RPC request: {} (id: {:?})", method, id);
 
-            if is_acp_method(&method) {
+            if is_rejected_over_http(&method) {
                 let response = WsMessage::RpcResponse {
                     id,
                     result: None,
@@ -479,6 +493,17 @@ mod tests {
         assert!(!is_acp_method("acplike.notreally"));
     }
 
+    #[test]
+    fn page_tools_methods_are_recognized_for_rejection() {
+        assert!(is_page_tools_method("page_tools.open"));
+        assert!(is_page_tools_method("page_tools.close"));
+        assert!(!is_page_tools_method("llm.chat"));
+        assert!(!is_page_tools_method("page_toolslike.notreally"));
+        assert!(is_rejected_over_http("page_tools.open"));
+        assert!(is_rejected_over_http("acp.open"));
+        assert!(!is_rejected_over_http("llm.chat"));
+    }
+
     /// Finds a free port by briefly binding to port 0, matching the pattern
     /// `run_http_server` itself uses (a fixed, OS-caller-chosen port) - this
     /// is only for the test's own ephemeral server, not for anything shipped.
@@ -536,5 +561,29 @@ mod tests {
             .expect("request should succeed");
         let body: serde_json::Value = resp.json().await.expect("valid JSON response");
         assert_eq!(body["result"]["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn http_rejects_page_tools_methods() {
+        let port = free_port().await;
+        tokio::spawn(async move {
+            let _ = run_http_server(port).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        let client = reqwest::Client::new();
+        for method in ["page_tools.open", "page_tools.close"] {
+            let resp = client
+                .post(format!("http://127.0.0.1:{}/rpc", port))
+                .json(&serde_json::json!({ "id": 1, "method": method, "params": {} }))
+                .send()
+                .await
+                .expect("request should succeed");
+            let body: serde_json::Value = resp.json().await.expect("valid JSON response");
+            assert!(body.get("result").is_none(), "{} must not run over HTTP", method);
+            let error = body.get("error").expect("error field");
+            assert_eq!(error["code"], -32601);
+            assert!(error["message"].as_str().unwrap().contains(method));
+        }
     }
 }

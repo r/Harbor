@@ -442,6 +442,9 @@ function mcpServersForAgent(
     if (site.transport === 'streamable-http') {
       if (capabilities?.http) {
         servers.push({ type: 'http', name: site.name, url: site.url, headers: [] });
+      } else {
+        // Not `site.name`/`site.url` (page-supplied).
+        console.log('[Harbor] The agent does not support HTTP MCP servers; leaving one out of its session');
       }
     } else if (site.transport === 'sse') {
       if (capabilities?.sse) {

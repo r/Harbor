@@ -21,6 +21,8 @@
     "test:mcp": "node test-mcp-servers.mjs",
     "test:mcp:keep-open": "node test-mcp-servers.mjs --keep-open",
     "test:host-request": "node test-host-request.mjs",
+    "test:page-tools-agent": "node test-page-tools-agent.mjs",
+    "test:page-tools-agent:keep-open": "node test-page-tools-agent.mjs --keep-open",
     "test:wasm": "node test-wasm-server.mjs",
     "test:all": "npm run test:bridge && npm run test:harbor && npm run test:wasm && npm run test:mcp && npm run test:browser",
     "test:markdown": "node test-chat-markdown-sanitize.mjs"

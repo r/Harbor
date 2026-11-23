@@ -16,7 +16,7 @@
  * that cover each step as it takes it: `model:prompt` before each model
  * call after the first, `mcp:tools.call` before each tool call.
  */
-import { harborRequest } from './harbor-core';
+import { harborRequest, callPageToolForAgent } from './harbor-core';
 import { hasPermission } from './handlers';
 import { toolResultText } from './tool-messages';
 import { policyRefusalCode } from './policy-refusal';
@@ -28,6 +28,17 @@ export interface AgentBackendTool {
   name: string;
   description?: string;
   inputSchema?: unknown;
+  /**
+   * Set for the page's own tools (`serverId` `page:<host>`): the page
+   * generation they were listed under, so a call made after the page reloads
+   * fails instead of reaching the new page.
+   */
+  generation?: number;
+}
+
+/** The page's own tools (document.modelContext) appear under `page:<host>`. */
+function isPageToolServer(serverId: string | undefined): boolean {
+  return typeof serverId === 'string' && serverId.startsWith('page:');
 }
 
 export interface AgentRunRequest {
@@ -83,6 +94,7 @@ export const builtinAgentBackend: AgentBackend = {
       input_schema: t.inputSchema || { type: 'object', properties: {} },
       _serverId: t.serverId,
       _toolName: t.name,
+      _generation: t.generation,
     }));
 
     // Send thinking event
@@ -165,7 +177,13 @@ export const builtinAgentBackend: AgentBackend = {
       const toolCalls = choice?.message?.tool_calls;
 
       if (toolCalls && toolCalls.length > 0) {
-        if (!await hasPermission(origin, 'mcp:tools.call', tabId)) {
+        // The page's own tools need no MCP grant: the grant that started the
+        // run covers them, and each call is policy-checked below. Harbor's
+        // installed tools still need mcp:tools.call.
+        // A name the run didn't offer counts as an installed tool here, so it
+        // still needs the grant (failing closed).
+        const callsMcpTools = toolCalls.some(tc => !isPageToolServer(llmTools.find(t => t.name === tc.function.name)?._serverId));
+        if (callsMcpTools && !await hasPermission(origin, 'mcp:tools.call', tabId)) {
           messages.push({ role: 'assistant', content: responseContent || 'I need to use tools but permission was denied.' });
           messages.push({ role: 'user', content: 'Tool calling is not permitted. Please provide an answer without using tools.' });
           // A denied turn uses one unit of the budget, so a model that keeps
@@ -210,6 +228,7 @@ export const builtinAgentBackend: AgentBackend = {
           }
 
           const toolInfo = llmTools.find(t => t.name === llmToolName);
+
           const serverId = toolInfo?._serverId || '';
           const actualToolName = toolInfo?._toolName || llmToolName;
           const displayName = `${serverId}/${actualToolName}`;
@@ -218,14 +237,27 @@ export const builtinAgentBackend: AgentBackend = {
 
           let toolResult: unknown;
           try {
-            const callResult = await harborRequest<{ result: unknown }>('mcp.callTool', {
-              origin,
-              tabId,
-              serverId,
-              toolName: actualToolName,
-              args,
-            }, { signal });
-            toolResult = callResult.result;
+            if (isPageToolServer(serverId)) {
+              // Runs in the page; refused by policy, or failing because the
+              // page went away, it rejects like a failed tool call.
+              toolResult = await callPageToolForAgent({
+                origin,
+                tabId,
+                generation: toolInfo?._generation ?? -1,
+                name: actualToolName,
+                input: args,
+                signal,
+              });
+            } else {
+              const callResult = await harborRequest<{ result: unknown }>('mcp.callTool', {
+                origin,
+                tabId,
+                serverId,
+                toolName: actualToolName,
+                args,
+              }, { signal });
+              toolResult = callResult.result;
+            }
           } catch (e) {
             toolResult = { error: e instanceof Error ? e.message : 'Tool call failed' };
           }

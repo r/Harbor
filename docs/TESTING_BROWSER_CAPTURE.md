@@ -31,7 +31,7 @@ This is implemented by extending the bridge test harness (e.g. `tests/e2e/test-m
 
 - Load Harbor + Web Agents extensions in a browser.
 - Install and start a JS MCP server that uses `MCP.requestHost('browser.capturePage', { url })` in one of its tools.
-- Call that tool from the Harbor sidebar or Tool Tester. Verify a new tab opens, content is returned, and the tool result contains the expected data.
+- Call that tool from the Harbor sidebar's tool tester (**Settings → Developer → Tool tester**). Verify a new tab opens, content is returned, and the tool result contains the expected data.
 - Call the same tool from a web page (for example through `agent.tools.call`). Verify the capture is refused with "Browser capture is only allowed from the Harbor sidebar."
 
 ## Test server example (for bridge-only test)

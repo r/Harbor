@@ -645,14 +645,19 @@ impl JsServer {
             let id = req.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let params = req.get("params").cloned().unwrap_or(serde_json::Value::Null);
-            let (response_tx, mut response_rx) = tokio::sync::oneshot::channel();
-            host_request_tx
-                .try_send((id.clone(), method, params, context_to_send.clone(), response_tx))
-                .map_err(|e| format!("host_request_tx send: {}", e))?;
+            let outcome = if is_reserved_host_method(&method) {
+                // Never forwarded: see `is_reserved_host_method`.
+                Err(serde_json::json!("this host request is not available to MCP servers"))
+            } else {
+                let (response_tx, mut response_rx) = tokio::sync::oneshot::channel();
+                host_request_tx
+                    .try_send((id.clone(), method, params, context_to_send.clone(), response_tx))
+                    .map_err(|e| format!("host_request_tx send: {}", e))?;
 
-            let outcome = rt.block_on(async {
-                response_rx.await.unwrap_or(Err(serde_json::json!("host_response timeout")))
-            });
+                rt.block_on(async {
+                    response_rx.await.unwrap_or(Err(serde_json::json!("host_response timeout")))
+                })
+            };
 
             let err_msg = match &outcome {
                 Ok(_) => None,
@@ -810,5 +815,29 @@ impl JsServer {
                 }
             }
         }
+    }
+}
+
+/// Host-request methods a JS MCP server may never send. `page_tools.*` is
+/// how the bridge's own page-tools endpoint (`page_tools.rs`) relays an ACP
+/// agent's calls into a web page's tools; the extension answers it only for
+/// its own endpoint context. A JS server's host requests can carry a context
+/// the script set itself (`__requestHostContext`, used when the caller gave
+/// none), so these methods are refused here, before they ever leave the
+/// bridge.
+fn is_reserved_host_method(method: &str) -> bool {
+    method.starts_with("page_tools.")
+}
+
+#[cfg(test)]
+mod reserved_host_method_tests {
+    use super::is_reserved_host_method;
+
+    #[test]
+    fn page_tools_methods_are_reserved_for_the_bridge() {
+        assert!(is_reserved_host_method("page_tools.call"));
+        assert!(is_reserved_host_method("page_tools.list"));
+        assert!(!is_reserved_host_method("browser.capturePage"));
+        assert!(!is_reserved_host_method("http.get"));
     }
 }

@@ -73,6 +73,7 @@
   },
   "modelContext": {
     "addTool": "function",
+    "registerTool": "function",
     "removeTool": "function",
     "tools": {
       "__array": "empty"

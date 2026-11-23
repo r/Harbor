@@ -628,6 +628,8 @@ These are the policy engine's codes, and Harbor reports them as is wherever its 
 
 When the person has chosen an ACP agent to answer, each prompt is still checked by the policy engine, as `model.prompt.agent`; a refusal there is `ERR_PERMISSION_DENIED`. Failures from the agent itself use the ACP codes (`ERR_AGENT_FAILED`, `ERR_AGENT_BUSY`, `ERR_AGENT_REFUSED`, `ERR_AGENT_LIMIT`). An `agent.run()` on an ACP agent doesn't list Harbor's tools, so the tool-list refusal above applies on Harbor's own model only. On an ACP agent, the site's own registered MCP servers are passed to the agent only if the site holds `mcp:tools.list` and `mcp:tools.call` and the policy engine allows listing and calling tools; the site's per-tool grants don't apply there.
 
+**The page's own tools** (`document.modelContext`) work differently from site servers. They need no grant of their own, because `mcp:tools.list` and `mcp:tools.call` would also open the person's installed MCP servers. The grant that lets the page start `agent.run()` or `agent.chat.open()` covers them. The policy engine still checks `tool.list` on the `page:<host>` server when the run or chat starts, and `tool.call` with the tool's name on every call. It never prompts for them: a rule that asks refuses. A rule like `{ action: 'tool.call', resource: { server: 'page:*' } }` turns them off everywhere. Every check is in the audit log, and the site's per-tool grants don't apply. See [PAGE_TOOLS_FOR_AGENTS.md](PAGE_TOOLS_FOR_AGENTS.md).
+
 A declined Harbor prompt is `ERR_PERMISSION_DENIED`. Any other failure keeps the call's own code (`ERR_TOOL_FAILED`, `ERR_MODEL_FAILED`, `ERR_AGENT_FAILED`), even when a tool or model returns text that looks like one of these codes.
 
 `ERR_LABEL_FLOW_BLOCKED` can't occur on a page's call yet: Harbor doesn't attach data labels to page tool calls or prompts. Handle it anyway; it's reserved for when it does.
@@ -773,130 +775,77 @@ There is one prompt surface today: the popup window from `showPermissionPrompt` 
 
 # Part 4: For users
 
-This is what the system looks like from the user's chair, and what you can do with it.
+This is what the system looks like from the user's chair today, and what you can do with it. Parts 1–3 describe the engine underneath, some of which has no controls in the sidebar yet; those are listed under [Not built yet](#not-built-yet).
 
 ## What you'll see in normal use
 
-For most sites, most of the time, you won't see anything. Harbor's whole goal is to *not* interrupt you. The pattern looks like this:
+For most sites, most of the time, you won't see anything. A site that never asks for anything never prompts. When one does:
 
-1. You install Harbor and either accept the default policy or write your own.
-2. You visit a site. The site's agent quietly does what it's allowed to do.
-3. You go on with your life.
-
-You become aware of Harbor in three moments:
-
-- **The first time** a new site asks for a meaningful capability — a one-time prompt with a clear description.
-- **When something dangerous is about to happen** — a payment, a destructive action, a navigation to your bank — you'll be asked even if you've previously said "always allow."
-- **When something has gone wrong** — a site is misbehaving, your budget is hitting its cap, an automated containment fired — Harbor surfaces it in the sidebar.
+1. The first time a site asks for a capability (prompting your model, using your tools, reading the page, and so on), Harbor asks you once.
+2. If you allow it, the site goes on using it within what you allowed.
+3. Everything Harbor decided, allowed or not, shows up in the sidebar's **Activity** section.
 
 ## The sidebar at a glance
 
-Harbor's sidebar is the home for everything in this document. It has four tabs:
+Harbor's sidebar opens on a welcome card that names the agent sites run on: Harbor's built-in model, or an agent of your own. Below it:
 
-| Tab | What's there |
+| Section | What's there |
 |---|---|
-| **Sessions** | Every active agent session, its origin, its budget. One-click Stop, Pause, Revoke. |
-| **Policy** | Your `harbor-policy.json` editor. JSON, with schema validation and rule helpers. |
-| **Origins** | Per-site grants — what you've said "Allow always" or "Allow once" to, on which sites. |
-| **Activity** | Audit feed: every decision the engine has made, with the reason. Filter by site, by decision, by time. |
+| **Agent sessions** | Shown only while a site has a session open. Each lists its site and what it can do, with a **Terminate** button. |
+| **Activity** | Every decision the policy engine made, newest first, with a summary at the top. Filter by outcome (allowed, prompted, previewed, denied). Each row has a **Why?** link. |
+| **Site permissions** | What you've allowed or denied, site by site. **Revoke** clears a site's grants, so it asks again. |
+| **Browser agent capabilities** | Switches for whole families of the page API (text generation, tool access, agentic tool use, browser interaction, browser control, multi-agent). Off means no site can use it, whatever its grants. Reload pages after changing one. |
 
-A small Harbor icon also lives in the browser toolbar with a single state indicator: green (idle), blue (an agent is acting), yellow (an agent is waiting on you), red (a containment has fired).
+Your agent, the built-in model's settings and developer tools are under **Settings**, at the foot of the sidebar.
 
-## How prompts feel different now
+## The permission prompt
 
-When Harbor does ask, the prompt itself is more informative than before. Four kinds:
+When a site asks for something you haven't decided on, Harbor opens a prompt that shows:
 
-### First-use prompt
+- the site asking, and its **reason** in its own words (treat it as the site's claim, not Harbor's);
+- each capability it wants, with what it means and how risky it is;
+- for tools, which tools; for an agent, which sites it covers;
+- whether it should hold **This time only** (the default) or **Always allow**.
 
-The traditional "this site wants permission to X" dialog, but with several new things:
+**Allow** with *This time only* lasts about ten minutes, in the tab that asked. *Always allow* lasts until you revoke it in **Site permissions**. **Deny** is remembered, so the site doesn't keep asking; revoke it to be asked again.
 
-- A clear **effect badge** (read / write / egress / destructive).
-- The action's **locality** (`local` for on-device, `remote` for cloud).
-- The site's **`reason`** in plain language, not a generic "AI features."
-- A **default focused button** that matches the effect — read effects default to **Allow for this session**, write effects default to **Allow once**, persistent grants are never the default.
-- A third option: **"Always allow if it matches a rule…"** which generates a `harbor-policy.json` rule from this grant and adds it to your policy file. That's how you build up a policy over time without ever opening the editor.
+## Why did Harbor decide that?
 
-The change from v1: persistent grants ("Allow always") used to be the default for reads. They aren't anymore. Reads default to session-bound, and you have to actively pin a grant after using it a few times — usually after one trusted use, the prompt itself offers "I've used this site three times, always allow."
-
-### Egress prompt
-
-When a write or read crosses out of your machine — a remote-model prompt, a cross-origin fetch, a tool that talks to a third-party API — you see a destination-aware prompt:
-
-```
-┌────────────────────────────────────────────────┐
-│  example.com wants to send data outside your   │
-│  machine                                       │
-│                                                │
-│  Action: model.prompt.remote.thirdParty        │
-│  Destination: api.openai.com                   │
-│  Data carries label: confidential              │
-│                                                │
-│  Allow once   |   Allow for this session       │
-│  [Block this destination]                      │
-└────────────────────────────────────────────────┘
-```
-
-If the data carries a `credentials`, `payments`, or `identity` label, there's no "Allow" path — only "Block." Those labels are configured to never leave the machine without an explicit policy rule the user wrote in the sidebar.
-
-### Sensitive-action prompt
-
-When the SensitivityEngine catches something — you're about to delete a repo, navigate to a bank, click submit on a payment form — you see a different kind of dialog:
-
-```
-┌────────────────────────────────────────────────┐
-│  Sensitive action                              │
-│                                                │
-│  example.com wants to:                         │
-│  ▸ Delete repository alice/old-project         │
-│                                                │
-│  This action is irreversible.                  │
-│                                                │
-│  [Cancel]   [Confirm once]                     │
-└────────────────────────────────────────────────┘
-```
-
-There's no "always allow" option for sensitive actions, because that would defeat the purpose. You can move the rule to your sensitive-domains list later if you want to suppress this category of prompt for a specific origin, but it's a deliberate decision in the sidebar, not a one-click waiver.
-
-### The decision simulator
-
-Every row in the Activity feed has a **"Why?"** link. Clicking it opens a panel that walks through the decision: which tier of the ladder fired, which rule matched, what labels were on the input, what the resulting effect was. It's how you investigate "why did Harbor block this?" without having to read JSON.
-
-## Building a policy without ever editing JSON
-
-You don't have to write a policy file by hand. The sidebar offers four flows that produce one for you:
-
-1. **From a prompt.** When a first-use prompt appears, the "Always allow if it matches a rule…" button asks you what scope of rule you want — *exactly this tool*, *all tools from this server*, *all read-prefixed tools* — and adds it.
-2. **From the activity feed.** Any allowed action has a "Make this automatic" link that creates a matching `allow` rule. Any denied or contained action has a "Always deny" link that creates a `deny` rule.
-3. **From the origins tab.** Any per-origin grant can be promoted to a global rule with one click ("Allow this on every site that asks for it").
-4. **From a preset.** Harbor ships a small set of canned policies (Conservative, Balanced, Permissive, Developer, Researcher) you can use as a starting point and customize from there.
-
-The JSON is always the source of truth, and you can always open the editor if you want to write rules directly. But you can run Harbor for a year without ever touching it.
+Open **Activity** and click **Why?** on the row. It shows the reason, the resource involved, any data labels, the error code a site saw, and the trace through the policy engine's tiers, including the rule that matched.
 
 ## When something feels wrong
 
 A few things to check first, in order:
 
-1. **Is the session containment level above "normal"?** Sidebar → Sessions → look for a yellow or red badge. If yes, the Watchdog restricted it for a reason; the Activity tab will tell you what.
-2. **Is there a deny rule matching what the site is trying to do?** Sidebar → Policy. Look for a `deny` rule that mentions the scope or tool the site is asking about. The Activity tab also shows the rule that fired.
-3. **Did you grant "Allow once"?** Sidebar → Origins → look for the origin. If the grant has expired (10 minutes after grant, or when the tab closed), the next call will re-prompt.
-4. **Does the session hold the capability the site is trying to use?** A session only has the actions it was granted; a write it never asked for (or that you never granted) fails with `ERR_PERMISSION_DENIED`. The Sessions tab shows what each session can do.
+1. **Did you deny it, or did a grant run out?** Look the site up in **Site permissions**. A *This time only* grant ends after about ten minutes; the next call asks again.
+2. **Is a whole capability switched off?** Check **Browser agent capabilities**.
+3. **What did the engine say?** Find the call in **Activity** and open **Why?**. It names the tier and rule that fired.
+4. **Does the session hold what the site is using?** A session only has what it asked for and you granted. Anything else fails with `ERR_PERMISSION_DENIED`. **Agent sessions** shows what each session can do.
 
-If a site is hammering you with prompts, that's almost always a sign the site is asking poorly — broad scopes with vague reasons, or asking for one scope at a time when it should batch. Use the activity feed to identify which scope is coming up most often, then either grant it always (if you trust the site) or write a deny rule (if you don't).
+If a site keeps prompting, it is usually asking poorly: broad scopes with vague reasons, or one scope at a time. **Activity** shows which request comes up most. Allow it always if you trust the site, or deny it.
 
 ## What you control, summarized
 
 | You can... | Where |
 |---|---|
-| See every active agent session | Sidebar → Sessions |
-| Stop a session immediately | Sidebar → Sessions → Stop, or sidebar header Stop All |
+| See every active agent session | Sidebar → Agent sessions (shown while there are any) |
+| Stop a session immediately | Sidebar → Agent sessions → Terminate |
+| See what an agent did and why | Sidebar → Activity → Why? |
+| Revoke a site's grants | Sidebar → Site permissions → Revoke |
+| Turn a family of the API off for every site | Sidebar → Browser agent capabilities |
+| Choose who answers sites: the built-in model or your own agent | Sidebar → Settings → Your agent |
+| Set rules for a whole organization | A managed policy (see the FAQ) |
 | Reset a quarantined site | Not in the sidebar yet; the `watchdog.resetOrigin` message clears it |
-| Edit your policy file | Sidebar → Policy |
-| Add a rule from a recent action | Sidebar → Activity → "Make this automatic" |
-| See exactly what an agent did and why | Sidebar → Activity |
-| Revoke a per-origin grant | Sidebar → Origins → Revoke |
-| Mark a domain as sensitive | Sidebar → Policy → `sensitiveDomains` array |
-| Set per-session budgets | Sidebar → Policy → `budgets` block |
-| Export your policy / activity for support | Sidebar → Policy → Export, Activity → Export |
+
+## Not built yet
+
+The engine in Parts 1–3 supports more than the sidebar shows. These are designed but have no controls yet:
+
+- **Editing your own policy.** The engine reads a user policy (`harbor_policy_v2` in the extension's local storage) below any managed policy, but nothing in Harbor writes it: there is no editor, import, export, or preset (Conservative, Balanced, Permissive and so on).
+- **Rules from a prompt or from Activity.** No "Always allow if it matches a rule…" in the prompt, no "Make this automatic" or "Always deny" in Activity, and no promoting a site's grant to a global rule.
+- **Destination-aware and sensitive-action prompts.** Egress and sensitive actions go through the same permission prompt above, without the dedicated layouts the design describes.
+- **Session-length grants.** The prompt offers *This time only* and *Always allow*; there is no *Allow for this session*, and it doesn't offer to pin a grant after a few uses.
+- **Sensitive domains, budgets, containment badges, Pause, and a toolbar icon that shows state.**
 
 ---
 
@@ -908,15 +857,15 @@ If a site is hammering you with prompts, that's almost always a sign the site is
 - **Audit record.** A single decision logged by the PolicyEngine, with full trace including matched rule, source, and labels.
 - **Containment.** A graduated reduction of a session's authority, walked by the Watchdog in response to bad behavior; see [The Watchdog](#the-watchdog).
 - **Data label.** A tag (`credentials`, `payments`, `identity`, `confidential`, `regulated`) attached to data flowing through the agent. Tracked through reads, prompts, and tool calls; checked at egress.
-- **Decision simulator.** A read-only replay of a recorded decision under different rules or labels, reached through the `policy.simulate` and `policy.replay` messages.
+- **Decision simulator.** A read-only replay of a recorded decision under different rules or labels, reached through the `policy.simulate` and `policy.replay` messages. The sidebar's **Why?** link shows the recorded trace, not a replay.
 - **Effect.** One of `metadata`, `read`, `egress`, `write`, `identity`, `destructive`. Drives default UX.
 - **Locality.** One of `local`, `same-origin`, `cross-origin`, `remote`. Drives egress treatment.
 - **Manifest provenance.** Whether an MCP manifest is trusted (bundled, locally installed, signed, or pinned in policy) — determines whether the engine honors its self-attested sensitivity claims.
 - **Origin grant.** A per-site allow/once/deny remembered from a prompt. Lowest-precedence layer; the policy file overrides it.
 - **PolicyEngine.** The single function that decides whether to allow, deny, ask, or preview each API call.
-- **Policy file.** `harbor-policy.json` v2 — the user's declarative typed rules, merged with managed-storage policies.
+- **Policy file.** `harbor-policy.json` v2 — declarative typed rules. A managed policy comes from enterprise storage; a user policy is read from the extension's local storage (`harbor_policy_v2`), though nothing in Harbor writes one yet.
 - **Sensitivity.** Structural classification (safe / sensitive / destructive) independent of policy. Cannot be lowered by an `allow` rule.
-- **Sidebar.** Harbor's primary UI surface, where sessions, policy, origins, and activity live.
+- **Sidebar.** Harbor's primary UI surface: your agent, agent sessions, activity, site permissions and capability switches, with settings behind them.
 - **Watchdog.** The background monitor that maintains rolling statistics and label-flow events; tightens an origin's containment state in response.
 
 ---
@@ -938,13 +887,13 @@ The sample apps and the demo site demonstrate the new shape.
 
 Because they're not the same thing, even though v1 treated them as one. A local model (Firefox-ML, Chrome AI, Ollama) keeps your data on your machine; a remote model sends it to a cloud provider. A user (or a policy) might be totally fine with the first and not the second. Splitting them means the user can write `allow model.prompt.local` broadly while keeping `model.prompt.remote.thirdParty` on a tight leash, and means a site that only needs a local model never triggers an egress concern.
 
-**Q: Why aren't reads "Allow always" by default anymore?**
+**Q: Why doesn't the prompt default to "Always allow"?**
 
-Because reads can feed exfiltration. Reading a tab is harmless on its own; reading a tab and then sending the contents to a remote LLM is exfiltration. The new default is that reads stick around for the session but expire when the session ends; you have to actively pin them to make them persistent. After three trusted uses on the same site the prompt offers to do that for you in one click.
+Because reads can feed exfiltration. Reading a tab is harmless on its own; reading a tab and then sending the contents to a remote LLM is exfiltration. The prompt defaults to *This time only*, which lasts about ten minutes in that tab; you choose *Always allow* yourself.
 
 **Q: Why isn't there a single "Auto-approve everything safe" toggle?**
 
-There is, sort of — install one of the bundled presets (Permissive) and you'll get exactly that behavior. We don't expose it as a single toggle because "safe" depends on what your trusted infrastructure looks like. The Permissive preset trusts a generous set of allow rules; if you have a stricter environment, edit them.
+Because "safe" depends on what your trusted infrastructure looks like. The design answers this with policy presets (a Permissive one among them), but those aren't built yet; see [Not built yet](#not-built-yet). Today, *Always allow* on a site you trust is the closest thing.
 
 **Q: Can a malicious site spoof a `reason` or a manifest to look harmless?**
 
