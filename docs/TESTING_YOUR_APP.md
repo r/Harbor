@@ -128,9 +128,11 @@ mock.uninstall();
 | User allows every request | `mock.permissions.grantAll()` (grants only the scopes each `requestPermissions()` names, as Harbor does) |
 | Permissions denied | `mock.permissions.denyAll()` |
 | Scopes the site already holds | `mock.permissions.grantScopes(['model:prompt', 'mcp:tools.list'])` |
+| A session from `agent.requestCapabilities()` | Grant the scopes it needs first (`grantScopes`). As in Harbor, it doesn't prompt: an optional capability the site lacks is left out, and a required one it lacks fails with `ERR_PERMISSION_DENIED`. |
+| A policy rule or the watchdog refuses calls | `mock.policy.refuse('ERR_BLOCKED_BY_POLICY')` or `mock.policy.refuse('ERR_QUARANTINED')`; `mock.policy.reset()` lets them through again. Model, tool, session and agent calls are refused; `requestPermissions()` isn't. |
 | `session.prompt()` return value | `mock.ai.textSessionResponse = '…'` |
-| `session.promptStreaming()` tokens | `mock.ai.textSessionStreamTokens = ['a', 'b', 'c']` |
-| Next session error | `mock.ai.nextError = { code: 'ERR_MODEL_FAILED', message: '…' }` |
+| `session.promptStreaming()` string chunks | `mock.ai.textSessionStreamTokens = ['a', 'b', 'c']` |
+| Error thrown by `prompt()` or while reading `promptStreaming()` | `mock.ai.nextError = { code: 'ERR_MODEL_FAILED', message: '…' }` |
 | `agent.tools.list()` | `mock.agent.toolsList = [{ name: '…', description: '…', … }]` |
 | `agent.tools.call()` result | `mock.agent.toolCallResult = { … }` |
 | `agent.tools.call()` error | `mock.agent.toolCallError = { code: 'ERR_TOOL_NOT_FOUND', message: '…' }` |
@@ -140,11 +142,11 @@ mock.uninstall();
 | Another agent invokes or messages your page | `mock.agents.invokePage(fromId, request)`, `mock.agents.sendToPage(fromId, payload)` |
 | `multiAgent` feature on (off by default, as in Harbor) | `mock.agents.featureEnabled = true` |
 
-Error `code` values should match the real API (e.g. `ERR_PERMISSION_DENIED`, `ERR_SCOPE_REQUIRED`, `ERR_MODEL_FAILED`, `ERR_TOOL_NOT_FOUND`, `ERR_TOOL_FAILED`).
+Error `code` values should match the real API (e.g. `ERR_PERMISSION_DENIED`, `ERR_SCOPE_REQUIRED`, `ERR_MODEL_FAILED`, `ERR_TOOL_NOT_FOUND`, `ERR_TOOL_FAILED`, `ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`).
 
 ### Example (Vitest)
 
-See `harbor-test/example.test.mjs` in the generated harness. Run it with:
+See `harbor-test/example.test.mjs`, and `harbor-test/example.capabilities.test.mjs` for sessions and policy refusals, in the generated harness. Run it with:
 
 ```bash
 npx vitest run harbor-test/example.test.mjs

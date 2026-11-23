@@ -624,6 +624,20 @@ interface AgentSession {
   terminate(): Promise<void>;
 }
 
+/**
+ * The grants a typed action in a `requestCapabilities()` request needs,
+ * matching how that request is turned into a session's capabilities.
+ * Actions that don't become a capability need none.
+ */
+function scopesForTypedAction(action: string): string[] {
+  if (action.startsWith('model.prompt')) return ['model:prompt'];
+  if (action === 'tool.call') return ['mcp:tools.call'];
+  if (action === 'browser.read.screenshot') return ['browser:activeTab.read', 'browser:activeTab.screenshot'];
+  if (action.startsWith('browser.read.')) return ['browser:activeTab.read'];
+  if (action.startsWith('browser.write.')) return ['browser:activeTab.interact'];
+  return [];
+}
+
 function createAgentSessionObject(
   sessionId: string,
   capabilities: SessionCapabilities,
@@ -1719,7 +1733,9 @@ const agentApi = Object.freeze({
    * canonical session-creation API documented in `docs/PERMISSIONS.md`;
    * it translates a flat list of typed-action requests into the legacy
    * capability shape that `agent.sessions.create` understands and returns
-   * the resulting `AgentSession`.
+   * the resulting `AgentSession`. It doesn't prompt: a required action
+   * the origin hasn't been granted fails the request, and an optional one
+   * is left out of the session.
    *
    * @example
    * const session = await agent.requestCapabilities({
@@ -1738,7 +1754,21 @@ const agentApi = Object.freeze({
     optional?: Array<{ action: string; server?: string; toolNames?: string[] }>;
     budget?: { maxToolCalls?: number; ttlMinutes?: number };
   }): Promise<AgentSession> {
-    const all = [...opts.require, ...(opts.optional ?? [])];
+    // An optional capability the site hasn't been granted is left out
+    // quietly (no prompt); what's required is always sent, so Harbor's
+    // session.create still refuses an ungranted one. The background checks
+    // every capability the session ends up with, so this only decides what
+    // the site asks for.
+    let optional = opts.optional ?? [];
+    if (optional.length > 0) {
+      const held = await sendRequest<{ scopes?: Record<string, string> }>('agent.permissions.list');
+      const isHeld = (scope: string) => {
+        const status = held?.scopes?.[scope];
+        return status === 'granted-always' || status === 'granted-once';
+      };
+      optional = optional.filter((r) => scopesForTypedAction(r.action).every(isHeld));
+    }
+    const all = [...opts.require, ...optional];
 
     const wantsLLM = all.some((r) => r.action.startsWith('model.prompt'));
     const tools: string[] = [];
