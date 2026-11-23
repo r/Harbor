@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bring Your Own Chatbot — Web Agent API</title>
+  <title>Bring your own chatbot · Harbor</title>
 
   <!--
     Declarative MCP Server Discovery
@@ -25,352 +25,57 @@
     data-transport="sse"
   >
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../shared/styles.css">
   <style>
-    :root {
-      /* Amazon-inspired color scheme */
-      --shop-primary: #ff9900;
-      --shop-primary-dark: #e68a00;
-      --shop-header-bg: #131921;
-      --shop-header-text: #ffffff;
-      --shop-bg: #eaeded;
-      --shop-surface: #ffffff;
-      --shop-text: #0f1111;
-      --shop-text-muted: #565959;
-      --shop-border: #ddd;
-      --shop-link: #007185;
-    }
-
-    body {
-      background: var(--shop-bg);
-      color: var(--shop-text);
-      min-height: 100vh;
-      font-family: "Amazon Ember", Arial, sans-serif;
-    }
-
-    /* Shop header - Amazon dark style */
-    .shop-header {
-      background: var(--shop-header-bg);
-      padding: var(--demo-space-3) var(--demo-space-6);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .shop-logo {
-      display: flex;
-      align-items: center;
-      gap: var(--demo-space-2);
-      font-size: var(--demo-text-xl);
-      font-weight: var(--demo-weight-bold);
-      color: var(--shop-header-text);
-    }
-
-    .shop-logo-icon {
-      width: 36px;
-      height: 36px;
-      background: var(--shop-primary);
-      border-radius: var(--demo-radius-sm);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--shop-header-bg);
-      font-size: 18px;
-    }
-
-    .shop-nav {
-      display: flex;
-      gap: var(--demo-space-6);
-    }
-
-    .shop-nav a {
-      color: var(--shop-header-text);
-      text-decoration: none;
-      font-size: var(--demo-text-sm);
-      font-weight: var(--demo-weight-medium);
-      transition: color 0.2s;
-    }
-
-    .shop-nav a:hover {
-      color: var(--shop-primary);
-      text-decoration: underline;
-    }
-
-    /* Main content area */
-    .shop-main {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: var(--demo-space-8) var(--demo-space-6);
-    }
-
-    /* Hero section */
-    .shop-hero {
-      text-align: center;
-      margin-bottom: var(--demo-space-8);
-      padding: var(--demo-space-6);
-      background: var(--shop-surface);
-      border: 1px solid var(--shop-border);
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    }
-
-    .shop-hero h1 {
-      font-size: 28px;
-      font-weight: 400;
-      color: var(--shop-text);
-      margin-bottom: var(--demo-space-2);
-    }
-
-    .shop-hero p {
-      font-size: 14px;
-      color: var(--shop-text-muted);
-      max-width: 600px;
-      margin: 0 auto;
-    }
-
-    /* Product grid - Amazon style */
-    .product-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: var(--demo-space-4);
-    }
-
-    .product-card {
-      background: var(--shop-surface);
-      border: 1px solid var(--shop-border);
-      border-radius: 8px;
-      overflow: hidden;
-      transition: box-shadow 0.2s;
-      cursor: pointer;
-    }
-
-    .product-card:hover {
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
-
-    .product-image {
-      aspect-ratio: 1;
-      background: #f7f7f7;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 64px;
-      padding: var(--demo-space-4);
-    }
-
-    .product-info {
-      padding: var(--demo-space-3);
-    }
-
-    .product-name {
-      font-size: 14px;
-      color: var(--shop-link);
-      margin-bottom: var(--demo-space-1);
-      line-height: 1.3;
-    }
-
-    .product-name:hover {
-      color: #c7511f;
-      text-decoration: underline;
-    }
-
-    .product-price {
-      font-size: 18px;
-      font-weight: 400;
-      color: var(--shop-text);
-    }
-
-    .product-price::before {
-      content: '';
-      font-size: 13px;
-      vertical-align: top;
-    }
-
-    .product-rating {
-      font-size: 12px;
-      color: var(--shop-text-muted);
-      margin-top: var(--demo-space-1);
-    }
-
-    /* ============================================
-       BYOC Demo UI - Amazon-style cards
-       ============================================ */
-
-    /* Demo banner */
-    .demo-banner {
-      background: var(--shop-surface);
-      border: 1px solid var(--shop-border);
-      border-radius: 8px;
-      padding: var(--demo-space-5);
-      margin-bottom: var(--demo-space-4);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    }
-
-    .demo-banner-header {
-      display: flex;
-      align-items: flex-start;
-      gap: var(--demo-space-4);
-      margin-bottom: var(--demo-space-4);
-    }
-
-    .demo-banner-icon {
-      width: 48px;
-      height: 48px;
-      background: var(--shop-primary);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
-      flex-shrink: 0;
-    }
-
-    .demo-banner-content h2 {
-      font-size: var(--demo-text-lg);
-      color: var(--shop-text);
-      margin-bottom: var(--demo-space-1);
-    }
-
-    .demo-banner-content p {
-      font-size: var(--demo-text-sm);
-      color: var(--shop-text-muted);
-      line-height: var(--demo-leading-relaxed);
-    }
-
-    .demo-banner-content code {
-      background: #f0f0f0;
-      color: var(--shop-text);
-      padding: 1px 4px;
-      border-radius: 3px;
-      font-size: 12px;
-    }
-
-    .demo-banner-actions {
-      display: flex;
-      gap: var(--demo-space-3);
-    }
-
-    .demo-banner-actions .demo-btn {
-      background: var(--shop-surface);
-      border: 1px solid var(--shop-border);
-      color: var(--shop-text);
-      padding: 8px 14px;
-      border-radius: 8px;
-      font-size: 13px;
-      text-decoration: none;
-      transition: background 0.15s;
-    }
-
-    .demo-banner-actions .demo-btn:hover {
-      background: #f7f7f7;
-    }
-
-    /* Chat button: sits in the hero, so it never covers the chat panel
-       that Harbor opens at the side of the page. */
-    .chat-button {
-      margin-top: var(--demo-space-4);
-      padding: var(--demo-space-3) var(--demo-space-6);
-      background: var(--shop-primary);
-      border: none;
-      border-radius: 8px;
-      color: var(--shop-header-bg);
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    }
-
-    .chat-button:hover {
-      background: var(--shop-primary-dark);
-    }
-
-    .chat-button.hidden {
-      display: none;
-    }
-
-    /* Inline chat error (shown instead of an alert() when chat.open rejects) */
-    .chat-error-banner {
-      max-width: 480px;
-      margin: var(--demo-space-3) auto 0;
-      background: #fff0f0;
-      border: 1px solid #e0a0a0;
-      color: #a11;
-      border-radius: 8px;
-      padding: var(--demo-space-3);
-      font-size: 13px;
-    }
-
-    .chat-error-banner.hidden {
-      display: none;
-    }
-
-    /* API not available state */
-    .no-api-banner {
-      background: #fff8e6;
-      border: 1px solid #f0c36d;
-      border-radius: 8px;
-      padding: var(--demo-space-4);
-      margin-bottom: var(--demo-space-4);
-      display: flex;
-      align-items: flex-start;
-      gap: var(--demo-space-3);
-    }
-
-    .no-api-banner.hidden {
-      display: none;
-    }
-
-    .no-api-icon {
-      font-size: 24px;
-    }
-
-    .no-api-content h3 {
-      font-size: 14px;
-      font-weight: 700;
-      color: #b7791f;
-      margin-bottom: 4px;
-    }
-
-    .no-api-content p {
-      font-size: 13px;
-      color: var(--shop-text-muted);
-    }
-
-    /* Footer - Amazon style */
-    .shop-footer {
-      text-align: center;
-      padding: var(--demo-space-6) var(--demo-space-6);
-      background: var(--shop-header-bg);
-      color: #999;
-      font-size: 12px;
-      margin-top: var(--demo-space-8);
-    }
-
-    .shop-footer a {
-      color: var(--shop-link);
-    }
-
-    .shop-footer a:hover {
-      color: var(--shop-primary);
-      text-decoration: underline;
-    }
+    body { min-height: 100vh; }
+    .shop-header { max-width: 1180px; margin: auto; padding: 24px 28px; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 16px; border-bottom: 1px solid var(--demo-border-default); }
+    .shop-logo { font-size: var(--demo-text-xl); font-weight: 750; color: var(--demo-text-primary); letter-spacing: -.035em; }
+    .shop-nav { display: flex; flex-wrap: wrap; gap: 20px; font-size: var(--demo-text-sm); }
+    a { text-decoration: underline; text-underline-offset: 4px; }
+    .shop-main { max-width: 1180px; margin: auto; padding: 48px 28px; }
+    .demo-banner { margin-bottom: 32px; }
+    .demo-eyebrow { color: var(--demo-text-secondary); font-family: var(--demo-font-mono); font-size: var(--demo-text-xs); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 16px; }
+    .demo-banner h1 { font-size: clamp(2rem, 5vw, 3.2rem); letter-spacing: -.035em; font-weight: 750; margin-bottom: 20px; }
+    .demo-banner-content p { max-width: 68ch; line-height: 1.7; }
+    code { overflow-wrap: anywhere; }
+    .byoc-explanation { border-top: 1px solid var(--demo-border-default); padding: 20px 0; margin-bottom: 24px; }
+    summary { color: var(--demo-accent-primary); font-weight: 600; cursor: pointer; }
+    .byoc-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 24px; }
+    .byoc-step { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+    .byoc-step > span { flex-shrink: 0; display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--demo-border-strong); border-radius: 50%; color: var(--demo-accent-primary); font-family: var(--demo-font-mono); font-size: var(--demo-text-xs); }
+    .byoc-step > div { min-width: 0; }
+    .byoc-step p { font-size: var(--demo-text-sm); margin-top: 8px; line-height: 1.7; }
+    .shop-hero { padding: 32px; background: var(--demo-bg-subtle); border: 1px solid var(--demo-border-default); border-radius: var(--demo-radius-lg); margin-bottom: 24px; }
+    .shop-hero h2 { font-size: clamp(1.5rem, 3vw, 2rem); margin-bottom: 12px; }
+    .shop-hero p { max-width: 60ch; }
+    .chat-button { margin-top: 20px; padding: 12px 20px; background: var(--demo-action); color: var(--demo-action-ink); border: 1px solid transparent; border-radius: var(--demo-radius-sm); font: inherit; font-weight: 600; cursor: pointer; }
+    .chat-button:hover { background: var(--demo-action-hover); }
+    .chat-button.hidden, .chat-error-banner.hidden, .no-api-banner.hidden { display: none; }
+    .chat-error-banner { margin-top: 16px; padding: 16px; background: var(--demo-error-dim); color: var(--demo-error); border: 1px solid var(--demo-error); border-radius: var(--demo-radius-sm); font-size: var(--demo-text-sm); overflow-wrap: anywhere; }
+    .no-api-banner { padding: 20px; margin-bottom: 24px; background: var(--demo-warning-dim); border: 1px solid var(--demo-warning); border-radius: var(--demo-radius-sm); }
+    .no-api-content h3 { font-size: var(--demo-text-base); margin-bottom: 8px; }
+    .no-api-content p { font-size: var(--demo-text-sm); }
+    .product-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 20px; }
+    .product-card { min-width: 0; background: var(--demo-bg-surface); border: 1px solid var(--demo-border-default); border-radius: var(--demo-radius-lg); overflow: hidden; }
+    .product-image { aspect-ratio: 3 / 2; background: var(--demo-bg-elevated); color: var(--demo-accent-primary); display: grid; place-items: center; padding: 24px; }
+    .product-image svg { width: 64px; height: 64px; stroke: currentColor; fill: none; stroke-width: 1.25; stroke-linecap: round; stroke-linejoin: round; }
+    .product-info { padding: 20px; }
+    .product-name { font-size: var(--demo-text-base); font-weight: 600; line-height: 1.4; margin-bottom: 8px; }
+    .product-price { color: var(--demo-text-primary); font-size: var(--demo-text-lg); }
+    .product-rating { font-size: var(--demo-text-xs); color: var(--demo-text-secondary); margin-top: 8px; }
+    .shop-footer { max-width: 1180px; margin: 16px auto 0; padding: 24px 28px 40px; border-top: 1px solid var(--demo-border-default); font-size: var(--demo-text-sm); }
+    :focus-visible { outline: 2px solid var(--demo-accent-primary); outline-offset: 4px; }
+    @media (max-width: 640px) { .shop-header { padding: 20px; } .shop-main { padding: 32px 20px; } .shop-hero { padding: 24px; } .byoc-steps { grid-template-columns: minmax(0, 1fr); } .shop-footer { padding: 24px 20px; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
   </style>
 </head>
 <body>
   <!-- Shop Header -->
   <header class="shop-header">
-    <div class="shop-logo">
-      <div class="shop-logo-icon">🛍️</div>
-      <span>Acme Shop</span>
-    </div>
-    <nav class="shop-nav">
-      <a href="#">Products</a>
-      <a href="#">Categories</a>
-      <a href="#">Deals</a>
-      <a href="#">Cart (0)</a>
+    <a class="shop-logo" href="../../">Harbor demos</a>
+    <nav class="shop-nav" aria-label="Demo navigation">
+      <a href="#products">Products</a>
+      <a href="README.md">Setup and verification</a>
     </nav>
   </header>
 
@@ -379,61 +84,55 @@
     <!-- Demo Banner -->
     <div class="demo-banner">
       <div class="demo-banner-header">
-        <div class="demo-banner-icon">🤖</div>
         <div class="demo-banner-content">
-          <h2>Bring Your Own Chatbot (BYOC) Demo</h2>
+          <p class="demo-eyebrow">Working demo · Web Agent API</p>
+          <h1>Bring your own chatbot</h1>
           <p>
             This page writes no chat UI of its own. It calls <code>agent.chat.open()</code>
-            and the Web Agent API's implementer — Harbor, in this browser — opens a chat
-            surface that runs on your own model. Click "Chat with Acme Shop" below to try it.
+            and Harbor opens a chat with your agent, using the model you configured. Click "Chat with Acme Shop" below to try it.
           </p>
         </div>
-      </div>
-      <div class="demo-banner-actions">
-        <a href="../../" class="demo-btn demo-btn-ghost">← Back to Demos</a>
       </div>
     </div>
 
     <!-- How It Works Explanation -->
-    <div class="byoc-explanation" style="background: var(--shop-surface); border: 1px solid var(--shop-border); border-radius: 8px; padding: var(--demo-space-5); margin-bottom: var(--demo-space-4); box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
-      <h3 style="font-size: 16px; font-weight: 700; margin-bottom: var(--demo-space-4); color: var(--shop-text);">
-        📋 How BYOC Works
-      </h3>
+    <details class="byoc-explanation">
+      <summary>How this demo works</summary>
 
-      <div class="byoc-steps" style="display: grid; gap: var(--demo-space-3);">
-        <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
-          <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">1</span>
+      <div class="byoc-steps">
+        <div class="byoc-step">
+          <span>1</span>
           <div>
-            <strong style="color: var(--shop-text);">The page calls <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">agent.chat.open()</code></strong>
-            <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
-              Clicking the chat button runs <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">window.agent.chat.open({ systemPrompt, style })</code> —
+            <strong>The page calls <code>agent.chat.open()</code></strong>
+            <p>
+              Clicking the chat button runs <code>window.agent.chat.open({ systemPrompt, style })</code> —
               a system prompt describing the assistant, and style hints like an accent color and
               which side of the screen to open on. The page can also advertise tools with
-              <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">&lt;link rel="mcp-server"&gt;</code>, as this page's <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">&lt;head&gt;</code> does.
+              <code>&lt;link rel="mcp-server"&gt;</code>, as this page's <code>&lt;head&gt;</code> does.
             </p>
           </div>
         </div>
 
-        <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
-          <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">2</span>
+        <div class="byoc-step">
+          <span>2</span>
           <div>
-            <strong style="color: var(--shop-text);">Harbor asks whether the site may open a chat</strong>
-            <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
-              The first call to <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">chat.open()</code> from this origin prompts you for the
-              <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">chat:open</code> permission. Deny it and the call rejects; this page
+            <strong>Harbor asks whether the site may open a chat</strong>
+            <p>
+              The first call to <code>chat.open()</code> from this origin prompts you for the
+              <code>chat:open</code> permission. Deny it and the call rejects; this page
               catches that and shows an inline message instead of pretending it worked.
             </p>
           </div>
         </div>
 
-        <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
-          <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">3</span>
+        <div class="byoc-step">
+          <span>3</span>
           <div>
-            <strong style="color: var(--shop-text);">Harbor's chat opens and runs on your own model</strong>
-            <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
+            <strong>Harbor's chat opens and runs on your own model</strong>
+            <p>
               Harbor draws the chat panel on this page. Because the page could reach that panel, Harbor treats every message in it as this site's prompt.
               Your first message prompts Harbor to ask, once, whether this site may send prompts
-              to your model — that's the <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">model:prompt</code> permission. If you've picked your own agent in
+              to your model — that's the <code>model:prompt</code> permission. If you've picked your own agent in
               Harbor, it answers and can use what it knows about you; otherwise Harbor's built-in model does.
               Replies use this page's visible text (the product grid below), not the
               MCP tools this page advertises — Harbor's chat doesn't call those yet.
@@ -441,94 +140,93 @@
           </div>
         </div>
 
-        <div class="byoc-step" style="display: flex; gap: var(--demo-space-3); align-items: flex-start;">
-          <span style="background: var(--shop-primary); color: var(--shop-header-bg); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">4</span>
+        <div class="byoc-step">
+          <span>4</span>
           <div>
-            <strong style="color: var(--shop-text);">This site wrote no chat UI</strong>
-            <p style="color: var(--shop-text-muted); font-size: 13px; margin-top: 2px;">
+            <strong>This site wrote no chat UI</strong>
+            <p>
               Every bubble, input box and typing indicator you see belongs to Harbor, not to
               Acme Shop. A different implementer of the same API — for example a native app
               hosting this page — could show its own chat surface instead, using the same
-              <code style="background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px;">agent.chat.open()</code> call.
+              <code>agent.chat.open()</code> call.
             </p>
           </div>
         </div>
       </div>
 
-    </div>
+    </details>
 
     <!-- API Not Available Warning (shown if agent.chat.open is not available) -->
     <div class="no-api-banner hidden" id="no-api-banner">
-      <div class="no-api-icon">⚠️</div>
       <div class="no-api-content">
-        <h3>Web Agent API Required</h3>
+        <h3>Connect Harbor to try the chat</h3>
         <p>
-          This demo requires an implementer of <code>agent.chat.open()</code> — Harbor, for
-          example. Install one to try the "Bring Your Own Chatbot" feature!
+          Load the Harbor extension in Firefox and configure a model, then reload this page.
+          The products below are sample data for the conversation.
         </p>
       </div>
     </div>
 
     <!-- Hero -->
     <section class="shop-hero">
-      <h1>Welcome to Acme Shop</h1>
-      <p>Find the perfect products with help from your AI assistant.</p>
+      <h2>Welcome to Acme Shop</h2>
+      <p>Compare the sample products with your agent. Ask for a recommendation or a price comparison.</p>
       <!-- The only chat-related UI this page owns. Clicking it hands off to
            window.agent.chat.open(); everything after that is drawn by the
            Web Agent API's implementer, not by this page. -->
-      <button class="chat-button hidden" id="chat-button">💬 Chat with Acme Shop</button>
+      <button class="chat-button hidden" id="chat-button">Chat with Acme Shop</button>
       <!-- Inline error shown if agent.chat.open() rejects (e.g. permission denied) -->
-      <div class="chat-error-banner hidden" id="chat-error-banner"></div>
+      <div class="chat-error-banner hidden" id="chat-error-banner" role="status" aria-live="polite"></div>
     </section>
 
     <!-- Product Grid -->
-    <section class="product-grid">
+    <section class="product-grid" id="products" aria-label="Sample products">
       <div class="product-card" data-product="wireless-headphones">
-        <div class="product-image">🎧</div>
+        <div class="product-image" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 14v-3a9 9 0 0 1 18 0v3"/><rect x="3" y="12" width="4" height="9" rx="2"/><rect x="17" y="12" width="4" height="9" rx="2"/></svg></div>
         <div class="product-info">
           <div class="product-name">Wireless Headphones Pro</div>
           <div class="product-price">$149.99</div>
-          <div class="product-rating">⭐⭐⭐⭐⭐ (128 reviews)</div>
+          <div class="product-rating">5 of 5 · 128 reviews</div>
         </div>
       </div>
       <div class="product-card" data-product="smart-watch">
-        <div class="product-image">⌚</div>
+        <div class="product-image" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m8 2-1 5m10 0-1-5M7 17l1 5m8 0 1-5"/><rect x="6" y="6" width="12" height="12" rx="3"/><path d="M12 9v3l2 1"/></svg></div>
         <div class="product-info">
           <div class="product-name">Smart Watch Series X</div>
           <div class="product-price">$299.99</div>
-          <div class="product-rating">⭐⭐⭐⭐ (89 reviews)</div>
+          <div class="product-rating">4 of 5 · 89 reviews</div>
         </div>
       </div>
       <div class="product-card" data-product="laptop-stand">
-        <div class="product-image">💻</div>
+        <div class="product-image" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="12" rx="2"/><path d="m2 20 2-5h16l2 5Z"/></svg></div>
         <div class="product-info">
           <div class="product-name">Ergonomic Laptop Stand</div>
           <div class="product-price">$59.99</div>
-          <div class="product-rating">⭐⭐⭐⭐⭐ (256 reviews)</div>
+          <div class="product-rating">5 of 5 · 256 reviews</div>
         </div>
       </div>
       <div class="product-card" data-product="mechanical-keyboard">
-        <div class="product-image">⌨️</div>
+        <div class="product-image" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10"/></svg></div>
         <div class="product-info">
           <div class="product-name">Mechanical Keyboard RGB</div>
           <div class="product-price">$129.99</div>
-          <div class="product-rating">⭐⭐⭐⭐ (64 reviews)</div>
+          <div class="product-rating">4 of 5 · 64 reviews</div>
         </div>
       </div>
       <div class="product-card" data-product="webcam-hd">
-        <div class="product-image">📷</div>
+        <div class="product-image" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 4h-4L8 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-4Z"/><circle cx="12" cy="13" r="3"/></svg></div>
         <div class="product-info">
           <div class="product-name">HD Webcam 4K</div>
           <div class="product-price">$89.99</div>
-          <div class="product-rating">⭐⭐⭐⭐⭐ (192 reviews)</div>
+          <div class="product-rating">5 of 5 · 192 reviews</div>
         </div>
       </div>
       <div class="product-card" data-product="usb-hub">
-        <div class="product-image">🔌</div>
+        <div class="product-image" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 11v2m5-2v2m5-2v2M12 7V3h5"/></svg></div>
         <div class="product-info">
           <div class="product-name">USB-C Hub 7-in-1</div>
           <div class="product-price">$49.99</div>
-          <div class="product-rating">⭐⭐⭐⭐ (156 reviews)</div>
+          <div class="product-rating">4 of 5 · 156 reviews</div>
         </div>
       </div>
     </section>
@@ -537,7 +235,7 @@
   <!-- Footer -->
   <footer class="shop-footer">
     <p>
-      This is a demo for the <a href="../../">Web Agent API</a>.
+      A working <a href="../../">Harbor demo</a> of the Web Agent API.
       <a href="README.md">Learn more about how BYOC works</a>.
     </p>
   </footer>
@@ -598,7 +296,7 @@
       try {
         await window.agent.chat.open({
           systemPrompt: 'You are Acme Shop\'s shopping assistant. Help the person choose from the products on this page, using anything you know about them and the people they\'re shopping for. Compare price, rating and availability from the page, and don\'t make up products or details that aren\'t listed here.',
-          style: { accentColor: '#ff9900', position: 'right' },
+          style: { accentColor: '#176435', position: 'right' },
         });
       } catch (err) {
         console.error('[BYOC Demo] agent.chat.open() failed:', err);
