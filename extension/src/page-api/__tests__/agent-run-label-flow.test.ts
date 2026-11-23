@@ -164,6 +164,17 @@ describe('run-scoped labels at the model boundary', () => {
     expect(bridgeChat).toHaveBeenCalledTimes(1);
   });
 
+  it('does not label a stale page tool when no page content was received', async () => {
+    const core = await import('../harbor-core');
+    const labelFlow = core.createLabelFlow();
+    const port = connect();
+    await offerTool(port);
+    await expect(core.callPageToolForAgent({ origin: ORIGIN, tabId: 9, generation: -1,
+      name: 'read_dummy', input: {}, labelFlow })).rejects.toThrow('gone away');
+    expect(labelFlow.labels.isEmpty()).toBe(true);
+    expect(port.posted.some(p => p.type === 'page_tools.call')).toBe(false);
+  });
+
   it('starts a fresh flow for a later run on the same tab and origin', async () => {
     const { bridgeChat } = await import('../../llm/chat');
     vi.mocked(bridgeChat).mockResolvedValueOnce(toolReply() as never).mockResolvedValue({ content: 'clean run' } as never);

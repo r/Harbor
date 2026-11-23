@@ -33,8 +33,8 @@ import { listPageTools, callPageTool, pageToolServerId, type PageToolDescriptor 
 import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
-import { checkAction, requireAction } from '../agents/handlers/helpers';
-import type { RequestContext, ResponseSender } from '../agents/handlers/router-types';
+import { checkAction } from '../agents/handlers/helpers';
+import type { RequestContext } from '../agents/handlers/router-types';
 import { backendTagForSetting, isGrantedForBackend } from '../policy/backend-grant';
 import { SessionRegistry } from '../sessions';
 import { LabelFlow } from '../policy/label-flow';
@@ -367,11 +367,7 @@ export async function acpClose(channel: string): Promise<void> {
  * both already do (`hasPermission`): that's Harbor's own consent store,
  * this is the policy engine's rule evaluation and audit trail.
  *
- * Returns only a boolean: whatever response `requireAction` would have sent
- * back to a page is discarded (the `sender` below is a no-op), since the
- * caller here always reports a plain `ERR_PERMISSION_DENIED` on `false` —
- * the same wording the pre-existing origin-grant check already uses — not
- * the policy engine's own error code for whichever tier actually denied it.
+ * Returns the policy refusal so callers can preserve its error code.
  *
  * `upstreamConsent: 'origin-grant'` means a site that already holds
  * `model:prompt` proceeds without a second native popup when the engine
@@ -382,23 +378,9 @@ export async function checkAgentPromptAction(origin: string, tabId?: number, lab
   return checkAction(pageToolPolicyContext(origin, tabId), 'model.prompt.agent', { upstreamConsent: 'origin-grant', labelFlow });
 }
 
+/** Compatibility boolean for ACP run callers that report a permission error. */
 export async function requireAgentPromptAction(origin: string, tabId?: number, labelFlow?: LabelFlow): Promise<boolean> {
-  const ctx: RequestContext = {
-    id: crypto.randomUUID(),
-    // `requireAction` never branches on `ctx.type` (only `ctx.id`/`ctx.origin`/
-    // `ctx.tabId` reach the policy request and the audit record) — the
-    // transport-level `agent.run`/`session.promptStreaming` types this is
-    // called from aren't part of this `MessageType` union at all (it's the
-    // agent-router's own type, distinct from extension-api.ts's), so this
-    // names the closest real member rather than widening the type for one
-    // synthetic ctx.
-    type: 'session.prompt',
-    payload: {},
-    origin,
-    tabId,
-  };
-  const sender: ResponseSender = { sendResponse: () => {}, sendStreamEvent: () => {} };
-  return requireAction(ctx, sender, 'model.prompt.agent', { upstreamConsent: 'origin-grant', labelFlow });
+  return await checkAgentPromptAction(origin, tabId, labelFlow) === null;
 }
 
 /**
@@ -538,6 +520,9 @@ export async function callPageToolForAgent(call: {
   });
   if (denial) throw Object.assign(new Error(denial.message), { code: denial.code });
   call.onAllowed?.();
+  const listing = listPageTools(call.tabId, call.origin);
+  const offered = listing?.generation === call.generation
+    && listing.tools.some(tool => tool.name === call.name) && !call.signal?.aborted;
   try {
     return await callPageTool({
       tabId: call.tabId,
@@ -548,8 +533,9 @@ export async function callPageToolForAgent(call: {
       signal: call.signal,
     });
   } finally {
-    // Error text is page content too when the model receives it.
-    call.labelFlow?.addPageOutput(call.origin);
+    // A stale/missing tool never returned page content. Actual handler
+    // failures can carry page-authored error text and keep the source labels.
+    if (offered) call.labelFlow?.addPageOutput(call.origin);
   }
 }
 
