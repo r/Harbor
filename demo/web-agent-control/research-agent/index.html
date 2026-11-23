@@ -4,9 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Research Agent — Web Agent API</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../shared/styles.css" />
   <script src="../shared/agent.js"></script>
   <style>
@@ -15,7 +12,7 @@
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
-      padding: var(--demo-space-10) 0;
+      padding: var(--demo-space-10) var(--demo-space-4);
     }
 
     .search-form {
@@ -26,7 +23,7 @@
 
     .search-form input {
       flex: 1;
-      min-width: 280px;
+      min-width: 0;
     }
 
     .results-section {
@@ -51,7 +48,7 @@
     .result-card-icon {
       width: 32px;
       height: 32px;
-      background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-tertiary));
+      background: var(--demo-action);
       border-radius: var(--demo-radius-md);
       display: flex;
       align-items: center;
@@ -80,12 +77,12 @@
     }
 
     .consolidated-result {
-      background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(236, 72, 153, 0.05));
+      background: var(--demo-accent-glow);
       border: 1px solid var(--demo-accent-primary);
     }
 
     .consolidated-result .result-card-icon {
-      background: linear-gradient(135deg, var(--demo-success), #10b981);
+      background: var(--demo-success-dim);
     }
 
     .references-list {
@@ -191,16 +188,21 @@
     .empty-state-text {
       font-size: var(--demo-text-sm);
     }
+
+    .search-form { flex-wrap: wrap; }
+    .search-form input { flex-basis: 280px; }
+    .result-card-header > div { min-width: 0; }
+    .result-card-content { overflow-wrap: anywhere; }
   </style>
 </head>
-<body class="demo-bg-grid">
+<body>
   <main class="page-container">
     <header class="demo-header">
       <div class="header-badge">
         <span class="dot"></span>
         <span>Interactive Walkthrough</span>
       </div>
-      <h1 class="demo-title demo-text-gradient">Research Agent</h1>
+      <h1 class="demo-title">Research Agent</h1>
       <p class="demo-subtitle">Search the web (falling back to Wikipedia if Google blocks it), fetch multiple result pages, and consolidate findings with AI.</p>
     </header>
 
@@ -208,7 +210,6 @@
       <!-- Search Input -->
       <section class="demo-card">
         <div class="demo-card-header">
-          <div class="demo-card-icon">🔍</div>
           <div>
             <div class="demo-card-title">Enter Your Research Query</div>
             <p class="demo-text-sm">The agent will try a Google search, fall back to Wikipedia if that's blocked, fetch the results directly, and synthesize findings.</p>
@@ -245,7 +246,6 @@
       <!-- Permissions Info -->
       <section class="demo-card">
         <div class="demo-card-header">
-          <div class="demo-card-icon">🔐</div>
           <div>
             <div class="demo-card-title">Permissions</div>
             <p class="demo-text-sm">Required for this demo.</p>
@@ -655,7 +655,6 @@ Please provide a comprehensive answer to the research query, synthesizing inform
       let html = `
         <div class="result-card consolidated-result">
           <div class="result-card-header">
-            <div class="result-card-icon">✨</div>
             <div>
               <div class="result-card-title">Research Summary</div>
               <div class="result-card-url">Query: ${escapeHtml(searchQuery)}</div>

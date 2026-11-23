@@ -68,10 +68,10 @@ function waitForWebAgent(timeoutMs = 5000) {
 
 // Agent colors for arrows
 const AGENT_COLORS = {
-  orchestrator: '#8b5cf6',
-  searcher: '#3b82f6',
-  reader: '#10b981',
-  writer: '#f59e0b',
+  orchestrator: 'var(--demo-accent-primary)',
+  searcher: 'var(--demo-accent-primary)',
+  reader: 'var(--demo-accent-primary)',
+  writer: 'var(--demo-accent-primary)',
 };
 
 // Column indices for positioning arrows
@@ -120,7 +120,6 @@ const elements = {
   outputWords: document.getElementById('output-words'),
   outputTime: document.getElementById('output-time'),
   outputBody: document.getElementById('output-body'),
-  themeToggle: document.getElementById('theme-toggle'),
 };
 
 // ============================================================================
@@ -1251,11 +1250,6 @@ elements.topicInput.addEventListener('keydown', (e) => {
   } else if (e.key === 'Enter' && !canStartPipeline()) {
     alert(getMissingFeaturesMessage());
   }
-});
-
-elements.themeToggle?.addEventListener('click', () => {
-  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-  document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
 });
 
 // ============================================================================

@@ -4,9 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Time Agent — Web Agent API</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../shared/styles.css">
   <style>
     body {
@@ -27,6 +24,7 @@
       color: var(--demo-text-secondary);
       min-height: 60px;
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     .footer {
@@ -46,17 +44,15 @@
     }
   </style>
 </head>
-<body class="demo-bg-grid">
+<body>
   <div class="page-container">
     <header class="demo-header">
-      <div class="demo-logo">⏰</div>
-      <h1 class="demo-title demo-text-gradient">Time Agent</h1>
+      <h1 class="demo-title">Time Agent</h1>
       <p class="demo-subtitle">A simple demo that calls the <code>time.now</code> MCP tool.</p>
     </header>
 
     <div class="demo-card demo-mb-6">
       <div class="demo-card-header">
-        <div class="demo-card-icon">🔧</div>
         <h2 class="demo-card-title">MCP Tool Call</h2>
       </div>
       
@@ -71,7 +67,6 @@
 
     <div class="demo-card">
       <div class="demo-card-header">
-        <div class="demo-card-icon">💻</div>
         <h2 class="demo-card-title">Code</h2>
       </div>
       

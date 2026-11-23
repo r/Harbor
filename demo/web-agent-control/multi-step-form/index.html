@@ -4,9 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Multi-step Form — Web Agent API</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../shared/styles.css" />
   <script src="../shared/agent.js"></script>
   <style>
@@ -15,7 +12,7 @@
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
-      padding: var(--demo-space-10) 0;
+      padding: var(--demo-space-10) var(--demo-space-4);
     }
 
     .wizard-steps {
@@ -38,16 +35,16 @@
     }
 
     .wizard-step-dot.active {
-      background: var(--demo-accent-primary);
+      background: var(--demo-action);
       border-color: var(--demo-accent-primary);
-      color: white;
-      box-shadow: var(--demo-shadow-glow);
+      color: var(--demo-action-ink);
+      box-shadow: none;
     }
 
     .wizard-step-dot.complete {
-      background: var(--demo-success);
+      background: var(--demo-success-dim);
       border-color: var(--demo-success);
-      color: white;
+      color: var(--demo-success);
     }
 
     .wizard-panel {
@@ -108,16 +105,19 @@
       color: var(--demo-text-secondary);
     }
 
+
+    .wizard-summary-row { gap: var(--demo-space-3); flex-wrap: wrap; }
+    .wizard-summary-row span { overflow-wrap: anywhere; }
   </style>
 </head>
-<body class="demo-bg-glow">
+<body>
   <main class="page-container">
     <header class="demo-header">
       <div class="header-badge">
         <span class="dot"></span>
         <span>Interactive Walkthrough</span>
       </div>
-      <h1 class="demo-title demo-text-gradient">Multi-step Form</h1>
+      <h1 class="demo-title">Multi-step Form</h1>
       <p class="demo-subtitle">Navigate a multi-step wizard with validation and delayed transitions.</p>
     </header>
 
@@ -203,7 +203,6 @@
 
       <section class="demo-card">
         <div class="demo-card-header">
-          <div class="demo-card-icon">🔐</div>
           <div>
             <div class="demo-card-title">Permissions</div>
             <p class="demo-text-sm">Required for this page.</p>
@@ -442,7 +441,7 @@
       if (walkthroughIndex >= walkthroughSteps.length - 1) {
         walkthroughNextBtn.disabled = true;
         walkthroughNextBtn.textContent = 'Complete! ✓';
-        walkthroughNextBtn.style.background = 'var(--demo-success)';
+        walkthroughNextBtn.style.background = 'var(--demo-action)';
         walkthroughResetBtn.style.display = 'inline-flex';
       } else {
         walkthroughNextBtn.disabled = false;
