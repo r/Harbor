@@ -889,6 +889,8 @@ document.getElementById('preview').src = dataUrl;
 
 #### Browser Control (browserControl)
 
+Tabs open in the calling tab’s window by default. An explicit destination window must have the same private-browsing state. Firefox also preserves the calling tab’s cookie store, including its container. Harbor refuses tab creation if it cannot preserve that context. On Chrome, regular tabs open in a regular window and requests from incognito tabs are refused.
+
 Navigate and manage tabs. **Requires:** `browserControl` feature flag.
 
 ```javascript

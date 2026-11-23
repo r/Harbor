@@ -167,13 +167,34 @@ export async function handleTabsCreate(ctx: RequestContext): HandlerResponse {
   if (refused) return refused;
 
   try {
-    const createOptions: chrome.tabs.CreateProperties = {
+    if (ctx.tabId === undefined) {
+      return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Cannot identify the calling tab');
+    }
+    const caller = await chrome.tabs.get(ctx.tabId) as chrome.tabs.Tab & { cookieStoreId?: string };
+    const firefox = chrome.runtime.getURL('').startsWith('moz-extension://');
+    if (typeof caller.incognito !== 'boolean' || (firefox ? !caller.cookieStoreId : caller.incognito)) {
+      return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Cannot preserve the calling tab’s browsing context');
+    }
+
+    const windowId = payload.windowId === undefined ? caller.windowId : payload.windowId;
+    if (!Number.isSafeInteger(windowId) || windowId < 0) {
+      return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', 'A concrete destination window is required');
+    }
+    if (windowId !== caller.windowId) {
+      const destination = await chrome.windows.get(windowId);
+      if (destination.incognito !== caller.incognito) {
+        return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Destination window has a different privacy state');
+      }
+    }
+
+    const createOptions: chrome.tabs.CreateProperties & { cookieStoreId?: string } = {
       url: target.href,
       active: payload.active ?? false,
       index: payload.index,
-      windowId: payload.windowId,
+      windowId,
     };
-    
+    if (firefox) createOptions.cookieStoreId = caller.cookieStoreId;
+
     const tab = await chrome.tabs.create(createOptions);
     console.log('[Web Agents API] Tab created:', { tabId: tab.id });
 

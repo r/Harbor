@@ -63,6 +63,8 @@ const tabs = {
   onUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
   onRemoved: { addListener: vi.fn() },
 };
+const getWindow = vi.fn();
+const runtimeURL = vi.fn();
 const fetchMock = vi.fn();
 
 type Policy = typeof import('../../policy/store').Policy;
@@ -91,8 +93,8 @@ beforeAll(async () => {
 function stubGlobals() {
   vi.stubGlobal('fetch', fetchMock);
   const storage = { local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) } };
-  const runtime = { id: 'harbor@test', sendMessage: vi.fn(async () => {}) };
-  vi.stubGlobal('chrome', { storage, tabs, runtime });
+  const runtime = { id: 'harbor@test', getURL: runtimeURL, sendMessage: vi.fn(async () => {}) };
+  vi.stubGlobal('chrome', { storage, tabs, runtime, windows: { get: getWindow } });
   // Public IPs only, so fetch's private-network guard lets these through.
   vi.stubGlobal('browser', {
     storage,
@@ -108,8 +110,10 @@ beforeEach(() => {
   mocks.hasPermission.mockResolvedValue(true);
   mocks.executeScriptInTab.mockResolvedValue({ success: true });
   tabs.get.mockImplementation(async (id: number) => ({
-    id, url: `${ORIGIN}/page`, active: true, windowId: 1, status: 'complete',
+    id, url: `${ORIGIN}/page`, active: true, windowId: 1, incognito: false, cookieStoreId: 'firefox-default', status: 'complete',
   }));
+  runtimeURL.mockReturnValue('moz-extension://harbor/');
+  getWindow.mockResolvedValue({ id: 2, incognito: false });
   tabs.query.mockResolvedValue([]);
   tabs.create.mockImplementation(async (opts: { url: string }) => ({
     id: SPAWNED_TAB, url: opts.url, title: '', active: false, index: 0, windowId: 1,
@@ -362,5 +366,68 @@ describe('a fetch that is redirected is checked again at its final URL', () => {
     const res = await browserHandlers.handleBrowserFetch(ctx('agent.browser.fetch', { url: 'https://api.other.example/start' }));
     expect(res.ok).toBe(true);
     expect(Audit.query({ origin: ORIGIN })).toHaveLength(1);
+  });
+});
+
+describe('tab creation context', () => {
+  const create = (windowId?: number) => tabHandlers.handleTabsCreate(
+    ctx('agent.browser.tabs.create', { url: ORIGIN, windowId }),
+  );
+
+  it.each([
+    ['firefox-container-1', false, undefined, 1],
+    ['firefox-container-2', false, 2, 2],
+    ['firefox-private', true, undefined, 1],
+    ['firefox-private', true, 2, 2],
+  ] as const)('preserves store %s, private=%s, requested window=%s', async (cookieStoreId, incognito, requested, expected) => {
+    tabs.get.mockResolvedValue({ windowId: 1, incognito, cookieStoreId });
+    getWindow.mockResolvedValue({ id: 2, incognito });
+    expect((await create(requested)).ok).toBe(true);
+    expect(tabs.create).toHaveBeenCalledWith(expect.objectContaining({ windowId: expected, cookieStoreId }));
+  });
+
+  it.each([true, false])('rejects a window with the opposite privacy state', async (incognito) => {
+    tabs.get.mockResolvedValue({ windowId: 1, incognito, cookieStoreId: 'firefox-default' });
+    getWindow.mockResolvedValue({ id: 2, incognito: !incognito });
+    expect((await create(2)).ok).toBe(false);
+    expect(tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses Firefox creation without a known cookie store', async () => {
+    tabs.get.mockResolvedValue({ windowId: 1, incognito: false });
+    expect((await create()).ok).toBe(false);
+    expect(tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the sender or requested window is gone', async () => {
+    tabs.get.mockRejectedValueOnce(new Error('No such tab'));
+    expect((await create()).ok).toBe(false);
+    getWindow.mockRejectedValueOnce(new Error('No such window'));
+    expect((await create(2)).ok).toBe(false);
+    expect(tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('does not retry a rejected context in a default window or store', async () => {
+    tabs.create.mockRejectedValueOnce(new Error('Cookie store unavailable'));
+    expect((await create()).ok).toBe(false);
+    expect(tabs.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a browser window sentinel', async () => {
+    expect((await create(-2)).ok).toBe(false);
+    expect(tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('uses a concrete Chrome window and refuses incognito callers', async () => {
+    runtimeURL.mockReturnValue('chrome-extension://harbor/');
+    tabs.get.mockResolvedValue({ windowId: 4, incognito: false });
+    expect((await create()).ok).toBe(true);
+    const [options] = tabs.create.mock.calls[0];
+    expect(options.windowId).toBe(4);
+    expect(options).not.toHaveProperty('cookieStoreId');
+    tabs.create.mockClear();
+    tabs.get.mockResolvedValue({ windowId: 5, incognito: true });
+    expect((await create()).ok).toBe(false);
+    expect(tabs.create).not.toHaveBeenCalled();
   });
 });

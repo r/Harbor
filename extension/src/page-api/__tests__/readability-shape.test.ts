@@ -44,10 +44,11 @@ beforeEach(() => {
   mocks.executeScriptInTab.mockImplementation(async (_id: number, fn: (...a: unknown[]) => unknown, args: unknown[] = []) =>
     runInPage(fn, args));
   vi.stubGlobal('chrome', {
+    runtime: { getURL: () => 'chrome-extension://harbor/' },
     storage: { local: { set: vi.fn(async () => {}), get: vi.fn(async () => ({})) } },
     tabs: {
       create: vi.fn(async ({ url }: { url: string }) => ({ id: 7, url, status: 'complete', active: false, index: 0, windowId: 1, title: '' })),
-      get: vi.fn(async (id: number) => ({ id, url: `${CALLER}/story`, status: 'complete' })),
+      get: vi.fn(async (id: number) => ({ id, incognito: false, windowId: 1, url: `${CALLER}/story`, status: 'complete' })),
       query: vi.fn(async () => []),
       onUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
     },
@@ -66,7 +67,7 @@ describe('readability returns the spec shape', () => {
 
   it('tab.readability(tabId) resolves to exactly { url, title, text }', async () => {
     const { routeMessage } = await import('../handlers');
-    const created = await routeMessage({ id: 'c1', type: 'agent.browser.tabs.create', payload: { url: `${CALLER}/story` }, origin: CALLER });
+    const created = await routeMessage({ id: 'c1', tabId: 3, type: 'agent.browser.tabs.create', payload: { url: `${CALLER}/story` }, origin: CALLER });
     const tabId = (created as { result: { id: number } }).result.id;
     const res = await routeMessage({ id: 'r2', type: 'agent.browser.tab.readability', payload: { tabId }, origin: CALLER });
     expect(res).toMatchObject({ ok: true });
