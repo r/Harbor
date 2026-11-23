@@ -3,13 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(), hasPermission: vi.fn(), getFeatureFlags: vi.fn(),
   harborStreamRequest: vi.fn(), resolveTextSession: vi.fn(),
-  getPermissions: vi.fn(), pageToolsForAgent: vi.fn(),
+  getPermissions: vi.fn(), pageToolsForAgent: vi.fn(), siteToolsForAgent: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
+  describedBySite: (origin: string, d?: string) => `From ${new URL(origin).host}: ${d}`,
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   onHarborSessionEnded: vi.fn(() => () => {}),
   pageToolsForAgent: mocks.pageToolsForAgent,
+  siteToolsForAgent: mocks.siteToolsForAgent,
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
@@ -33,6 +35,7 @@ beforeEach(async () => {
   mocks.hasPermission.mockResolvedValue(true);
   mocks.getPermissions.mockResolvedValue({ scopes: {}, allowedTools: [] });
   mocks.pageToolsForAgent.mockResolvedValue(null);
+  mocks.siteToolsForAgent.mockResolvedValue([]);
   mocks.harborRequest.mockImplementation(async (method) => method === 'mcp.listTools'
     ? { tools: [] } : { content: 'The time is noon.' });
   const event = () => ({ addListener: vi.fn() });
@@ -81,6 +84,27 @@ describe('agent.run receiving boundary', () => {
     expect(mocks.pageToolsForAgent).toHaveBeenCalledWith('https://example.test', 1);
     const modelCall = mocks.harborRequest.mock.calls.find(([method]) => method === 'llm.chat');
     expect(modelCall?.[1].tools.map((t: { name: string }) => t.name)).toEqual(['page_example_test_go_to']);
+  });
+
+  it("offers the site's own server tools with no MCP grants and no allowlist, and doesn't list them twice", async () => {
+    mocks.hasPermission.mockImplementation(async (_origin, scope) => !String(scope).startsWith('mcp:'));
+    mocks.siteToolsForAgent.mockResolvedValue([{ serverId: 'site:example.test:shop', name: 'search', description: 'Search', inputSchema: { type: 'object' } }]);
+    await run();
+    expect(mocks.siteToolsForAgent).toHaveBeenCalledWith('https://example.test', 1);
+    const modelCall = mocks.harborRequest.mock.calls.find(([method]) => method === 'llm.chat');
+    expect(modelCall?.[1].tools.map((t: { name: string }) => t.name)).toEqual(['site_example_test_shop_search']);
+    expect(modelCall?.[1].tools[0].description).toBe('From example.test: Search');
+  });
+
+  it("drops site tools from the installed-tools listing even when they're allowlisted, so they aren't offered twice", async () => {
+    mocks.getPermissions.mockResolvedValue({ scopes: {}, allowedTools: ['site:example.test:shop/search', 'clock/time'] });
+    mocks.harborRequest.mockImplementation(async (method) => method === 'mcp.listTools'
+      ? { tools: [{ serverId: 'clock', name: 'time' }, { serverId: 'site:example.test:shop', name: 'search' }] }
+      : { content: 'ok' });
+    mocks.siteToolsForAgent.mockResolvedValue([{ serverId: 'site:example.test:shop', name: 'search', description: 'Search', inputSchema: { type: 'object' } }]);
+    await run();
+    const modelCall = mocks.harborRequest.mock.calls.find(([method]) => method === 'llm.chat');
+    expect(modelCall?.[1].tools.map((t: { name: string }) => t.name).sort()).toEqual(['clock_time', 'site_example_test_shop_search']);
   });
 
   it('rejects a direct transport request when Agentic Tool Use is off', async () => {

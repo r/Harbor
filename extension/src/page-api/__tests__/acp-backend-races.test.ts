@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('../handlers', () => ({ hasPermission: mocks.hasPermission }));
 vi.mock('../harbor-core', () => ({
+  describedBySite: (_origin: string, d?: string) => d,
+  siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   pageToolsForAgent: vi.fn(async () => null),
@@ -25,8 +27,6 @@ vi.mock('../harbor-core', () => ({
   requireAgentPromptAction: async () => true,
   // This file is about cancellation races, not site-registered MCP
   // servers — no origin here registered any.
-  listSiteServersForAcp: () => [],
-  policyAllowsSiteToolsForAcp: async () => true,
 }));
 
 import { createFakeAcpBridge } from './support/fake-acp-bridge';

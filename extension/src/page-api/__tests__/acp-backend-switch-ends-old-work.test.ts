@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   bridge: { current: null as null | ReturnType<typeof import('./support/fake-acp-bridge').createFakeAcpBridge> },
 }));
 vi.mock('../harbor-core', () => ({
+  describedBySite: (_origin: string, d?: string) => d,
+  siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   pageToolsForAgent: vi.fn(async () => null),
@@ -39,8 +41,6 @@ vi.mock('../harbor-core', () => ({
   isModelPromptGrantedForAgent: async () => true,
   // This file is about ending old work on a backend switch, not
   // site-registered MCP servers — no origin here registered any.
-  listSiteServersForAcp: () => [],
-  policyAllowsSiteToolsForAcp: async () => true,
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../policy/feature-flags')>()),

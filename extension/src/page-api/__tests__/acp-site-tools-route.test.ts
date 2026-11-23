@@ -1,22 +1,15 @@
 /**
- * D2 (HBR-134): a site's registered MCP servers are only ever passed into
- * the person's own ACP agent's `session/new` when the origin holds both
- * `mcp:tools.list` and `mcp:tools.call` (Harbor's own origin-grant store)
- * *and* the policy engine would allow `tool.list`/`tool.call` for that
- * origin with no prompt — a rule that denies or asks either one means
- * `mcpServers: []`, never a prompt from inside the run. The per-tool
- * allowlist still doesn't apply to an ACP agent's own tool use (unchanged
- * maintainer decision).
+ * A site's own registered MCP server tools reach the person's ACP agent
+ * through Harbor's own MCP endpoint, never by handing the agent the server's
+ * URL (docs/PERMISSIONS.md). They need no grant of their own (not
+ * mcp:tools.list or mcp:tools.call) and get a policy check per server, the
+ * same gate as the page's own tools.
  *
- * This drives the real port, the real agent router, `agent.mcp.register`
- * (so a real site server is sitting in the registry to offer), the real
- * policy engine/rules/audit log, and the real `acp-connection.ts`
- * capability filtering — through harbor-core.ts kept real via
- * `importOriginal`, as `acp-model-prompt-agent-policy.test.ts` does. Only
- * the ACP bridge (a fake agent) and the permission *prompt* (so a test
- * doesn't hang waiting for a popup nothing answers) are stubbed; the
- * site's own MCP server is a fake one (stub fetch/EventSource), not
- * mocked away.
+ * This drives the real port, `agent.mcp.register` (so a real site server is
+ * in the registry), the real policy engine, and the real
+ * `acp-connection.ts`. Only the ACP bridge (a fake agent), the bridge's
+ * page_tools.open/close RPCs, and the permission prompt are stubbed; the
+ * site's own MCP server is a fake one (stub fetch/EventSource).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { agent as buildAgentApp, AGENT_METHODS, type StopReason } from '@agentclientprotocol/sdk';
@@ -27,6 +20,11 @@ import { resetSiteMcpServersForTests, siteServerId } from '../../mcp/site-server
 
 const mocks = vi.hoisted(() => ({
   bridge: { current: null as null | ReturnType<typeof import('./support/fake-acp-bridge').createFakeAcpBridge> },
+  rpcRequest: vi.fn(),
+}));
+vi.mock('../../llm/native-bridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../llm/native-bridge')>()),
+  rpcRequest: mocks.rpcRequest,
 }));
 
 vi.mock('../harbor-core', async (importOriginal) => ({
@@ -51,6 +49,12 @@ beforeEach(async () => {
   resetMockBrowser();
   installFakeMcpServer({ tools: [{ name: 'search' }] });
   mocks.bridge.current = createFakeAcpBridge();
+  mocks.rpcRequest.mockReset();
+  mocks.rpcRequest.mockImplementation(async (method: string) => {
+    if (method === 'page_tools.open') return { endpointId: 'pt-1-abc', url: 'http://127.0.0.1:4555/mcp/abcdefghijklmnop' };
+    if (method === 'page_tools.close') return { closed: true };
+    throw new Error(`unexpected ${method}`);
+  });
 
   const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> };
   chromeGlobal.chrome.runtime = {
@@ -147,135 +151,55 @@ function registerFakeAgent(onSessionNew: (params: unknown) => void): void {
   mocks.bridge.current!.registerAgent(AGENT_ID, app, {});
 }
 
+const HARBOR_ENDPOINT = { type: 'http', name: 'shop.example', url: 'http://127.0.0.1:4555/mcp/abcdefghijklmnop', headers: [] };
+
 describe("a site's registered MCP servers reaching the person's ACP agent", () => {
-  it('are offered when the origin holds both grants and no rule denies tool.list/tool.call', async () => {
+  it("go through Harbor's endpoint with no MCP grants, and the site's URL is never passed", async () => {
+    const port = connectPort(`${ORIGIN}/page`);
+    await registerSiteServer(port);
+    let sessionNewParams: unknown;
+    registerFakeAgent((params) => { sessionNewParams = params; });
+    const id = port.send('agent.run', { task: 'find headphones' });
+    await port.waitForRun(id);
+    const servers = (sessionNewParams as { mcpServers: Array<{ url: string }> }).mcpServers;
+    expect(servers).toEqual([HARBOR_ENDPOINT]);
+    expect(JSON.stringify(sessionNewParams)).not.toContain(`${ORIGIN}/mcp`);
+  });
+
+  it('are still routed through Harbor when the origin holds the MCP grants', async () => {
     const port = connectPort(`${ORIGIN}/page`);
     await registerSiteServer(port);
     await grantToolAccess({ list: true, call: true });
-
     let sessionNewParams: unknown;
     registerFakeAgent((params) => { sessionNewParams = params; });
-
     const id = port.send('agent.run', { task: 'find headphones' });
     await port.waitForRun(id);
-
-    expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers.length).toBeGreaterThan(0);
+    expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([HARBOR_ENDPOINT]);
   });
 
-  it('are withheld (mcpServers: []) when the origin lacks mcp:tools.call', async () => {
+  it('are left out when a policy rule refuses tool.list for site:*', async () => {
     const port = connectPort(`${ORIGIN}/page`);
     await registerSiteServer(port);
-    await grantToolAccess({ list: true, call: false });
-
+    await loadRules([{ id: 'no-sites', effect: 'deny', principal: { origin: '*' }, action: 'tool.list', resource: { server: 'site:*' } }]);
     let sessionNewParams: unknown;
     registerFakeAgent((params) => { sessionNewParams = params; });
-
     const id = port.send('agent.run', { task: 'find headphones' });
     await port.waitForRun(id);
-
     expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([]);
-  });
-
-  it('are withheld when a policy rule denies tool.call, even though both grants are held', async () => {
-    const port = connectPort(`${ORIGIN}/page`);
-    await registerSiteServer(port);
-    await grantToolAccess({ list: true, call: true });
-    await loadRules([{ id: 'deny-tool-call', effect: 'deny', principal: { origin: '*' }, action: 'tool.call' }]);
-
-    let sessionNewParams: unknown;
-    registerFakeAgent((params) => { sessionNewParams = params; });
-
-    const id = port.send('agent.run', { task: 'find headphones' });
-    await port.waitForRun(id);
-
-    expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([]);
-  });
-
-  it('are withheld when a policy rule asks for tool.list', async () => {
-    const port = connectPort(`${ORIGIN}/page`);
-    await registerSiteServer(port);
-    await grantToolAccess({ list: true, call: true });
-    await loadRules([{ id: 'ask-tool-list', effect: 'ask', principal: { origin: '*' }, action: 'tool.list' }]);
-
-    let sessionNewParams: unknown;
-    registerFakeAgent((params) => { sessionNewParams = params; });
-
-    const id = port.send('agent.run', { task: 'find headphones' });
-    await port.waitForRun(id);
-
-    // Not asserting showPermissionPrompt here: background.ts's
-    // handleAgentRun also fetches mcp.listTools for the *built-in*
-    // backend's own tools before a backend is even picked (discarded by
-    // this backend — see acp-backend.ts's header comment), and that
-    // separate, pre-existing step goes through this same rule and does
-    // prompt. The "no prompt from inside the run" requirement is about
-    // this file's own check never adding a *second* one — covered
-    // directly, isolated from that confound, below.
-    expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([]);
+    expect(mocks.rpcRequest).not.toHaveBeenCalledWith('page_tools.open', expect.anything());
   });
 });
 
-describe('the policy check runs per server, not all-or-nothing', () => {
-  it('a rule naming one serverId keeps only that server out of session/new, leaving the other', async () => {
+describe("a site's page chat on the person's ACP agent", () => {
+  it("gets the site's registered servers through Harbor's endpoint too", async () => {
     const port = connectPort(`${ORIGIN}/page`);
-    const serverIdA = await registerSiteServer(port, 'Shop A');
-    const serverIdB = await registerSiteServer(port, 'Shop B');
-    await grantToolAccess({ list: true, call: true });
-    await loadRules([
-      { id: 'deny-a', effect: 'deny', principal: { origin: '*' }, action: 'tool.call', resource: { server: serverIdA } },
-    ]);
-
+    await registerSiteServer(port);
     let sessionNewParams: unknown;
     registerFakeAgent((params) => { sessionNewParams = params; });
-
-    const id = port.send('agent.run', { task: 'find headphones' });
-    await port.waitForRun(id);
-
-    const names = (sessionNewParams as { mcpServers: Array<{ name: string }> }).mcpServers.map((s) => s.name);
-    expect(names).toEqual(['Shop B']);
-    expect(serverIdA).not.toBe(serverIdB);
-  });
-
-  it('a wildcard rule over site:* still keeps every site server out', async () => {
-    const port = connectPort(`${ORIGIN}/page`);
-    await registerSiteServer(port, 'Shop A');
-    await registerSiteServer(port, 'Shop B');
-    await grantToolAccess({ list: true, call: true });
-    await loadRules([
-      { id: 'deny-all-sites', effect: 'deny', principal: { origin: '*' }, action: 'tool.call', resource: { server: 'site:*' } },
-    ]);
-
-    let sessionNewParams: unknown;
-    registerFakeAgent((params) => { sessionNewParams = params; });
-
-    const id = port.send('agent.run', { task: 'find headphones' });
-    await port.waitForRun(id);
-
-    expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([]);
-  });
-});
-
-describe('policyAllowsSiteToolsForAcp itself never prompts', () => {
-  it('filters out a server a rule denies or asks about, without ever calling showPermissionPrompt', async () => {
-    await loadRules([{ id: 'ask-tool-list', effect: 'ask', principal: { origin: '*' }, action: 'tool.list', resource: { server: 'site:shop.example:shop' } }]);
-
-    const { showPermissionPrompt, grantPermissions } = await import('../../policy/permissions');
-    await grantPermissions(ORIGIN, ['mcp:tools.list', 'mcp:tools.call'], 'granted-always', TAB);
-    vi.mocked(showPermissionPrompt).mockClear();
-
-    const { policyAllowsSiteToolsForAcp } = await import('../harbor-core');
-    const allowed = await policyAllowsSiteToolsForAcp(ORIGIN, TAB, ['site:shop.example:shop', 'site:shop.example:other']);
-
-    expect(allowed).toEqual(['site:shop.example:other']);
-    expect(showPermissionPrompt).not.toHaveBeenCalled();
-  });
-
-  it('keeps every candidate with no rule in the way', async () => {
-    const { grantPermissions } = await import('../../policy/permissions');
-    await grantPermissions(ORIGIN, ['mcp:tools.list', 'mcp:tools.call'], 'granted-always', TAB);
-
-    const { policyAllowsSiteToolsForAcp } = await import('../harbor-core');
-    const ids = ['site:shop.example:shop', 'site:shop.example:other'];
-    expect(await policyAllowsSiteToolsForAcp(ORIGIN, TAB, ids)).toEqual(ids);
+    const { AcpTextSession } = await import('../acp-text-session');
+    const session = new AcpTextSession(AGENT_ID, ORIGIN, TAB, undefined, 'page-chat');
+    await session.open();
+    expect((sessionNewParams as { mcpServers: unknown[] }).mcpServers).toEqual([HARBOR_ENDPOINT]);
+    await session.destroy();
   });
 });

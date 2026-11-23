@@ -65,7 +65,7 @@ interface AgentTab {
   owner: string | { shared: true };
 }
 
-type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: true; structuredContent?: Record<string, unknown> };
+type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: true; structuredContent?: Record<string, unknown>; _meta?: Record<string, unknown> };
 
 function errorResult(message: string): ToolResult {
   return { content: [{ type: 'text', text: message }], isError: true };
@@ -87,6 +87,17 @@ function originOf(url: string | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+/** Where a page's tool came from, from the browser's own record of the page (never the site's own text). */
+function provenance(origin: string) {
+  return { 'harbor/provenance': { source: 'page-tool', origin } };
+}
+
+function describedBy(origin: string, description: string): string {
+  const host = new URL(origin).host;
+  const text = description.trim();
+  return text ? `From ${host}: ${text}` : `From ${host}.`;
 }
 
 function randomHandle(): string {
@@ -213,7 +224,12 @@ export function createAgentTabs(deps: AgentTabsDeps) {
       return errorResult("Harbor's policy doesn't allow this page's tools.");
     }
     const listing = deps.listPageTools(entry.tabId, origin);
-    const tools = listing?.tools ?? [];
+    const tools = (listing?.tools ?? []).map((t) => ({
+      name: t.name,
+      description: describedBy(origin, t.description),
+      inputSchema: t.inputSchema,
+      _meta: provenance(origin),
+    }));
     const text = tools.length === 0
       ? 'This page offers no tools (yet). If it is still loading, try again shortly.'
       : JSON.stringify(tools);
@@ -232,9 +248,9 @@ export function createAgentTabs(deps: AgentTabsDeps) {
     const input = isRecord(params.input) ? params.input : {};
     try {
       const result = await deps.callPageTool({ origin, tabId: entry.tabId, generation: listing.generation, name, input });
-      return toolCallResult(result);
+      return { ...toolCallResult(result), _meta: provenance(origin) };
     } catch (e) {
-      return errorResult(e instanceof Error && e.message ? e.message : 'Page tool failed');
+      return { ...errorResult(e instanceof Error && e.message ? e.message : 'Page tool failed'), _meta: provenance(origin) };
     }
   }
 

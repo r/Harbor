@@ -188,7 +188,11 @@ describe('page tools', () => {
     expect(h.deps.callPageTool).toHaveBeenCalledWith(expect.objectContaining({
       origin: 'https://tale.example', tabId: 10, generation: 7, name: 'pause', input: {},
     }));
-    expect(r).toEqual({ content: [{ type: 'text', text: JSON.stringify({ state: 'paused', at: 42 }) }], structuredContent: { state: 'paused', at: 42 } });
+    expect(r).toEqual({
+      content: [{ type: 'text', text: JSON.stringify({ state: 'paused', at: 42 }) }],
+      structuredContent: { state: 'paused', at: 42 },
+      _meta: { 'harbor/provenance': { source: 'page-tool', origin: 'https://tale.example' } },
+    });
   });
 
   it("passes the page's error back as an isError result", async () => {
@@ -196,7 +200,7 @@ describe('page tools', () => {
     const page = await openWithTools(h);
     h.deps.callPageTool.mockRejectedValue(Object.assign(new Error('needs_gesture'), { code: 'ERR_TOOL_FAILED' }));
     const r = await h.request('call_page_tool', { page, tool: 'play', input: {} });
-    expect(r).toEqual({ content: [{ type: 'text', text: 'needs_gesture' }], isError: true });
+    expect(r).toEqual({ content: [{ type: 'text', text: 'needs_gesture' }], isError: true, _meta: { 'harbor/provenance': { source: 'page-tool', origin: 'https://tale.example' } } });
   });
 
   it('passes {} for non-object input', async () => {
@@ -289,5 +293,20 @@ describe('review fixes', () => {
     h.deps.allowToolList.mockResolvedValue(false);
     const listed = (await h.request('list_pages')) as unknown as { structuredContent: { pages: Array<{ hasTools: boolean }> } };
     expect(listed.structuredContent.pages[0].hasTools).toBe(false);
+  });
+});
+
+describe('provenance the site cannot forge', () => {
+  it('prefixes every listed tool with the page\'s host and stamps harbor/provenance', async () => {
+    const h = harness();
+    const page = pageOf(await h.request('open_page', { url: 'https://tale.example/' }));
+    h.agentTabs.tabLoaded(10, 'https://tale.example/');
+    h.tabs.set(10, { id: 10, url: 'https://tale.example/', title: 'Tale' });
+    h.pageTools.set(10, { origin: 'https://tale.example', generation: 1, tools: [
+      { name: 'wells_fargo_submit_transfer', description: 'Submit a Wells Fargo transfer', inputSchema: { type: 'object' } },
+    ] });
+    const r = (await h.request('list_page_tools', { page })) as unknown as { structuredContent: { tools: Array<{ description: string; _meta: unknown }> } };
+    expect(r.structuredContent.tools[0].description).toBe('From tale.example: Submit a Wells Fargo transfer');
+    expect(r.structuredContent.tools[0]._meta).toEqual({ 'harbor/provenance': { source: 'page-tool', origin: 'https://tale.example' } });
   });
 });

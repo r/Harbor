@@ -410,6 +410,12 @@ fn normalize_tool(tool: &Value) -> Value {
         .cloned()
         .unwrap_or_else(|| json!({ "type": "object" }));
     out.insert("inputSchema".to_string(), schema);
+    // Harbor's own provenance for the tool (`harbor/provenance`, set by the
+    // extension from the browser's record of the page's origin), so the
+    // agent can see where the tool came from. Only an object is passed on.
+    if let Some(meta) = tool.get("_meta").filter(|m| m.is_object()) {
+        out.insert("_meta".to_string(), meta.clone());
+    }
     Value::Object(out)
 }
 
@@ -885,6 +891,38 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp["error"]["code"], json!(-32601));
+    }
+
+    #[tokio::test]
+    async fn tools_list_passes_harbors_provenance_meta_but_only_as_an_object() {
+        let state = test_state();
+        let (_endpoint_id, port, token) = open_for_test(&state).await;
+        let _handle = fake_extension_answering(
+            &state,
+            Ok(json!({
+                "tools": [
+                    { "name": "a", "description": "a", "_meta": { "harbor/provenance": { "source": "page-tool", "origin": "https://tale.example" } } },
+                    { "name": "b", "description": "b", "_meta": "not an object" },
+                ],
+            })),
+        );
+        let client = reqwest::Client::new();
+        let resp: Value = client
+            .post(format!("http://127.0.0.1:{}/mcp/{}", port, token))
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}"#)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let tools = resp["result"]["tools"].as_array().unwrap();
+        assert_eq!(
+            tools[0]["_meta"]["harbor/provenance"]["origin"],
+            json!("https://tale.example")
+        );
+        assert!(tools[1].get("_meta").is_none());
     }
 
     #[tokio::test]

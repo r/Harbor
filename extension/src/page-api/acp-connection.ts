@@ -421,42 +421,24 @@ export async function openAcpChannel(
 }
 
 /**
- * Turns the origin/tab's site-registered MCP servers into the ACP form
- * `session/new` wants, keeping only what the agent just said (in its
- * `initialize` response) it can actually use. WebSocket has no ACP
- * transport, so a site server registered over it is dropped with a log
- * line rather than silently.
- *
- * `name` is the site's own display name for the server, not the
- * deterministic `serverId` — ACP's `McpServer.name` is documented as
- * "human-readable", and the agent's own tool-call surface is what the
- * person sees it through, not Harbor's allowlist (which doesn't apply to
- * an ACP agent's own tool use — a maintainer decision).
+ * Turns Harbor's own MCP endpoint for what the site offers (the page's tools
+ * and its registered servers' tools, `openPageToolEndpointForAcp`) into the
+ * ACP form `session/new` wants. A site server's own URL is never passed: its
+ * tools reach the agent through that endpoint, where every call is
+ * policy-checked.
  */
 function mcpServersForAgent(
   candidates: readonly SiteMcpServerDescriptor[],
-  capabilities: { http?: boolean; sse?: boolean } | undefined,
+  capabilities: { http?: boolean } | undefined,
 ): McpServer[] {
-  const servers: McpServer[] = [];
-  for (const site of candidates) {
-    if (site.transport === 'streamable-http') {
-      if (capabilities?.http) {
-        servers.push({ type: 'http', name: site.name, url: site.url, headers: [] });
-      } else {
-        // Not `site.name`/`site.url` (page-supplied).
-        console.log('[Harbor] The agent does not support HTTP MCP servers; leaving one out of its session');
-      }
-    } else if (site.transport === 'sse') {
-      if (capabilities?.sse) {
-        servers.push({ type: 'sse', name: site.name, url: site.url, headers: [] });
-      }
-    } else {
-      // Not `site.name`/`site.url` (page-supplied) — see
-      // page-api/__tests__/no-payload-logs.test.ts.
-      console.log('[Harbor] ACP has no websocket MCP server form; dropping one site-registered server');
-    }
+  // The only server Harbor hands an agent is its own HTTP endpoint for what
+  // the site offers (openPageToolEndpointForAcp); an agent without HTTP MCP
+  // support gets none.
+  if (candidates.length > 0 && !capabilities?.http) {
+    console.log('[Harbor] The agent does not support HTTP MCP servers; leaving the site\'s tools out of its session');
+    return [];
   }
-  return servers;
+  return candidates.map((c) => ({ type: 'http' as const, name: c.name, url: c.url, headers: [] }));
 }
 
 /**
@@ -467,12 +449,10 @@ function mcpServersForAgent(
  * decides how (`send(...)` for agent.run, a rejected `open()` for a text
  * session).
  *
- * `siteMcpServers` is the origin/tab's site-registered MCP servers
- * (`mcp/site-servers.ts`, reached through harbor-core.ts's
- * `listSiteServersForAcp` — this module stays inside the page-api/ import
- * boundary). Omitted (or empty) for a caller with no tools to offer, e.g.
- * acp-text-session.ts's `window.ai` sessions, which stay tool-less — ACP's
- * per-tool allowlist has no equivalent, so this is the only gate they get.
+ * `siteMcpServers` is Harbor's endpoint for what the site offers
+ * (`openPageToolEndpointForAcp`), or empty for a caller with no tools to
+ * offer, e.g. acp-text-session.ts's `window.ai` sessions, which stay
+ * tool-less.
  */
 export async function initializeAcpSession(
   ctx: ClientContext,
