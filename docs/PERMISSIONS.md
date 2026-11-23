@@ -56,8 +56,8 @@ Page calls window.ai or window.agent
    │   Tier 2  Sensitivity gate ────────────────► attach labels; irreversible writes need at least a preview
    │   Tier 3  Information-flow check ──────────► deny  (input carries a label the action doesn't accept)
    │   Tier 4  Watchdog containment ────────────► ask / deny
-   │   Tier 6  First matching policy rule ──────► allow
-   │   Tier 7    (same rule, any other effect) ─► ask / preview / deny
+   │   Tier 6  Most cautious matching policy rule ─► allow
+   │   Tier 7    (same lookup, any other effect) ──► ask / preview / deny
    │   Tier 8  Per-origin grant ────────────────► allow / deny / ask / preview
    │   Tier 9  Default for action's effect ─────► allow (metadata) / ask (read, egress) / preview (write)
    └────────────────────────────────────────────┘
@@ -68,7 +68,7 @@ Page calls window.ai or window.agent
 
 One important property of this ladder: **the managed deny, information-flow and watchdog checks always run, above policy rules.** A deny from Tier 1, 3 or 4 can't be overridden by an `allow` rule or a grant. Tier 2's preview for irreversible writes is weaker: on a page call, the site's origin grant or a matching `allow` rule answers it without a prompt (see [Page calls](#page-calls)).
 
-Tiers 6 and 7 are one step: the engine takes the first policy rule that matches, in precedence order, and numbers the decision 6 if it ends in `allow` and 7 otherwise (an `allow` rule that Tier 2 raises to a preview is 7). Tier 5 was a capability-token check that nothing used; it was removed and the other numbers kept.
+Tiers 6 and 7 are one step: within one source's rules (managed, then user — see Precedence below), the engine finds every rule that matches and takes the most cautious effect, deny > preview > ask > allow; the first source with any matching rule decides. It numbers the decision 6 if that effect is `allow` and 7 otherwise (an `allow` rule that Tier 2 raises to a preview is 7). Tier 5 was a capability-token check that nothing used; it was removed and the other numbers kept.
 
 ## Typed actions and effects
 
@@ -248,7 +248,7 @@ One more short form, `Prompt(local|first_party|third_party|agent)`, targets one 
 2. User policy file (`harbor-policy.json`)
 3. Per-origin grants ("Allow always" / "Allow once" decisions remembered from prompts)
 
-Within a single document, the engine tries the short-form arrays first, in the order **deny → ask → preview → allow**, then the typed `rules` in the order written, and the first match wins. So a short-form `allow` beats a typed `deny`, and an earlier typed `allow` beats a later typed `deny`. Only a managed deny (Tier 1) is guaranteed to win.
+Within a single document, the engine considers every rule that matches the request — short-form arrays and typed `rules` alike — and the most cautious effect wins: **deny > preview > ask > allow**. A narrow `allow` can't carve an exception out of a broader `deny` in the same document, whichever order they're written in. Order only breaks a tie between two matching rules of the *same* effect: it picks the first in the document (short-form `deny`, then `ask`, then `preview`, then `allow`, then typed `rules` in the order written), so a rule's id stays stable across loads. Only *across* sources does order matter: the first source with any matching rule decides — managed before user, user before origin grants — and only within that source does the most-cautious rule apply. A managed deny (Tier 1) is still guaranteed to win over anything in the user document or an origin grant.
 
 ## Sensitivity gates and tool manifest provenance
 
