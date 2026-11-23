@@ -21,7 +21,9 @@ browser — opens the chat surface instead. The page writes no chat UI of its ow
    from that agent instead — with whatever it can do in your setup, including its tools and
    what it remembers about you — and the permission prompt says so. Either way, replies are
    grounded in the page's visible text (the product grid), not the MCP tools this page
-   advertises — Harbor's chat doesn't call those yet.
+   advertises. A chat on your own agent can call a site's MCP tools once the page registers
+   its server with `agent.mcp.register()`; this demo only advertises it with
+   `<link rel="mcp-server">`.
 4. **The site wrote no chat UI** — Every bubble and input box belongs to Harbor, not to Acme
    Shop. A different implementer of the same API — for example a native app hosting this page
    — could show its own chat surface instead, using the same `agent.chat.open()` call.
