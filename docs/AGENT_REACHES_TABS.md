@@ -1,6 +1,6 @@
 # Your agent reaches into the browser: design
 
-Status: proposed, for maintainer review before it's built.
+Status: decided (2026-11-23). §1–§4 follow the recommended options.
 
 ## Problem
 
@@ -131,6 +131,49 @@ they've connected. That's too broad as a default.
   `list_page_tools` again.
 - Closing the connection doesn't close the agent's tabs. They're the person's
   tabs now.
+
+## Wire contract
+
+**`harbor-mcp` (the stdio MCP server the agent runs)**
+
+- It answers `initialize`, `ping`, notifications and `tools/list` itself, from
+  the static list of four tools in §2. That way the agent's MCP connection
+  stays up even when Firefox isn't running.
+- At start it generates a random **agent id** (32 bytes, base64url). It
+  remembers the `clientInfo.name` from `initialize` as the agent's display
+  name.
+- For each `tools/call`, it sends one request line to `~/.harbor/agent.sock`,
+  reconnecting first if it needs to. It reads one response line back:
+  - request: `{"id": <n>, "agentId": "...", "agentName": "goose", "op": "open_page"|"list_pages"|"list_page_tools"|"call_page_tool", "params": {...}}`
+  - response: `{"id": <n>, "result": <MCP CallToolResult>}`
+- The response's `result` becomes the `tools/call` result, unchanged. If the
+  socket is missing, or the connection or the request fails, the call returns
+  a CallToolResult with `isError: true`, saying Firefox with Harbor isn't
+  running.
+
+**Bridge**
+
+- It creates `~/.harbor` with mode `0700` if it doesn't exist, and listens on
+  `agent.sock` with mode `0600`, replacing a stale socket file.
+- Each request line becomes a host request to the extension: method
+  `agent_tabs.request`, context `{ "origin": "harbor-bridge-agent-tabs" }`,
+  params `{ agentId, agentName, op, params }`.
+- The extension's answer is the response `result`. A host-request error or a
+  timeout (70 s) becomes an `isError` result.
+- It holds no state, and it logs only the op and the agent name, never the
+  params or the result.
+- A JS MCP server can't send `agent_tabs.*` host requests, which joins the
+  reserved `page_tools.*`.
+- `agent_tabs.info`, a native-messaging RPC, returns
+  `{ mcpCommand, socketPath }` for the sidebar's connect snippet. It's refused
+  over the Safari HTTP surface.
+
+**Extension**
+
+- It answers `agent_tabs.request` only from the bridge's own context.
+- Every answer is a CallToolResult, never a thrown error.
+- When the setting is off, every op returns `isError` with the message: "Turn
+  on 'Agents outside the browser' in Harbor's Agent panel."
 
 ## 6. Build units
 
