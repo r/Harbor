@@ -176,7 +176,22 @@ interface PageToolDescriptor {
   name: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
-  handler: (args: Record<string, unknown>) => unknown | Promise<unknown>;
+  handler: (args: Record<string, unknown>, options?: { signal: AbortSignal }) => unknown | Promise<unknown>;
+}
+
+/** A tool as the WebMCP draft's registerTool() takes it. `handler` is Harbor's older name for `execute`. */
+interface ModelContextTool {
+  name: string;
+  title?: string;
+  description: string;
+  inputSchema?: Record<string, unknown>;
+  execute?: (input: Record<string, unknown>, options: { signal: AbortSignal }) => unknown | Promise<unknown>;
+  handler?: (input: Record<string, unknown>, options: { signal: AbortSignal }) => unknown | Promise<unknown>;
+}
+
+interface ModelContextRegisterToolOptions {
+  signal?: AbortSignal;
+  exposedTo?: string[];
 }
 
 /** Registry of page-provided tools, keyed by name. */
@@ -1455,7 +1470,7 @@ const agentApi = Object.freeze({
 
             // Execute the handler in page context
             try {
-              return await Promise.resolve(descriptor.handler(args));
+              return await Promise.resolve(descriptor.handler(args, { signal: new AbortController().signal }));
             } catch (e) {
               const err = new Error(e instanceof Error ? e.message : 'Page tool failed');
               (err as Error & { code?: string }).code = 'ERR_TOOL_FAILED';
@@ -1874,14 +1889,69 @@ const agentApi = Object.freeze({
 // =============================================================================
 
 /**
- * navigator.modelContext — Web MCP compatibility surface.
+ * navigator.modelContext / document.modelContext — the WebMCP surface
+ * (https://webmachinelearning.github.io/webmcp/). The draft puts it on
+ * `document`; Harbor also keeps it on `navigator`, where it started.
  *
  * Pages call:
- *   navigator.modelContext.addTool({ name, description, inputSchema, handler })
- *   navigator.modelContext.removeTool(name)
+ *   await document.modelContext.registerTool(
+ *     { name, description, inputSchema, execute(input, { signal }) },
+ *     { signal },             // abort to unregister
+ *   )
+ *   navigator.modelContext.addTool({ name, description, inputSchema, handler })  // older alias
+ *   navigator.modelContext.removeTool(name)                                       // older alias
  *   navigator.modelContext.tools  // current snapshot
  */
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9_.-]{1,128}$/;
+
+function registerPageTool(tool: ModelContextTool, options: ModelContextRegisterToolOptions = {}): void {
+  const execute = tool?.execute ?? tool?.handler;
+  if (!tool || typeof execute !== 'function') {
+    throw new TypeError('registerTool requires { name, description, execute }');
+  }
+  const { signal, exposedTo } = options ?? {};
+  if (exposedTo !== undefined && (!Array.isArray(exposedTo) || exposedTo.length > 0)) {
+    // Harbor offers a page's tools only to agent work that page starts.
+    throw new DOMException('registerTool: exposedTo is not supported', 'NotSupportedError');
+  }
+  if (typeof tool.name !== 'string' || !TOOL_NAME_PATTERN.test(tool.name)) {
+    throw new DOMException(
+      'registerTool: name must be 1-128 ASCII letters, digits, "_", "-" or "."',
+      'InvalidStateError',
+    );
+  }
+  if (typeof tool.description !== 'string' || tool.description === '') {
+    throw new DOMException('registerTool: description must not be empty', 'InvalidStateError');
+  }
+  if (pageTools.has(tool.name)) {
+    throw new DOMException(`registerTool: a tool named "${tool.name}" is already registered`, 'InvalidStateError');
+  }
+  if (signal?.aborted) {
+    throw signal.reason;
+  }
+  const entry: PageToolDescriptor = {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    handler: (args, callOptions) => execute.call(tool, args, callOptions ?? { signal: new AbortController().signal }),
+  };
+  pageTools.set(tool.name, entry);
+  signal?.addEventListener('abort', () => {
+    // Only this registration: a same-named tool registered later stays.
+    if (pageTools.get(entry.name) === entry) pageTools.delete(entry.name);
+  }, { once: true });
+}
+
 const modelContext = Object.freeze({
+  registerTool(tool: ModelContextTool, options?: ModelContextRegisterToolOptions): Promise<undefined> {
+    try {
+      registerPageTool(tool, options);
+      return Promise.resolve(undefined);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  },
+
   addTool(descriptor: PageToolDescriptor): void {
     if (!descriptor.name || typeof descriptor.handler !== 'function') {
       throw new TypeError('addTool requires { name: string, handler: function }');
@@ -1965,6 +2035,18 @@ try {
     }
   } catch (e) {
     console.debug('[Web Agents API] Could not define navigator.modelContext:', e);
+  }
+  try {
+    if (!Object.getOwnPropertyDescriptor(document, 'modelContext')) {
+      Object.defineProperty(document, 'modelContext', {
+        value: modelContext,
+        writable: false,
+        enumerable: true,
+        configurable: false,
+      });
+    }
+  } catch (e) {
+    console.debug('[Web Agents API] Could not define document.modelContext:', e);
   }
 
   // Dispatch ready event with feature flags info

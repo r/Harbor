@@ -595,14 +595,16 @@ try {
 
 Pages can register JavaScript functions as "page tools" that appear alongside MCP tools. Page tools execute in the page context — they never leave the page.
 
-**Registration API:** `navigator.modelContext`
+**Registration API:** `document.modelContext`, as in the [WebMCP draft](https://webmachinelearning.github.io/webmcp/). Harbor also exposes the same object as `navigator.modelContext`.
 
-#### navigator.modelContext.addTool(descriptor)
+#### document.modelContext.registerTool(tool, options?)
 
-Register a page tool.
+Register a page tool. Returns a promise that resolves to `undefined`.
 
 ```javascript
-navigator.modelContext.addTool({
+const registration = new AbortController();
+
+await document.modelContext.registerTool({
   name: 'get_cart_items',
   description: 'Returns the current shopping cart contents',
   inputSchema: {
@@ -611,21 +613,39 @@ navigator.modelContext.addTool({
       includeMetadata: { type: 'boolean', description: 'Include product metadata' }
     }
   },
-  handler: async (args) => {
+  execute: async (input, { signal }) => {
     const items = document.querySelectorAll('.cart-item');
     return Array.from(items).map(el => ({
       name: el.querySelector('.name')?.textContent,
       price: el.querySelector('.price')?.textContent,
     }));
   },
-});
+}, { signal: registration.signal });
+
+// Later: unregister by aborting the signal you registered with
+registration.abort();
 ```
 
-#### navigator.modelContext.removeTool(name)
+| Field | Required | Notes |
+|-------|----------|-------|
+| `name` | yes | 1–128 ASCII letters, digits, `_`, `-` or `.` |
+| `description` | yes | Must not be empty |
+| `inputSchema` | no | JSON Schema for the input |
+| `execute(input, { signal })` | yes | `handler` is accepted as an older name |
 
-Unregister a page tool. Returns `true` if the tool was found and removed.
+The promise rejects with:
+
+- `InvalidStateError` for a duplicate name, an invalid name or an empty description.
+- `TypeError` when `execute` is missing.
+- the signal's abort reason when `options.signal` is already aborted.
+- `NotSupportedError` for a non-empty `options.exposedTo`. Harbor doesn't share a page's tools with other origins.
+
+#### navigator.modelContext.addTool(descriptor) / removeTool(name)
+
+Harbor's older names, kept as aliases. `addTool` registers synchronously and replaces a tool of the same name; `removeTool(name)` returns `true` if a tool was removed.
 
 ```javascript
+navigator.modelContext.addTool({ name: 'get_cart_items', description: '…', handler: async () => [] });
 navigator.modelContext.removeTool('get_cart_items');
 ```
 

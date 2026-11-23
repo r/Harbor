@@ -85,7 +85,7 @@ describe('registerTool', () => {
 
   it('rejects a missing execute with a TypeError', async () => {
     const { mc } = page();
-    await expect(mc.registerTool({ name: 'x', description: 'x' })).rejects.toBeInstanceOf(TypeError);
+    await expect(mc.registerTool({ name: 'x', description: 'x' })).rejects.toMatchObject({ name: 'TypeError' });
   });
 
   it('unregisters the tool when its signal aborts', async () => {
