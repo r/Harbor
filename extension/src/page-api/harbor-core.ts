@@ -766,12 +766,14 @@ export async function callSiteToolForAgent(call: {
   });
   if (denial) throw Object.assign(new Error(denial.message), { code: denial.code });
   call.onAllowed?.();
+  const offered = listSiteTools(call.origin, call.tabId)
+    .some(tool => tool.serverId === call.serverId && tool.name === call.name);
   try {
     const result = await callSiteTool(call.origin, call.tabId, call.serverId, call.name, call.input);
     if (!result.ok) throw Object.assign(new Error(result.error), { code: 'ERR_TOOL_FAILED' });
     return result.result;
   } finally {
-    call.labelFlow?.addPageOutput(call.origin);
+    if (offered) call.labelFlow?.addPageOutput(call.origin);
   }
 }
 
