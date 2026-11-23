@@ -16,7 +16,7 @@
  * that cover each step as it takes it: `model:prompt` before each model
  * call after the first, `mcp:tools.call` before each tool call.
  */
-import { harborRequest, callPageToolForAgent, callSiteToolForAgent } from './harbor-core';
+import { createLabelFlow, harborRequest, callPageToolForAgent, callSiteToolForAgent } from './harbor-core';
 import { hasPermission } from './handlers';
 import { toolResultText } from './tool-messages';
 import { policyRefusalCode } from './policy-refusal';
@@ -96,6 +96,7 @@ async function promptRevoked(origin: string, tabId: number | undefined, emit: (e
 export const builtinAgentBackend: AgentBackend = {
   async run(req, emit, signal) {
     const { origin, tabId, task, systemPrompt, maxToolCalls, tools } = req;
+    const labelFlow = createLabelFlow();
 
     // Build tool definitions for the LLM
     const llmTools = tools.map(t => ({
@@ -164,7 +165,7 @@ export const builtinAgentBackend: AgentBackend = {
             description: t.description,
             input_schema: t.input_schema,
           })) : undefined,
-        }, { signal });
+        }, { signal, labelFlow });
       } catch (e) {
         emit({
           type: 'error',
@@ -257,6 +258,7 @@ export const builtinAgentBackend: AgentBackend = {
                 name: actualToolName,
                 input: args,
                 signal,
+                labelFlow,
               });
             } else if (isSiteToolServer(serverId)) {
               toolResult = await callSiteToolForAgent({
@@ -266,6 +268,7 @@ export const builtinAgentBackend: AgentBackend = {
                 name: actualToolName,
                 input: args,
                 signal,
+                labelFlow,
               });
             } else {
               const callResult = await harborRequest<{ result: unknown }>('mcp.callTool', {
@@ -274,7 +277,7 @@ export const builtinAgentBackend: AgentBackend = {
                 serverId,
                 toolName: actualToolName,
                 args,
-              }, { signal });
+              }, { signal, labelFlow });
               toolResult = callResult.result;
             }
           } catch (e) {
@@ -310,7 +313,7 @@ export const builtinAgentBackend: AgentBackend = {
       origin,
       tabId,
       messages,
-    }, { signal });
+    }, { signal, labelFlow });
     const finalContent = finalResult.content;
 
     if (signal.aborted) {

@@ -153,6 +153,8 @@ For example, if you request `tools: ['brave-search/search', 'filesystem/read_fil
 
 Harbor checks that a session is still alive, and belongs to your origin, before every `prompt()` and `promptStreaming()`. A terminated or expired session fails with `ERR_SESSION_NOT_FOUND`.
 
+Each session also keeps its own internal information-flow labels. Output from a site-owned tool, including tool error text, adds the sensitivity labels Harbor assigns to that site. Those labels carry into later tool calls and model prompts, including streaming and ACP prompts. A destination that does not accept them is refused with `ERR_LABEL_FLOW_BLOCKED`. Pages cannot clear these labels or supply trusted labels themselves; separate sessions keep separate label state. This does not associate native browser reads with a session.
+
 ---
 
 ## Comparison Examples

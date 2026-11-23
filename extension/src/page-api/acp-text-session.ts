@@ -45,7 +45,7 @@ import {
   type ClientContext,
 } from '@agentclientprotocol/sdk';
 
-import { acpClose, acpOpenStream, closePageToolEndpoint, isModelPromptGrantedForAgent, openPageToolEndpointForAcp, requireAgentPromptAction, type SiteMcpServerDescriptor } from './harbor-core';
+import { acpClose, acpOpenStream, closePageToolEndpoint, isModelPromptGrantedForAgent, openPageToolEndpointForAcp, checkAgentPromptAction, type LabelFlow, type SiteMcpServerDescriptor } from './harbor-core';
 import { hasPermission } from './handlers/permission-handlers';
 import { PER_SITE_AGENT_LIMIT, tryAcquireAgentSlot, releaseAgentSlot } from './acp-agent-limits';
 import type { StreamToken } from './types';
@@ -114,6 +114,7 @@ export class AcpTextSession {
     private readonly systemPrompt: string | undefined,
     /** `'website'` for a `window.ai` text session (the default); a page chat (`handlers/page-chat-agent-sessions.ts`) passes `'page-chat'` so the provenance `_meta` on every prompt says so. */
     private readonly provenanceSource: 'website' | 'page-chat' = 'website',
+    private readonly labelFlow?: LabelFlow,
   ) {}
 
   /**
@@ -408,10 +409,13 @@ export class AcpTextSession {
       // engine and the audit log, exactly as a prompt to Harbor's own model
       // does — in addition to, not instead of, resolveTextSession's own
       // model:prompt origin-grant check before this turn was ever queued.
-      if (!await requireAgentPromptAction(this.origin, this.tabId)) {
+      const denial = await checkAgentPromptAction(this.origin, this.tabId, this.labelFlow);
+      if (denial) {
         turn.terminalSent = true;
         turn.runEnded.abort();
-        return { ok: false, error: cancelReasonEvent('permission-denied') };
+        return { ok: false, error: denial.code === 'ERR_LABEL_FLOW_BLOCKED'
+          ? { type: 'error', error: denial }
+          : cancelReasonEvent('permission-denied') };
       }
 
       const prompt = buildPromptBlocks(this.origin, input, this.systemPrompt, !this.firstPromptSent);
@@ -485,6 +489,7 @@ export async function createAcpTextSession(
   tabId: number | undefined,
   systemPrompt: string | undefined,
   signal?: AbortSignal,
+  labelFlow?: LabelFlow,
 ): Promise<void> {
   registerPendingOpen(sessionId, tabId);
   // `cancelPendingOpensForTab` (the tab closing, or its port disconnecting
@@ -496,7 +501,7 @@ export async function createAcpTextSession(
   setPendingOpenAbort(sessionId, () => tabAbort.abort());
   const openSignal = signal ? combineAbortSignals([signal, tabAbort.signal]) : tabAbort.signal;
 
-  const session = new AcpTextSession(agentId, origin, tabId, systemPrompt);
+  const session = new AcpTextSession(agentId, origin, tabId, systemPrompt, 'website', labelFlow);
   try {
     await session.open(openSignal);
   } catch (e) {

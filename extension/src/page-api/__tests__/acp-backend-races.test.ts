@@ -1,3 +1,4 @@
+import { LabelFlow } from '../../policy/label-flow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { agent as buildAgentApp, AGENT_METHODS, CLIENT_METHODS, RequestError, type StopReason } from '@agentclientprotocol/sdk';
 
@@ -8,6 +9,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('../handlers', () => ({ hasPermission: mocks.hasPermission }));
 vi.mock('../harbor-core', () => ({
+  createLabelFlow: () => new LabelFlow(),
+  checkAgentPromptAction: async () => null,
   describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),

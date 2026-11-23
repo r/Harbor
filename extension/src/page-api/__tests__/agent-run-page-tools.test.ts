@@ -1,3 +1,4 @@
+import { LabelFlow } from '../../policy/label-flow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Harbor's built-in agent.run loop calls the page's own tools
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   callSiteToolForAgent: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
+  createLabelFlow: () => new LabelFlow(),
   describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   callSiteToolForAgent: mocks.callSiteToolForAgent,

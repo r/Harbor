@@ -20,6 +20,7 @@
  *     `unregister()`. Nothing here outlives the tab.
  */
 
+import type { LabelFlow } from '../policy/label-flow';
 import { createRemoteTransport, type RemoteTransportKind } from './remote-transport';
 import type { McpNotification, McpRequest, McpResponse } from './protocol';
 import type { McpTransport } from './transport';
@@ -367,6 +368,7 @@ export async function callSiteTool(
   serverId: string,
   toolName: string,
   args: Record<string, unknown>,
+  labelFlow?: LabelFlow,
 ): Promise<{ ok: true; result: unknown } | { ok: false; error: string }> {
   const entry = registry.get(registryKey(tabId, serverId));
   if (!entry || entry.origin !== origin) {
@@ -388,6 +390,9 @@ export async function callSiteTool(
     return { ok: true, result: response.result };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Tool call failed' };
+  } finally {
+    // The verified server can return site content in either result or error text.
+    labelFlow?.addPageOutput(entry.origin);
   }
 }
 

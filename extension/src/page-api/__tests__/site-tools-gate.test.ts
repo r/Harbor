@@ -79,7 +79,7 @@ describe('listing a site\'s own tools for agent work', () => {
 describe('calling a site\'s own tool for agent work', () => {
   it('calls it with no MCP grants, and audits the call', async () => {
     const result = await core.callSiteToolForAgent({ origin: ORIGIN, tabId: TAB, serverId: SERVER, name: 'read_tale', input: { upTo: 'p4' } });
-    expect(mocks.callSiteTool).toHaveBeenCalledWith(ORIGIN, TAB, SERVER, 'read_tale', { upTo: 'p4' });
+    expect(mocks.callSiteTool).toHaveBeenCalledWith(ORIGIN, TAB, SERVER, 'read_tale', { upTo: 'p4' }, undefined);
     expect(result).toEqual({ content: [{ type: 'text', text: 'Once upon a time' }] });
     const { Audit } = await import('../../policy/audit');
     expect(Audit.list().find((r) => r.action === 'tool.call')?.resource).toEqual({ server: SERVER, tool: 'read_tale' });
