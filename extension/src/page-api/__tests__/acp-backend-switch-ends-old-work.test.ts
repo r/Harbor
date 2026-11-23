@@ -22,7 +22,11 @@ const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(), hasPermission: vi.fn(), getFeatureFlags: vi.fn(),
   bridge: { current: null as null | ReturnType<typeof import('./support/fake-acp-bridge').createFakeAcpBridge> },
 }));
-vi.mock('../harbor-core', () => ({
+vi.mock('../harbor-core', async () => {
+  const { LabelFlow } = await import('../../policy/label-flow');
+  return ({
+  createLabelFlow: () => new LabelFlow(),
+  getSessionLabelFlow: vi.fn(() => new LabelFlow()),
   describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
@@ -38,10 +42,12 @@ vi.mock('../harbor-core', () => ({
   // (acp-model-prompt-agent-policy.test.ts, is-model-prompt-granted-for-agent.test.ts);
   // this file is about ending old work on a switch, not about grants.
   requireAgentPromptAction: async () => true,
+  checkAgentPromptAction: async () => null,
   isModelPromptGrantedForAgent: async () => true,
   // This file is about ending old work on a backend switch, not
   // site-registered MCP servers — no origin here registered any.
-}));
+  });
+});
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../policy/feature-flags')>()),
   getFeatureFlags: mocks.getFeatureFlags,

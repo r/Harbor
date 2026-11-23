@@ -19,12 +19,16 @@ const mocks = vi.hoisted(() => ({
   hasPermission: vi.fn(),
   askAgentQuestion: vi.fn(),
   getFeatureFlags: vi.fn(),
-  requireAgentPromptAction: vi.fn(),
+  checkAgentPromptAction: vi.fn(),
   isModelPromptGrantedForAgent: vi.fn(),
   bridge: { current: null as null | ReturnType<typeof import('./support/fake-acp-bridge').createFakeAcpBridge> },
 }));
 
-vi.mock('../harbor-core', () => ({
+vi.mock('../harbor-core', async () => {
+  const { LabelFlow } = await import('../../policy/label-flow');
+  return ({
+  createLabelFlow: () => new LabelFlow(),
+  getSessionLabelFlow: vi.fn(() => new LabelFlow()),
   describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
@@ -46,13 +50,14 @@ vi.mock('../harbor-core', () => ({
   // the real port and the real policy engine, in
   // acp-model-prompt-agent-policy.test.ts; here it's a controllable mock so
   // this file's own "deny" test can exercise how AcpTextSession handles it.
-  requireAgentPromptAction: mocks.requireAgentPromptAction,
+  checkAgentPromptAction: mocks.checkAgentPromptAction,
   // The defence-in-depth, explicit-backend grant check — its own real
   // behaviour is covered in is-model-prompt-granted-for-agent.test.ts;
   // here it's a controllable mock too, so a dedicated test can exercise
   // how AcpTextSession handles a mismatch distinct from a policy-rule deny.
   isModelPromptGrantedForAgent: mocks.isModelPromptGrantedForAgent,
-}));
+  });
+});
 vi.mock('../handlers/permission-handlers', async (importOriginal) => ({
   ...(await importOriginal<object>()), hasPermission: mocks.hasPermission,
 }));
@@ -243,8 +248,8 @@ beforeEach(async () => {
   mocks.hasPermission.mockResolvedValue(true);
   mocks.askAgentQuestion.mockReset();
   mocks.getFeatureFlags.mockResolvedValue(DEFAULT_FLAGS);
-  mocks.requireAgentPromptAction.mockReset();
-  mocks.requireAgentPromptAction.mockResolvedValue(true);
+  mocks.checkAgentPromptAction.mockReset();
+  mocks.checkAgentPromptAction.mockResolvedValue(null);
   mocks.isModelPromptGrantedForAgent.mockReset();
   mocks.isModelPromptGrantedForAgent.mockResolvedValue(true);
   mocks.bridge.current = createFakeAcpBridge();
@@ -794,7 +799,7 @@ describe('mid-turn model:prompt revoke, on a tool call during a text-session tur
 });
 
 describe('the model.prompt.agent policy gate, before session/prompt', () => {
-  // requireAgentPromptAction (harbor-core.ts) itself is covered against the
+  // checkAgentPromptAction (harbor-core.ts) itself is covered against the
   // real policy engine and audit log, driven through the real port, in
   // acp-model-prompt-agent-policy.test.ts. This only checks that
   // AcpTextSession respects a `false` from it: no prompt sent, and the page
@@ -814,14 +819,14 @@ describe('the model.prompt.agent policy gate, before session/prompt', () => {
     const created = await createViaPort(port);
     const sessionId = created.result as string;
 
-    mocks.requireAgentPromptAction.mockResolvedValue(false);
+    mocks.checkAgentPromptAction.mockResolvedValue({ code: 'ERR_PERMISSION_DENIED', message: 'Permission denied' });
     const result = await promptViaPort(port, sessionId, 'hi');
 
     expect(result).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
     expect(promptCalled).toBe(false);
     // The exact origin and tab this session was opened for — not some
     // other origin/tabId — must reach the gate.
-    expect(mocks.requireAgentPromptAction).toHaveBeenCalledWith(ORIGIN, port.tabId);
+    expect(mocks.checkAgentPromptAction).toHaveBeenCalledWith(ORIGIN, port.tabId, expect.anything());
   });
 
   it('is checked on every prompt, not just the first', async () => {
@@ -842,7 +847,7 @@ describe('the model.prompt.agent policy gate, before session/prompt', () => {
     expect(first).toMatchObject({ ok: true });
     expect(promptCalls).toBe(1);
 
-    mocks.requireAgentPromptAction.mockResolvedValue(false);
+    mocks.checkAgentPromptAction.mockResolvedValue({ code: 'ERR_PERMISSION_DENIED', message: 'Permission denied' });
     const second = await promptViaPort(port, sessionId, 'two');
     expect(second).toMatchObject({ ok: false, error: { code: 'ERR_PERMISSION_DENIED' } });
     expect(promptCalls).toBe(1);
@@ -854,7 +859,7 @@ describe('the explicit-backend grant check, before session/prompt (defence in de
   // against the session's own agentId, not a live read of the selection)
   // is covered in is-model-prompt-granted-for-agent.test.ts. This only
   // checks that AcpTextSession respects a `false` from it, distinctly
-  // from a policy-rule deny (requireAgentPromptAction).
+  // from a policy-rule deny (checkAgentPromptAction).
   it('never sends session/prompt when the session\'s own backend no longer holds the grant, and reports ERR_PERMISSION_DENIED', async () => {
     await setAcpBackend(AGENT_ID);
     const fakeBridge = createFakeAcpBridge();

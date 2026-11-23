@@ -24,6 +24,7 @@ import type {
 } from './types';
 import { getDefaultImplicitCapabilities, buildCapabilitiesFromRequest } from './types';
 import type { ConversationMessage } from '../agents/types';
+import { LabelFlow } from '../policy/label-flow';
 
 // =============================================================================
 // Session Registry
@@ -31,6 +32,8 @@ import type { ConversationMessage } from '../agents/types';
 
 class SessionRegistryImpl {
   private sessions = new Map<string, AgentSession>();
+  /** Internal flow state never enters session summaries or page responses. */
+  private labelFlows = new WeakMap<AgentSession, LabelFlow>();
   /** Tool call slots held for calls still waiting on the policy engine. */
   private reservedToolCalls = new Map<string, number>();
   private listeners = new Set<SessionEventListener>();
@@ -183,6 +186,17 @@ class SessionRegistryImpl {
     }
 
     return session;
+  }
+
+  /** Retrieve flow state only after checking the session's origin and lifetime. */
+  getLabelFlow(sessionId: string, origin: string): LabelFlow {
+    const session = this.getValidatedSession(sessionId, origin);
+    let flow = this.labelFlows.get(session);
+    if (!flow) {
+      flow = new LabelFlow();
+      this.labelFlows.set(session, flow);
+    }
+    return flow;
   }
 
   /**

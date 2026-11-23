@@ -235,7 +235,7 @@ describe("the site's own MCP server tools, through the same endpoint", () => {
     mocks.callSiteTool.mockResolvedValue({ ok: true, result: { content: [{ type: 'text', text: 'Once upon a time' }] } });
     const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB, { maxCalls: 1 }))!;
     const r = await core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'tale__read_tale', arguments: { upTo: 'p4' } });
-    expect(mocks.callSiteTool).toHaveBeenCalledWith(ORIGIN, TAB, 'site:tale.example:tale', 'read_tale', { upTo: 'p4' });
+    expect(mocks.callSiteTool).toHaveBeenCalledWith(ORIGIN, TAB, 'site:tale.example:tale', 'read_tale', { upTo: 'p4' }, undefined);
     // The server's own CallToolResult is passed through, not re-wrapped as JSON text.
     expect(r).toEqual({ content: [{ type: 'text', text: 'Once upon a time' }], _meta: { 'harbor/provenance': { source: 'site-server', origin: ORIGIN, server: 'site:tale.example:tale' } } });
     const over = await core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'tale__read_tale', arguments: {} });
@@ -275,7 +275,7 @@ describe('names, provenance and audit on the endpoint', () => {
     const listed = await core.handlePageToolsHostRequest('page_tools.list', { endpointId }) as { tools: Array<{ name: string }> };
     expect(listed.tools.map((t) => t.name)).toEqual(['x___y', 'x___y_2']);
     await core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'x___y_2', arguments: {} });
-    expect(mocks.callSiteTool).toHaveBeenLastCalledWith(ORIGIN, TAB, 'site:tale.example:x_', 'y', {});
+    expect(mocks.callSiteTool).toHaveBeenLastCalledWith(ORIGIN, TAB, 'site:tale.example:x_', 'y', {}, undefined);
   });
 
   it('a site tool call after a listing adds only its own tool.call audit entry', async () => {

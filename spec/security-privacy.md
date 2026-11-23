@@ -302,7 +302,7 @@ This spec assumes the model will sometimes be tricked. The defense is scope, not
 |-------|--------|
 | **User confirmation.** Before a tool call that can't be undone, the browser's own interface asks the user, naming the origin and the action: "paypa1.com wants to send $1,000 to billing@paypa1-support.com." Text from the page or from a tool can't give this approval. | Planned. Today the user's grant to the origin covers each call. A separate prompt appears only when a policy rule or the watchdog asks for one. For agents run over the Agent Client Protocol, [`docs/ACP_BACKEND_DESIGN.md`](../docs/ACP_BACKEND_DESIGN.md) proposes approval for every tool call. |
 | **Origin in the prompt.** A system message the page can't override tells the model which origin is asking. | Planned. |
-| **Data-flow checks.** The policy engine tracks where data came from, so data from one source can't reach a sending tool without consent. | Partial. Page calls to the model and to tools pass the policy engine (`extension/src/extension-api.ts`, `PAGE_GATES`), but without data labels, so no data-flow checks apply to them yet. |
+| **Data-flow checks.** The policy engine tracks where data came from, so data from one source can't reach a sending tool without consent. | Within a run or session, Harbor carries labels from a site's tool results into later policy checks. A destination that refuses any carried label is blocked. Separate runs, sessions and standalone calls have independent scope. |
 
 **For site developers:** Ask only for the tools the task needs. Every extra tool you request widens what an injected instruction can do. Treat what the agent returns as untrusted input: escape it before you render it, and never run it.
 
