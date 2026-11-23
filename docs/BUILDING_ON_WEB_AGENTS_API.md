@@ -251,7 +251,7 @@ const results = await window.agent.tools.call({
 registration.abort();
 ```
 
-To support browsers both with and without a native implementation, feature-detect: `const mc = document.modelContext ?? navigator.modelContext;`.
+To support browsers both with and without a native implementation, feature-detect: `const mc = document.modelContext ?? navigator.modelContext;`. Harbor adds the API shortly after the page starts, so a script that checks once at load can miss it: if `mc` is missing, register on the `agent-ready` event instead (`window.addEventListener('agent-ready', register, { once: true })`).
 
 Page tools run in your page's JavaScript context, with no network or MCP server needed. The person's agent can call them too, during the `agent.run()` or `agent.chat.open()` your page starts: Harbor's built-in agent sees them as `page:<host>/<tool>`, and the person's own ACP agent (goose, Claude Code, Codex) gets them as an MCP server named `page:<host>`. Only the name, description and input schema leave the page. They need no permission beyond the one that starts the run or chat. They last as long as the document: a reload drops them, and a hash or `pushState` change doesn't. Treat what your tools return as something an agent will read: return data, not instructions. See [WEB_AGENTS_API.md](WEB_AGENTS_API.md#page-tools-and-the-persons-agent).
 

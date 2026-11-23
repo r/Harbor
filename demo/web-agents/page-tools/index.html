@@ -51,7 +51,6 @@
   <script>
     const log = document.getElementById('log');
     const say = (line) => { log.textContent += `\n${line}`; };
-    const mc = document.modelContext ?? navigator.modelContext;
     const paragraphs = () => Array.from(document.querySelectorAll('.chapter p'));
 
     function highlight(el) {
@@ -59,9 +58,12 @@
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    if (!mc) {
-      log.textContent = 'This page needs Harbor (or another WebMCP implementation). Without it, nothing changes.';
-    } else {
+    // Harbor injects the API shortly after the page starts, so a page that
+    // checks once while loading can miss it: register now if it's there,
+    // otherwise when Harbor says it's ready.
+    function registerPageTools() {
+      const mc = document.modelContext ?? navigator.modelContext;
+      if (!mc) return false;
       // The draft's API: async, an execute callback, unregister by aborting the signal.
       mc.registerTool({
         name: 'reading_position',
@@ -98,6 +100,14 @@
           return words;
         },
       });
+      return true;
+    }
+
+    if (!registerPageTools()) {
+      log.textContent = 'Waiting for Harbor (or another WebMCP implementation). Without one, nothing changes.';
+      window.addEventListener('agent-ready', () => {
+        if (registerPageTools()) log.textContent = 'Tools registered: reading_position, go_to (registerTool), count_words (addTool).';
+      }, { once: true });
     }
 
     async function ensurePermission() {
