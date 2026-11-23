@@ -538,6 +538,9 @@ export async function callPageToolForAgent(call: {
   });
   if (denial) throw Object.assign(new Error(denial.message), { code: denial.code });
   call.onAllowed?.();
+  const listing = listPageTools(call.tabId, call.origin);
+  const offered = listing?.generation === call.generation
+    && listing.tools.some(tool => tool.name === call.name) && !call.signal?.aborted;
   try {
     return await callPageTool({
       tabId: call.tabId,
@@ -548,8 +551,9 @@ export async function callPageToolForAgent(call: {
       signal: call.signal,
     });
   } finally {
-    // Error text is page content too when the model receives it.
-    call.labelFlow?.addPageOutput(call.origin);
+    // A stale/missing tool never returned page content. Actual handler
+    // failures can carry page-authored error text and keep the source labels.
+    if (offered) call.labelFlow?.addPageOutput(call.origin);
   }
 }
 
