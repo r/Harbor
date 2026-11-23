@@ -820,13 +820,14 @@ impl JsServer {
 
 /// Host-request methods a JS MCP server may never send. `page_tools.*` is
 /// how the bridge's own page-tools endpoint (`page_tools.rs`) relays an ACP
-/// agent's calls into a web page's tools; the extension answers it only for
-/// its own endpoint context. A JS server's host requests can carry a context
-/// the script set itself (`__requestHostContext`, used when the caller gave
-/// none), so these methods are refused here, before they ever leave the
-/// bridge.
+/// agent's calls into a web page's tools; `agent_tabs.*` is the same thing
+/// for `agent_tabs.rs`'s Unix-socket relay. In both cases the extension
+/// answers only for that relay's own context. A JS server's host requests
+/// can carry a context the script set itself (`__requestHostContext`, used
+/// when the caller gave none), so these methods are refused here, before
+/// they ever leave the bridge.
 fn is_reserved_host_method(method: &str) -> bool {
-    method.starts_with("page_tools.")
+    method.starts_with("page_tools.") || method.starts_with("agent_tabs.")
 }
 
 #[cfg(test)]
@@ -839,5 +840,11 @@ mod reserved_host_method_tests {
         assert!(is_reserved_host_method("page_tools.list"));
         assert!(!is_reserved_host_method("browser.capturePage"));
         assert!(!is_reserved_host_method("http.get"));
+    }
+
+    #[test]
+    fn agent_tabs_methods_are_reserved_for_the_bridge() {
+        assert!(is_reserved_host_method("agent_tabs.request"));
+        assert!(!is_reserved_host_method("agent_tabslike.request"));
     }
 }

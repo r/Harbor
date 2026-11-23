@@ -174,9 +174,19 @@ fn is_page_tools_method(method: &str) -> bool {
     method.starts_with("page_tools.")
 }
 
-/// Either of the two bridge-only method families refused over this surface.
+/// `agent_tabs.*` is refused over HTTP/WebSocket for the same reason
+/// `page_tools.*` is: `agent_tabs.info` exists to hand the sidebar a
+/// connect snippet for native messaging's single long-lived connection
+/// (see `agent_tabs::info`), and the relay it describes
+/// (`~/.harbor/agent.sock`) is started only from
+/// `native_messaging::run_native_messaging`, never from this surface.
+fn is_agent_tabs_method(method: &str) -> bool {
+    method.starts_with("agent_tabs.")
+}
+
+/// Every bridge-only method family refused over this surface.
 fn is_rejected_over_http(method: &str) -> bool {
-    is_acp_method(method) || is_page_tools_method(method)
+    is_acp_method(method) || is_page_tools_method(method) || is_agent_tabs_method(method)
 }
 
 fn acp_rejected_over_http(method: &str) -> HttpRpcErrorResponse {
@@ -504,6 +514,15 @@ mod tests {
         assert!(!is_rejected_over_http("llm.chat"));
     }
 
+    #[test]
+    fn agent_tabs_methods_are_recognized_for_rejection() {
+        assert!(is_agent_tabs_method("agent_tabs.info"));
+        assert!(is_agent_tabs_method("agent_tabs.request"));
+        assert!(!is_agent_tabs_method("llm.chat"));
+        assert!(!is_agent_tabs_method("agent_tabslike.notreally"));
+        assert!(is_rejected_over_http("agent_tabs.info"));
+    }
+
     /// Finds a free port by briefly binding to port 0, matching the pattern
     /// `run_http_server` itself uses (a fixed, OS-caller-chosen port) - this
     /// is only for the test's own ephemeral server, not for anything shipped.
@@ -573,6 +592,30 @@ mod tests {
 
         let client = reqwest::Client::new();
         for method in ["page_tools.open", "page_tools.close"] {
+            let resp = client
+                .post(format!("http://127.0.0.1:{}/rpc", port))
+                .json(&serde_json::json!({ "id": 1, "method": method, "params": {} }))
+                .send()
+                .await
+                .expect("request should succeed");
+            let body: serde_json::Value = resp.json().await.expect("valid JSON response");
+            assert!(body.get("result").is_none(), "{} must not run over HTTP", method);
+            let error = body.get("error").expect("error field");
+            assert_eq!(error["code"], -32601);
+            assert!(error["message"].as_str().unwrap().contains(method));
+        }
+    }
+
+    #[tokio::test]
+    async fn http_rejects_agent_tabs_methods() {
+        let port = free_port().await;
+        tokio::spawn(async move {
+            let _ = run_http_server(port).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        let client = reqwest::Client::new();
+        for method in ["agent_tabs.info", "agent_tabs.request"] {
             let resp = client
                 .post(format!("http://127.0.0.1:{}/rpc", port))
                 .json(&serde_json::json!({ "id": 1, "method": method, "params": {} }))
