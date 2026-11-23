@@ -13,6 +13,7 @@ const icon = read('extension/assets/icon.svg');
 const shapes = icon.match(/<(?:rect|path)\b[^>]*\/>/g) ?? [];
 
 const BADGES = [
+  'extension/src/sidebar.html',
   'extension/src/permission-prompt.html',
   'extension/src/directory.html',
   'extension/src/page-chat.ts',

@@ -1212,11 +1212,19 @@ function setAgentControlsEnabled(enabled: boolean): void {
 }
 
 const welcomeAgentName = document.getElementById('welcome-agent-name') as HTMLElement;
+const welcomeAvatarHarbor = document.getElementById('welcome-avatar-harbor') as HTMLElement;
+const welcomeAvatarAgent = document.getElementById('welcome-avatar-agent') as HTMLElement;
 
-/** Names the agent sites run on in the welcome card, from the "Run sites on" choice. */
+/**
+ * Names the agent sites run on in the welcome card, from the "Run sites on"
+ * choice: the lighthouse for Harbor's built-in model, a sparkle for your own.
+ */
 function updateWelcomeAgent(): void {
   const selected = agentBackendSelect.selectedOptions[0];
-  welcomeAgentName.textContent = selected && selected.value ? selected.textContent : 'Built-in model';
+  const ownAgent = Boolean(selected && selected.value);
+  welcomeAgentName.textContent = ownAgent ? selected.textContent : 'Built-in model';
+  welcomeAvatarHarbor.hidden = ownAgent;
+  welcomeAvatarAgent.hidden = !ownAgent;
 }
 
 function renderAgentBackendOptions(): void {

@@ -33,6 +33,14 @@ describe('sidebar layout', () => {
     expect(html.slice(html.indexOf("<body"))).not.toMatch(/>\s*Harbor\s*</);
   });
 
+  it("shows the lighthouse for Harbor's built-in model, and a sparkle for your own agent", () => {
+    inOrder(['welcome-card', 'welcome-avatar-harbor', 'welcome-avatar-agent', 'welcome-agent-name']);
+    expect(html.slice(at('welcome-avatar-harbor'), at('welcome-avatar-agent'))).toContain('<svg viewBox="0 0 64 64"');
+    expect(tag('welcome-avatar-agent')).toMatch(/\shidden[\s>]/);
+    expect(ts).toMatch(/welcomeAvatarHarbor\.hidden = /);
+    expect(ts).toMatch(/welcomeAvatarAgent\.hidden = /);
+  });
+
   it("opens straight onto the welcome card, with no header row of its own", () => {
     expect(html).not.toContain('class="header"');
     expect(html.slice(html.indexOf("<body"), at("main-view"))).not.toMatch(/<(div|button|svg)\b/);
