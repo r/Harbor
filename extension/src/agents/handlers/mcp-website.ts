@@ -114,7 +114,11 @@ export async function handleMcpDiscover(
       func: () => {
         const links = document.querySelectorAll('link[rel="mcp-server"]');
         return Array.from(links).map((link) => ({
-          url: link.getAttribute('href') || '',
+          // Resolved against the document (HTMLLinkElement.href), so a
+          // relative href reaches agent.mcp.register as the absolute URL it
+          // needs. An absent or empty href stays '' rather than becoming
+          // the page's own URL.
+          url: link.getAttribute('href') ? (link as HTMLLinkElement).href : '',
           name: link.getAttribute('title') || undefined,
           description: link.getAttribute('data-description') || undefined,
           tools: link.getAttribute('data-tools')?.split(',').map(t => t.trim()) || undefined,

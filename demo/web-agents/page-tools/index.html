@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page Tools — Web Agent API</title>
+  <link rel="stylesheet" href="../../shared/styles.css">
+  <style>
+    body { padding: var(--demo-space-10) var(--demo-space-6); }
+    .page-container { max-width: 760px; margin: 0 auto; }
+    .chapter p { line-height: 1.7; padding: var(--demo-space-2) var(--demo-space-3); border-radius: var(--demo-radius-md); transition: background 0.3s; }
+    .chapter p.highlight { background: var(--demo-accent-subtle, rgba(200, 120, 80, 0.18)); }
+    .controls { display: flex; gap: var(--demo-space-3); flex-wrap: wrap; margin: var(--demo-space-4) 0; }
+    .controls input { flex: 1; min-width: 240px; }
+    .log { background: var(--demo-bg-elevated); border: 1px solid var(--demo-border-default); border-radius: var(--demo-radius-md);
+           padding: var(--demo-space-4); font-family: var(--demo-font-mono); font-size: var(--demo-text-sm); white-space: pre-wrap; min-height: 80px; }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <header class="demo-header">
+      <h1 class="demo-title">Page Tools</h1>
+      <p class="demo-subtitle">
+        This page offers its own functions to your agent with
+        <code>document.modelContext.registerTool()</code>. The functions run here, in the page.
+        Your agent (Harbor's built-in model, or your own agent such as goose or Claude Code)
+        calls them as <code>page:&lt;host&gt;/&lt;tool&gt;</code>.
+      </p>
+    </header>
+
+    <section class="demo-card demo-mb-6">
+      <h2 class="demo-card-title">Ask your agent about this page</h2>
+      <div class="controls">
+        <input id="task" class="demo-input" value="Take me to the paragraph about the harbor at night, and tell me how many words it has.">
+        <button id="run" class="demo-btn demo-btn-primary">Ask (agent.run)</button>
+        <button id="chat" class="demo-btn">Open chat</button>
+      </div>
+      <div id="log" class="log" aria-live="polite">Tools registered: reading_position, go_to (registerTool), count_words (addTool).</div>
+    </section>
+
+    <article class="chapter demo-card">
+      <h2 class="demo-card-title">Chapter One</h2>
+      <p id="p1">The ferry left at six, as it always did, carrying the same handful of commuters across the grey water.</p>
+      <p id="p2">Mara counted the gulls on the railing and lost track at eleven, which she took as a sign of something.</p>
+      <p id="p3">By the time they reached the far side, the fog had lifted enough to show the lighthouse, white and patient.</p>
+      <p id="p4">At night the harbor turned into a field of small lights, each one a boat that had chosen to stay.</p>
+      <p id="p5">She walked home along the seawall, thinking about the letter she still had not opened.</p>
+    </article>
+  </div>
+
+  <script>
+    const log = document.getElementById('log');
+    const say = (line) => { log.textContent += `\n${line}`; };
+    const paragraphs = () => Array.from(document.querySelectorAll('.chapter p'));
+
+    function highlight(el) {
+      paragraphs().forEach((p) => p.classList.toggle('highlight', p === el));
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // Harbor injects the API shortly after the page starts, so a page that
+    // checks once while loading can miss it: register now if it's there,
+    // otherwise when Harbor says it's ready.
+    function registerPageTools() {
+      const mc = document.modelContext ?? navigator.modelContext;
+      if (!mc) return false;
+      // The draft's API: async, an execute callback, unregister by aborting the signal.
+      mc.registerTool({
+        name: 'reading_position',
+        description: 'Which paragraph the reader is looking at, and the text of every paragraph with its anchor.',
+        inputSchema: { type: 'object', properties: {} },
+        execute: async () => {
+          const visible = paragraphs().find((p) => p.getBoundingClientRect().bottom > 0) ?? paragraphs()[0];
+          say(`page handler ran: reading_position -> ${visible.id}`);
+          return { current: visible.id, paragraphs: paragraphs().map((p) => ({ anchor: p.id, text: p.textContent })) };
+        },
+      });
+      mc.registerTool({
+        name: 'go_to',
+        description: 'Scroll to a paragraph by its anchor (p1 to p5) and highlight it.',
+        inputSchema: { type: 'object', properties: { anchor: { type: 'string' } }, required: ['anchor'] },
+        execute: async ({ anchor }) => {
+          const el = document.getElementById(String(anchor));
+          if (!el || !el.matches('.chapter p')) throw new Error(`No paragraph with anchor "${anchor}"`);
+          highlight(el);
+          say(`page handler ran: go_to(${anchor})`);
+          return { at: anchor };
+        },
+      });
+      // Harbor's older alias still works and reaches the agent too.
+      mc.addTool({
+        name: 'count_words',
+        description: 'Count the words in a paragraph, by its anchor.',
+        inputSchema: { type: 'object', properties: { anchor: { type: 'string' } }, required: ['anchor'] },
+        handler: async ({ anchor }) => {
+          const el = document.getElementById(String(anchor));
+          if (!el) throw new Error(`No paragraph with anchor "${anchor}"`);
+          const words = el.textContent.trim().split(/\s+/).length;
+          say(`page handler ran: count_words(${anchor}) -> ${words}`);
+          return words;
+        },
+      });
+      return true;
+    }
+
+    if (!registerPageTools()) {
+      log.textContent = 'Waiting for Harbor (or another WebMCP implementation). Without one, nothing changes.';
+      window.addEventListener('agent-ready', () => {
+        if (registerPageTools()) log.textContent = 'Tools registered: reading_position, go_to (registerTool), count_words (addTool).';
+      }, { once: true });
+    }
+
+    async function ensurePermission() {
+      const result = await window.agent.requestPermissions({
+        scopes: ['model:prompt', 'model:tools'],
+        reason: 'To let your agent answer questions about this page using its tools',
+      });
+      if (!result.granted) throw new Error('Permission denied');
+    }
+
+    document.getElementById('run').addEventListener('click', async () => {
+      log.textContent = 'Asking your agent...';
+      try {
+        await ensurePermission();
+        for await (const event of window.agent.run({ task: document.getElementById('task').value, maxToolCalls: 6 })) {
+          if (event.type === 'tool_call') say(`agent called ${event.tool}`);
+          if (event.type === 'final') say(`\n${event.output}`);
+          if (event.type === 'error') say(`error: ${event.error?.message}`);
+        }
+      } catch (e) {
+        say(`error: ${e.message}`);
+      }
+    });
+
+    document.getElementById('chat').addEventListener('click', async () => {
+      try {
+        await window.agent.chat.open({ systemPrompt: 'You help the reader with the chapter on this page. Use the page tools to read and navigate it.' });
+      } catch (e) {
+        say(`error: ${e.message}`);
+      }
+    });
+  </script>
+</body>
+</html>

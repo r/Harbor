@@ -51,16 +51,10 @@ interface TextSessionOptions {
   provider?: string;
 }
 
-interface StreamToken {
-  type: 'token' | 'done' | 'error';
-  token?: string;
-  error?: ApiError;
-}
-
 interface TextSession {
   sessionId: string;
   prompt(input: string): Promise<string>;
-  promptStreaming(input: string): AsyncIterable<StreamToken>;
+  promptStreaming(input: string): AsyncIterable<string>;
   destroy(): Promise<void>;
 }
 

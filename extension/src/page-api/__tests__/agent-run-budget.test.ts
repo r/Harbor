@@ -5,7 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // keeps asking for tools the site may not call must still reach an end.
 
 const mocks = vi.hoisted(() => ({ harborRequest: vi.fn(), hasPermission: vi.fn() }));
-vi.mock('../harbor-core', () => ({ harborRequest: mocks.harborRequest }));
+vi.mock('../harbor-core', () => ({
+  openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
+  syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
+  pageToolsForAgent: vi.fn(async () => null), harborRequest: mocks.harborRequest }));
 vi.mock('../handlers', () => ({ hasPermission: mocks.hasPermission }));
 
 import { builtinAgentBackend } from '../agent-backend';

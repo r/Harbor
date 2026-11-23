@@ -18,6 +18,11 @@ import {
   onHarborSessionEnded,
   forgetSiteServersInTab,
   forgetSiteServersOnNavigation,
+  syncPageTools,
+  resolvePageToolResult,
+  forgetPageToolsForConnection,
+  forgetPageToolsInTab,
+  pageToolsForAgent,
 } from './harbor-core';
 import { policyRefusalCode } from './policy-refusal';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
@@ -217,7 +222,7 @@ async function handleAgentRun(
     const backendChangeSignal = acpBackendChangeSignal();
     const backend = backendOverride ?? await selectAgentBackend();
     // Only the built-in loop uses Harbor’s installed tools. ACP uses its own.
-    let tools: Array<{ serverId: string; name: string; description?: string; inputSchema?: unknown }> = [];
+    let tools: Array<{ serverId: string; name: string; description?: string; inputSchema?: unknown; generation?: number }> = [];
 
     if (!(backend instanceof AcpAgentBackend) && await hasPermission(ctx.origin, 'mcp:tools.list', ctx.tabId)) {
       const toolsResult = await harborRequest<{ tools: typeof tools }>('mcp.listTools', {
@@ -232,6 +237,19 @@ async function handleAgentRun(
         permissions.allowedTools.includes(t.name) ||
         permissions.allowedTools.includes(`${t.serverId}/${t.name}`)
       );
+    }
+
+    // The calling page's own tools (document.modelContext). They need no
+    // grant of their own: the grant that started this run covers them, and
+    // pageToolsForAgent policy-checks and audits the listing. The person's
+    // own ACP agent gets them through the bridge instead.
+    if (!(backend instanceof AcpAgentBackend)) {
+      const pageTools = await pageToolsForAgent(ctx.origin, ctx.tabId);
+      if (pageTools) {
+        for (const t of pageTools.tools) {
+          tools.push({ serverId: pageTools.serverId, name: t.name, description: t.description, inputSchema: t.inputSchema, generation: pageTools.generation });
+        }
+      }
     }
 
     // Tool discovery can wait on policy consent. If the person switched
@@ -314,6 +332,8 @@ export function initializePageApi(): void {
 
   // Clean up spawned tabs when they are closed.
   browserAPI.tabs.onRemoved.addListener(async (tabId: number) => {
+    // The page's own tools (document.modelContext) go with the tab.
+    forgetPageToolsInTab(tabId);
     const wasTracked = Object.values(getAllSpawnedTabs()).some(tabs => tabs.includes(tabId));
 
     if (wasTracked) {
@@ -375,6 +395,27 @@ export function initializePageApi(): void {
     const runControllers = new Map<string, AbortController>();
 
     port.onMessage.addListener(async (message: { id: string; type: string; payload: unknown }) => {
+      // The page's own tools (document.modelContext): its descriptor list,
+      // and its answers to calls. Handled here, not routed, because both are
+      // tied to this port: it lives exactly as long as the page's document.
+      // Only the top frame runs the page API (manifest.json's all_frames:
+      // false); a subframe's sync is ignored all the same.
+      if (message?.type === 'page_tools.result') {
+        if (tabId !== undefined) resolvePageToolResult(tabId, connection, message);
+        return;
+      }
+      if (message?.type === 'page_tools.sync') {
+        const isTopFrame = (port.sender?.frameId ?? 0) === 0;
+        const accepted = tabId !== undefined && isTopFrame
+          && syncPageTools({ tabId, origin, connection, port }, message.payload);
+        try {
+          port.postMessage(accepted || !isTopFrame
+            ? { id: message.id, ok: true, result: { accepted } }
+            : { id: message.id, ok: false, error: { code: 'ERR_INVALID_REQUEST', message: 'Invalid page tool list' } });
+        } catch { /* Port disconnected */ }
+        return;
+      }
+
       if (message?.type === 'abort') {
         // The id crosses the page/extension boundary, so it's validated
         // here rather than trusted as the declared type.
@@ -431,6 +472,8 @@ export function initializePageApi(): void {
     port.onDisconnect?.addListener(() => {
       for (const controller of runControllers.values()) controller.abort();
       runControllers.clear();
+      // The page's document is gone, and its tools' handlers with it.
+      if (tabId !== undefined) forgetPageToolsForConnection(tabId, connection);
       // The page navigated or reloaded (a new port connects for the new
       // page) or the tab closed outright — either way, every ACP-backed
       // text session this port's page opened must end, not just the ones

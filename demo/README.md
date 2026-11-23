@@ -18,6 +18,7 @@ These demos are published via GitHub Pages at: **https://[your-org].github.io/ha
 | **Page Summarizer** | Simple one-click page summarization | `/demo/web-agents/summarizer/` |
 | **Time Agent** | Simple MCP time tool demo | `/demo/web-agents/time-agent/` |
 | **Bring Your Own Chatbot** | A shop page that opens Harbor's chat with one `agent.chat.open()` call, no chat UI of its own | `/demo/web-agents/bring-your-chatbot/` |
+| **Page Tools** | A page offers its own functions with `document.modelContext.registerTool()`, and your agent (built-in or your own ACP agent) calls them | `/demo/web-agents/page-tools/` |
 | **Basic Actions** | Practice click, fill, and select | `/demo/web-agent-control/basic-actions/` |
 | **Multi-step Form** | Form validation and step navigation | `/demo/web-agent-control/multi-step-form/` |
 | **Research Agent** | Multi-tab search and synthesis | `/demo/web-agent-control/research-agent/` |
