@@ -58,12 +58,14 @@ beforeEach(() => {
   vi.stubGlobal('chrome', {
     storage: { local: { set: vi.fn(async () => {}), get: vi.fn(async () => ({})) } },
     tabs: {
+      get: vi.fn(async () => ({ windowId: 1, incognito: false })),
       create: vi.fn(async ({ url }: { url: string }) => ({ id: 7, url, status: 'complete' })),
       onUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
       onRemoved: { addListener: vi.fn() },
     },
     windows: { onRemoved: { addListener: vi.fn() } },
     runtime: {
+      getURL: () => 'chrome-extension://harbor/',
       onConnect: { addListener: vi.fn() },
       onMessage: { addListener: vi.fn() },
       onMessageExternal: { addListener: vi.fn() },
