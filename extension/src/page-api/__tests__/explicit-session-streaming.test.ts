@@ -130,7 +130,7 @@ describe('promptStreaming on explicit sessions', () => {
     const evs = await stream(id);
     expect(evs.map((e: any) => e.event.type)).toEqual(['token', 'token', 'done']);
     expect(mocks.harborStreamRequest).toHaveBeenCalledWith('llm.chatStream', expect.objectContaining({
-      messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Hi' }], model: 'm' }), 'st', expect.any(AbortSignal));
+      messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Hi' }], model: 'm' }), 'st', expect.any(AbortSignal), expect.anything());
   });
   it('refuses another origin without reaching the model', async () => {
     const id = await create();

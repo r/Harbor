@@ -363,7 +363,12 @@ function holdSessionToolSlot(
       return false;
     }
   };
-  if (!valid()) return { refusal: SESSION_GONE };
+  let flow: LabelFlow;
+  try {
+    flow = SessionRegistry.getLabelFlow(sessionId, origin);
+  } catch {
+    return { refusal: SESSION_GONE };
+  }
   if (!SessionRegistry.reserveToolCall(sessionId)) return { refusal: SESSION_BUDGET_SPENT };
 
   let held = true;
@@ -372,7 +377,7 @@ function holdSessionToolSlot(
     held = false;
   };
   return {
-    flow: SessionRegistry.getLabelFlow(sessionId, origin),
+    flow,
     slot: {
       commit: (tool) => {
         // The session may have been terminated or expired while a prompt was open.
