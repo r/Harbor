@@ -89,7 +89,7 @@ export function installWebAgentsMock(global) {
   function scopesForTypedAction(action) {
     if (action.startsWith('model.prompt')) return ['model:prompt'];
     if (action === 'tool.call') return ['mcp:tools.call'];
-    if (action === 'browser.read.screenshot') return ['browser:activeTab.read', 'browser:activeTab.screenshot'];
+    if (action === 'browser.read.screenshot') return ['browser:activeTab.screenshot'];
     if (action.startsWith('browser.read.')) return ['browser:activeTab.read'];
     if (action.startsWith('browser.write.')) return ['browser:activeTab.interact'];
     return [];
@@ -131,7 +131,7 @@ export function installWebAgentsMock(global) {
       llm: { allowed: llm },
       tools: { allowed: tools.length > 0, allowedTools: tools },
       browser: {
-        readActiveTab: all.some(r => r.action.startsWith('browser.read.')),
+        readActiveTab: all.some(r => r.action.startsWith('browser.read.') && r.action !== 'browser.read.screenshot'),
         interact: all.some(r => r.action.startsWith('browser.write.')),
         screenshot: all.some(r => r.action === 'browser.read.screenshot'),
       },

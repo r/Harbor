@@ -731,7 +731,9 @@ interface AgentSession {
 function scopesForTypedAction(action: string): string[] {
   if (action.startsWith('model.prompt')) return ['model:prompt'];
   if (action === 'tool.call') return ['mcp:tools.call'];
-  if (action === 'browser.read.screenshot') return ['browser:activeTab.read', 'browser:activeTab.screenshot'];
+  // A screenshot needs only its own grant (browser-handlers.ts checks
+  // browser:activeTab.screenshot alone), so it doesn't also ask for read.
+  if (action === 'browser.read.screenshot') return ['browser:activeTab.screenshot'];
   if (action.startsWith('browser.read.')) return ['browser:activeTab.read'];
   if (action.startsWith('browser.write.')) return ['browser:activeTab.interact'];
   return [];
@@ -1858,9 +1860,9 @@ const agentApi = Object.freeze({
   }): Promise<AgentSession> {
     // An optional capability the site hasn't been granted is left out
     // quietly (no prompt); what's required is always sent. This only
-    // decides what the site asks for: session.create refuses model access or
-    // tools without their grants, and each browser call checks its own grant
-    // when it's made.
+    // decides what the site asks for: session.create refuses model access,
+    // tools or browser access without their grants, and each browser call
+    // checks its own grant again when it's made.
     let optional = opts.optional ?? [];
     if (optional.length > 0) {
       const held = await sendRequest<{ scopes?: Record<string, string> }>('agent.permissions.list');
@@ -1884,7 +1886,7 @@ const agentApi = Object.freeze({
       }
     }
     const browser: ('read' | 'interact' | 'screenshot')[] = [];
-    if (all.some((r) => r.action.startsWith('browser.read.'))) browser.push('read');
+    if (all.some((r) => r.action.startsWith('browser.read.') && r.action !== 'browser.read.screenshot')) browser.push('read');
     if (all.some((r) => r.action.startsWith('browser.write.'))) browser.push('interact');
     if (all.some((r) => r.action === 'browser.read.screenshot')) browser.push('screenshot');
 
