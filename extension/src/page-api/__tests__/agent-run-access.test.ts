@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getPermissions: vi.fn(), pageToolsForAgent: vi.fn(), siteToolsForAgent: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
+  describedBySite: (origin: string, d?: string) => `From ${new URL(origin).host}: ${d}`,
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   onHarborSessionEnded: vi.fn(() => () => {}),
@@ -92,6 +93,7 @@ describe('agent.run receiving boundary', () => {
     expect(mocks.siteToolsForAgent).toHaveBeenCalledWith('https://example.test', 1);
     const modelCall = mocks.harborRequest.mock.calls.find(([method]) => method === 'llm.chat');
     expect(modelCall?.[1].tools.map((t: { name: string }) => t.name)).toEqual(['site_example_test_shop_search']);
+    expect(modelCall?.[1].tools[0].description).toBe('From example.test: Search');
   });
 
   it("drops site tools from the installed-tools listing even when they're allowlisted, so they aren't offered twice", async () => {

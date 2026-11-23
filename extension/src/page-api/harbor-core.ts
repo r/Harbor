@@ -542,6 +542,8 @@ interface PageToolEndpoint {
   /** An agent.run's tool budget; absent for a page chat. */
   maxCalls?: number;
   calls: number;
+  /** Endpoint tool name → the site server tool it stands for, from the last listing. */
+  siteNames?: Map<string, { serverId: string; tool: string }>;
 }
 
 const pageToolEndpoints = new Map<string, PageToolEndpoint>();
@@ -625,15 +627,7 @@ export async function handlePageToolsHostRequest(method: string, params: unknown
 
   if (method === 'page_tools.list') {
     if (!endpoint) return { tools: [] };
-    const listing = listPageTools(endpoint.tabId, endpoint.origin);
-    const pageTools = listing && listing.generation === endpoint.generation ? listing.tools : [];
-    const siteTools = (await siteToolsForAgent(endpoint.origin, endpoint.tabId)).map((t) => ({
-      name: siteToolEndpointName(t.serverId, t.name),
-      description: t.description ?? '',
-      inputSchema: (t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : { type: 'object' }) as Record<string, unknown>,
-    }));
-    const pageNames = new Set(pageTools.map((t) => t.name));
-    return { tools: [...pageTools, ...siteTools.filter((t) => !pageNames.has(t.name))] };
+    return { tools: await endpointToolListing(endpoint) };
   }
 
   if (method === 'page_tools.call') {
@@ -649,7 +643,10 @@ export async function handlePageToolsHostRequest(method: string, params: unknown
     endpoint.calls++;
     let allowed = false;
     try {
-      const site = pageNameIsSiteTool(endpoint, name) ? await resolveSiteToolName(endpoint.origin, endpoint.tabId, name) : null;
+      // The name map from the agent's last listing; built (and its policy
+      // checks audited) only if the agent calls before listing.
+      if (!endpoint.siteNames) await endpointToolListing(endpoint);
+      const site = endpoint.siteNames?.get(name);
       if (site) {
         const result = await callSiteToolForAgent({
           origin: endpoint.origin,
@@ -659,7 +656,7 @@ export async function handlePageToolsHostRequest(method: string, params: unknown
           input,
           onAllowed: () => { allowed = true; },
         });
-        return pageToolCallResult(result);
+        return withProvenance(siteToolCallResult(result), toolProvenance(endpoint.origin, 'site-server', site.serverId));
       }
       const result = await callPageToolForAgent({
         origin: endpoint.origin,
@@ -669,10 +666,10 @@ export async function handlePageToolsHostRequest(method: string, params: unknown
         input,
         onAllowed: () => { allowed = true; },
       });
-      return pageToolCallResult(result);
+      return withProvenance(pageToolCallResult(result), toolProvenance(endpoint.origin, 'page-tool'));
     } catch (e) {
       if (!allowed) endpoint.calls--;
-      return pageToolErrorResult(e instanceof Error && e.message ? e.message : 'Page tool failed');
+      return withProvenance(pageToolErrorResult(e instanceof Error && e.message ? e.message : 'Page tool failed'), toolProvenance(endpoint.origin, 'page-tool'));
     }
   }
 
@@ -762,15 +759,76 @@ function siteToolEndpointName(serverId: string, tool: string): string {
   return `${serverName}__${tool}`.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 128);
 }
 
-/** Whether `name` isn't one of the page's own tools on this endpoint (page tools win a name clash). */
-function pageNameIsSiteTool(endpoint: PageToolEndpoint, name: string): boolean {
-  const listing = listPageTools(endpoint.tabId, endpoint.origin);
-  return !(listing && listing.generation === endpoint.generation && listing.tools.some((t) => t.name === name));
+
+// =============================================================================
+// Provenance: where a tool came from, in a form the site can't forge
+// =============================================================================
+
+/**
+ * `_meta` provenance for a tool or tool result Harbor serves, from the
+ * browser's own record of the page's origin (never anything the site
+ * supplied). The same shape as the `harbor/provenance` Harbor puts on
+ * prompts (acp-connection.ts's provenanceMeta); see docs/rfds/provenance.md.
+ */
+export function toolProvenance(origin: string, source: 'page-tool' | 'site-server', server?: string) {
+  return { 'harbor/provenance': { source, origin, ...(server ? { server } : {}) } };
 }
 
-async function resolveSiteToolName(origin: string, tabId: number, name: string): Promise<{ serverId: string; tool: string } | null> {
-  for (const t of await siteToolsForAgent(origin, tabId)) {
-    if (siteToolEndpointName(t.serverId, t.name) === name) return { serverId: t.serverId, tool: t.name };
+/** A site-supplied description, prefixed with the site Harbor knows it came from. */
+export function describedBySite(origin: string, description: string | undefined): string {
+  const text = (description ?? '').trim();
+  return text ? `From ${hostOf(origin)}: ${text}` : `From ${hostOf(origin)}.`;
+}
+
+function withProvenance<T extends Record<string, unknown>>(result: T, meta: ReturnType<typeof toolProvenance>): T & { _meta: ReturnType<typeof toolProvenance> } {
+  return { ...result, _meta: meta };
+}
+
+/** A site server's own result is already an MCP CallToolResult: passed through, not re-wrapped. */
+function siteToolCallResult(result: unknown) {
+  if (isPlainRecord(result) && Array.isArray(result.content)) {
+    const out: Record<string, unknown> = { content: result.content };
+    if (isPlainRecord(result.structuredContent)) out.structuredContent = result.structuredContent;
+    if (result.isError === true) out.isError = true;
+    return out;
   }
-  return null;
+  return pageToolCallResult(result);
+}
+
+/**
+ * Everything the endpoint offers the agent: the page's own tools under their
+ * names, then the site's registered servers' tools as `<server>__<tool>`. A
+ * name already taken (by a page tool, or by another of the same page's
+ * servers) gets a numbered suffix, so every name maps to exactly one tool.
+ * The name map is kept on the endpoint for calls.
+ */
+async function endpointToolListing(endpoint: PageToolEndpoint) {
+  const listing = listPageTools(endpoint.tabId, endpoint.origin);
+  const pageTools = listing && listing.generation === endpoint.generation ? listing.tools : [];
+  const taken = new Set(pageTools.map((t) => t.name));
+  const siteNames = new Map<string, { serverId: string; tool: string }>();
+  const siteEntries = [];
+  for (const t of await siteToolsForAgent(endpoint.origin, endpoint.tabId)) {
+    const base = siteToolEndpointName(t.serverId, t.name);
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base.slice(0, 120)}_${n}`;
+    taken.add(name);
+    siteNames.set(name, { serverId: t.serverId, tool: t.name });
+    siteEntries.push({
+      name,
+      description: describedBySite(endpoint.origin, t.description),
+      inputSchema: (t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : { type: 'object' }) as Record<string, unknown>,
+      _meta: toolProvenance(endpoint.origin, 'site-server', t.serverId),
+    });
+  }
+  endpoint.siteNames = siteNames;
+  return [
+    ...pageTools.map((t) => ({
+      name: t.name,
+      description: describedBySite(endpoint.origin, t.description),
+      inputSchema: t.inputSchema,
+      _meta: toolProvenance(endpoint.origin, 'page-tool'),
+    })),
+    ...siteEntries,
+  ];
 }

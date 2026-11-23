@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   callSiteToolForAgent: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
+  describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   callSiteToolForAgent: mocks.callSiteToolForAgent,
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),

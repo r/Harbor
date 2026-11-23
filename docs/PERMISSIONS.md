@@ -637,6 +637,13 @@ When the person has chosen an ACP agent to answer, each prompt is still checked 
 
 The person's installed MCP servers are unchanged: they need `mcp:tools.list`, `mcp:tools.call` and the allowlist. See [PAGE_TOOLS_FOR_AGENTS.md](PAGE_TOOLS_FOR_AGENTS.md).
 
+**Tool spoofing.** A site names and describes its own tools, so it can offer `wells_fargo_submit_transfer` from `evil.example`. Harbor can't tell an honest tool from a lying one, so it does two things instead:
+
+- **It never lets a site's tools leave that site.** They exist only in agent work that site's page started, or in a tab the person's outside agent opened or the person shared. They never appear while the agent is working on another site.
+- **It makes the origin impossible to forge.** Every site tool reaches the agent under a name Harbor builds from the page's host (`mcp__evil_example__...` on an ACP agent, `site_evil_example_...` or `page_evil_example_...` on Harbor's model). Its description is prefixed "From evil.example:", and it carries `_meta: {"harbor/provenance": {"source", "origin", "server"}}`. The site can't choose or change any of these.
+
+Whether to call a tool is the agent's and the person's decision. With a verified origin on every tool, an agent or harness can enforce rules such as "money tools only from origins I approved". [rfds/provenance.md](rfds/provenance.md) proposes making that provenance a standard field in ACP.
+
 **Your agent outside the browser** reaches pages through `harbor-mcp`, a command the person adds to their agent. It's off until the person turns on "Let your agent open and use pages" in the Agent panel. The agent sees only tabs it opened (while they stay on the site they first loaded) and tabs the person shares. It can call only those pages' own tools, under the same `page:<host>` policy checks and audit, and at most 60 calls a minute per agent (120 across all agents, `open_page` included). Only the person's own user account can connect: `harbor-mcp` reaches the bridge over `~/.harbor/agent.sock` (mode 0600). See [AGENT_REACHES_TABS.md](AGENT_REACHES_TABS.md).
 
 A declined Harbor prompt is `ERR_PERMISSION_DENIED`. Any other failure keeps the call's own code (`ERR_TOOL_FAILED`, `ERR_MODEL_FAILED`, `ERR_AGENT_FAILED`), even when a tool or model returns text that looks like one of these codes.

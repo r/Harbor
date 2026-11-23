@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getPermissions: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
+  describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),

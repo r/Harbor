@@ -135,6 +135,8 @@ the site may use, and page tools aren't the person's.
 
 `<host>` includes a non-default port, as site server names do.
 
+Every description the agent sees starts with "From <host>:", and every tool and result carries `_meta: {"harbor/provenance": {"source": "page-tool" | "site-server", "origin": "<origin>", "server": "<id>"}}`. Both come from the browser's own record of the page, never from the site (see "Tool spoofing" in PERMISSIONS.md). If two of a page's own servers yield the same `<server>__<tool>` name, the later one gets a numbered suffix, so every name calls exactly one tool.
+
 ## 3. Calling into the tab
 
 The background sends `page_tools.call { callId, generation, name, input }` to

@@ -24,6 +24,7 @@ import {
   forgetPageToolsInTab,
   pageToolsForAgent,
   siteToolsForAgent,
+  describedBySite,
 } from './harbor-core';
 import { policyRefusalCode } from './policy-refusal';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
@@ -249,11 +250,13 @@ async function handleAgentRun(
     if (!(backend instanceof AcpAgentBackend)) {
       // The site's own registered MCP server tools, under the same gate as
       // its page tools: no grant or allowlist, a policy check per server.
-      tools.push(...await siteToolsForAgent(ctx.origin, ctx.tabId));
+      for (const t of await siteToolsForAgent(ctx.origin, ctx.tabId)) {
+        tools.push({ ...t, description: describedBySite(ctx.origin, t.description) });
+      }
       const pageTools = await pageToolsForAgent(ctx.origin, ctx.tabId);
       if (pageTools) {
         for (const t of pageTools.tools) {
-          tools.push({ serverId: pageTools.serverId, name: t.name, description: t.description, inputSchema: t.inputSchema, generation: pageTools.generation });
+          tools.push({ serverId: pageTools.serverId, name: t.name, description: describedBySite(ctx.origin, t.description), inputSchema: t.inputSchema, generation: pageTools.generation });
         }
       }
     }
