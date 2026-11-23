@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `docs/PERMISSIONS.md` Parts 1–3 (how it works, for site authors, for extension contributors) described much that isn't built as if it were. It now matches the code: data labels come from the call itself and aren't carried from one call to the next; the element classifier and a trusted manifest's reversibility claim aren't wired into the engine; the policy file's real rule fields and short forms; `requestCapabilities()`'s real options, including that `optional` is treated as required; `agent.tools.call()`'s single-object form; the test mock's real controls; and the contributor walkthroughs' real files and functions (`trustManifest`, `Publishers`, `Pins`, `SensitivityVerdict`). What's designed but not built is marked as such.
 - `window.agent.agents.list()` now returns the calling origin's registered agents instead of `undefined`. Its public types and test mock match the returned `id`, `name` and `status` entries.
 - Running a site's task on your own agent no longer asks about listing Harbor's installed tools, which that agent doesn't use. The built-in model still lists tools under the site's existing permissions and policy.
 
