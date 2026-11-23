@@ -25,7 +25,7 @@ Harbor's permission system is built around a different assumption: **most decisi
 
 1. A **typed, declarative policy** so the user (or their org) can decide once, in advance, what's fine — and so a tool can statically reason about what a policy will do.
 2. **Asymmetric defaults** so reading is cheap, persisting reads is opt-in, and writing is expensive.
-3. **Information-flow labels** so sensitive data can't be sent somewhere that shouldn't receive it. Today a label comes from the call itself; carrying a label from one call's output to the next call's input is designed but not built (see [Information-flow labels](#information-flow-labels)).
+3. **Information-flow labels** so sensitive data can't be sent somewhere that shouldn't receive it. A run or session carries labels from tool results into its later policy checks (see [Information-flow labels](#information-flow-labels)).
 4. A **safety net** — sensitivity gates, watchdog containment, and a non-bypassable enforcement chokepoint — that catches misbehavior automatically before a human has to react.
 
 This guide describes what Harbor does today. Where the design goes further than the code, the text says so.
@@ -161,19 +161,18 @@ The label set, in order of severity:
 
 **What's built.** The engine works out a call's labels at Tier 2 from the call itself:
 
-- **A host**, through a built-in list in `sensitivity.ts`: sign-in providers (Google, Microsoft, Apple, Okta) carry `credentials` and `identity`; Stripe and PayPal carry `payments`, and bank-like names carry `payments` and `identity`; Gmail, Outlook, Slack, Notion and Google Docs carry `confidential`; patient-portal names carry `regulated` and `identity`. There's no setting to extend the list. Page browser calls record their host without classifying it (see [Page calls](#page-calls)). The one call that does classify its host, a remote A2A agent (`agent.delegate.remote`), has no page entry point, so in practice no call's host is classified today.
+- **A host**, through a built-in list in `sensitivity.ts`: sign-in providers (Google, Microsoft, Apple, Okta) carry `credentials` and `identity`; Stripe and PayPal carry `payments`, and bank-like names carry `payments` and `identity`; Gmail, Outlook, Slack, Notion and Google Docs carry `confidential`; patient-portal names carry `regulated` and `identity`. There's no setting to extend the list. Page browser calls record their host without classifying it (see [Page calls](#page-calls)). For page-owned tool results in a run or session, Harbor classifies the origin of the page that supplied the tool. A remote A2A agent call also classifies its host.
 - **A tool's manifest**, from its `riskTags` (`credentials`, `payments`, `identity`, `regulated`, `confidential` and a few synonyms), or, with no tags, from a tool name that suggests secrets or payments. No caller passes a tool manifest to the engine yet.
-- **The input's own labels**, when the caller supplies them. No caller does yet.
+- **Labels from earlier calls.** A run or session accumulates labels. Each subsequent model or tool call in that context checks the accumulated set, even if the page supplies fresh text. The labels expire with that run or session.
 
 At Tier 3, the engine compares those labels with the action's `acceptsLabels` and denies the call with `ERR_LABEL_FLOW_BLOCKED` if it carries any label the action doesn't accept. There's no "ask" outcome here. What each action accepts is fixed in `actions.ts`: `model.prompt.local` accepts every label, `browser.write.interact` accepts `credentials` and `payments` (so a page can be filled in), `model.prompt.remote.firstParty`, `model.prompt.agent` and `network.egress.same_origin` accept `confidential`, and every other action accepts none.
 
 **Not built yet.**
 
-- Carrying a label from one call's output to a later call's input, across a session or an agent run. The engine computes an output label set for each decision, but nothing passes it on.
 - Labelling page content as it's read (a password field in the page text, a `<meta name="harbor:confidential">` tag). The element classifier in `sensitivity.ts` exists but the engine doesn't call it.
 - Per-destination exceptions in the policy file, such as letting `confidential` data reach one company's API.
 
-So Tier 3 never fires today, and a site can't yet be stopped from reading a sensitive page and sending what it read somewhere else, unless a rule, a grant or the watchdog stops it. A page's calls never see `ERR_LABEL_FLOW_BLOCKED`.
+For example, a tool on a payments site can supply a result to a run. A later prompt to a remote model in that run fails because the destination does not accept the payments label. Standalone browser reads have no session identity. A separate session in the same tab starts with its own empty set.
 
 ## The policy file
 
@@ -323,10 +322,10 @@ normal
 | 60 tool calls | restricted |
 | 5 cross-origin egresses (a page's own `fetch` isn't counted) | restricted (can't fire yet) |
 | 3 distinct sensitive labels (no window) | restricted (can't fire yet) |
-| 3 label-flow blocks | quarantined (can't fire yet) |
+| 3 label-flow blocks | quarantined |
 | 5 consecutive denials (no window) | quarantined |
 
-Only the tool-call and consecutive-denial triggers can fire today. The egress count takes only non-page fetches and third-party prompts, and Harbor produces neither; reads only ever carry `confidential`, so three distinct labels can't appear; and Tier 3 never denies (see [Information-flow labels](#information-flow-labels)).
+The egress count takes only non-page fetches and third-party prompts. Page-owned tool outputs can result in label-flow blocks when the next destination refuses their labels.
 
 The state only tightens: an origin never steps back down on its own. It clears when the extension restarts, since the counts live in memory. A `watchdog.resetOrigin` message exists, but nothing in Harbor sends it, and nothing shows an origin's state. The thresholds are `DEFAULT_THRESHOLDS` in `extension/src/policy/watchdog.ts`.
 
@@ -599,7 +598,6 @@ try {
       break;
     case 'ERR_LABEL_FLOW_BLOCKED':
       // The input carries a data label this action doesn't accept.
-      // Reserved: a page's calls don't carry labels yet.
       break;
     case 'ERR_BUDGET_EXCEEDED':
       // The session used up its maxToolCalls.
@@ -648,7 +646,7 @@ Whether to call a tool is the agent's and the person's decision. With a verified
 
 A declined Harbor prompt is `ERR_PERMISSION_DENIED`. Any other failure keeps the call's own code (`ERR_TOOL_FAILED`, `ERR_MODEL_FAILED`, `ERR_AGENT_FAILED`), even when a tool or model returns text that looks like one of these codes.
 
-`ERR_LABEL_FLOW_BLOCKED` can't occur on a page's call yet: Harbor doesn't attach data labels to page tool calls or prompts. Handle it anyway; it's reserved for when it does.
+A run or session can return `ERR_LABEL_FLOW_BLOCKED` when its next destination refuses the labels it carries.
 
 ### 6. Pre-action previews
 
@@ -752,7 +750,7 @@ Then have a classifier in `sensitivity.ts` add it to the `labels` of the `Sensit
 
 ## Adding a sensitivity rule
 
-The classifiers are `classifyDomain(host)`, `classifyElement(el)` and `classifyTool(manifest, manifestTrusted)` in `sensitivity.ts`. Each returns a `SensitivityVerdict`: `{ labels, confidence, reason }`. To flag more hosts, add to `DOMAIN_RULES` (though no reachable call classifies its host today; see [Information-flow labels](#information-flow-labels)); to flag more tools, extend `classifyTool`:
+The classifiers are `classifyDomain(host)`, `classifyElement(el)` and `classifyTool(manifest, manifestTrusted)` in `sensitivity.ts`. Each returns a `SensitivityVerdict`: `{ labels, confidence, reason }`. To flag more hosts, add to `DOMAIN_RULES`; to flag more tools, extend `classifyTool`:
 
 ```ts
 // extension/src/policy/sensitivity.ts, inside classifyTool
@@ -919,7 +917,7 @@ The `reason` string is always site-supplied, so trust the structural information
 
 The PolicyEngine is the structural defense: even if the agent is convinced by injected instructions to do something dangerous, the engine evaluates the action against your policy and the SensitivityEngine and the data-label flow tracker, all of which are blind to the agent's reasoning. Sensitive actions still confirm; deny rules still deny; tainted data still can't reach a remote model without your consent. None of this prevents the agent from being misled, but it bounds what a misled agent can do.
 
-One limit applies to requests from web pages. The engine gates their calls to the model and to tools, but those calls don't carry data labels yet, so the label check described above doesn't cover them. See [Against Prompt Injection](../spec/security-privacy.md#against-prompt-injection) for what limits a page's session today and what is planned.
+One limit applies to requests from web pages. Label tracking covers calls linked by a run or session. A page can also make standalone calls, and Harbor does not track data copied between independent contexts. See [Against Prompt Injection](../spec/security-privacy.md#against-prompt-injection) for what limits a page's session today and what is planned.
 
 **Q: Can my organization centrally manage this?**
 
