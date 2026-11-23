@@ -1,3 +1,4 @@
+import { LabelFlow } from '../../policy/label-flow';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The content script posts {type:'abort', id} on the port when the page
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   harborStreamRequest: vi.fn(), resolveTextSession: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
+  createLabelFlow: () => new LabelFlow(),
   describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
@@ -235,6 +237,6 @@ describe('agent.run cancellation at the background port boundary', () => {
 
     const chats = mocks.harborRequest.mock.calls.filter(([method]) => method === 'llm.chat');
     expect(chats.length).toBeGreaterThan(1); // the loop's call(s) plus the final one
-    for (const [, , options] of chats) expect(options).toEqual({ signal: expect.any(AbortSignal) });
+    for (const [, , options] of chats) expect(options).toEqual({ signal: expect.any(AbortSignal), labelFlow: expect.any(LabelFlow) });
   });
 });
