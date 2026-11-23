@@ -54,3 +54,19 @@ describe('Harbor browser capture', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("the bridge's page-tools endpoint", () => {
+  it.each(['page_tools.list', 'page_tools.call'])('%s reaches the page-tools handler only from the bridge endpoint', async (method) => {
+    const core = await import('../page-api/harbor-core');
+    const spy = vi.spyOn(core, 'handlePageToolsHostRequest').mockResolvedValue({ tools: [] });
+    await expect(handleHostRequest({ type: 'host_request', id: '1', method, params: { endpointId: 'pt-1' }, context: { origin: 'harbor-bridge-page-tools' } } as never))
+      .resolves.toEqual({ tools: [] });
+    expect(spy).toHaveBeenCalledWith(method, { endpointId: 'pt-1' });
+    spy.mockClear();
+    for (const context of [undefined, {}, { origin: 'harbor-extension' }, { origin: 'https://tale.example' }]) {
+      await expect(handleHostRequest({ type: 'host_request', id: '1', method, params: { endpointId: 'pt-1' }, context } as never)).rejects.toThrow();
+    }
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});

@@ -147,7 +147,11 @@ async fn open_on(state: &Arc<PageToolsState>) -> Result<Value, RpcError> {
     let token = generate_token();
     let mut inner = state.inner.lock().await;
     inner.counter += 1;
-    let endpoint_id = format!("pt-{}", inner.counter);
+    // Unguessable too, not just unique: the extension answers page_tools.*
+    // host requests only for an endpoint id it opened, and any code that can
+    // send a host request (a JS MCP server running in this bridge can) must
+    // not be able to name another session's endpoint.
+    let endpoint_id = format!("pt-{}-{}", inner.counter, &generate_token()[..16]);
     inner.tokens.insert(token.clone(), endpoint_id.clone());
     inner.endpoints.insert(endpoint_id.clone(), token.clone());
     drop(inner);
@@ -569,6 +573,15 @@ mod tests {
         assert_ne!(id_a, id_b);
         assert_ne!(token_a, token_b);
         assert_eq!(port_a, port_b, "a second open should reuse the one listener");
+    }
+
+    #[tokio::test]
+    async fn endpoint_ids_carry_a_random_part_and_never_contain_the_token() {
+        let state = test_state();
+        let (id, _port, token) = open_for_test(&state).await;
+        let random = id.rsplit('-').next().unwrap();
+        assert!(random.len() >= 16, "endpoint id {id:?} has no random part");
+        assert!(!id.contains(&token), "the endpoint id must not reveal the URL token");
     }
 
     #[tokio::test]

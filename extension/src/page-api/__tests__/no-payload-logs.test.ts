@@ -13,6 +13,7 @@ vi.mock('../handlers/permission-handlers', async (importOriginal) => ({
   ...(await importOriginal<object>()), hasPermission: mocks.hasPermission,
 }));
 vi.mock('../harbor-core', () => ({
+  openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   pageToolsForAgent: vi.fn(async () => null),
   onHarborSessionEnded: vi.fn(() => () => {}),
