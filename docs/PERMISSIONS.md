@@ -649,7 +649,7 @@ mock.permissions.grantScopes(['model:prompt', 'mcp:tools.list']);
 mock.permissions.denyAll();
 ```
 
-The mock implements `agent.requestCapabilities()` the way Harbor does, and `mock.policy.refuse('ERR_BLOCKED_BY_POLICY')` (or `'ERR_QUARANTINED'`) makes model, tool, session and agent calls fail as Harbor's policy engine would, until `mock.policy.reset()`. It doesn't model the engine itself: there's no typed policy, sensitivity, label or simulator control. To see real decisions, run against Harbor in Firefox and read the sidebar's **Activity** section. See [TESTING_YOUR_APP.md](TESTING_YOUR_APP.md) for everything the mock does.
+The mock implements `agent.requestCapabilities()`'s grant handling (an ungranted optional capability is left out; a required model or tool capability it lacks fails with `ERR_PERMISSION_DENIED`), though it doesn't narrow tools to the site's allowlist or fail on a denied browser grant. `mock.policy.refuse('ERR_BLOCKED_BY_POLICY')` (or `'ERR_QUARANTINED'`) makes model, tool, session and agent calls fail as Harbor's policy engine would, until `mock.policy.reset()`. It doesn't model the engine itself: there's no typed policy, sensitivity, label or simulator control. To see real decisions, run against Harbor in Firefox and read the sidebar's **Activity** section. See [TESTING_YOUR_APP.md](TESTING_YOUR_APP.md) for everything the mock does.
 
 ---
 
@@ -710,7 +710,7 @@ decision is ask or preview, shows the permission prompt
      },
    } as const;
    ```
-2. **Map it to a grant.** Reusing an existing permission scope is simplest. A new scope goes in `PermissionScope` in `agents/types.ts`, in the three scope-description records in `policy/permissions.ts`, and in the page's own copies in `page-api/types.ts` and `page-api/injected.ts` so pages can request it. Then add the scope to `primaryLegacyScope` in `agents/handlers/helpers.ts` (TypeScript requires a case for every action) and the action to `TYPED_TO_LEGACY` in `policy/origin-grants.ts`. Without that entry, an origin grant never satisfies Tier 8 for the action.
+2. **Map it to a grant.** Reusing an existing permission scope is simplest. A new scope goes in `PermissionScope` in `agents/types.ts`, in the three `Record<PermissionScope, …>` literals in `policy/permissions.ts` (two grant-status maps and `SCOPE_DESCRIPTIONS`), and in the page's own copies in `page-api/types.ts` and `page-api/injected.ts` so pages can request it. Then add the scope to `primaryLegacyScope` in `agents/handlers/helpers.ts` (TypeScript requires a case for every action) and the action to `TYPED_TO_LEGACY` in `policy/origin-grants.ts`. Without that entry, an origin grant never satisfies Tier 8 for the action.
 3. **Gate the handler** with `requireAction(ctx, sender, 'browser.write.tabsMove', { resource })` (`agents/handlers/helpers.ts`). For a page call that goes through `extension-api.ts`, add the action to that message type's page checks there.
 4. **Add unit tests** in `policy/__tests__/engine.test.ts` covering at least one allow path and one ask/deny path.
 
