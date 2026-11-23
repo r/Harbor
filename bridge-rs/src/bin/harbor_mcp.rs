@@ -398,6 +398,15 @@ fn main() {
                 continue;
             }
         };
+        // A JSON-RPC batch (allowed before MCP 2025-06-18) isn't supported:
+        // answer it with an error rather than leave the client waiting.
+        if parsed.is_array() {
+            write_line(
+                &mut stdout,
+                &json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32600, "message": "Batches are not supported" } }),
+            );
+            continue;
+        }
         if let Some(response) = handle_message(&parsed, &agent_id, &mut agent_name, &mut relay) {
             write_line(&mut stdout, &response);
         }

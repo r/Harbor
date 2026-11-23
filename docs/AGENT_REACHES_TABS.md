@@ -47,8 +47,9 @@ MCP over stdio ───────────────────▶ rela
 - When Firefox isn't running, the bridge isn't either. `harbor-mcp` then
   answers every call with a clear error ("Firefox with Harbor isn't running").
   It doesn't fail to start, so the agent's config stays valid.
-- The sidebar's Agent panel shows the snippet to paste into each agent's
-  config: goose, Claude Code and Codex.
+- The sidebar's Agent panel shows the command, with lines to paste for goose
+  and Claude Code. Any agent that can run a command as an MCP server works the
+  same way.
 
 Alternatives:
 
@@ -117,7 +118,10 @@ they've connected. That's too broad as a default.
   `tool.call` for `page:<host>` on every call, the audit log, and output
   treated as untrusted. A policy rule can turn a site off for outside agents.
 - **Budget:** there's no run to bound calls, so a per-connection rate limit
-  (for example 60 calls a minute) keeps a runaway agent from hammering a page.
+  (60 calls a minute per agent, and 120 across all agents, counting `open_page`)
+  keeps a runaway agent from hammering a page. Agent ids are self-reported, so the
+  overall limit is what holds against a local process that changes its id: any
+  process running as the person can already reach the socket.
 
 ## 5. Lifetime
 

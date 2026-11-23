@@ -20,7 +20,10 @@
  */
 
 export const AGENT_TABS_LIMITS = Object.freeze({
+  /** Per agent id. Ids are self-reported, so this guards against a runaway agent, not a hostile local process. */
   callsPerMinute: 60,
+  /** Every agent together, so a fresh id per call can't escape the limit. */
+  totalCallsPerMinute: 120,
   maxIdLength: 128,
 });
 
@@ -125,12 +128,20 @@ export function createAgentTabs(deps: AgentTabsDeps) {
     const entry = typeof page === 'string' ? pages.get(page) : undefined;
     if (!entry || !canUse(entry, agentId)) return errorResult('No such page. Call list_pages to see the pages you can use.');
     const tab = await deps.getTab(entry.tabId);
-    const current = originOf(tab?.url);
-    if (!tab || !current) {
+    if (!tab) {
       dropTab(entry.tabId);
       return errorResult('That page has been closed.');
     }
-    if (entry.origin === null) entry.origin = current;
+    const current = originOf(tab.url);
+    // Before its first load completes, a tab the agent opened isn't pinned
+    // yet (tabLoaded does that), and it may still be redirecting: use where
+    // it is now, but don't pin or drop it here.
+    if (!current) {
+      if (entry.origin === null) return errorResult('That page is still loading; try again shortly.');
+      dropTab(entry.tabId);
+      return errorResult('That page has moved away from the web page it showed, so it is no longer available.');
+    }
+    if (entry.origin === null) return { entry, origin: current };
     if (current !== entry.origin) {
       dropTab(entry.tabId);
       return errorResult('That page has moved to another site, so it is no longer available.');
@@ -138,21 +149,24 @@ export function createAgentTabs(deps: AgentTabsDeps) {
     return { entry, origin: current };
   }
 
+  let recentTotal: number[] = [];
+
   function overRateLimit(agentId: string): boolean {
     const now = deps.now();
     const recent = (recentCalls.get(agentId) ?? []).filter((t) => now - t < 60_000);
-    if (recent.length >= AGENT_TABS_LIMITS.callsPerMinute) {
-      recentCalls.set(agentId, recent);
-      return true;
-    }
-    recent.push(now);
+    recentTotal = recentTotal.filter((t) => now - t < 60_000);
     recentCalls.set(agentId, recent);
+    if (recent.length >= AGENT_TABS_LIMITS.callsPerMinute) return true;
+    if (recentTotal.length >= AGENT_TABS_LIMITS.totalCallsPerMinute) return true;
+    recent.push(now);
+    recentTotal.push(now);
     return false;
   }
 
   async function openPage(agentId: string, params: Record<string, unknown>): Promise<ToolResult> {
     const url = typeof params.url === 'string' ? params.url : '';
     if (!originOf(url)) return errorResult('open_page needs an http or https URL.');
+    if (overRateLimit(agentId)) return errorResult('Too many requests; wait a minute and try again.');
     let tabId: number;
     try {
       tabId = await deps.createTab(url);
@@ -178,7 +192,10 @@ export function createAgentTabs(deps: AgentTabsDeps) {
         page: handle,
         url: tab.url ?? '',
         title: tab.title ?? '',
-        hasTools: (deps.listPageTools(entry.tabId, current)?.tools.length ?? 0) > 0,
+        // Behind the same policy check as list_page_tools, so a page whose
+        // tools policy refuses doesn't show as having them.
+        hasTools: (deps.listPageTools(entry.tabId, current)?.tools.length ?? 0) > 0
+          && await deps.allowToolList(current, entry.tabId),
         sharedByPerson: typeof entry.owner !== 'string',
       });
     }

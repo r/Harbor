@@ -209,7 +209,8 @@ describe('page tools', () => {
   it('rate-limits one agent, not others', async () => {
     const h = harness();
     const page = await openWithTools(h);
-    for (let i = 0; i < AGENT_TABS_LIMITS.callsPerMinute; i++) {
+    // open_page used one of the minute's calls.
+    for (let i = 0; i < AGENT_TABS_LIMITS.callsPerMinute - 1; i++) {
       expect(isError(await h.request('call_page_tool', { page, tool: 'play', input: {} }))).toBe(false);
     }
     const over = await h.request('call_page_tool', { page, tool: 'play', input: {} });
@@ -231,5 +232,62 @@ describe('requests', () => {
     const h = harness();
     await h.request('list_pages');
     expect(h.agentTabs.connectedAgents()).toEqual([expect.objectContaining({ name: 'goose' })]);
+  });
+});
+
+describe('review fixes', () => {
+  it("doesn't pin a tab to a pre-redirect origin when the agent asks before the first load finishes", async () => {
+    const h = harness();
+    const page = pageOf(await h.request('open_page', { url: 'http://tale.example/' }));
+    // The agent asks right away, while the tab is still on the pre-redirect URL.
+    await h.request('list_page_tools', { page });
+    // Then the redirect lands and the first load completes on https.
+    h.tabs.set(10, { id: 10, url: 'https://tale.example/', title: 'Tale' });
+    h.agentTabs.tabNavigated(10, 'https://tale.example/');
+    h.agentTabs.tabLoaded(10, 'https://tale.example/');
+    h.pageTools.set(10, { origin: 'https://tale.example', generation: 1, tools: [{ name: 'play', description: 'Play', inputSchema: { type: 'object' } }] });
+    const r = (await h.request('list_page_tools', { page })) as unknown as { structuredContent?: { tools: Array<{ name: string }> } };
+    expect(isError(r)).toBe(false);
+    expect(r.structuredContent?.tools.map((t) => t.name)).toEqual(['play']);
+  });
+
+  it('says a page is still loading, without dropping it, when its URL is not a web page yet', async () => {
+    const h = harness();
+    const page = pageOf(await h.request('open_page', { url: 'https://tale.example/' }));
+    h.tabs.set(10, { id: 10, url: 'about:blank', title: '' });
+    const r = await h.request('list_page_tools', { page });
+    expect(isError(r)).toBe(true);
+    expect(text(r)).toMatch(/still loading/i);
+    h.tabs.set(10, { id: 10, url: 'https://tale.example/', title: 'Tale' });
+    expect(isError(await h.request('list_page_tools', { page }))).toBe(false);
+  });
+
+  it('counts open_page against the rate limit', async () => {
+    const h = harness();
+    for (let i = 0; i < AGENT_TABS_LIMITS.callsPerMinute; i++) {
+      expect(isError(await h.request('open_page', { url: `https://tale.example/${i}` }))).toBe(false);
+    }
+    expect(text(await h.request('open_page', { url: 'https://tale.example/x' }))).toMatch(/too many/i);
+  });
+
+  it('holds every agent together to an overall limit, so a fresh agent id per call does not escape it', async () => {
+    const h = harness();
+    let refused = 0;
+    for (let i = 0; i < AGENT_TABS_LIMITS.totalCallsPerMinute + 5; i++) {
+      const r = await h.request('open_page', { url: `https://tale.example/${i}` }, `agent-${i}`);
+      if (isError(r)) refused++;
+    }
+    expect(refused).toBe(5);
+  });
+
+  it('reports hasTools only when policy allows the page\'s tools', async () => {
+    const h = harness();
+    await h.request('open_page', { url: 'https://tale.example/' });
+    h.agentTabs.tabLoaded(10, 'https://tale.example/');
+    h.tabs.set(10, { id: 10, url: 'https://tale.example/', title: 'Tale' });
+    h.pageTools.set(10, { origin: 'https://tale.example', generation: 1, tools: [{ name: 'play', description: 'Play', inputSchema: { type: 'object' } }] });
+    h.deps.allowToolList.mockResolvedValue(false);
+    const listed = (await h.request('list_pages')) as unknown as { structuredContent: { pages: Array<{ hasTools: boolean }> } };
+    expect(listed.structuredContent.pages[0].hasTools).toBe(false);
   });
 });

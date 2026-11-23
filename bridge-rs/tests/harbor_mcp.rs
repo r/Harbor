@@ -376,3 +376,15 @@ fn a_dropped_connection_mid_call_is_reported_as_not_running() {
     assert!(text.contains("Firefox"), "unexpected error text: {text}");
     let _ = std::fs::remove_file(&socket_path);
 }
+
+#[test]
+fn a_batch_is_answered_with_an_invalid_request_error_not_dropped() {
+    let mut mcp = Mcp::spawn();
+    mcp.send(&json!([{ "jsonrpc": "2.0", "id": 1, "method": "ping" }]));
+    let resp = mcp.read_response();
+    assert_eq!(resp["error"]["code"], json!(-32600));
+    assert_eq!(resp["id"], json!(null));
+    // The connection still works afterwards.
+    let pong = mcp.rpc(2, "ping", json!({}));
+    assert_eq!(pong["result"], json!({}));
+}
