@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(), harborStreamRequest: vi.fn(), hasPermission: vi.fn(), getPermissions: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
+  syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
+  pageToolsForAgent: vi.fn(async () => null),
   onHarborSessionEnded: vi.fn(() => () => {}),
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
 }));

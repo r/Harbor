@@ -5,7 +5,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 let harborRequest = vi.fn();
-vi.mock('../harbor-core', () => ({ harborRequest: (...args: unknown[]) => harborRequest(...args) }));
+vi.mock('../harbor-core', () => ({
+  syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
+  pageToolsForAgent: vi.fn(async () => null), harborRequest: (...args: unknown[]) => harborRequest(...args) }));
 
 import { handleAgentsRegister, handleAgentsInvoke, handleAgentsSend } from '../handlers/agent-handlers';
 import type { RequestContext } from '../handlers/types';

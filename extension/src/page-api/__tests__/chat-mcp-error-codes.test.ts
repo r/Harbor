@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // as they are, and keep their own codes for any other failure.
 
 const mocks = vi.hoisted(() => ({ harborRequest: vi.fn() }));
-vi.mock('../harbor-core', () => ({ harborRequest: mocks.harborRequest }));
+vi.mock('../harbor-core', () => ({
+  syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
+  pageToolsForAgent: vi.fn(async () => null), harborRequest: mocks.harborRequest }));
 
 import { handleChatCanOpen, handleChatClose, handleChatOpen } from '../handlers/chat-handlers';
 import { handleMcpDiscover, handleMcpRegister, handleMcpUnregister } from '../handlers/mcp-handlers';

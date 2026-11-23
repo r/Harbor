@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../harbor-core', () => ({
+  pageToolsForAgent: vi.fn(async () => null),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   onHarborSessionEnded: vi.fn(() => () => {}),
   forgetAgentsInTab: vi.fn(),

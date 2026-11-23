@@ -26,11 +26,9 @@ export {
   resolvePageToolResult,
   forgetPageToolsForConnection,
   forgetPageToolsInTab,
-  listPageTools,
-  callPageTool,
-  pageToolServerId,
   type PageToolDescriptor,
 } from '../mcp/page-tools';
+import { listPageTools, callPageTool, pageToolServerId, type PageToolDescriptor as PageToolDescriptorImpl } from '../mcp/page-tools';
 import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
@@ -502,5 +500,76 @@ export function listSiteServersForAcp(origin: string, tabId?: number): SiteMcpSe
 export function onHarborSessionEnded(listener: (sessionId: string, origin: string) => void): () => void {
   return SessionRegistry.subscribe((event) => {
     if (event.type === 'session_terminated') listener(event.sessionId, event.origin);
+  });
+}
+
+// =============================================================================
+// The page's own tools, for the person's agent
+// =============================================================================
+
+/**
+ * A synthetic request context for a policy check made on the page's behalf
+ * during agent work it started. `requireAction` only reads id/origin/tabId.
+ */
+function pageToolPolicyContext(origin: string, tabId: number | undefined, signal?: AbortSignal): RequestContext {
+  return { id: crypto.randomUUID(), type: 'session.prompt', payload: {}, origin, tabId, signal };
+}
+
+/**
+ * The calling tab's page tools (document.modelContext), for agent work that
+ * page started, or null when it has none or policy refuses `tool.list` for
+ * its `page:<host>` server. Needs no grant of its own: the grant that started
+ * the run or chat covers it (docs/PAGE_TOOLS_FOR_AGENTS.md §2). The check is
+ * recorded in the audit log either way; a rule that asks is a refusal here,
+ * since there's no one-off prompt for page tools.
+ */
+export async function pageToolsForAgent(
+  origin: string,
+  tabId: number | undefined,
+): Promise<{ serverId: string; generation: number; tools: PageToolDescriptorImpl[] } | null> {
+  if (tabId === undefined) return null;
+  const listing = listPageTools(tabId, origin);
+  if (!listing) return null;
+  const serverId = pageToolServerId(origin);
+  const denial = await checkAction(pageToolPolicyContext(origin, tabId), 'tool.list', {
+    upstreamConsent: 'origin-grant',
+    noPrompt: true,
+    resource: { server: serverId },
+  });
+  if (denial) return null;
+  return { serverId, ...listing };
+}
+
+/**
+ * Call one of the calling tab's page tools for agent work that page started:
+ * policy-checks `tool.call` for `page:<host>` and that tool (recorded in the
+ * audit log), then runs the page's handler. Rejects with the refusal's code,
+ * or `ERR_TOOL_FAILED` (see mcp/page-tools.ts's callPageTool).
+ */
+export async function callPageToolForAgent(call: {
+  origin: string;
+  tabId: number | undefined;
+  generation: number;
+  name: string;
+  input: Record<string, unknown>;
+  signal?: AbortSignal;
+}): Promise<unknown> {
+  if (call.tabId === undefined) {
+    throw Object.assign(new Error('This page tool has no tab'), { code: 'ERR_TOOL_FAILED' });
+  }
+  const serverId = pageToolServerId(call.origin);
+  const denial = await checkAction(pageToolPolicyContext(call.origin, call.tabId, call.signal), 'tool.call', {
+    upstreamConsent: 'origin-grant',
+    noPrompt: true,
+    resource: { server: serverId, tool: call.name },
+  });
+  if (denial) throw Object.assign(new Error(denial.message), { code: denial.code });
+  return callPageTool({
+    tabId: call.tabId,
+    origin: call.origin,
+    generation: call.generation,
+    name: call.name,
+    input: call.input,
+    signal: call.signal,
   });
 }

@@ -109,15 +109,19 @@ have: it already writes the task text, and tool output is treated as untrusted
 
 At session start (list), the policy engine must allow `tool.list` for the
 `page:<host>` server. If it doesn't, no page tools are offered (for ACP, no
-endpoint is opened), and the refusal is written to the audit log.
+endpoint is opened).
 
 At each call:
 
-1. The site's tool allowlist names the tool, when the site has one.
-2. The policy engine allows `tool.call` for `page:<host>`.
-3. The session's tool budget has room. A refused call spends no budget,
-   which matches the existing rule.
-4. The audit log records the call and its outcome.
+1. The policy engine allows `tool.call` for `page:<host>` and that tool.
+2. The run's tool budget has room. A refused call spends no budget, which
+   matches the existing rule.
+
+Each policy check is recorded in the audit log, whether it allows or
+refuses. A rule that *asks* is a refusal here, since there's no one-off
+prompt for page tools; a rule naming `site:*` doesn't touch them. The site's
+tool allowlist doesn't apply: it lists which of the person's own MCP tools
+the site may use, and page tools aren't the person's.
 
 **Names.** The person sees where a tool came from:
 

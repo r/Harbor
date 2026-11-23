@@ -22,6 +22,7 @@ import {
   resolvePageToolResult,
   forgetPageToolsForConnection,
   forgetPageToolsInTab,
+  pageToolsForAgent,
 } from './harbor-core';
 import { policyRefusalCode } from './policy-refusal';
 import { featureRefusal, getFeatureFlags } from './policy/feature-flags';
@@ -221,7 +222,7 @@ async function handleAgentRun(
     const backendChangeSignal = acpBackendChangeSignal();
     const backend = backendOverride ?? await selectAgentBackend();
     // Only the built-in loop uses Harbor’s installed tools. ACP uses its own.
-    let tools: Array<{ serverId: string; name: string; description?: string; inputSchema?: unknown }> = [];
+    let tools: Array<{ serverId: string; name: string; description?: string; inputSchema?: unknown; generation?: number }> = [];
 
     if (!(backend instanceof AcpAgentBackend) && await hasPermission(ctx.origin, 'mcp:tools.list', ctx.tabId)) {
       const toolsResult = await harborRequest<{ tools: typeof tools }>('mcp.listTools', {
@@ -236,6 +237,19 @@ async function handleAgentRun(
         permissions.allowedTools.includes(t.name) ||
         permissions.allowedTools.includes(`${t.serverId}/${t.name}`)
       );
+    }
+
+    // The calling page's own tools (document.modelContext). They need no
+    // grant of their own: the grant that started this run covers them, and
+    // pageToolsForAgent policy-checks and audits the listing. The person's
+    // own ACP agent gets them through the bridge instead.
+    if (!(backend instanceof AcpAgentBackend)) {
+      const pageTools = await pageToolsForAgent(ctx.origin, ctx.tabId);
+      if (pageTools) {
+        for (const t of pageTools.tools) {
+          tools.push({ serverId: pageTools.serverId, name: t.name, description: t.description, inputSchema: t.inputSchema, generation: pageTools.generation });
+        }
+      }
     }
 
     // Tool discovery can wait on policy consent. If the person switched
