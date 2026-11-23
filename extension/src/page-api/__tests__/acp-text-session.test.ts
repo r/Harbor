@@ -25,6 +25,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../harbor-core', () => ({
+  openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
+  pageToolsForAgent: vi.fn(async () => null),
+  syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   onHarborSessionEnded: vi.fn(() => () => {}),
   forgetAgentsInTab: vi.fn(),
   // This file's tabs.onRemoved tests close a tab, which background.ts's

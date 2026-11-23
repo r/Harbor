@@ -45,7 +45,7 @@ import {
   type ClientContext,
 } from '@agentclientprotocol/sdk';
 
-import { acpClose, acpOpenStream, isModelPromptGrantedForAgent, requireAgentPromptAction } from './harbor-core';
+import { acpClose, acpOpenStream, closePageToolEndpoint, isModelPromptGrantedForAgent, openPageToolEndpointForAcp, requireAgentPromptAction, type SiteMcpServerDescriptor } from './harbor-core';
 import { hasPermission } from './handlers/permission-handlers';
 import { PER_SITE_AGENT_LIMIT, tryAcquireAgentSlot, releaseAgentSlot } from './acp-agent-limits';
 import type { StreamToken } from './types';
@@ -100,6 +100,8 @@ export class AcpTextSession {
   private cancelCurrentTurn: (() => void) | null = null;
   private connectionClosed: Promise<void> = Promise.resolve();
   private requestClose: (() => void) | null = null;
+  /** The page-tools endpoint a page chat's session holds (`openPageToolEndpointForAcp`), closed in `destroy()` or on a failed `open()`. */
+  private pageEndpointId: string | undefined;
   /** Cancels `initialize`/`session/new` if `destroy()`, or `open()`'s own caller-given signal, lands while they're still running. */
   private readonly openAbort = new AbortController();
   /** Whether this session currently holds one of `this.origin`'s per-site agent slots — acquired at the top of `open()`, released on `open()`'s own failure or in `destroy()`, never both. */
@@ -172,7 +174,18 @@ export class AcpTextSession {
         // unsupported protocol version — must still resolve `ready`, or
         // `open()` hangs forever (nothing else ever settles it).
         try {
-          const initialized = await initializeAcpSession(ctx, opened.cwd, this.openAbort.signal);
+          // A page chat gets the calling page's own tools, through the
+          // bridge's MCP endpoint; a window.ai text session stays
+          // tool-less. Closed in destroy().
+          const pageServers: SiteMcpServerDescriptor[] = [];
+          if (this.provenanceSource === 'page-chat') {
+            const endpoint = await openPageToolEndpointForAcp(this.origin, this.tabId);
+            if (endpoint) {
+              this.pageEndpointId = endpoint.endpointId;
+              pageServers.push(endpoint);
+            }
+          }
+          const initialized = await initializeAcpSession(ctx, opened.cwd, this.openAbort.signal, pageServers);
           if (!initialized.ok) {
             readyResolve({ ok: false, error: initialized.error });
             return;
@@ -210,6 +223,7 @@ export class AcpTextSession {
         this.requestClose?.();
         await this.connectionClosed;
         if (this.channel) await acpClose(this.channel).catch(() => { /* best-effort */ });
+        await this.closePageEndpoint();
         this.releaseSlot();
         throw toThrownError(result.error);
       }
@@ -252,7 +266,14 @@ export class AcpTextSession {
     this.requestClose?.();
     await this.connectionClosed.catch(() => { /* already reported to whichever turn was running */ });
     if (this.channel) await acpClose(this.channel).catch(() => { /* best-effort */ });
+    await this.closePageEndpoint();
     this.releaseSlot();
+  }
+
+  private async closePageEndpoint(): Promise<void> {
+    const endpointId = this.pageEndpointId;
+    this.pageEndpointId = undefined;
+    if (endpointId) await closePageToolEndpoint(endpointId);
   }
 
   /**

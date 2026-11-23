@@ -29,6 +29,9 @@ vi.mock('../handlers/permission-handlers', async (importOriginal) => ({
   ...(await importOriginal<object>()), hasPermission: mocks.hasPermission,
 }));
 vi.mock('../harbor-core', () => ({
+  openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
+  syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
+  pageToolsForAgent: vi.fn(async () => null),
   harborRequest: vi.fn(async () => ({ bridgeReady: true })),
   acpOpenStream: (agentId: string, workspace: string) => mocks.bridge.current!.acpOpenStream(agentId, workspace),
   acpSend: (channel: string, message: unknown) => mocks.bridge.current!.acpSend(channel, message),
