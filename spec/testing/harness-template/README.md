@@ -37,6 +37,8 @@ mock.ai.nextError = { code: 'ERR_MODEL_FAILED', message: 'Model unavailable' };
 
 Like Harbor, `requestPermissions()` grants exactly the scopes it names. `grantAll()` doesn't grant anything up front; it means the user says yes when the page asks. `grantScopes([...])` stands for scopes the site already holds.
 
+Set `mock.ai.textSessionStreamTokens` to the text chunks your app should receive. A `for await` loop over `session.promptStreaming()` yields each nonempty string and ends after the last chunk. Setting `mock.ai.nextError` makes the loop throw an error with the configured `code` and `message`.
+
 See `mock.js` for the full control API (e.g. `mock.agent.toolsList`, `mock.agent.toolCallResult`).
 
 ### Multi-agent (`agent.agents`)

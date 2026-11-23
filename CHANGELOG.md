@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `agent.mcp.discover()` now reports a `<link rel="mcp-server">` URL resolved against the page. A relative `href` such as `/api/mcp` used to come back as written, and passing it to `agent.mcp.register()` failed because registration needs an absolute URL.
 
+- The generated test harness now matches Harbor when an app reads `session.promptStreaming()`: it yields text chunks and throws a coded error on failure.
+
 - `window.agent.agents.list()` now returns the calling origin's registered agents instead of `undefined`. Its public types and test mock match the returned `id`, `name` and `status` entries.
 - Running a site's task on your own agent no longer asks about listing Harbor's installed tools, which that agent doesn't use. The built-in model still lists tools under the site's existing permissions and policy.
 
