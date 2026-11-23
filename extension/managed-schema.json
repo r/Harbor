@@ -5,7 +5,7 @@
   "properties": {
     "policy": {
       "title": "Policy document (JSON string)",
-      "description": "A Harbor policy document (extension/src/policy/store.ts PolicyDocument), encoded as a JSON string. Loaded at the highest precedence; cannot be overridden by the user's own policy or by per-origin grants. Example: {\"version\":2,\"deny\":[\"Egress(third_party)\"]}",
+      "description": "A Harbor policy document, encoded as a JSON string. Loaded at the highest precedence; cannot be overridden by the user's own policy or by per-origin grants. Example: {\"version\":2,\"deny\":[\"Egress(third_party)\"]}",
       "type": "string"
     }
   }
