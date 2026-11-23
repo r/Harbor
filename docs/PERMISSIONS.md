@@ -40,7 +40,7 @@ The system is **provider-agnostic**: permissions are expressed in terms of *effe
 
 Every API call from a website goes through a single chokepoint: the **PolicyEngine**. The engine answers one question per call:
 
-> Given this **principal** (origin, and whether the caller is a subagent), this typed **action** (`model.prompt.remote.thirdParty`, `tool.call`, `network.egress.cross_origin`, …), this **resource** (a tool, a host, the labels the input carries), and this **context** (watchdog state, destination locality, reversibility) — should this action be allowed, denied, previewed, or asked about?
+> Given this **principal** (origin, and whether the caller is a subagent, though no caller sets that yet), this typed **action** (`model.prompt.remote.thirdParty`, `tool.call`, `network.egress.cross_origin`, …), this **resource** (a tool, a host, the labels the input carries), and this **context** (watchdog state, destination locality, reversibility) — should this action be allowed, denied, previewed, or asked about?
 
 It answers by walking a **tier ladder**, top to bottom, returning the first decisive answer.
 
@@ -51,7 +51,7 @@ Page calls window.ai or window.agent
    ┌────────────────────────────────────────────┐
    │   PolicyEngine                             │
    │                                            │
-   │   Tier 0  Ambient ─────────────────────────► allow (no prompt, ever)
+   │   Tier 0  Known action ────────────────────► deny  (an action Harbor doesn't define)
    │   Tier 1  Managed deny ────────────────────► deny  (org policy)
    │   Tier 2  Sensitivity gate ────────────────► attach labels; irreversible writes need at least a preview
    │   Tier 3  Information-flow check ──────────► deny  (input carries a label the action doesn't accept)
@@ -59,16 +59,16 @@ Page calls window.ai or window.agent
    │   Tier 6  First matching policy rule ──────► allow
    │   Tier 7    (same rule, any other effect) ─► ask / preview / deny
    │   Tier 8  Per-origin grant ────────────────► allow / deny / ask
-   │   Tier 9  Default for action's effect ─────► ask (read) / preview (write)
+   │   Tier 9  Default for action's effect ─────► allow (metadata) / ask (read, egress) / preview (write)
    └────────────────────────────────────────────┘
             │
             ▼
    audit  +  watchdog  +  execute
 ```
 
-One important property of this ladder: **Sensitivity, info-flow, and watchdog checks always run.** They are above policy rules deliberately — a generous `allow` rule cannot defeat a label-aware egress check or an irreversible-write preview. This is the safety floor; nothing in the policy file or per-origin grants can disable it.
+One important property of this ladder: **the managed deny, information-flow and watchdog checks always run, above policy rules.** A deny from Tier 1, 3 or 4 can't be overridden by an `allow` rule or a grant. Tier 2's preview for irreversible writes is weaker: on a page call, the site's origin grant or a matching `allow` rule answers it without a prompt (see [Page calls](#page-calls)).
 
-Tiers 6 and 7 are one step: the engine takes the first policy rule that matches, in precedence order, and numbers the decision 6 if that rule allows and 7 otherwise. Tier 5 was a capability-token check that nothing used; it was removed and the other numbers kept.
+Tiers 6 and 7 are one step: the engine takes the first policy rule that matches, in precedence order, and numbers the decision 6 if it ends in `allow` and 7 otherwise (an `allow` rule that Tier 2 raises to a preview is 7). Tier 5 was a capability-token check that nothing used; it was removed and the other numbers kept.
 
 ## Typed actions and effects
 
@@ -101,7 +101,7 @@ The typed namespace is organized by what the action actually does. These are all
 | `agent.message` | Message another agent on this device | write |
 | `agent.delegate.crossOrigin` | Invoke or message an agent from a different site; granted per target site | egress, irreversible |
 | `agent.delegate.remote` | Invoke a remote A2A agent | egress, irreversible |
-| `agent.run` | Start a built-in agent run (its prompts and tool calls are checked one by one) | metadata |
+| `agent.run` | A built-in agent run. Nothing checks the run itself; its tool listing, prompts and tool calls are checked one by one | metadata |
 | `chat.open` | Open Harbor's chat on the page | write |
 
 Every action carries metadata:
@@ -112,7 +112,7 @@ type ActionMeta = {
   description: string;
   effect: 'metadata' | 'read' | 'egress' | 'write' | 'identity' | 'destructive';
   locality: 'local' | 'same_origin' | 'cross_origin' | 'network_first_party' | 'network_third_party';
-  reversible?: boolean;
+  reversible: boolean | null;       // null: not a write
   defaultDataLabels: DataLabel[];   // labels this action's *output* carries
   acceptsLabels: DataLabel[];       // labels this action's *input* may carry
   defaultTTL: 'one_call' | 'session' | 'until_origin_unloads' | 'until_user_revokes';
@@ -125,13 +125,13 @@ type ActionMeta = {
 
 | Effect | Examples | Default (Tier 9) |
 |---|---|---|
-| **metadata** | `model.list`, `tool.list`, `agent.discover`, `agent.run` | Allowed; never prompts |
+| **metadata** | `model.list`, `tool.list`, `agent.discover`, `agent.run` | Allow. A rule, a denied grant or the watchdog can still refuse it or make it ask, since the default comes last. |
 | **read** | `model.prompt.local`, `browser.read.activeTab`, `browser.read.screenshot` | Ask |
 | **egress** | `network.egress.cross_origin`, `model.prompt.remote.thirdParty`, `model.prompt.agent` | Ask |
 | **write** | `browser.write.interact`, `browser.write.navigate`, `tool.call` | Preview |
 | **destructive**, **identity** | None yet | Preview |
 
-A write the action metadata marks irreversible (`tool.call`, `browser.write.interact`) needs at least a preview even when a rule or grant would allow it (Tier 2). For page calls, Harbor treats an origin grant as the person's answer to that preview; see [Page calls](#page-calls).
+A write the action metadata marks irreversible (`tool.call`, `browser.write.interact`) needs at least a preview even when a rule or grant would allow it (Tier 2). Both are only checked on page calls, where the origin grant or a matching `allow` rule answers that preview; see [Page calls](#page-calls).
 
 The `destructive` and `identity` effects exist in the type, and rules can name them, but no action uses them yet. A tool call is `write` whatever the tool does.
 
@@ -141,7 +141,7 @@ When the engine asks, the person answers in Harbor's permission prompt, which of
 
 - *This time only* lasts ten minutes, in the tab that asked. Another tab on the same site is asked again.
 - *Always allow* lasts until the person revokes the site in the sidebar.
-- *Deny* is remembered until revoked.
+- *Deny* is remembered until revoked when the prompt came from `agent.requestPermissions()`. A prompt the engine raises on its own (an `ask` rule, a watchdog restriction, a page's chat) stores only a grant; denying it refuses that one call and stores nothing.
 
 Persisting a grant only after repeated trusted use, and a separate session-length grant, are designed but not built.
 
@@ -161,7 +161,7 @@ The label set, in order of severity:
 
 **What's built.** The engine works out a call's labels at Tier 2 from the call itself:
 
-- **A host**, through a built-in list in `sensitivity.ts`: sign-in providers (Google, Microsoft, Apple, Okta) carry `credentials` and `identity`; Stripe, PayPal and bank-like names carry `payments`; Gmail, Outlook, Slack, Notion and Google Docs carry `confidential`; patient-portal names carry `regulated` and `identity`. There's no setting to extend the list. Page browser calls record their host without classifying it (see [Page calls](#page-calls)), so today only a call to a remote agent (`agent.delegate.remote`) has its host classified.
+- **A host**, through a built-in list in `sensitivity.ts`: sign-in providers (Google, Microsoft, Apple, Okta) carry `credentials` and `identity`; Stripe and PayPal carry `payments`, and bank-like names carry `payments` and `identity`; Gmail, Outlook, Slack, Notion and Google Docs carry `confidential`; patient-portal names carry `regulated` and `identity`. There's no setting to extend the list. Page browser calls record their host without classifying it (see [Page calls](#page-calls)). The one call that does classify its host, a remote A2A agent (`agent.delegate.remote`), has no page entry point, so in practice no call's host is classified today.
 - **A tool's manifest**, from its `riskTags` (`credentials`, `payments`, `identity`, `regulated`, `confidential` and a few synonyms), or, with no tags, from a tool name that suggests secrets or payments. No caller passes a tool manifest to the engine yet.
 - **The input's own labels**, when the caller supplies them. No caller does yet.
 
@@ -173,18 +173,18 @@ At Tier 3, the engine compares those labels with the action's `acceptsLabels` an
 - Labelling page content as it's read (a password field in the page text, a `<meta name="harbor:confidential">` tag). The element classifier in `sensitivity.ts` exists but the engine doesn't call it.
 - Per-destination exceptions in the policy file, such as letting `confidential` data reach one company's API.
 
-So a site can't yet be stopped from reading a sensitive page and sending what it read somewhere else, unless a rule, a grant or the watchdog stops it. A page's calls never see `ERR_LABEL_FLOW_BLOCKED` today.
+So Tier 3 never fires today, and a site can't yet be stopped from reading a sensitive page and sending what it read somewhere else, unless a rule, a grant or the watchdog stops it. A page's calls never see `ERR_LABEL_FLOW_BLOCKED`.
 
 ## The policy file
 
-`harbor-policy.json` is a declarative document the user (or an organization) writes once. The engine reads two copies: a **managed** policy from the browser's managed storage (Firefox `policies.json`, Chrome enterprise policies, MDM), under the key `policy`, and a **user** policy from the extension's local storage, under `harbor_policy_v2`. Nothing in Harbor writes the user policy yet: there's no editor, import or export.
+`harbor-policy.json` is a declarative document the user (or an organization) writes once. The engine reads two copies: a **managed** policy from the browser's managed storage under the key `policy` (Firefox `policies.json` or MDM; Chrome needs a `storage.managed_schema` in the extension's manifest, which Harbor doesn't declare yet), and a **user** policy from the extension's local storage, under `harbor_policy_v2`. Nothing in Harbor writes the user policy yet: there's no editor, import or export.
 
 The schema is **typed**: every rule is `{id, effect, principal, action, resource, context}` (`extension/src/policy/rules.ts`).
 
 - `effect` is `allow`, `ask`, `preview` or `deny`.
 - `principal` is `{ origin }`, with `*` and suffix wildcards such as `*.github.com`.
 - `action` is one typed action, an array of them, a glob such as `browser.read.*`, or an effect class such as `{ "effect": "egress" }`.
-- `resource` matches `server`, `tool`, `toolTags` (a tool manifest's `riskTags`), `host` and `path`, with wildcards.
+- `resource` matches `server`, `tool`, `host` and `path`, with wildcards. It also accepts `toolTags` (a tool manifest's `riskTags`), but no caller passes a manifest yet, so a `toolTags` rule never matches.
 - `context` matches `hasAnyLabel`, `hasAllLabels`, `destinationLocality`, `reversible` and `trustedManifest`.
 
 ```jsonc
@@ -205,11 +205,11 @@ The schema is **typed**: every rule is `{id, effect, principal, action, resource
       "context": { "hasAnyLabel": ["credentials", "payments", "identity"] }
     },
     {
-      "id": "preview-github-writes",
-      "effect": "preview",
+      "id": "ask-before-github-tools",
+      "effect": "ask",
       "principal": { "origin": "https://app.example.com" },
       "action": "tool.call",
-      "resource": { "server": "github", "toolTags": ["remote_write"] }
+      "resource": { "server": "github" }
     },
     {
       "id": "no-fetch-to-tracker",
@@ -218,12 +218,11 @@ The schema is **typed**: every rule is `{id, effect, principal, action, resource
       "action": "network.egress.cross_origin",
       "resource": { "host": "*.tracker.example" }
     }
-  ],
-  "pinnedManifests": [{ "serverId": "github", "hash": "sha256-…" }]
+  ]
 }
 ```
 
-A document can also list `trustedPublishers` (see [Trusted vs untrusted manifests](#trusted-vs-untrusted-manifests)). Settings the design describes for the policy file — `trustedOrigins`, `sensitiveDomains` and per-session or per-origin `budgets` — aren't read by anything yet.
+The document type also declares `pinnedManifests` and `trustedPublishers`, but nothing reads them yet (see [Trusted vs untrusted manifests](#trusted-vs-untrusted-manifests)). Settings the design describes — `trustedOrigins`, `sensitiveDomains` and per-session or per-origin `budgets` — don't exist.
 
 **Short string forms.** `allow`, `ask`, `preview` and `deny` arrays accept short strings, compiled to typed rules at load time:
 
@@ -232,10 +231,11 @@ A document can also list `trustedPublishers` (see [Trusted vs untrusted manifest
 | `Tool(*)` | `{action: "tool.call"}` |
 | `Tool(github.create_issue)` | `{action: "tool.call", resource: {server: "github", tool: "create_issue"}}` |
 | `Tool(github.*)` or `Tool(github)` | `{action: "tool.call", resource: {server: "github"}}` |
-| `Tool(*:remote_write)` | `{action: "tool.call", resource: {server: "*", toolTags: ["remote_write"]}}` |
+| `Tool(*:remote_write)` | `{action: "tool.call", resource: {server: "*", toolTags: ["remote_write"]}}` (never matches yet; see `toolTags` above) |
 | `Read(*.example.com)` | `{action: {effect: "read"}, resource: {host: "*.example.com"}}` |
 | `Egress(third_party)` | `{action: {effect: "egress"}, context: {destinationLocality: ["network_third_party"]}}` |
-| `Browser.Write(*)` | Any browser write |
+| `Browser.Write(*)` | `{action: "browser.write.interact"}` (clicks and fills only) |
+| `Browser.Write(*.example.com)` | `{action: ["browser.write.interact", "browser.write.navigate", "browser.write.tabsCreate"], resource: {host: "*.example.com"}}` |
 
 `Egress` takes `local`, `same_origin`, `cross_origin`, `first_party` or `third_party`. Short strings apply to every origin; write a typed rule to scope one to a site.
 
@@ -247,7 +247,7 @@ One more short form, `Prompt(local|first_party|third_party|agent)`, targets one 
 2. User policy file (`harbor-policy.json`)
 3. Per-origin grants ("Allow always" / "Allow once" decisions remembered from prompts)
 
-Within a single document, evaluation order is **deny → ask → preview → allow**, so a deny rule always wins over an allow rule.
+Within a single document, the engine tries the short-form arrays first, in the order **deny → ask → preview → allow**, then the typed `rules` in the order written, and the first match wins. So a short-form `allow` beats a typed `deny`, and an earlier typed `allow` beats a later typed `deny`. Only a managed deny (Tier 1) is guaranteed to win.
 
 ## Sensitivity gates and tool manifest provenance
 
@@ -269,12 +269,14 @@ The MCP spec says tool descriptions and annotations are untrusted unless the ser
 
 1. **Bundled** with Harbor.
 2. **Installed locally** by the person.
-3. **Signed** by a publisher in the policy's `trustedPublishers` (or the `Publishers` registry).
-4. **Pinned** in the policy's `pinnedManifests`, by server id and exact manifest hash.
+3. **Signed** by a publisher in the `Publishers` registry.
+4. **Pinned** in the `Pins` registry, by server id and exact manifest hash.
 
 Anything else, including a manifest a page declares or Harbor fetched, is untrusted. The verdict feeds Tier 2 (an untrusted manifest on a write forces a preview) and a rule's `trustedManifest` context.
 
-A manifest's claims that make a tool look more dangerous (risk tags) count from any source. `sensitivity.ts` also has the opposite helper, honouring a trusted manifest's `reversible: true`, but the engine doesn't use it: `tool.call` is irreversible in the action metadata, so every tool call needs at least a preview whatever its manifest says.
+**Not built yet:** nothing fills the `Publishers` or `Pins` registries (only tests do), and the policy file's `trustedPublishers` and `pinnedManifests` aren't read. A "signed" manifest isn't checked against its signature: a registered publisher key is trusted as is. And since no caller passes a tool manifest to the engine, none of this affects a call today.
+
+A manifest's risk tags would count from any source, since they only make a tool look more dangerous. `sensitivity.ts` also has the opposite helper, honouring a trusted manifest's `reversible: true`, but nothing calls it: `tool.call` is irreversible in the action metadata, so every tool call needs at least a preview whatever its manifest says.
 
 **Not built yet:** a separate prompt for sensitive actions, and a sidebar decision to waive a sensitivity category for a site.
 
@@ -291,7 +293,7 @@ Session tool budgets are enforced in the background, against the session's `maxT
 
 ### Getting more authority later
 
-There's no in-place upgrade: when a site needs more than its current session asked for — say, write access — it gets the origin grant it needs (`agent.requestPermissions()` shows the prompt) and calls `agent.requestCapabilities()` again for a new session. `requestCapabilities()` doesn't ask for grants: without one it fails. (It can still prompt when the watchdog has restricted the origin, or a policy rule says `ask` or `preview` for a requested capability.) The original session keeps working with what it already had. Terminate a session when you're done with it.
+There's no in-place upgrade: when a site needs more than its current session asked for — say, write access — it gets the origin grant it needs (`agent.requestPermissions()` shows the prompt) and calls `agent.requestCapabilities()` again for a new session. `requestCapabilities()` doesn't ask for grants: a required capability without its grant fails the request, and an optional one is left out. (It can still prompt when the watchdog has restricted the origin, or a policy rule says `ask` or `preview` for a requested capability.) The original session keeps working with what it already had. Terminate a session when you're done with it.
 
 ## The Watchdog
 
@@ -309,7 +311,7 @@ Each origin is in one of four states. The engine consults the state at Tier 4 on
 
 ```
 normal
-  └─ flagged       (nothing changes yet; the activity feed marks the origin)
+  └─ flagged       (nothing changes yet)
        └─ restricted    (every action that would be allowed asks first)
             └─ quarantined   (every action is denied with ERR_QUARANTINED)
 ```
@@ -318,12 +320,14 @@ normal
 |---|---|
 | 20 tool calls | flagged |
 | 60 tool calls | restricted |
-| 5 cross-origin egresses (a page's own `fetch` isn't counted) | restricted |
-| 3 distinct sensitive labels (no window) | restricted |
-| 3 label-flow blocks | quarantined |
+| 5 cross-origin egresses (a page's own `fetch` isn't counted) | restricted (can't fire yet) |
+| 3 distinct sensitive labels (no window) | restricted (can't fire yet) |
+| 3 label-flow blocks | quarantined (can't fire yet) |
 | 5 consecutive denials (no window) | quarantined |
 
-The state only tightens: an origin never steps back down on its own. It clears when the origin is reset (the `watchdog.resetOrigin` message) or the extension restarts, since the counts live in memory. The thresholds are `DEFAULT_THRESHOLDS` in `extension/src/policy/watchdog.ts`.
+Only the tool-call and consecutive-denial triggers can fire today. The egress count takes only non-page fetches and third-party prompts, and Harbor produces neither; reads only ever carry `confidential`, so three distinct labels can't appear; and Tier 3 never denies (see [Information-flow labels](#information-flow-labels)).
+
+The state only tightens: an origin never steps back down on its own. It clears when the extension restarts, since the counts live in memory. A `watchdog.resetOrigin` message exists, but nothing in Harbor sends it, and nothing shows an origin's state. The thresholds are `DEFAULT_THRESHOLDS` in `extension/src/policy/watchdog.ts`.
 
 ## Audit, activity feed, and the decision simulator
 
@@ -337,13 +341,12 @@ Every PolicyEngine decision — whether it prompted, auto-allowed, denied, or do
   action: "tool.call",
   resource: { server: "github", tool: "create_issue" },
   effect: "preview",
-  tier: 7,
-  source: "policy",
-  rule: { id: "preview-github-writes", effect: "preview" },
+  tier: 9,
+  source: "default",
   reason: "…",
   labelsIn: [],
   labelsOut: [],
-  consent: "origin-grant",
+  consent: "origin-grant",   // the page's grant answered the preview
   trace: [/* one step per tier */]
 }
 ```
@@ -378,7 +381,7 @@ The host is recorded in the audit log, and a policy rule can match it (for examp
 
 If a rule or the watchdog makes Harbor ask before a page call (a browser call, a model prompt, a tool call, creating a session, a call to or from another agent, or opening the chat), and the page gives up waiting (its request times out after 30 seconds — or, for `agent.requestPermissions()`, 5 minutes — or it cancels an `agent.run` or a stream), the call isn't performed even if the person then allows it.
 
-A few page calls aren't checked by the PolicyEngine, on purpose. `agent.sessions.get()`, `list()` and `terminate()` only see or end the calling site's own sessions, which it created after the person allowed it; Harbor scopes them to the origin, so they reach nothing new. Harbor's usage bookkeeping after a prompt (`session.recordUsage`) follows a prompt that was already checked, and the readiness probe behind `window.ai.canCreateTextSession()` and `ai.languageModel.capabilities()` (`system.getCapabilities`) only reports whether Harbor is ready. Apart from these and the permission checks themselves (`permissions.check` and `permissions.request`), a page can't reach any other message type in Harbor's router.
+A few page calls aren't checked by the PolicyEngine, on purpose. `agent.sessions.get()`, `list()` and `terminate()` only see or end the calling site's own sessions, which it created after the person allowed it; Harbor scopes them to the origin, so they reach nothing new. Harbor's usage bookkeeping after a prompt (`session.recordUsage`) follows a prompt that was already checked, and the readiness probe behind `window.ai.canCreateTextSession()` and `ai.languageModel.capabilities()` (`system.getCapabilities`) only reports whether Harbor is ready. Several agent and chat calls are also unchecked: `agent.agents.getInfo()`, `list()` and `unsubscribe()`, registering an invocation or message handler, `agent.chat.canOpen()` and `close()`, and `agent.mcp.discover()`. Apart from these and the permission checks themselves (`permissions.check` and `permissions.request`), a page can't reach any other message type in Harbor's router.
 
 Harbor holds the only store of per-origin grants and the only consent prompt. The page API checks Harbor's store (`permissions.check`) before each page call, and `agent.requestPermissions()` goes to Harbor's prompt (`permissions.request`). So a site revoked in Harbor's sidebar is refused on its next call. That includes work the site started while it still held the grant: every prompt on an open text session (`window.ai` or `agent.sessions.create`), and every model turn of a running `agent.run`, re-checks `model:prompt`. Revoking the site, or a one-time grant expiring, stops the next one. This holds in Safari too: its build injects the same page API.
 
@@ -390,7 +393,7 @@ A mismatch — the live backend's allow doesn't cover the current backend, or a 
 
 The older, separate Web Agents API extension no longer injects anything, and Harbor no longer accepts a message or connection from it, or from any other extension: there is no cross-extension entry point left to reach.
 
-For page calls, Harbor enforces `deny` (safety floor, policy rules, a denied origin grant, the watchdog). When the only thing left to settle is the origin grant (Tier 8 or the Tier 9 default), Harbor proceeds without prompting again, because the page API has just checked that grant in Harbor's store; the audit record carries `consent: "origin-grant"`. A watchdog restriction (Tier 4) or a policy rule that asks or previews (Tier 7) still shows Harbor's prompt.
+For page calls, Harbor enforces `deny` (safety floor, policy rules, a denied origin grant, the watchdog). When the only thing left to settle is the origin grant (Tier 8 or the Tier 9 default), or an `allow` rule that Tier 2 raised to a preview, Harbor proceeds without prompting again, and the audit record carries `consent: "origin-grant"`. For most page calls that's because the page API has just checked the grant in Harbor's store. Creating a session is the exception: `session.create` checks only `model:prompt` and `mcp:tools.call`, so a session's browser capabilities are recorded as consented without a browser grant. Each browser call still checks its own grant when it's made. A watchdog restriction (Tier 4) or a policy rule that asks or previews (Tier 7) still shows Harbor's prompt.
 
 The engine treats a write that can't be undone as needing a preview even when the origin holds a grant. Calling or messaging another agent on this device (`agent.invoke`, `agent.message`) doesn't count as one: the call itself changes nothing, and the other agent's own actions are checked separately. So once a site holds `agents:invoke` or `agents:message`, later calls go through without another prompt. An "Allow once" grant covers only the tab that granted it, for ten minutes; another tab on the same site is asked again.
 
@@ -418,7 +421,7 @@ Each audit row in the sidebar has a **"Why?"** affordance. The **"What if?"** si
 - A modified policy (what if I added this allow rule?)
 - A modified label set (what if the input wasn't tainted with `credentials`?)
 
-The simulator does not affect live state — it's a pure replay against the engine, returning the simulated decision with its own trace.
+The simulator replays a decision against the engine and returns the simulated decision with its own trace. It swaps the live rules and resolvers while it runs, so a live decision made at the same moment could see the simulated ones; nothing calls it yet (`policy.simulate` and `policy.replay` have no sender).
 
 ## Telemetry goals
 
@@ -457,9 +460,10 @@ const session = await agent.requestCapabilities({
 });
 ```
 
-`requestCapabilities()` takes `require` and `optional` lists of `{ action, server?, toolNames? }`, an optional `budget` of `maxToolCalls` and `ttlMinutes`, and a `name` and `reason`. It turns the actions into a session's capabilities (model access, tools, browser access) and creates the session. It doesn't prompt for grants itself: if the origin lacks one it needs, the whole request fails with `ERR_PERMISSION_DENIED`.
+`requestCapabilities()` takes `require` and `optional` lists of `{ action, server?, toolNames? }`, an optional `budget` of `maxToolCalls` and `ttlMinutes`, and a `name` and `reason`. It turns three kinds of action into a session's capabilities: any `model.prompt.*` becomes model access, `tool.call` with a `server` becomes tools, and `browser.*` becomes browser access. Anything else (`network.egress.*`, `agent.*`, `chat.open`, a `tool.call` without a `server`) is ignored. It doesn't prompt for grants itself:
 
-**`optional` isn't optional yet.** Harbor merges `optional` into `require`, so an ungranted optional capability fails the whole request. Until that changes, request only what the origin already holds.
+- A **required** capability whose grant the site lacks fails the request with `ERR_PERMISSION_DENIED`. Harbor checks `model:prompt` for model access and `mcp:tools.call` for tools; browser access is checked on each browser call instead.
+- An **optional** capability whose grant the site lacks is left out of the session quietly.
 
 `session.capabilities` describes what the session can use: `{ llm, tools, browser, limits }`.
 
@@ -467,7 +471,7 @@ A few things worth knowing up front:
 
 - The person can say "this time only" or "always allow" without you needing different code paths.
 - The person, their organization and the watchdog can restrict you without a prompt (policy rules, containment) — handle structured errors gracefully.
-- Asking for `model.prompt.local` instead of `model.prompt.remote.thirdParty` keeps data on the device. Prefer local when you can.
+- Which `model.prompt.*` action you request doesn't choose a model: every one becomes the same model access, and Harbor classifies each prompt by the model it actually runs on.
 
 ## Designing your capability requests
 
@@ -500,17 +504,9 @@ The `reason` string you pass to `agent.requestPermissions()` appears in the prom
 
 ### 1a. Prefer local prompts when you can
 
-`model.prompt.local` (Firefox-ML, Chrome AI, Ollama loopback) keeps the user's data on the machine. `model.prompt.remote.thirdParty` sends data to a cloud provider. The engine treats them very differently:
+A prompt that runs on a model on this device is checked as `model.prompt.local`, a read; one that runs on a remote provider is checked as `model.prompt.remote.firstParty`, an egress; and one on the person's own agent is `model.prompt.agent`. Harbor decides which from the model the prompt actually runs on (see [Page calls](#page-calls)). The person picks that model, not your request: asking for `model.prompt.local` in `requestCapabilities()` gives the same model access as any other `model.prompt.*`. (`model.prompt.remote.thirdParty` exists for rules, but no prompt is classified that way yet.)
 
-```ts
-// Good if you don't need a frontier model — easier to grant, no egress concerns
-{ action: 'model.prompt.local' }
-
-// Required if you need a remote model. Be explicit; the user sees this.
-{ action: 'model.prompt.remote.thirdParty' }
-```
-
-If your task can be done with a local model, ask for `model.prompt.local` only. It's a read, not an egress, and it accepts every data label, so it's the easiest prompt to allow. Harbor decides whether a prompt is local from the model it runs on (see [Page calls](#page-calls)), not from what you request.
+What you can do is name a specific model when the person has one you know is local, and say in your `reason` why you need a model at all.
 
 ### 2. Ask for scopes that belong together at once
 
@@ -575,11 +571,9 @@ If you publish an MCP server, declare what your tools touch:
 
 How Harbor uses this today:
 
-- A policy rule can match your tools' `riskTags` (`"toolTags": ["remote_write"]`, or `Tool(*:remote_write)`).
-- Risk tags that name a data label (`credentials`, `payments`, `identity`, `regulated`, `confidential`) count from any source, since they only make a tool look more dangerous.
-- A claim that makes a tool look *safer*, such as `reversible: true`, counts only from a trusted manifest (bundled, installed locally, signed by a trusted publisher, or pinned in policy). An untrusted manifest's claim is ignored.
+Not much yet. No caller passes a tool manifest to Harbor's policy engine, so today your annotations don't affect any decision: a `toolTags` rule never matches, risk tags don't label a call, and `reversible: true` counts from no source. Every tool call is an irreversible write in Harbor's action metadata, so it needs at least a preview, which the site's origin grant answers.
 
-Every tool call is an irreversible write in Harbor's action metadata, so it needs at least a preview whatever your manifest says, and the page API's origin grant is what answers that preview. Nothing passes tool manifests to the policy engine yet, so the label and trust parts above don't affect page calls today.
+The design: risk tags that name a data label (`credentials`, `payments`, `identity`, `regulated`, `confidential`) would count from any source, since they only make a tool look more dangerous; a claim that makes a tool look *safer* would count only from a trusted manifest. Declaring them now costs nothing.
 
 ### 5. Handle the new error shapes
 
@@ -597,8 +591,8 @@ try {
       // A user or organization policy rule denied this. Don't retry.
       break;
     case 'ERR_QUARANTINED':
-      // The watchdog has quarantined this origin. Every call is denied
-      // until the person resets it.
+      // The watchdog has quarantined this origin. Every policy-checked
+      // call is denied until the browser restarts the extension.
       break;
     case 'ERR_LABEL_FLOW_BLOCKED':
       // The input carries a data label this action doesn't accept.
@@ -623,12 +617,12 @@ These are the policy engine's codes, and Harbor reports them as is wherever its 
 
 - `agent.tools.call()` and a session's `callTool()` throw them.
 - A `window.ai` text session's `prompt()` throws them, and `promptStreaming()` ends with them, when the session runs on Harbor's own model.
-- `agent.run()` ends with them as its `error` event when its tool list is refused, or, on Harbor's own model, a model call.
+- `agent.run()` on Harbor's own model ends with them as its `error` event when its tool list or a model call is refused.
 - `agent.browser.*` calls (page interaction, screenshots, reading the page, navigation, `fetch` and the tab calls) throw them.
 - `agent.agents.*` calls (registering, discovering, invoking and messaging agents, and orchestration) and `agent.chat.open()` throw them.
 - `agent.mcp.register()` throws them. It's checked as `mcp.server.register` and needs the `mcp:servers.register` grant, which asks by default, before Harbor connects to the site's server. It refuses a server that isn't on the page's origin (or, from a loopback page such as `localhost`, on a loopback host) with `ERR_PERMISSION_DENIED`, before asking. `agent.mcp.unregister()` isn't checked, since it only drops a connection; it can only drop a server the same page registered in the same tab. An unknown server id, or one registered in another tab, fails with `ERR_MCP_UNREGISTER`.
 
-When the person has chosen an ACP agent to answer, prompts go to that agent rather than through Harbor's policy engine, so its failures use the ACP codes (`ERR_AGENT_FAILED`, `ERR_AGENT_BUSY`, `ERR_AGENT_REFUSED`, `ERR_AGENT_LIMIT`). `agent.run()`'s tool list is still checked by the policy engine on either backend. On an ACP agent, the site's own registered MCP servers are passed to the agent only if the site holds `mcp:tools.list` and `mcp:tools.call` and the policy engine allows listing and calling tools; the site's per-tool grants don't apply there.
+When the person has chosen an ACP agent to answer, each prompt is still checked by the policy engine, as `model.prompt.agent`; a refusal there is `ERR_PERMISSION_DENIED`. Failures from the agent itself use the ACP codes (`ERR_AGENT_FAILED`, `ERR_AGENT_BUSY`, `ERR_AGENT_REFUSED`, `ERR_AGENT_LIMIT`). An `agent.run()` on an ACP agent doesn't list Harbor's tools, so the tool-list refusal above applies on Harbor's own model only. On an ACP agent, the site's own registered MCP servers are passed to the agent only if the site holds `mcp:tools.list` and `mcp:tools.call` and the policy engine allows listing and calling tools; the site's per-tool grants don't apply there.
 
 A declined Harbor prompt is `ERR_PERMISSION_DENIED`. Any other failure keeps the call's own code (`ERR_TOOL_FAILED`, `ERR_MODEL_FAILED`, `ERR_AGENT_FAILED`), even when a tool or model returns text that looks like one of these codes.
 
@@ -681,17 +675,17 @@ extension/src/policy/
 The flow through the system is:
 
 ```
-agents/handlers/*  ─[requireAction]─►  policy/engine.evaluate
+agents/handlers/*, extension-api.ts  ─[requireAction]─►  policy/engine.evaluate
                                               │
                                               ├─►  policy/sensitivity
                                               ├─►  policy/labels (input/output flow)
                                               ├─►  policy/store (typed rules)
                                               ├─►  policy/watchdog (state)
-                                              ├─►  policy/manifest-trust (for tool meta)
-                                              └─►  policy/audit
+                                              └─►  policy/manifest-trust (for tool meta)
 
-When the decision is ask or preview, requireAction shows the permission
-prompt (permission-prompt.ts) through policy/permissions.
+requireAction then writes the audit record (policy/audit), and when the
+decision is ask or preview, shows the permission prompt
+(permission-prompt.ts) through policy/permissions.
 ```
 
 ## Adding a new typed action
@@ -712,12 +706,13 @@ prompt (permission-prompt.ts) through policy/permissions.
      },
    } as const;
    ```
-2. **Gate the handler** with `requireAction(ctx, sender, 'browser.write.tabsMove', { resource })` (`agents/handlers/helpers.ts`). For a page call that goes through `extension-api.ts`, add the action to that message type's page checks there.
-3. **Add unit tests** in `policy/__tests__/engine.test.ts` covering at least one allow path and one ask/deny path.
+2. **Map it to a grant.** Add the permission scope a person grants for it to `PermissionScope` (`page-api/types.ts`) if it's new, the scope to `primaryLegacyScope` in `agents/handlers/helpers.ts` (TypeScript requires a case for every action), and the action to `TYPED_TO_LEGACY` in `policy/origin-grants.ts`. Without that entry, an origin grant never satisfies Tier 8 for the action.
+3. **Gate the handler** with `requireAction(ctx, sender, 'browser.write.tabsMove', { resource })` (`agents/handlers/helpers.ts`). For a page call that goes through `extension-api.ts`, add the action to that message type's page checks there.
+4. **Add unit tests** in `policy/__tests__/engine.test.ts` covering at least one allow path and one ask/deny path.
 
 ## Adding a data label
 
-Add an entry to `DATA_LABELS` in `labels.ts`, with a `title`, a `description` and a `severity` (`low`, `medium`, `high` or `critical`; the engine uses severity only to order labels):
+Add the name to the `DataLabel` union in `labels.ts`, then an entry to `DATA_LABELS`, with a `title`, a `description` and a `severity` (`low`, `medium`, `high` or `critical`; nothing reads severity yet):
 
 ```ts
 // extension/src/policy/labels.ts
@@ -731,7 +726,7 @@ export const DATA_LABELS = {
 };
 ```
 
-Then have a classifier in `sensitivity.ts` add it to the `labels` of the `SensitivityVerdict` it returns, and decide which actions may receive it by adding it to their `acceptsLabels` in `actions.ts`. There's no per-label egress setting: Tier 3 denies any action whose input carries a label missing from that action's `acceptsLabels`.
+Then have a classifier in `sensitivity.ts` add it to the `labels` of the `SensitivityVerdict` it returns, and decide which actions may receive it by adding it to their `acceptsLabels` in `actions.ts`. There's no per-label egress setting: Tier 3 denies any action whose input carries a label missing from that action's `acceptsLabels`. The watchdog counts distinct labels from a fixed list in `watchdog.ts`; add the new one there too.
 
 ## Adding a sensitivity rule
 
