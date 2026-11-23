@@ -128,7 +128,7 @@ mock.uninstall();
 | User allows every request | `mock.permissions.grantAll()` (grants only the scopes each `requestPermissions()` names, as Harbor does) |
 | Permissions denied | `mock.permissions.denyAll()` |
 | Scopes the site already holds | `mock.permissions.grantScopes(['model:prompt', 'mcp:tools.list'])` |
-| A session from `agent.requestCapabilities()` | Grant the scopes it needs first (`grantScopes`). As in Harbor, it doesn't prompt: an optional capability the site lacks is left out, and a required one it lacks fails with `ERR_PERMISSION_DENIED`. |
+| A session from `agent.requestCapabilities()` | Grant the scopes it needs first (`grantScopes`). As in Harbor, it doesn't prompt: an optional capability the site lacks is left out, and a required model or tool capability it lacks fails with `ERR_PERMISSION_DENIED`. Unlike Harbor, the mock doesn't narrow tools to the site's tool allowlist or fail on a denied browser grant. |
 | A policy rule or the watchdog refuses calls | `mock.policy.refuse('ERR_BLOCKED_BY_POLICY')` or `mock.policy.refuse('ERR_QUARANTINED')`; `mock.policy.reset()` lets them through again. Model, tool, session and agent calls are refused; `requestPermissions()` isn't. |
 | `session.prompt()` return value | `mock.ai.textSessionResponse = '…'` |
 | `session.promptStreaming()` string chunks | `mock.ai.textSessionStreamTokens = ['a', 'b', 'c']` |

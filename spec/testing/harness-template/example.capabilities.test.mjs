@@ -86,3 +86,22 @@ describe('policy refusals in the mock', () => {
     expect(await text.prompt('Hi')).toBe('Mocked response');
   });
 });
+
+describe('requestCapabilities checks grants before policy, as Harbor does', () => {
+  let mock;
+  beforeEach(() => { mock = installWebAgentsMock(globalThis); });
+  afterEach(() => { mock.uninstall(); });
+
+  it('reports a missing grant even while policy would refuse', async () => {
+    mock.policy.refuse('ERR_QUARANTINED');
+    await expect(globalThis.agent.requestCapabilities({ require: [{ action: 'model.prompt.local' }] }))
+      .rejects.toMatchObject({ code: 'ERR_PERMISSION_DENIED' });
+  });
+
+  it('reports the policy refusal once the grants are there', async () => {
+    mock.permissions.grantScopes(['model:prompt']);
+    mock.policy.refuse('ERR_QUARANTINED');
+    await expect(globalThis.agent.requestCapabilities({ require: [{ action: 'model.prompt.local' }] }))
+      .rejects.toMatchObject({ code: 'ERR_QUARANTINED' });
+  });
+});
