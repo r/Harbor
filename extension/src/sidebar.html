@@ -96,23 +96,16 @@
       .welcome {
         --sea-top: calc(var(--space-6) + 1.6rem * (1.1 + 0.92) + 5px - 24px);
       }
+      /* Drawn wide and cropped from the right, never stretched, so the sun
+         stays round. It sets behind the far wave: the sky is clipped along
+         that wave's crest. */
       .welcome-sea {
         position: absolute;
         top: var(--sea-top);
         left: 0;
         width: 100%;
         height: 24px;
-      }
-      /* Half a sun, setting on the far wave's crest. */
-      .welcome-sun {
-        position: absolute;
-        top: calc(var(--sea-top) + 4px - 11px);
-        right: 28px;
-        width: 22px;
-        height: 22px;
-        border-radius: var(--radius-full);
-        background: var(--color-action);
-        clip-path: inset(0 0 50% 0);
+        overflow: visible;
       }
       .welcome h1 {
         position: relative;
@@ -1042,15 +1035,14 @@
       </div>
 
       <section class="welcome" id="welcome-card">
-        <span class="welcome-sun" aria-hidden="true"></span>
-        <svg class="welcome-sea" viewBox="0 0 360 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><defs><linearGradient id="welcome-sea-fade" x1="0" x2="0" y1="0" y2="1"><stop offset="0.45" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient><mask id="welcome-sea-mask"><rect width="360" height="24" fill="url(#welcome-sea-fade)"/></mask></defs><g mask="url(#welcome-sea-mask)" fill="var(--color-accent-primary)"><path d="M0 6 Q22.5 0 45 6 T90 6 T135 6 T180 6 T225 6 T270 6 T315 6 T360 6 V24 H0Z" opacity=".08"/><path d="M0 14 Q22.5 8 45 14 T90 14 T135 14 T180 14 T225 14 T270 14 T315 14 T360 14 V24 H0Z" opacity=".13"/></g></svg>
+        <svg class="welcome-sea" viewBox="0 0 810 24" preserveAspectRatio="xMaxYMin slice" aria-hidden="true" focusable="false"><defs><linearGradient id="welcome-sea-fade" x1="0" x2="0" y1="0" y2="1"><stop offset="0.45" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient><mask id="welcome-sea-mask"><rect width="810" height="24" fill="url(#welcome-sea-fade)"/></mask><clipPath id="welcome-sky"><path d="M0 6 Q22.5 0 45 6 T90 6 T135 6 T180 6 T225 6 T270 6 T315 6 T360 6 T405 6 T450 6 T495 6 T540 6 T585 6 T630 6 T675 6 T720 6 T765 6 T810 6 V-40 H0Z"/></clipPath></defs><circle cx="771" cy="5" r="11" fill="var(--color-action)" clip-path="url(#welcome-sky)"/><g mask="url(#welcome-sea-mask)" fill="var(--color-accent-primary)"><path d="M0 6 Q22.5 0 45 6 T90 6 T135 6 T180 6 T225 6 T270 6 T315 6 T360 6 T405 6 T450 6 T495 6 T540 6 T585 6 T630 6 T675 6 T720 6 T765 6 T810 6 V24 H0Z" opacity=".08"/><path d="M0 14 Q22.5 8 45 14 T90 14 T135 14 T180 14 T225 14 T270 14 T315 14 T360 14 T405 14 T450 14 T495 14 T540 14 T585 14 T630 14 T675 14 T720 14 T765 14 T810 14 V24 H0Z" opacity=".13"/></g></svg>
         <h1 id="welcome-title">Calm seas today</h1>
         <p>I'll keep watch while you browse, and check with you whenever a site asks for more.</p>
         <div class="welcome-agent">
           <div class="welcome-avatar"><i data-icon="sparkles" data-icon-size="22"></i></div>
           <div class="welcome-agent-text">
             <b id="welcome-agent-name">Built-in model</b>
-            <span>Sites ask before using it.</span>
+            <span>Sites ask first.</span>
           </div>
           <button class="link-btn" id="welcome-change-agent" type="button">Change</button>
         </div>
