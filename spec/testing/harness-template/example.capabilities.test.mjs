@@ -54,6 +54,20 @@ describe('agent.requestCapabilities() in the mock', () => {
       require: [{ action: 'tool.call', server: 'github' }],
     })).rejects.toMatchObject({ code: 'ERR_PERMISSION_DENIED' });
   });
+
+  it('refuses the session when a required browser capability is missing', async () => {
+    await expect(globalThis.agent.requestCapabilities({
+      require: [{ action: 'browser.read.activeTab' }],
+    })).rejects.toMatchObject({ code: 'ERR_PERMISSION_DENIED' });
+  });
+
+  it('makes a session when the required browser capability is held', async () => {
+    mock.permissions.grantScopes(['browser:activeTab.interact']);
+    const session = await globalThis.agent.requestCapabilities({
+      require: [{ action: 'browser.write.interact' }],
+    });
+    expect(session.capabilities.browser.interact).toBe(true);
+  });
 });
 
 describe('policy refusals in the mock', () => {
