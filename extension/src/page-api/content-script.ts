@@ -20,6 +20,10 @@ import { DEFAULT_FLAGS, STORAGE_KEY, type FeatureFlags } from './policy/feature-
 
 const CHANNEL = 'harbor_page_api';
 
+type PageToolPortMessage =
+  | { type: 'page_tools.call'; callId: string; name: string; input: unknown }
+  | { type: 'page_tools.cancel'; callId: string };
+
 type RuntimePort = chrome.runtime.Port;
 
 let backgroundPort: RuntimePort | null = null;
@@ -44,7 +48,20 @@ function getBackgroundPort(): RuntimePort {
     backgroundPort = chrome.runtime.connect({ name: 'harbor-page-api' });
 
     // Handle messages from background
-    backgroundPort.onMessage.addListener((message: TransportResponse | TransportStreamEvent) => {
+    backgroundPort.onMessage.addListener((message: TransportResponse | TransportStreamEvent | PageToolPortMessage) => {
+      // The person's agent calling one of the page's own tools
+      // (document.modelContext), or giving up on a call.
+      if ('type' in message && message.type === 'page_tools.call') {
+        window.postMessage({
+          channel: CHANNEL,
+          pageToolCall: { callId: message.callId, name: message.name, input: message.input },
+        }, '*');
+        return;
+      }
+      if ('type' in message && message.type === 'page_tools.cancel') {
+        window.postMessage({ channel: CHANNEL, pageToolCancel: { callId: message.callId } }, '*');
+        return;
+      }
       if ('ok' in message) {
         // Regular response
         if (!message.ok && message.error) {
@@ -263,6 +280,23 @@ function setupAgentEventForwarding() {
     return false;
   });
 }
+
+// The page's answer to a page-tool call goes back on the page port, which
+// is the only connection the background accepts it from. Only the answer's
+// own fields are forwarded.
+window.addEventListener('message', (event: MessageEvent) => {
+  if (event.source !== window) return;
+  const data = event.data as {
+    channel?: string;
+    pageToolResult?: { callId?: unknown; ok?: unknown; result?: unknown; error?: { message?: unknown } };
+  };
+  if (data?.channel !== CHANNEL || !data.pageToolResult) return;
+  const { callId, ok, result, error } = data.pageToolResult;
+  if (typeof callId !== 'string') return;
+  getBackgroundPort().postMessage(ok === true
+    ? { type: 'page_tools.result', callId, ok: true, result }
+    : { type: 'page_tools.result', callId, ok: false, error: { message: typeof error?.message === 'string' ? error.message : 'Page tool failed' } });
+});
 
 // Listen for agent invocation responses from the page
 window.addEventListener('message', (event: MessageEvent) => {

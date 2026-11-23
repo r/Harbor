@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{acp, fs, js, llm, mcp, oauth};
+use crate::{acp, fs, js, llm, mcp, oauth, page_tools};
 
 // =============================================================================
 // Types
@@ -123,6 +123,9 @@ fn get_handlers() -> &'static HashMap<&'static str, RpcHandler> {
     // ACP (Agent Client Protocol) process relay handlers
     register_acp_handlers(&mut handlers);
 
+    // Bridge-hosted MCP endpoint for page tools
+    register_page_tools_handlers(&mut handlers);
+
     handlers
   })
 }
@@ -223,6 +226,13 @@ fn register_acp_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
     Box::pin(acp::resolve::resolve_command(p))
   });
   handlers.insert("acp.close", |p| Box::pin(acp::close(p)));
+}
+
+/// `page_tools.*` methods, like `acp.*`, are also rejected outright over the
+/// HTTP/WebSocket (Safari) surface; see `http_server::is_page_tools_method`.
+fn register_page_tools_handlers(handlers: &mut HashMap<&'static str, RpcHandler>) {
+  handlers.insert("page_tools.open", |_| Box::pin(page_tools::open()));
+  handlers.insert("page_tools.close", |p| Box::pin(page_tools::close(p)));
 }
 
 // =============================================================================

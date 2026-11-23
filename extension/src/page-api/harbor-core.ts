@@ -19,6 +19,17 @@ import type { TypedAction } from '../policy/actions';
 import { routeAgentMessage } from '../agents/background-router';
 import { forgetTabAgents } from '../agents/handlers/multi-agent';
 import { forgetTabServers, forgetTabServersIfOriginChanged, listSiteServersForAcp as listSiteServersForAcpImpl, type SiteMcpServerDescriptor } from '../mcp/site-servers';
+// The page's own tools (document.modelContext), relayed to its port: see
+// docs/PAGE_TOOLS_FOR_AGENTS.md.
+export {
+  syncPageTools,
+  resolvePageToolResult,
+  forgetPageToolsForConnection,
+  forgetPageToolsInTab,
+  type PageToolDescriptor,
+} from '../mcp/page-tools';
+export type { SiteMcpServerDescriptor } from '../mcp/site-servers';
+import { listPageTools, callPageTool, pageToolServerId, type PageToolDescriptor as PageToolDescriptorImpl } from '../mcp/page-tools';
 import { rpcRequest, rpcStreamRequest } from '../llm/native-bridge';
 import { browserAPI } from '../browser-compat';
 import { ErrorCodes } from './types';
@@ -491,4 +502,208 @@ export function onHarborSessionEnded(listener: (sessionId: string, origin: strin
   return SessionRegistry.subscribe((event) => {
     if (event.type === 'session_terminated') listener(event.sessionId, event.origin);
   });
+}
+
+// =============================================================================
+// The page's own tools, for the person's agent
+// =============================================================================
+
+/**
+ * A synthetic request context for a policy check made on the page's behalf
+ * during agent work it started. `requireAction` only reads id/origin/tabId.
+ */
+function pageToolPolicyContext(origin: string, tabId: number | undefined, signal?: AbortSignal): RequestContext {
+  return { id: crypto.randomUUID(), type: 'session.prompt', payload: {}, origin, tabId, signal };
+}
+
+/**
+ * The calling tab's page tools (document.modelContext), for agent work that
+ * page started, or null when it has none or policy refuses `tool.list` for
+ * its `page:<host>` server. Needs no grant of its own: the grant that started
+ * the run or chat covers it (docs/PAGE_TOOLS_FOR_AGENTS.md §2). The check is
+ * recorded in the audit log either way; a rule that asks is a refusal here,
+ * since there's no one-off prompt for page tools.
+ */
+export async function pageToolsForAgent(
+  origin: string,
+  tabId: number | undefined,
+): Promise<{ serverId: string; generation: number; tools: PageToolDescriptorImpl[] } | null> {
+  if (tabId === undefined) return null;
+  const listing = listPageTools(tabId, origin);
+  if (!listing) return null;
+  const serverId = pageToolServerId(origin);
+  const denial = await checkAction(pageToolPolicyContext(origin, tabId), 'tool.list', {
+    upstreamConsent: 'origin-grant',
+    noPrompt: true,
+    resource: { server: serverId },
+  });
+  if (denial) return null;
+  return { serverId, ...listing };
+}
+
+/**
+ * Call one of the calling tab's page tools for agent work that page started:
+ * policy-checks `tool.call` for `page:<host>` and that tool (recorded in the
+ * audit log), then runs the page's handler. Rejects with the refusal's code,
+ * or `ERR_TOOL_FAILED` (see mcp/page-tools.ts's callPageTool).
+ */
+export async function callPageToolForAgent(call: {
+  origin: string;
+  tabId: number | undefined;
+  generation: number;
+  name: string;
+  input: Record<string, unknown>;
+  signal?: AbortSignal;
+  /** Called once the policy check has allowed the call, before it runs. */
+  onAllowed?: () => void;
+}): Promise<unknown> {
+  if (call.tabId === undefined) {
+    throw Object.assign(new Error('This page tool has no tab'), { code: 'ERR_TOOL_FAILED' });
+  }
+  const serverId = pageToolServerId(call.origin);
+  const denial = await checkAction(pageToolPolicyContext(call.origin, call.tabId, call.signal), 'tool.call', {
+    upstreamConsent: 'origin-grant',
+    noPrompt: true,
+    resource: { server: serverId, tool: call.name },
+  });
+  if (denial) throw Object.assign(new Error(denial.message), { code: denial.code });
+  call.onAllowed?.();
+  return callPageTool({
+    tabId: call.tabId,
+    origin: call.origin,
+    generation: call.generation,
+    name: call.name,
+    input: call.input,
+    signal: call.signal,
+  });
+}
+
+// =============================================================================
+// The bridge's page-tools MCP endpoint, for the person's ACP agent
+// =============================================================================
+
+interface PageToolEndpoint {
+  origin: string;
+  tabId: number;
+  /** The page generation the session started under: a reload ends its tools. */
+  generation: number;
+  /** An agent.run's tool budget; absent for a page chat. */
+  maxCalls?: number;
+  calls: number;
+}
+
+const pageToolEndpoints = new Map<string, PageToolEndpoint>();
+
+/**
+ * Opens a bridge-hosted MCP endpoint serving the calling tab's page tools to
+ * one ACP session, and returns it in the form `session/new` takes a site
+ * server in (`acp-connection.ts`'s `mcpServersForAgent`). Null — nothing
+ * opened — when the page has no tools, policy refuses them
+ * (`pageToolsForAgent`), or the bridge can't open one. The caller closes it
+ * with `closePageToolEndpoint` when the session ends.
+ */
+export async function openPageToolEndpointForAcp(
+  origin: string,
+  tabId: number | undefined,
+  options: { maxCalls?: number } = {},
+): Promise<(SiteMcpServerDescriptor & { endpointId: string }) | null> {
+  const listing = await pageToolsForAgent(origin, tabId);
+  if (!listing || tabId === undefined) return null;
+  let opened: { endpointId?: unknown; url?: unknown };
+  try {
+    opened = await rpcRequest<{ endpointId?: unknown; url?: unknown }>('page_tools.open', {});
+  } catch {
+    console.log('[Harbor] Could not open a page tools endpoint on the bridge');
+    return null;
+  }
+  const { endpointId, url } = opened ?? {};
+  // The URL goes straight into the agent's session/new, so it must be the
+  // bridge's own loopback listener and nothing else.
+  if (typeof endpointId !== 'string' || typeof url !== 'string' || !/^http:\/\/127\.0\.0\.1:\d+\/mcp\/[A-Za-z0-9_-]+$/.test(url)) {
+    console.log('[Harbor] The bridge returned an unexpected page tools endpoint');
+    if (typeof endpointId === 'string') await rpcRequest('page_tools.close', { endpointId }).catch(() => {});
+    return null;
+  }
+  pageToolEndpoints.set(endpointId, { origin, tabId, generation: listing.generation, maxCalls: options.maxCalls, calls: 0 });
+  return { serverId: listing.serverId, name: listing.serverId, url, transport: 'streamable-http', endpointId };
+}
+
+/** Closes an endpoint opened by `openPageToolEndpointForAcp`. Idempotent. */
+export async function closePageToolEndpoint(endpointId: string): Promise<void> {
+  if (!pageToolEndpoints.delete(endpointId)) return;
+  await rpcRequest('page_tools.close', { endpointId }).catch(() => { /* best-effort; the bridge's exit closes it too */ });
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function pageToolErrorResult(message: string) {
+  return { content: [{ type: 'text', text: message }], isError: true };
+}
+
+/** A page tool's result as an MCP CallToolResult. It is untrusted page content, passed on as data only. */
+function pageToolCallResult(result: unknown) {
+  if (typeof result === 'string') return { content: [{ type: 'text', text: result }] };
+  let text: string;
+  try {
+    text = result === undefined ? '' : JSON.stringify(result);
+  } catch {
+    return pageToolErrorResult("The page tool's result can't be sent");
+  }
+  return isPlainRecord(result)
+    ? { content: [{ type: 'text', text }], structuredContent: result }
+    : { content: [{ type: 'text', text }] };
+}
+
+/**
+ * Answers the bridge's `page_tools.list` / `page_tools.call` host requests for
+ * an endpoint this module opened. Always answers with an MCP result, never a
+ * thrown error: a page tool's own error text is page content and must not
+ * reach native-bridge.ts's failure log.
+ */
+export async function handlePageToolsHostRequest(method: string, params: unknown): Promise<unknown> {
+  const endpointId = isPlainRecord(params) && typeof params.endpointId === 'string' ? params.endpointId : undefined;
+  const endpoint = endpointId ? pageToolEndpoints.get(endpointId) : undefined;
+
+  if (method === 'page_tools.list') {
+    if (!endpoint) return { tools: [] };
+    const listing = listPageTools(endpoint.tabId, endpoint.origin);
+    if (!listing || listing.generation !== endpoint.generation) return { tools: [] };
+    return { tools: listing.tools };
+  }
+
+  if (method === 'page_tools.call') {
+    if (!endpoint) return pageToolErrorResult('This page tool is no longer available');
+    const name = isPlainRecord(params) && typeof params.name === 'string' ? params.name : '';
+    const input = isPlainRecord(params) && isPlainRecord(params.arguments) ? params.arguments : {};
+    if (endpoint.maxCalls !== undefined && endpoint.calls >= endpoint.maxCalls) {
+      return pageToolErrorResult('Tool call budget exceeded; this call was not run.');
+    }
+    // Reserved before anything is awaited, so calls the agent sends in
+    // parallel can't all pass the check above; given back if policy refuses
+    // the call, so a refused call spends no budget.
+    endpoint.calls++;
+    let allowed = false;
+    try {
+      const result = await callPageToolForAgent({
+        origin: endpoint.origin,
+        tabId: endpoint.tabId,
+        generation: endpoint.generation,
+        name,
+        input,
+        onAllowed: () => { allowed = true; },
+      });
+      return pageToolCallResult(result);
+    } catch (e) {
+      if (!allowed) endpoint.calls--;
+      return pageToolErrorResult(e instanceof Error && e.message ? e.message : 'Page tool failed');
+    }
+  }
+
+  return pageToolErrorResult('Unknown page tools request');
+}
+
+export function __resetPageToolEndpointsForTests(): void {
+  pageToolEndpoints.clear();
 }

@@ -6,7 +6,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ harborRequest: vi.fn() }));
-vi.mock('../harbor-core', () => ({ harborRequest: mocks.harborRequest }));
+vi.mock('../harbor-core', () => ({
+  openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
+  syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
+  pageToolsForAgent: vi.fn(async () => null), harborRequest: mocks.harborRequest }));
 
 const windowsCreate = vi.fn();
 vi.stubGlobal('chrome', {
