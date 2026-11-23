@@ -124,6 +124,9 @@ interface AgentSummary {
   isRemote: boolean;
 }
 
+/** Basic identity and lifecycle state of an agent on the calling origin. */
+type AgentListEntry = Pick<AgentSummary, 'id' | 'name' | 'status'>;
+
 interface AgentDiscoveryQuery {
   name?: string;
   capabilities?: string[];
@@ -180,7 +183,7 @@ interface AgentsApi {
   unregister(agentId?: string): Promise<void>;
   getInfo(agentId: string): Promise<RegisteredAgent | null>;
   discover(query?: AgentDiscoveryQuery): Promise<{ agents: AgentSummary[]; total: number }>;
-  list(): Promise<AgentSummary[]>;
+  list(): Promise<AgentListEntry[]>;
   invoke(agentId: string, request: AgentInvocationRequest): Promise<AgentInvocationResponse>;
   send(agentId: string, payload: unknown): Promise<{ delivered: boolean }>;
   onMessage(handler: (message: AgentMessage) => void): () => void;

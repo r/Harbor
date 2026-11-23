@@ -928,6 +928,9 @@ interface AgentSummary {
   isRemote: boolean;
 }
 
+/** Basic identity and lifecycle state of an agent on the calling origin. */
+type AgentListEntry = Pick<AgentSummary, 'id' | 'name' | 'status'>;
+
 interface AgentDiscoveryQuery {
   name?: string;
   capabilities?: string[];
@@ -1041,10 +1044,10 @@ function createMultiAgentApi() {
     },
 
     /**
-     * List all registered agents visible to this origin.
+     * List the identity and status of agents registered on this origin.
      */
-    async list(): Promise<AgentSummary[]> {
-      const result = await sendRequest<{ agents: AgentSummary[] }>('agent.agents.list');
+    async list(): Promise<AgentListEntry[]> {
+      const result = await sendRequest<{ agents: AgentListEntry[] }>('agent.agents.list');
       return result.agents;
     },
 

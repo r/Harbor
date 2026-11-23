@@ -327,10 +327,8 @@ describe('page chat on the ACP agent backend', () => {
     await closedViaUi(chatId);
     expect(closeSpy).toHaveBeenCalled();
 
-    // The chat is still "open" in Harbor's own registry (only the agent
-    // session ended) — a later message reopens a fresh agent session.
-    await send(chatId);
-    expect(sessionNewCalls).toBe(2);
+    expect(await send(chatId)).toMatchObject({ ok: false, type: 'error' });
+    expect(sessionNewCalls).toBe(1);
   });
 
   it('ends the agent session when the tab closes', async () => {
@@ -346,6 +344,8 @@ describe('page chat on the ACP agent backend', () => {
     expect(sessionNewCalls).toBe(1);
 
     await fireTabRemoved(TAB);
+    const { getActiveChat } = await import('../../agents/handlers/chat');
+    expect(getActiveChat(chatId)).toBeUndefined();
     expect(closeSpy).toHaveBeenCalled();
   });
 
@@ -478,7 +478,10 @@ describe('page chat on the ACP agent backend', () => {
     await closedViaUi(chatId, { url: `${SHOP}/deals` }); // no tab at all
     expect(closeSpy).not.toHaveBeenCalled();
 
+    const { getActiveChat } = await import('../../agents/handlers/chat');
+    expect(getActiveChat(chatId)).toBeDefined();
     await closedViaUi(chatId, { tab: { id: TAB }, url: `${SHOP}/other`, frameId: 0 });
+    expect(getActiveChat(chatId)).toBeUndefined();
     expect(closeSpy).toHaveBeenCalled();
   });
 

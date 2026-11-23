@@ -247,7 +247,7 @@ export function registerPageChatHandlers(): void {
     const origin = originOf(sender.url);
     (async () => {
       if (chat && tabId !== undefined && origin && chat.tabId === tabId && chat.origin === origin) {
-        await closeAgentChatSession(chatId!);
+        await forgetChatAndSession(chat.chatId);
       }
       sendResponse({ ok: true });
     })();

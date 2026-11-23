@@ -957,9 +957,11 @@ for (const a of agents) {
   console.log(`${a.name} (${a.id}): ${a.capabilities.join(', ')}`);
 }
 
-// List all agents
+// List agents registered by pages on this origin
 const allAgents = await window.agent.agents.list();
 ```
+
+`list()` returns an array of `{ id, name, status }` entries for the calling origin, or `[]` when it has no registered agents. It needs the Multi-Agent feature enabled and no discovery grant. Use `discover()` with `agents:discover` to retrieve capabilities and tags.
 
 #### Invoking Agents
 
@@ -1343,7 +1345,7 @@ declare global {
         unregister(): Promise<void>;
         getInfo(agentId: string): Promise<RegisteredAgent | null>;
         discover(query?: AgentDiscoveryQuery): Promise<{ agents: AgentSummary[]; total: number }>;
-        list(): Promise<AgentSummary[]>;
+        list(): Promise<Array<{ id: string; name: string; status: 'active' | 'suspended' | 'terminated' }>>;
         invoke(agentId: string, request: AgentInvocationRequest): Promise<AgentInvocationResponse>;
         send(agentId: string, payload: unknown): Promise<{ delivered: boolean }>;
         onMessage(handler: (message: AgentMessage) => void): () => void;

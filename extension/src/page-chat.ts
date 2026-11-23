@@ -129,10 +129,7 @@ function initPageChat() {
   });
 
   closeBtn.addEventListener('click', () => {
-    // Tears down the DOM locally either way; in BYOC mode, also tells the
-    // background to end this chat's agent session (a no-op on the
-    // built-in backend) — there's no other signal that this chat's UI is
-    // gone short of the tab closing or navigating away.
+    // Let the background release the chat record and any agent session.
     if (byocConfig.chatId) {
       browserAPI.runtime.sendMessage({ type: 'page_chat_closed', chatId: byocConfig.chatId }).catch(() => {});
     }
