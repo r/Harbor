@@ -38,7 +38,7 @@ The system is **provider-agnostic**: permissions are expressed in terms of *effe
 
 ## The mental model
 
-Every API call from a website goes through a single chokepoint: the **PolicyEngine**. The engine answers one question per call:
+Nearly every API call from a website that reaches a model, a tool, the browser or another agent goes through a single chokepoint: the **PolicyEngine** (the exceptions are listed under [Page calls](#page-calls)). The engine answers one question per call:
 
 > Given this **principal** (origin, and whether the caller is a subagent, though no caller sets that yet), this typed **action** (`model.prompt.remote.thirdParty`, `tool.call`, `network.egress.cross_origin`, …), this **resource** (a tool, a host, the labels the input carries), and this **context** (watchdog state, destination locality, reversibility) — should this action be allowed, denied, previewed, or asked about?
 
@@ -58,7 +58,7 @@ Page calls window.ai or window.agent
    │   Tier 4  Watchdog containment ────────────► ask / deny
    │   Tier 6  First matching policy rule ──────► allow
    │   Tier 7    (same rule, any other effect) ─► ask / preview / deny
-   │   Tier 8  Per-origin grant ────────────────► allow / deny / ask
+   │   Tier 8  Per-origin grant ────────────────► allow / deny / ask / preview
    │   Tier 9  Default for action's effect ─────► allow (metadata) / ask (read, egress) / preview (write)
    └────────────────────────────────────────────┘
             │
@@ -230,7 +230,8 @@ The document type also declares `pinnedManifests` and `trustedPublishers`, but n
 |---|---|
 | `Tool(*)` | `{action: "tool.call"}` |
 | `Tool(github.create_issue)` | `{action: "tool.call", resource: {server: "github", tool: "create_issue"}}` |
-| `Tool(github.*)` or `Tool(github)` | `{action: "tool.call", resource: {server: "github"}}` |
+| `Tool(github.*)` | `{action: "tool.call", resource: {server: "github", tool: "*"}}` |
+| `Tool(github)` | `{action: "tool.call", resource: {server: "github"}}` |
 | `Tool(*:remote_write)` | `{action: "tool.call", resource: {server: "*", toolTags: ["remote_write"]}}` (never matches yet; see `toolTags` above) |
 | `Read(*.example.com)` | `{action: {effect: "read"}, resource: {host: "*.example.com"}}` |
 | `Egress(third_party)` | `{action: {effect: "egress"}, context: {destinationLocality: ["network_third_party"]}}` |
@@ -355,7 +356,7 @@ The full shape is `AuditRecord` in `extension/src/policy/audit.ts`. It records i
 
 ### Page calls
 
-Harbor injects the page API (`window.ai`, `window.agent`, `navigator.modelContext`) itself, from `extension/src/page-api/`. A page's calls arrive over a port from Harbor's own content script, and Harbor takes the page's origin and tab from the browser's record of that port (`port.sender`), never from the message. The page API calls the rest of Harbor in-process through `page-api/harbor-core.ts`. Harbor runs each model and tool call through the PolicyEngine under that origin: `llm.chat`, `llm.chatStream`, `mcp.listTools`, `mcp.callTool`, `session.create` (one check per requested capability), and the model listings behind `window.ai.providers.*` (as `model.list`, after the site's `model:list` grant). A built-in `agent.run` therefore appears in the audit log as its tool listing, each model prompt and each tool call, in order. An ACP run skips listing Harbor’s installed tools and its `tool.list` policy check, since that backend does not use them; its prompts are checked as described below. A prompt is classified as local or remote by the model it will run on, as the native bridge reports it: a model is local when its provider runs on this machine (Ollama, llamafile, LM Studio, Apple's on-device model), including a provider instance the person named, such as `my-ollama:llama3`. Harbor's in-browser models (`local:`, `firefox-ml:`, `chrome-ai:`) are always local. A prompt that names no model, as every `agent.run` prompt does, runs on the bridge's default model and is classified by that model. If the bridge can't say, or the default model is unknown, the prompt counts as remote. With an older bridge that can't answer the question, Harbor classifies by the model's name instead, so a named instance counts as remote. A call without an origin is rejected.
+Harbor injects the page API (`window.ai`, `window.agent`, `navigator.modelContext`) itself, from `extension/src/page-api/`. A page's calls arrive over a port from Harbor's own content script, and Harbor takes the page's origin and tab from the browser's record of that port (`port.sender`), never from the message. The page API calls the rest of Harbor in-process through `page-api/harbor-core.ts`. Harbor runs each model and tool call through the PolicyEngine under that origin: `llm.chat`, `llm.chatStream`, `mcp.listTools`, `mcp.callTool`, `session.create` (one check per requested capability), and the model listings behind `window.ai.providers.*` (as `model.list`, after the site's `model:list` grant). A built-in `agent.run` therefore appears in the audit log as its tool listing (when the site holds `mcp:tools.list`), each model prompt and each tool call, in order. An ACP run skips listing Harbor’s installed tools and its `tool.list` policy check, since that backend does not use them; its prompts are checked as described below. A prompt is classified as local or remote by the model it will run on, as the native bridge reports it: a model is local when its provider runs on this machine (Ollama, llamafile, LM Studio, Apple's on-device model), including a provider instance the person named, such as `my-ollama:llama3`. Harbor's in-browser models (`local:`, `firefox-ml:`, `chrome-ai:`) are always local. A prompt that names no model, as every `agent.run` prompt does, runs on the bridge's default model and is classified by that model. If the bridge can't say, or the default model is unknown, the prompt counts as remote. With an older bridge that can't answer the question, Harbor classifies by the model's name instead, so a named instance counts as remote. A call without an origin is rejected.
 
 When the person has selected an ACP agent (`harbor_agent_backend`; docs/ACP_BACKEND_DESIGN.md), a prompt runs on that agent instead of Harbor's own model, and is classified as `model.prompt.agent` rather than any `model.prompt.remote.*` action — `page-api/harbor-core.ts`'s `requireAgentPromptAction` runs the same `requireAction` gate right before every `session/prompt`, on both `agent.run` and a `window.ai` text session's own prompt loop, in addition to the pre-existing `model:prompt` origin-grant check. A denial there ends the run or turn with `ERR_PERMISSION_DENIED`, and is still recorded in the audit log under `model.prompt.agent` like any other decision.
 
@@ -379,9 +380,9 @@ Browser and tab calls go through the same check, after the page API has checked 
 
 The host is recorded in the audit log, and a policy rule can match it (for example, deny `network.egress.cross_origin` to one host). Harbor doesn't classify these hosts as sensitive, though: a page opening, navigating to or fetching a bank or a document site isn't moving data there that it didn't already have, so these calls are never refused at the information-flow tier. A page's own `fetch` also doesn't count toward the watchdog's cross-origin egress limit, because a site can already call `fetch` freely from its page. A `fetch` redirected to another origin is checked again at its final URL: if that's refused, the page gets the refusal instead of the response (the request itself has already been sent).
 
-If a rule or the watchdog makes Harbor ask before a page call (a browser call, a model prompt, a tool call, creating a session, a call to or from another agent, or opening the chat), and the page gives up waiting (its request times out after 30 seconds — or, for `agent.requestPermissions()`, 5 minutes — or it cancels an `agent.run` or a stream), the call isn't performed even if the person then allows it.
+If a rule or the watchdog makes Harbor ask before a page call (a browser call, a model prompt, a tool call, creating a session, a call to or from another agent, or opening the chat), and the page gives up waiting (its request times out: after 30 seconds by default, 2 minutes for creating a text session, 5 minutes for `agent.requestPermissions()` and 10½ minutes for a session prompt; or it cancels an `agent.run` or a stream), the call isn't performed even if the person then allows it.
 
-A few page calls aren't checked by the PolicyEngine, on purpose. `agent.sessions.get()`, `list()` and `terminate()` only see or end the calling site's own sessions, which it created after the person allowed it; Harbor scopes them to the origin, so they reach nothing new. Harbor's usage bookkeeping after a prompt (`session.recordUsage`) follows a prompt that was already checked, and the readiness probe behind `window.ai.canCreateTextSession()` and `ai.languageModel.capabilities()` (`system.getCapabilities`) only reports whether Harbor is ready. Several agent and chat calls are also unchecked: `agent.agents.getInfo()`, `list()` and `unsubscribe()`, registering an invocation or message handler, `agent.chat.canOpen()` and `close()`, and `agent.mcp.discover()`. Apart from these and the permission checks themselves (`permissions.check` and `permissions.request`), a page can't reach any other message type in Harbor's router.
+A few page calls aren't checked by the PolicyEngine, on purpose. `agent.sessions.get()`, `list()` and `terminate()` only see or end the calling site's own sessions, which it created after the person allowed it; Harbor scopes them to the origin, so they reach nothing new. Harbor's usage bookkeeping after a prompt (`session.recordUsage`) follows a prompt that was already checked, and the readiness probe behind `window.ai.canCreateTextSession()` and `ai.languageModel.capabilities()` (`system.getCapabilities`) only reports whether Harbor is ready. Creating a `window.ai` text session checks only the site's `model:prompt` grant; each of its prompts is then checked by the engine. Several agent and chat calls are also unchecked: `agent.agents.getInfo()`, `list()` and `unsubscribe()`, registering an invocation or message handler, `agent.chat.canOpen()` and `close()`, and `agent.mcp.discover()`. Apart from these and the permission checks themselves (`permissions.check` and `permissions.request`), a page can't reach any other message type in Harbor's router.
 
 Harbor holds the only store of per-origin grants and the only consent prompt. The page API checks Harbor's store (`permissions.check`) before each page call, and `agent.requestPermissions()` goes to Harbor's prompt (`permissions.request`). So a site revoked in Harbor's sidebar is refused on its next call. That includes work the site started while it still held the grant: every prompt on an open text session (`window.ai` or `agent.sessions.create`), and every model turn of a running `agent.run`, re-checks `model:prompt`. Revoking the site, or a one-time grant expiring, stops the next one. This holds in Safari too: its build injects the same page API.
 
@@ -462,8 +463,10 @@ const session = await agent.requestCapabilities({
 
 `requestCapabilities()` takes `require` and `optional` lists of `{ action, server?, toolNames? }`, an optional `budget` of `maxToolCalls` and `ttlMinutes`, and a `name` and `reason`. It turns three kinds of action into a session's capabilities: any `model.prompt.*` becomes model access, `tool.call` with a `server` becomes tools, and `browser.*` becomes browser access. Anything else (`network.egress.*`, `agent.*`, `chat.open`, a `tool.call` without a `server`) is ignored. It doesn't prompt for grants itself:
 
-- A **required** capability whose grant the site lacks fails the request with `ERR_PERMISSION_DENIED`. Harbor checks `model:prompt` for model access and `mcp:tools.call` for tools; browser access is checked on each browser call instead.
+- A **required** capability whose grant the site lacks fails the request with `ERR_PERMISSION_DENIED`. Harbor checks `model:prompt` for model access and `mcp:tools.call` for tools. Browser access isn't checked against a grant when the session is created, unless the site has *denied* it, which fails the request; each browser call checks its own grant when it's made.
 - An **optional** capability whose grant the site lacks is left out of the session quietly.
+- **Tools** are narrowed to the site's tool allowlist (the tools named when it was granted `mcp:tools.call`). A tool outside it is left out quietly, even if required. Name the tools: a `tool.call` with a `server` and no `toolNames` asks for `server/*`, which matches only if the allowlist holds that exact entry.
+- A policy refusal (a deny rule, a quarantine, a declined prompt) fails the request with the policy engine's code.
 
 `session.capabilities` describes what the session can use: `{ llm, tools, browser, limits }`.
 
@@ -506,7 +509,7 @@ The `reason` string you pass to `agent.requestPermissions()` appears in the prom
 
 A prompt that runs on a model on this device is checked as `model.prompt.local`, a read; one that runs on a remote provider is checked as `model.prompt.remote.firstParty`, an egress; and one on the person's own agent is `model.prompt.agent`. Harbor decides which from the model the prompt actually runs on (see [Page calls](#page-calls)). The person picks that model, not your request: asking for `model.prompt.local` in `requestCapabilities()` gives the same model access as any other `model.prompt.*`. (`model.prompt.remote.thirdParty` exists for rules, but no prompt is classified that way yet.)
 
-What you can do is name a specific model when the person has one you know is local, and say in your `reason` why you need a model at all.
+What you can do is say in your `reason` why you need a model at all. (`window.ai.createTextSession()` and `agent.sessions.create()` can name a model; `requestCapabilities()` can't.)
 
 ### 2. Ask for scopes that belong together at once
 
@@ -616,6 +619,7 @@ Treat `ERR_BLOCKED_BY_POLICY`, `ERR_LABEL_FLOW_BLOCKED`, and `ERR_QUARANTINED` a
 These are the policy engine's codes, and Harbor reports them as is wherever its policy check refuses a page's call:
 
 - `agent.tools.call()` and a session's `callTool()` throw them.
+- `agent.sessions.create()` and `agent.requestCapabilities()` throw them when creating the session is refused.
 - A `window.ai` text session's `prompt()` throws them, and `promptStreaming()` ends with them, when the session runs on Harbor's own model.
 - `agent.run()` on Harbor's own model ends with them as its `error` event when its tool list or a model call is refused.
 - `agent.browser.*` calls (page interaction, screenshots, reading the page, navigation, `fetch` and the tab calls) throw them.
@@ -645,7 +649,7 @@ mock.permissions.grantScopes(['model:prompt', 'mcp:tools.list']);
 mock.permissions.denyAll();
 ```
 
-The mock doesn't model the policy engine: there's no typed policy, sensitivity, label or simulator control, and it doesn't implement `agent.requestCapabilities()` yet. To see real decisions, run against Harbor in Firefox and read the sidebar's **Activity** section. See [TESTING_YOUR_APP.md](TESTING_YOUR_APP.md) for everything the mock does.
+The mock implements `agent.requestCapabilities()` the way Harbor does, and `mock.policy.refuse('ERR_BLOCKED_BY_POLICY')` (or `'ERR_QUARANTINED'`) makes model, tool, session and agent calls fail as Harbor's policy engine would, until `mock.policy.reset()`. It doesn't model the engine itself: there's no typed policy, sensitivity, label or simulator control. To see real decisions, run against Harbor in Firefox and read the sidebar's **Activity** section. See [TESTING_YOUR_APP.md](TESTING_YOUR_APP.md) for everything the mock does.
 
 ---
 
@@ -706,7 +710,7 @@ decision is ask or preview, shows the permission prompt
      },
    } as const;
    ```
-2. **Map it to a grant.** Add the permission scope a person grants for it to `PermissionScope` (`page-api/types.ts`) if it's new, the scope to `primaryLegacyScope` in `agents/handlers/helpers.ts` (TypeScript requires a case for every action), and the action to `TYPED_TO_LEGACY` in `policy/origin-grants.ts`. Without that entry, an origin grant never satisfies Tier 8 for the action.
+2. **Map it to a grant.** Reusing an existing permission scope is simplest. A new scope goes in `PermissionScope` in `agents/types.ts`, in the three scope-description records in `policy/permissions.ts`, and in the page's own copies in `page-api/types.ts` and `page-api/injected.ts` so pages can request it. Then add the scope to `primaryLegacyScope` in `agents/handlers/helpers.ts` (TypeScript requires a case for every action) and the action to `TYPED_TO_LEGACY` in `policy/origin-grants.ts`. Without that entry, an origin grant never satisfies Tier 8 for the action.
 3. **Gate the handler** with `requireAction(ctx, sender, 'browser.write.tabsMove', { resource })` (`agents/handlers/helpers.ts`). For a page call that goes through `extension-api.ts`, add the action to that message type's page checks there.
 4. **Add unit tests** in `policy/__tests__/engine.test.ts` covering at least one allow path and one ask/deny path.
 
@@ -730,7 +734,7 @@ Then have a classifier in `sensitivity.ts` add it to the `labels` of the `Sensit
 
 ## Adding a sensitivity rule
 
-The classifiers are `classifyDomain(host)`, `classifyElement(el)` and `classifyTool(manifest, manifestTrusted)` in `sensitivity.ts`. Each returns a `SensitivityVerdict`: `{ labels, confidence, reason }`. To flag more hosts, add to `DOMAIN_RULES`; to flag more tools, extend `classifyTool`:
+The classifiers are `classifyDomain(host)`, `classifyElement(el)` and `classifyTool(manifest, manifestTrusted)` in `sensitivity.ts`. Each returns a `SensitivityVerdict`: `{ labels, confidence, reason }`. To flag more hosts, add to `DOMAIN_RULES` (though no reachable call classifies its host today; see [Information-flow labels](#information-flow-labels)); to flag more tools, extend `classifyTool`:
 
 ```ts
 // extension/src/policy/sensitivity.ts, inside classifyTool
@@ -745,7 +749,7 @@ The engine runs the domain and tool classifiers at Tier 2, before any policy rul
 
 ## Adding a trusted-manifest source
 
-`trustManifest(provenance)` in `manifest-trust.ts` decides trust from `provenance.source`: `bundled`, `localInstall`, `signed` (checked against the `Publishers` registry) and `policyPinned` (checked against `Pins`, by server id and manifest hash) are trusted; `pageDeclared`, `fetched` and `unknown` aren't. Add a publisher with `Publishers.add({ name, publicKey, algorithm: 'ed25519', addedAt: Date.now(), allowedServerGlob })`, or let the person list it in the policy's `trustedPublishers`. Pin a manifest with `Pins.pin(serverId, hash)` or the policy's `pinnedManifests`.
+`trustManifest(provenance)` in `manifest-trust.ts` decides trust from `provenance.source`: `bundled`, `localInstall`, `signed` (checked against the `Publishers` registry) and `policyPinned` (checked against `Pins`, by server id and manifest hash) are trusted; `pageDeclared`, `fetched` and `unknown` aren't. Add a publisher with `Publishers.add({ name, publicKey, algorithm: 'ed25519', addedAt: Date.now(), allowedServerGlob })` and pin a manifest with `Pins.pin(serverId, hash)`. Only tests call these today, and the policy file's `trustedPublishers` and `pinnedManifests` aren't read, so loading them from policy is part of the work.
 
 The engine calls `trustManifest` before Tier 2; an untrusted manifest on a write forces a preview.
 
