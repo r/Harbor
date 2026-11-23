@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { requireAction } from '../helpers';
+import { LabelFlow } from '../../../policy/label-flow';
 import { Policy } from '../../../policy/store';
 import { setOriginGrantResolver, setWatchdogResolver } from '../../../policy/engine';
 import { compileRule, type Rule } from '../../../policy/rules';
@@ -86,6 +87,18 @@ describe('requireAction', () => {
     expect(result).toBe(false);
     const response = calls[0] as { error: { code: string } };
     expect(response.error.code).toBe('ERR_LABEL_FLOW_BLOCKED');
+  });
+
+  it('carries the policy decision’s output labels into the next check in the same flow', async () => {
+    const flow = new LabelFlow();
+    const { sender: s, calls } = sender();
+    const options = { labelFlow: flow, upstreamConsent: 'origin-grant' as const };
+    expect(await requireAction(ctx(), s, 'browser.read.activeTab', options)).toBe(true);
+    expect(flow.labels.toArray()).toEqual(['confidential']);
+    expect(await requireAction(ctx(), s, 'model.prompt.local', options)).toBe(true);
+    expect(await requireAction(ctx(), s, 'model.prompt.remote.thirdParty', options)).toBe(false);
+    expect(calls).toEqual([expect.objectContaining({ error: expect.objectContaining({ code: 'ERR_LABEL_FLOW_BLOCKED' }) })]);
+    expect(await requireAction(ctx(), s, 'model.prompt.remote.thirdParty', { ...options, labelFlow: new LabelFlow() })).toBe(true);
   });
 
   it('quarantine response uses ERR_QUARANTINED', async () => {
