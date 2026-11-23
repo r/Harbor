@@ -7,70 +7,197 @@
     <style>
       body {
         min-height: 100vh;
-        padding: var(--space-3);
+        padding: var(--space-4) var(--space-4) var(--space-6);
       }
-      .header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: var(--space-2);
-        padding-bottom: var(--space-2);
-        border-bottom: 1px solid var(--color-border-subtle);
+      [hidden] {
+        display: none !important;
       }
-      .header-brand {
-        display: flex;
-        align-items: center;
-        gap: var(--space-2);
-      }
-      .header-logo {
-        width: 22px;
-        height: 22px;
-        border-radius: var(--radius-sm);
-        display: flex;
-        align-items: center;
-        justify-content: center;
+      .icon-btn {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: var(--radius-full);
+        background: transparent;
+        color: var(--color-text-secondary);
         cursor: pointer;
-        transition: transform 0.15s, box-shadow 0.15s;
       }
-      .header-logo svg {
+      .icon-btn:hover {
+        background: var(--color-bg-subtle);
+        color: var(--color-text-primary);
+      }
+
+      /* Shown only while Harbor can't reach its bridge. */
+      .bridge-notice {
+        display: flex;
+        gap: var(--space-3);
+        padding: var(--space-3);
+        margin-bottom: var(--space-4);
+        border-radius: var(--radius-md);
+        background: var(--color-warning-subtle);
+        color: var(--color-text-primary);
+        font-size: var(--text-sm);
+      }
+      .bridge-notice > .icon {
+        color: var(--color-warning);
+        margin-top: 2px;
+      }
+      .bridge-notice b {
+        display: block;
+        margin-bottom: 2px;
+      }
+      .bridge-notice p + p {
+        margin-top: var(--space-1);
+        color: var(--color-text-secondary);
+        font-size: var(--text-xs);
+      }
+
+      /* Welcome card: your agent, on a calm horizon. */
+      .welcome {
+        position: relative;
+        overflow: hidden;
+        padding: var(--space-6) var(--space-4) var(--space-4);
+        border-radius: 18px;
+        background: var(--color-surface-tertiary);
+      }
+      /* The waves end 5px below the baseline of the title's second line:
+         the card's top padding, one 1.6rem line at line-height 1.1, then
+         where the baseline sits in the next line (about 0.92em), less the
+         waves' own height. The title always takes two lines (max-width 9ch). */
+      .welcome {
+        --sea-top: calc(var(--space-6) + 1.6rem * (1.1 + 0.92) + 5px - 24px);
+      }
+      /* Drawn wide and cropped from the right, never stretched, so the sun
+         stays round. It sets behind the far wave: the sky is clipped along
+         that wave's crest. */
+      .welcome-sea {
+        position: absolute;
+        top: var(--sea-top);
+        left: 0;
+        width: 100%;
+        height: 24px;
+        overflow: visible;
+      }
+      .welcome h1 {
+        position: relative;
+        max-width: 9ch;
+        font-size: 1.6rem;
+        line-height: 1.1;
+        font-weight: var(--weight-bold);
+      }
+      .welcome > p {
+        position: relative;
+        max-width: 30ch;
+        margin-top: var(--space-2);
+        color: var(--color-text-secondary);
+      }
+      .welcome-agent {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        margin-top: var(--space-4);
+        padding: var(--space-3);
+        border-radius: 14px;
+        background: var(--color-bg-base);
+      }
+      .welcome-avatar {
+        width: 40px;
+        height: 40px;
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+        border-radius: var(--radius-md);
+        background: var(--color-action);
+        color: var(--color-action-ink);
+      }
+      /* Harbor's built-in model is Harbor, so it wears the lighthouse; your
+         own agent gets a sparkle. */
+      .welcome-avatar {
+        overflow: hidden;
+      }
+      .welcome-avatar-mark,
+      .welcome-avatar-mark svg {
         display: block;
         width: 100%;
         height: 100%;
-        border-radius: inherit;
       }
-      .header-logo:hover {
-        transform: scale(1.05);
-        box-shadow: var(--shadow-sm);
+      .welcome-agent-text {
+        min-width: 0;
       }
-      .header-logo:active {
-        transform: scale(0.98);
+      .welcome-agent-text b {
+        display: block;
+        overflow-wrap: anywhere;
       }
-      .header-title {
+      .welcome-agent-text span {
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+      }
+      .link-btn {
+        margin-left: auto;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--color-accent-primary);
+        font: inherit;
         font-size: var(--text-sm);
         font-weight: var(--weight-semibold);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        cursor: pointer;
+      }
+
+      /* The way into Settings, at the foot of the main view. */
+      .settings-row {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        width: 100%;
+        margin-top: var(--space-6);
+        padding: var(--space-3) var(--space-4);
+        border: 0;
+        border-radius: 14px;
+        background: var(--color-bg-subtle);
+        color: var(--color-text-secondary);
+        font: inherit;
+        font-size: var(--text-sm);
+        text-align: left;
+        cursor: pointer;
+      }
+      .settings-row:hover {
         color: var(--color-text-primary);
       }
-      .header-status {
+      .settings-row b {
+        display: block;
+        color: var(--color-text-primary);
+      }
+      .settings-row > [data-icon]:last-child {
+        margin-left: auto;
+      }
+
+      /* Settings view */
+      .settings-top {
         display: flex;
         align-items: center;
-        gap: 4px;
-        margin-left: var(--space-1);
-        padding-left: var(--space-2);
-        border-left: 1px solid var(--color-border-subtle);
+        gap: var(--space-2);
+        margin-bottom: var(--space-2);
       }
-      .header-status .status-indicator {
-        width: 6px;
-        height: 6px;
+      .settings-top h1 {
+        font-size: var(--text-lg);
+        font-weight: var(--weight-bold);
       }
-      .header-status .status-text {
+      .settings-group-title {
+        margin: var(--space-8) 0 var(--space-1);
+        font-size: var(--text-lg);
+        font-weight: var(--weight-bold);
+      }
+      .settings-group-hint {
+        margin-bottom: var(--space-2);
         font-size: var(--text-xs);
-        font-weight: var(--weight-medium);
+        color: var(--color-text-muted);
       }
-      .header-actions {
-        display: flex;
-        align-items: center;
-        gap: var(--space-1);
-      }
+
       .status-indicator {
         width: 8px;
         height: 8px;
@@ -98,48 +225,42 @@
       .status-text.connected { color: var(--color-success); }
       .status-text.disconnected { color: var(--color-error); }
       .status-text.connecting { color: var(--color-warning); }
+
+      /* Sections sit on the page: no box, no rules. Spacing and the heading
+         group them. */
       .panel {
-        background: var(--color-surface-primary);
-        border: 1px solid var(--color-border-default);
-        border-radius: var(--radius-md);
-      }
-      .panel + .panel {
-        margin-top: var(--space-3);
+        margin-top: var(--space-6);
       }
       .panel-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: var(--space-2) var(--space-3);
-        border-bottom: 1px solid var(--color-border-subtle);
+        min-height: 32px;
+        padding: var(--space-1) 0;
         cursor: pointer;
         user-select: none;
       }
-      .panel-header:hover {
-        background: var(--color-surface-secondary);
-      }
       .panel-title {
-        font-size: var(--text-xs);
-        font-weight: var(--weight-semibold);
-        color: var(--color-text-muted);
+        font-family: var(--font-display);
+        font-size: var(--text-base);
+        font-weight: var(--weight-bold);
+        color: var(--color-text-primary);
       }
-      .panel-toggle {
-        font-size: var(--text-xs);
-        color: var(--color-text-muted);
-        transition: transform 0.2s;
-      }
-      .panel-toggle.collapsed {
-        transform: rotate(-90deg);
+      .panel-header:hover .panel-title {
+        color: var(--color-accent-primary);
       }
       .panel-body {
-        padding: var(--space-3);
+        padding: var(--space-2) 0 0;
       }
       .panel-body.collapsed {
         display: none;
       }
+      /* A collapsed section shows only its title. */
+      .panel-header:has(+ .panel-body.collapsed) .panel-header-right {
+        display: none;
+      }
       .server {
         padding: var(--space-2);
-        border: 1px solid var(--color-border-subtle);
         border-radius: var(--radius-sm);
         background: var(--color-surface-secondary);
       }
@@ -179,49 +300,19 @@
       /* LLM Provider styles */
       .provider {
         padding: var(--space-2);
-        border: 1px solid var(--color-border-subtle);
         border-radius: var(--radius-sm);
         background: var(--color-surface-secondary);
       }
       .provider + .provider {
         margin-top: var(--space-2);
       }
-      .provider-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--space-2);
-      }
-      .provider-name {
-        font-weight: var(--weight-semibold);
-        display: flex;
-        align-items: center;
-        gap: var(--space-2);
-      }
-      .provider-badge {
-        font-size: var(--text-xs);
-        padding: 2px 6px;
-        border-radius: var(--radius-sm);
-        background: var(--color-surface-tertiary);
-        color: var(--color-text-muted);
-      }
-      .provider-badge.local {
-        background: var(--color-success-subtle);
-        color: var(--color-success);
-      }
-      .provider-badge.configured {
-        background: var(--color-accent-primary-subtle);
-        color: var(--color-accent-primary);
-      }
-      .provider-config {
-        margin-top: var(--space-2);
-        padding-top: var(--space-2);
-        border-top: 1px solid var(--color-border-subtle);
-        display: none;
-      }
-      .provider-config.expanded {
-        display: block;
-      }
+
+
+
+
+
+
+
       .form-group {
         margin-bottom: var(--space-2);
       }
@@ -269,18 +360,8 @@
       #agent-preset-buttons {
         flex-wrap: wrap;
       }
-      .model-select {
-        margin-top: var(--space-3);
-        padding-top: var(--space-3);
-        border-top: 1px solid var(--color-border-subtle);
-      }
-      .model-select-label {
-        font-size: var(--text-xs);
-        font-weight: var(--weight-semibold);
-        color: var(--color-text-muted);
-        margin-bottom: var(--space-2);
-        display: block;
-      }
+
+
       .model-dropdown {
         width: 100%;
         padding: var(--space-2);
@@ -341,44 +422,14 @@
       .panel-collapse-icon.collapsed {
         transform: rotate(-90deg);
       }
-      /* Status summary */
-      .status-summary {
-        font-size: var(--text-xs);
-        color: var(--color-text-muted);
-        padding: var(--space-2);
-        background: var(--color-surface-secondary);
-        border-radius: var(--radius-sm);
-        margin-bottom: var(--space-3);
-      }
-      .status-summary.available {
-        background: var(--color-success-subtle);
-        color: var(--color-success);
-      }
-      .status-summary.unavailable {
-        background: var(--color-warning-subtle);
-        color: var(--color-warning);
-      }
-      /* Provider sections */
-      .provider-section {
-        margin-bottom: var(--space-3);
-      }
-      .provider-section:last-of-type {
-        margin-bottom: 0;
-      }
-      .section-header {
-        display: flex;
-        align-items: center;
-        gap: var(--space-2);
-        margin-bottom: var(--space-1);
-      }
-      .section-icon {
-        font-size: var(--text-sm);
-      }
-      .section-title {
-        font-size: var(--text-xs);
-        font-weight: var(--weight-semibold);
-        color: var(--color-text-primary);
-      }
+
+
+
+
+
+
+
+
       .section-hint {
         font-size: var(--text-xs);
         color: var(--color-text-muted);
@@ -422,160 +473,40 @@
         margin-top: 2px;
       }
       .setup-status-actions { margin-top: var(--space-2); }
-      /* Provider list */
-      .provider-list {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-      }
-      /* Provider item - compact card style */
-      .provider-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: var(--space-2);
-        background: var(--color-surface-secondary);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-sm);
-        transition: border-color 0.2s;
-      }
-      .provider-item:hover {
-        border-color: var(--color-border-default);
-      }
-      .provider-item.available {
-        border-left: 3px solid var(--color-success);
-      }
-      .provider-item.configured {
-        border-left: 3px solid var(--color-accent-primary);
-      }
-      .provider-item.unavailable {
-        opacity: 0.7;
-      }
-      .provider-info {
-        display: flex;
-        align-items: center;
-        gap: var(--space-2);
-        flex: 1;
-        min-width: 0;
-      }
-      .provider-name {
-        font-size: var(--text-sm);
-        font-weight: var(--weight-medium);
-        color: var(--color-text-primary);
-      }
-      .provider-status {
-        font-size: var(--text-xs);
-        color: var(--color-text-muted);
-      }
-      .provider-status.available {
-        color: var(--color-success);
-      }
-      .provider-status.configured {
-        color: var(--color-accent-primary);
-      }
-      .provider-actions {
-        display: flex;
-        align-items: center;
-        gap: var(--space-1);
-      }
-      /* Model select section */
-      .model-select-section {
-        margin-top: var(--space-3);
-        padding-top: var(--space-3);
-        border-top: 1px solid var(--color-border-subtle);
-      }
-      /* Add provider section */
-      .add-provider-section {
-        margin-bottom: var(--space-3);
-      }
-      .add-provider-row {
-        display: flex;
-        gap: var(--space-2);
-      }
-      .provider-dropdown {
-        flex: 1;
-        padding: var(--space-2);
-        font-size: var(--text-sm);
-        border: 1px solid var(--color-border-default);
-        border-radius: var(--radius-sm);
-        background: var(--color-surface-primary);
-        color: var(--color-text-primary);
-        cursor: pointer;
-      }
-      .provider-dropdown:focus {
-        outline: none;
-        border-color: var(--color-accent-primary);
-      }
-      /* Provider config form */
-      .provider-config-form {
-        padding: var(--space-3);
-        background: var(--color-surface-secondary);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-sm);
-        margin-bottom: var(--space-3);
-      }
-      .provider-config-form .form-group {
-        margin-bottom: var(--space-2);
-      }
-      .provider-config-form .form-group:last-of-type {
-        margin-bottom: var(--space-3);
-      }
-      /* Configured providers */
-      #configured-providers-section {
-        margin-top: var(--space-2);
-      }
-      #configured-providers-section .section-header {
-        margin-bottom: var(--space-2);
-      }
-      .configured-provider {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: var(--space-2);
-        background: var(--color-surface-secondary);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-sm);
-        margin-bottom: var(--space-2);
-      }
-      .configured-provider:last-child {
-        margin-bottom: 0;
-      }
-      .configured-provider.available {
-        border-left: 3px solid var(--color-success);
-      }
-      .configured-provider.unavailable {
-        border-left: 3px solid var(--color-text-muted);
-      }
-      .configured-provider.is-default {
-        background: var(--color-accent-primary-subtle);
-      }
-      .configured-provider-info {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-      .configured-provider-name {
-        font-size: var(--text-sm);
-        font-weight: var(--weight-medium);
-        color: var(--color-text-primary);
-      }
-      .configured-provider-type {
-        font-size: var(--text-xs);
-        color: var(--color-text-muted);
-      }
-      .configured-provider-status {
-        font-size: var(--text-xs);
-      }
-      .configured-provider-status.available {
-        color: var(--color-success);
-      }
-      .configured-provider-status.unavailable {
-        color: var(--color-text-muted);
-      }
-      .configured-provider-actions {
-        display: flex;
-        gap: var(--space-1);
-      }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       .no-providers {
         color: var(--color-text-muted);
         font-size: var(--text-sm);
@@ -592,7 +523,6 @@
         justify-content: space-between;
         padding: var(--space-2);
         background: var(--color-surface-secondary);
-        border: 1px solid var(--color-border-subtle);
         border-radius: var(--radius-sm);
         margin-bottom: var(--space-2);
       }
@@ -600,14 +530,11 @@
         margin-bottom: 0;
       }
       .detected-provider.available {
-        border-left: 3px solid var(--color-success);
       }
       .detected-provider.unavailable {
-        border-left: 3px solid var(--color-text-muted);
         opacity: 0.7;
       }
       .detected-provider.needs-config {
-        border-left: 3px solid var(--color-warning);
       }
       .detected-provider-info {
         display: flex;
@@ -651,7 +578,6 @@
       .api-key-config {
         padding: var(--space-3);
         background: var(--color-surface-secondary);
-        border: 1px solid var(--color-border-subtle);
         border-radius: var(--radius-sm);
         margin-bottom: var(--space-3);
       }
@@ -680,7 +606,6 @@
         justify-content: space-between;
         padding: var(--space-2);
         background: var(--color-surface-secondary);
-        border: 1px solid var(--color-border-subtle);
         border-radius: var(--radius-sm);
         margin-bottom: var(--space-2);
       }
@@ -688,7 +613,6 @@
         margin-bottom: 0;
       }
       .configured-model.is-default {
-        border-left: 3px solid var(--color-success);
         background: var(--color-success-subtle);
       }
       .configured-model-info {
@@ -734,7 +658,6 @@
       /* Providers Details */
       .providers-details {
         margin-top: var(--space-2);
-        border-top: 1px solid var(--color-border-subtle);
         padding-top: var(--space-2);
       }
       .providers-summary {
@@ -760,36 +683,6 @@
         margin-top: var(--space-2);
       }
       /* Quick Actions Panel */
-      .quick-actions-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-        gap: var(--space-2);
-      }
-      .quick-action-btn {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: var(--space-1);
-        padding: var(--space-3);
-        background: var(--color-surface-secondary);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        transition: all 0.15s;
-      }
-      .quick-action-btn:hover {
-        background: var(--color-surface-tertiary);
-        border-color: var(--color-accent-primary);
-      }
-      .quick-action-icon {
-        font-size: var(--text-lg);
-      }
-      .quick-action-label {
-        font-size: var(--text-xs);
-        color: var(--color-text-secondary);
-        font-weight: var(--weight-medium);
-      }
 
       /* Browser Agent Capabilities (feature flag toggles) */
       .toggle-switch {
@@ -904,7 +797,6 @@
         background: var(--color-surface-secondary);
         border-radius: var(--radius-sm);
         padding: var(--space-2);
-        border: 1px solid var(--color-border-subtle);
       }
       .permission-origin-header {
         display: flex;
@@ -947,7 +839,6 @@
       .permission-tools-section {
         margin-top: var(--space-2);
         padding-top: var(--space-2);
-        border-top: 1px solid var(--color-border-subtle);
       }
       .permission-tools-title {
         font-size: 9px;
@@ -966,7 +857,6 @@
         background: var(--color-surface-tertiary);
         color: var(--color-text-secondary);
         font-family: var(--font-mono);
-        border: 1px solid var(--color-border-subtle);
       }
       .permission-actions {
         display: flex;
@@ -984,13 +874,10 @@
         background: var(--color-surface-secondary);
         border-radius: var(--radius-sm);
         padding: var(--space-2);
-        border: 1px solid var(--color-border-subtle);
       }
       .session-item.explicit {
-        border-left: 3px solid var(--color-accent-primary);
       }
       .session-item.implicit {
-        border-left: 3px solid var(--color-text-muted);
       }
       .session-item.terminated {
         opacity: 0.6;
@@ -1112,449 +999,463 @@
     </style>
   </head>
   <body>
-    <div class="header">
-      <div class="header-brand">
-        <div class="header-logo" id="header-logo" title="Open Firefox debugging page"><svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><rect width="64" height="64" fill="#00d230"/><path d="M33 17L64 6V27.5L34 23Z" fill="#efffce"/><path d="M26 7.5L37 17H15Z" fill="#151b17"/><rect x="18" y="17" width="16" height="7" fill="#151b17"/><rect x="22" y="17.75" width="8" height="4.5" fill="#efffce"/><rect x="14" y="24" width="24" height="4" fill="#151b17"/><path d="M20 28H32.5L38 52H14Z" fill="#151b17"/><path d="M18.68 33.26L33.05 30.39L34.71 37.65L16.61 41.57Z" fill="#efffce"/><path d="M0 57Q8 53 13.5 51.5H38.5Q45 53 49 55.5Q56 53.5 64 53.5V64H0Z" fill="#151b17"/></svg></div>
-        <span class="header-title">Harbor</span>
-        <div class="header-status">
-          <div id="bridge-status-indicator" class="status-indicator connecting"></div>
-          <span id="bridge-status-text" class="status-text connecting">...</span>
+    <main id="main-view">
+      <div class="bridge-notice" id="bridge-notice" role="status" hidden>
+        <i data-icon="triangle-alert" data-icon-size="18"></i>
+        <div>
+          <p><b>Harbor can't reach its bridge</b>Sites can't use your agent until it's back.</p>
+          <p>In a terminal, run <code>cd harbor/bridge-rs &amp;&amp; ./install.sh --firefox-only --skip-build</code>, then restart Firefox.</p>
+          <p id="bridge-notice-error" hidden></p>
         </div>
       </div>
-      <div class="header-actions">
-        <button class="btn btn-ghost btn-sm" id="reload-extension-btn" title="Reload extension"><i data-icon="rotate-cw"></i></button>
-      </div>
-    </div>
 
-    <div class="panel" id="setup-status-panel">
-      <div class="panel-header" id="setup-status-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon" id="setup-status-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
-          <div class="panel-title">Setup</div>
+      <section class="welcome" id="welcome-card">
+        <svg class="welcome-sea" viewBox="0 0 810 24" preserveAspectRatio="xMaxYMin slice" aria-hidden="true" focusable="false"><defs><linearGradient id="welcome-sea-fade" x1="0" x2="0" y1="0" y2="1"><stop offset="0.45" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient><mask id="welcome-sea-mask"><rect width="810" height="24" fill="url(#welcome-sea-fade)"/></mask><clipPath id="welcome-sky"><path d="M0 6 Q22.5 0 45 6 T90 6 T135 6 T180 6 T225 6 T270 6 T315 6 T360 6 T405 6 T450 6 T495 6 T540 6 T585 6 T630 6 T675 6 T720 6 T765 6 T810 6 V-40 H0Z"/></clipPath></defs><circle cx="771" cy="5" r="11" fill="var(--color-action)" clip-path="url(#welcome-sky)"/><g mask="url(#welcome-sea-mask)" fill="var(--color-accent-primary)"><path d="M0 6 Q22.5 0 45 6 T90 6 T135 6 T180 6 T225 6 T270 6 T315 6 T360 6 T405 6 T450 6 T495 6 T540 6 T585 6 T630 6 T675 6 T720 6 T765 6 T810 6 V24 H0Z" opacity=".08"/><path d="M0 14 Q22.5 8 45 14 T90 14 T135 14 T180 14 T225 14 T270 14 T315 14 T360 14 T405 14 T450 14 T495 14 T540 14 T585 14 T630 14 T675 14 T720 14 T765 14 T810 14 V24 H0Z" opacity=".13"/></g></svg>
+        <h1 id="welcome-title">Calm seas today</h1>
+        <p>I'll keep watch while you browse, and check with you whenever a site asks for more.</p>
+        <div class="welcome-agent">
+          <div class="welcome-avatar">
+            <span class="welcome-avatar-mark" id="welcome-avatar-harbor"><svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><rect width="64" height="64" fill="#00d230"/><path d="M33 17L64 6V27.5L34 23Z" fill="#efffce"/><path d="M26 7.5L37 17H15Z" fill="#151b17"/><rect x="18" y="17" width="16" height="7" fill="#151b17"/><rect x="22" y="17.75" width="8" height="4.5" fill="#efffce"/><rect x="14" y="24" width="24" height="4" fill="#151b17"/><path d="M20 28H32.5L38 52H14Z" fill="#151b17"/><path d="M18.68 33.26L33.05 30.39L34.71 37.65L16.61 41.57Z" fill="#efffce"/><path d="M0 57Q8 53 13.5 51.5H38.5Q45 53 49 55.5Q56 53.5 64 53.5V64H0Z" fill="#151b17"/></svg></span>
+            <i data-icon="sparkles" data-icon-size="22" id="welcome-avatar-agent" hidden></i>
+          </div>
+          <div class="welcome-agent-text">
+            <b id="welcome-agent-name">Built-in model</b>
+            <span>Sites ask first.</span>
+          </div>
+          <button class="link-btn" id="welcome-change-agent" type="button">Change</button>
         </div>
-      </div>
-      <div class="panel-body" id="setup-status-body">
-        <div id="setup-status-list" class="setup-status-list"></div>
-        <div class="setup-status-actions">
-          <a href="#" id="open-debugging-link" class="btn btn-secondary btn-sm">Open about:debugging</a>
-        </div>
-      </div>
-    </div>
+      </section>
 
-    <div class="panel" id="llm-panel">
-      <div class="panel-header" id="llm-panel-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon" id="llm-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
-          <div class="panel-title">LLM Providers</div>
+      <div class="panel" id="sessions-panel" hidden>
+        <div class="panel-header" id="sessions-panel-header">
+          <div class="panel-header-left">
+            <span class="panel-collapse-icon" id="sessions-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
+            <div class="panel-title">Agent sessions</div>
+          </div>
+          <div class="panel-header-right">
+            <div id="sessions-status-indicator" class="status-indicator disconnected"></div>
+            <span id="sessions-count" class="status-text disconnected">0</span>
+            <button class="btn btn-ghost btn-sm" id="refresh-sessions-btn" title="Refresh"><i data-icon="refresh-cw"></i></button>
+          </div>
         </div>
-        <div class="panel-header-right">
-          <div id="llm-status-indicator" class="status-indicator connecting"></div>
-          <span id="llm-status-text" class="status-text connecting">Checking...</span>
+        <div class="panel-body" id="sessions-list">
+          <div class="empty-state">No active sessions.</div>
         </div>
       </div>
-      <div class="panel-body" id="llm-panel-body">
-        <!-- Configured Models List -->
-        <div class="section-label">Configured Models</div>
-        <div id="configured-models" class="configured-models-list"></div>
-        
-        <!-- Add Model -->
-        <div class="add-model-section">
-          <select class="model-dropdown" id="available-models">
-            <option value="">Select a model to add...</option>
-          </select>
-          <button class="btn btn-primary btn-sm" id="add-model-btn" disabled>Add</button>
-          <button class="btn btn-ghost btn-sm" id="refresh-models-btn" title="Refresh available models"><i data-icon="refresh-cw"></i></button>
-        </div>
 
-        <!-- Detected Providers (collapsible) -->
-        <details class="providers-details">
-          <summary class="providers-summary">
-            <span>Providers</span>
-            <span id="providers-count" class="providers-count">0</span>
-          </summary>
-          <div id="detected-providers" class="detected-providers-list"></div>
-          
-          <!-- API Key Config -->
-          <div id="api-key-config" class="api-key-config" style="display: none;">
+      <div class="panel" id="activity-panel">
+        <div class="panel-header" id="activity-panel-header">
+          <div class="panel-header-left">
+            <span class="panel-collapse-icon collapsed" id="activity-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
+            <div class="panel-title">Activity</div>
+          </div>
+          <div class="panel-header-right">
+            <select class="form-input form-input-sm" id="activity-filter-effect" title="Filter by outcome" style="height: 24px; font-size: var(--text-xs); padding: 0 var(--space-2);">
+              <option value="">All</option>
+              <option value="allow">Allowed</option>
+              <option value="ask">Prompted</option>
+              <option value="preview">Previewed</option>
+              <option value="deny">Denied</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" id="refresh-activity-btn" title="Refresh"><i data-icon="refresh-cw"></i></button>
+          </div>
+        </div>
+        <div class="panel-body collapsed" id="activity-body">
+          <div id="activity-summary" style="font-size: var(--text-xs); color: var(--color-text-secondary); margin-bottom: var(--space-2);">Loading…</div>
+          <div id="activity-list">
+            <div class="empty-state">No activity yet.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="permissions-panel">
+        <div class="panel-header" id="permissions-panel-header">
+          <div class="panel-header-left">
+            <span class="panel-collapse-icon collapsed" id="permissions-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
+            <div class="panel-title">Site permissions</div>
+          </div>
+          <div class="panel-header-right">
+            <button class="btn btn-ghost btn-sm" id="refresh-permissions-btn" title="Refresh"><i data-icon="refresh-cw"></i></button>
+          </div>
+        </div>
+        <div class="panel-body collapsed" id="permissions-list">
+          <div class="empty-state">No site permissions granted yet.</div>
+        </div>
+      </div>
+
+      <div class="panel" id="api-toggles-panel">
+        <div class="panel-header" id="api-toggles-header">
+          <div class="panel-header-left">
+            <span class="panel-collapse-icon collapsed" id="api-toggles-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
+            <div class="panel-title">Browser agent capabilities</div>
+          </div>
+        </div>
+        <div class="panel-body collapsed" id="api-toggles-body">
+          <div class="feature-flag-item">
+            <div class="feature-flag-info">
+              <div class="feature-flag-name">Text generation</div>
+              <div class="feature-flag-desc">Sites can send prompts to an AI and get responses back. This is the basic building block for any AI-powered feature.</div>
+              <div class="feature-flag-api"><code>window.ai.prompt()</code></div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="flag-textGeneration" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="feature-flag-item">
+            <div class="feature-flag-info">
+              <div class="feature-flag-name">Tool access</div>
+              <div class="feature-flag-desc">The site's code can call specific tools directly—e.g., "call the Gmail tool to fetch inbox." The developer decides exactly which tools run and when.</div>
+              <div class="feature-flag-api"><code>agent.tools.list()</code> <code>agent.tools.call()</code></div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="flag-toolAccess" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="feature-flag-item">
+            <div class="feature-flag-info">
+              <div class="feature-flag-name">Agentic tool use</div>
+              <div class="feature-flag-desc">The AI autonomously decides which tools to call. Give it a task like "summarize my unread emails" and it figures out the steps itself. More powerful, but the AI has more control.</div>
+              <div class="feature-flag-api"><code>agent.run()</code></div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="flag-toolCalling" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="feature-flag-item">
+            <div class="feature-flag-info">
+              <div class="feature-flag-name">Browser interaction</div>
+              <div class="feature-flag-desc">The AI can click buttons, fill out forms, and scroll on the current page. Useful for automating tasks within a single site.</div>
+              <div class="feature-flag-api"><code>agent.browser.click()</code> <code>agent.browser.fill()</code> <code>agent.browser.scroll()</code></div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="flag-browserInteraction" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="feature-flag-item">
+            <div class="feature-flag-info">
+              <div class="feature-flag-name">Browser control</div>
+              <div class="feature-flag-desc">The AI can open new tabs, navigate to URLs, and fetch content from other websites. Enables research and multi-site workflows.</div>
+              <div class="feature-flag-api"><code>agent.browser.tabs</code> <code>agent.browser.navigate()</code> <code>agent.browser.fetch()</code></div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="flag-browserControl" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="feature-flag-item">
+            <div class="feature-flag-info">
+              <div class="feature-flag-name">Multi-Agent</div>
+              <div class="feature-flag-desc">Multiple AI agents can work together and coordinate. Enables complex workflows where specialized agents collaborate on tasks.</div>
+              <div class="feature-flag-api"><code>agent.a2a</code></div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="flag-multiAgent" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="feature-flag-reload-hint" id="feature-flag-reload-hint">
+            <i data-icon="triangle-alert" data-icon-size="14"></i> Reload pages to apply changes
+          </div>
+        </div>
+      </div>
+
+      <button class="settings-row" id="open-settings" type="button">
+        <i data-icon="sliders-horizontal" data-icon-size="20"></i>
+        <span><b>Settings</b>Your agent, model and tools</span>
+        <i data-icon="chevron-right" data-icon-size="18"></i>
+      </button>
+    </main>
+
+    <section id="settings-view" hidden>
+      <div class="settings-top">
+        <button class="icon-btn" id="settings-back" type="button" title="Back" aria-label="Back"><i data-icon="arrow-left" data-icon-size="20"></i></button>
+        <h1>Settings</h1>
+      </div>
+
+      <div class="panel" id="agent-panel">
+        <div class="panel-header" id="agent-panel-header">
+          <div class="panel-header-left">
+            <span class="panel-collapse-icon" id="agent-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
+            <div class="panel-title">Your agent</div>
+          </div>
+          <div class="panel-header-right">
+            <span id="agent-check-status" class="status-text"></span>
+          </div>
+        </div>
+        <div class="panel-body" id="agent-panel-body">
+          <div class="section-hint">
+            Harbor starts agents without your shell environment. Give your agent's tools their keys in the agent's own settings.
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="agent-backend-select">Run sites on</label>
+            <select class="form-input" id="agent-backend-select">
+              <option value="">Harbor (built-in model)</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" id="agent-check-btn" style="margin-top: var(--space-2);" disabled>Check</button>
+          </div>
+
+          <div class="section-label">Configured agents</div>
+          <div id="configured-agents" class="configured-models-list"></div>
+
+          <div class="add-model-section">
+            <button class="btn btn-secondary btn-sm" id="add-agent-btn" disabled>+ Add agent</button>
+          </div>
+
+          <!-- Add/Edit Agent Form (hidden by default) -->
+          <div id="agent-form" class="api-key-config" style="display: none;">
             <div class="api-key-header">
-              <span id="api-key-provider-name">Configure Provider</span>
-              <button class="btn btn-ghost btn-sm" id="api-key-cancel" aria-label="Close"><i data-icon="x"></i></button>
+              <span id="agent-form-title">Add agent</span>
+              <button class="btn btn-ghost btn-sm" id="agent-form-cancel" type="button" aria-label="Close"><i data-icon="x"></i></button>
             </div>
             <div class="form-group">
-              <label class="form-label" for="api-key-input">API Key</label>
-              <input type="password" class="form-input" id="api-key-input" placeholder="Enter API key" />
+              <label class="form-label">Preset</label>
+              <div id="agent-preset-buttons" class="form-actions">
+                <button class="btn btn-secondary btn-sm" id="agent-preset-goose" data-preset="goose" type="button">goose</button>
+                <button class="btn btn-secondary btn-sm" id="agent-preset-claude-code" data-preset="claude-code" type="button">Claude Code</button>
+                <button class="btn btn-secondary btn-sm" id="agent-preset-codex" data-preset="codex" type="button">Codex</button>
+                <button class="btn btn-secondary btn-sm" id="agent-preset-custom" data-preset="custom" type="button">Custom</button>
+              </div>
+              <div class="form-hint" id="agent-preset-docs-hint" style="display: none;"></div>
             </div>
-            <button class="btn btn-primary btn-sm" id="api-key-save" style="width: 100%;">Save</button>
-          </div>
-        </details>
-      </div>
-    </div>
-
-    <!-- Agent Panel: Harbor built-in vs. the person's own ACP agent -->
-    <div class="panel" id="agent-panel">
-      <div class="panel-header" id="agent-panel-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon" id="agent-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
-          <div class="panel-title">Agent</div>
-        </div>
-        <div class="panel-header-right">
-          <span id="agent-check-status" class="status-text"></span>
-        </div>
-      </div>
-      <div class="panel-body" id="agent-panel-body">
-        <div class="section-hint">
-          Harbor starts agents without your shell environment. Give your agent's tools their keys in the agent's own settings.
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="agent-backend-select">Run sites on</label>
-          <select class="form-input" id="agent-backend-select">
-            <option value="">Harbor (built-in model)</option>
-          </select>
-          <button class="btn btn-secondary btn-sm" id="agent-check-btn" style="margin-top: var(--space-2);" disabled>Check</button>
-        </div>
-
-        <div class="section-label">Configured agents</div>
-        <div id="configured-agents" class="configured-models-list"></div>
-
-        <div class="add-model-section">
-          <button class="btn btn-secondary btn-sm" id="add-agent-btn" disabled>+ Add agent</button>
-        </div>
-
-        <!-- Add/Edit Agent Form (hidden by default) -->
-        <div id="agent-form" class="api-key-config" style="display: none;">
-          <div class="api-key-header">
-            <span id="agent-form-title">Add agent</span>
-            <button class="btn btn-ghost btn-sm" id="agent-form-cancel" type="button" aria-label="Close"><i data-icon="x"></i></button>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Preset</label>
-            <div id="agent-preset-buttons" class="form-actions">
-              <button class="btn btn-secondary btn-sm" id="agent-preset-goose" data-preset="goose" type="button">goose</button>
-              <button class="btn btn-secondary btn-sm" id="agent-preset-claude-code" data-preset="claude-code" type="button">Claude Code</button>
-              <button class="btn btn-secondary btn-sm" id="agent-preset-codex" data-preset="codex" type="button">Codex</button>
-              <button class="btn btn-secondary btn-sm" id="agent-preset-custom" data-preset="custom" type="button">Custom</button>
+            <div class="form-group">
+              <label class="form-label" for="agent-form-name">Name</label>
+              <input type="text" class="form-input" id="agent-form-name" placeholder="goose" />
             </div>
-            <div class="form-hint" id="agent-preset-docs-hint" style="display: none;"></div>
+            <div class="form-group">
+              <label class="form-label" for="agent-form-command">Command</label>
+              <input type="text" class="form-input" id="agent-form-command" placeholder="goose" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="agent-form-args">Arguments (one per line)</label>
+              <textarea class="form-input" id="agent-form-args" rows="3" placeholder="acp"></textarea>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-secondary btn-sm" id="agent-form-check" disabled>Check</button>
+              <button class="btn btn-primary btn-sm" id="agent-form-save" style="flex: 1;" disabled>Save</button>
+            </div>
+            <div class="form-hint" id="agent-form-check-result"></div>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="agent-form-name">Name</label>
-            <input type="text" class="form-input" id="agent-form-name" placeholder="goose" />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="agent-form-command">Command</label>
-            <input type="text" class="form-input" id="agent-form-command" placeholder="goose" />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="agent-form-args">Arguments (one per line)</label>
-            <textarea class="form-input" id="agent-form-args" rows="3" placeholder="acp"></textarea>
-          </div>
-          <div class="form-actions">
-            <button class="btn btn-secondary btn-sm" id="agent-form-check" disabled>Check</button>
-            <button class="btn btn-primary btn-sm" id="agent-form-save" style="flex: 1;" disabled>Save</button>
-          </div>
-          <div class="form-hint" id="agent-form-check-result"></div>
         </div>
       </div>
-    </div>
 
-    <!-- OAuth App Credentials Panel -->
-    <div class="panel" id="oauth-panel">
-      <div class="panel-header" id="oauth-panel-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon" id="oauth-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
-          <div class="panel-title">App Credentials</div>
-        </div>
-        <div class="panel-header-right">
-          <div id="oauth-status-indicator" class="status-indicator disconnected"></div>
-          <span id="oauth-status-text" class="status-text disconnected">Not configured</span>
-        </div>
-      </div>
-      <div class="panel-body" id="oauth-panel-body">
-        <div class="section-hint">OAuth client credentials for MCP servers that need API access (Gmail, GitHub, etc.)</div>
-        
-        <div id="oauth-providers-list" class="detected-providers-list"></div>
-        
-        <!-- OAuth Credentials Config Form (hidden by default) -->
-        <div id="oauth-config-form" class="api-key-config" style="display: none;">
-          <div class="api-key-header">
-            <span id="oauth-config-provider-name">Configure Google</span>
-            <button class="btn btn-ghost btn-sm" id="oauth-config-cancel" aria-label="Close"><i data-icon="x"></i></button>
+      <div id="builtin-model-group">
+        <h2 class="settings-group-title">Harbor's built-in model</h2>
+        <p class="settings-group-hint">Sites use these when they run on Harbor's built-in model instead of your own agent.</p>
+      <div class="panel" id="llm-panel">
+        <div class="panel-header" id="llm-panel-header">
+          <div class="panel-header-left">
+            <span class="panel-collapse-icon" id="llm-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
+            <div class="panel-title">Model</div>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="oauth-client-id">Client ID</label>
-            <input type="text" class="form-input" id="oauth-client-id" placeholder="your-client-id.apps.googleusercontent.com" />
+          <div class="panel-header-right">
+            <div id="llm-status-indicator" class="status-indicator connecting"></div>
+            <span id="llm-status-text" class="status-text connecting">Checking...</span>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="oauth-client-secret">Client Secret</label>
-            <input type="password" class="form-input" id="oauth-client-secret" placeholder="Enter client secret" />
-          </div>
-          <div class="form-hint">Get credentials from <a href="#" id="oauth-help-link" target="_blank">developer console</a></div>
-          <button class="btn btn-primary btn-sm" id="oauth-config-save" style="width: 100%; margin-top: var(--space-2);">Save</button>
         </div>
-      </div>
-    </div>
+        <div class="panel-body" id="llm-panel-body">
+          <!-- Configured Models List -->
+          <div class="section-label">Your models</div>
+          <div id="configured-models" class="configured-models-list"></div>
+          
+          <!-- Add Model -->
+          <div class="add-model-section">
+            <select class="model-dropdown" id="available-models">
+              <option value="">Select a model to add...</option>
+            </select>
+            <button class="btn btn-primary btn-sm" id="add-model-btn" disabled>Add</button>
+            <button class="btn btn-ghost btn-sm" id="refresh-models-btn" title="Refresh available models"><i data-icon="refresh-cw"></i></button>
+          </div>
 
-    <div class="panel">
-      <div class="panel-header" id="servers-panel-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon" id="servers-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
-          <div class="panel-title">MCP Servers</div>
-        </div>
-        <div class="panel-header-right">
-          <button class="btn btn-secondary btn-sm" id="add-remote" title="Add remote MCP server (SSE/WebSocket)">+ Remote</button>
-          <button class="btn btn-secondary btn-sm" id="add" title="Load MCP server (.json manifest or .wasm)">+ File</button>
-          <input id="file" type="file" accept=".wasm,.json" hidden />
+          <!-- Detected Providers (collapsible) -->
+          <details class="providers-details">
+            <summary class="providers-summary">
+              <span>Providers</span>
+              <span id="providers-count" class="providers-count">0</span>
+            </summary>
+            <div id="detected-providers" class="detected-providers-list"></div>
+            
+            <!-- API Key Config -->
+            <div id="api-key-config" class="api-key-config" style="display: none;">
+              <div class="api-key-header">
+                <span id="api-key-provider-name">Configure provider</span>
+                <button class="btn btn-ghost btn-sm" id="api-key-cancel" aria-label="Close"><i data-icon="x"></i></button>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="api-key-input">API Key</label>
+                <input type="password" class="form-input" id="api-key-input" placeholder="Enter API key" />
+              </div>
+              <button class="btn btn-primary btn-sm" id="api-key-save" style="width: 100%;">Save</button>
+            </div>
+          </details>
         </div>
       </div>
-      <div class="panel-body" id="servers">
-        <!-- Remote Server Registration Form (hidden by default) -->
-        <div id="remote-server-form" class="api-key-config" style="display: none; margin-bottom: var(--space-3);">
-          <div class="api-key-header">
-            <span>Add Remote Server</span>
-            <button class="btn btn-ghost btn-sm" id="remote-server-cancel" aria-label="Close"><i data-icon="x"></i></button>
+
+      <div class="panel" id="servers-panel">
+        <div class="panel-header" id="servers-panel-header">
+          <div class="panel-header-left">
+            <span class="panel-collapse-icon" id="servers-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
+            <div class="panel-title">Tools</div>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="remote-server-url">Server URL</label>
-            <input type="text" class="form-input" id="remote-server-url" placeholder="http://localhost:3001/mcp" />
+          <div class="panel-header-right">
+            <button class="btn btn-ghost btn-sm" id="open-directory-btn" title="Browse tools you can install"><i data-icon="book-open"></i> Directory</button>
+            <button class="btn btn-secondary btn-sm" id="add-remote" title="Add a tool server by its address">+ Remote</button>
+            <button class="btn btn-secondary btn-sm" id="add" title="Load a tool server from a file (.json manifest or .wasm)">+ File</button>
+            <input id="file" type="file" accept=".wasm,.json" hidden />
           </div>
-          <div class="form-group">
-            <label class="form-label" for="remote-server-name">Name</label>
-            <input type="text" class="form-input" id="remote-server-name" placeholder="My MCP Server" />
+        </div>
+        <div class="panel-body" id="servers">
+          <!-- Remote Server Registration Form (hidden by default) -->
+          <div id="remote-server-form" class="api-key-config" style="display: none; margin-bottom: var(--space-3);">
+            <div class="api-key-header">
+              <span>Add a remote tool server</span>
+              <button class="btn btn-ghost btn-sm" id="remote-server-cancel" aria-label="Close"><i data-icon="x"></i></button>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="remote-server-url">Server URL</label>
+              <input type="text" class="form-input" id="remote-server-url" placeholder="http://localhost:3001/mcp" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="remote-server-name">Name</label>
+              <input type="text" class="form-input" id="remote-server-name" placeholder="My tool server" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="remote-server-transport">Transport</label>
+              <select class="form-input" id="remote-server-transport">
+                <option value="sse">SSE (Server-Sent Events)</option>
+                <option value="websocket">WebSocket</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="remote-server-auth">Authorization Header (optional)</label>
+              <input type="text" class="form-input" id="remote-server-auth" placeholder="Bearer your-token" />
+            </div>
+            <div class="form-hint" style="margin-bottom: var(--space-2);">
+              Enter the address of a tool server that supports SSE or WebSocket.
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-secondary btn-sm" id="remote-server-test">Test connection</button>
+              <button class="btn btn-primary btn-sm" id="remote-server-save" style="flex: 1;">Add server</button>
+            </div>
           </div>
+          <!-- Server secrets form (hidden; shown when Configure is clicked for a server with secretsDecl) -->
+          <div id="server-secrets-form" class="api-key-config" style="display: none; margin-bottom: var(--space-3);">
+            <div class="api-key-header">
+              <span id="server-secrets-title">Credentials</span>
+              <button class="btn btn-ghost btn-sm" id="server-secrets-cancel" type="button" aria-label="Close"><i data-icon="x"></i></button>
+            </div>
+            <div id="server-secrets-fields"></div>
+            <div class="form-actions">
+              <button class="btn btn-primary btn-sm" id="server-secrets-save" type="button">Save</button>
+              <button class="btn btn-ghost btn-sm" id="server-secrets-cancel-btn" type="button">Cancel</button>
+            </div>
+          </div>
+          <div id="servers-list"><!-- Server list rendered here --></div>
+        </div>
+      </div>
+
+      <div class="panel" id="oauth-panel">
+        <div class="panel-header" id="oauth-panel-header">
+          <div class="panel-header-left">
+            <span class="panel-collapse-icon" id="oauth-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
+            <div class="panel-title">App credentials</div>
+          </div>
+          <div class="panel-header-right">
+            <div id="oauth-status-indicator" class="status-indicator disconnected"></div>
+            <span id="oauth-status-text" class="status-text disconnected">Not configured</span>
+          </div>
+        </div>
+        <div class="panel-body" id="oauth-panel-body">
+          <div class="section-hint">Sign-in details for tools that reach your accounts, such as Gmail or GitHub.</div>
+          
+          <div id="oauth-providers-list" class="detected-providers-list"></div>
+          
+          <!-- OAuth Credentials Config Form (hidden by default) -->
+          <div id="oauth-config-form" class="api-key-config" style="display: none;">
+            <div class="api-key-header">
+              <span id="oauth-config-provider-name">Configure Google</span>
+              <button class="btn btn-ghost btn-sm" id="oauth-config-cancel" aria-label="Close"><i data-icon="x"></i></button>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="oauth-client-id">Client ID</label>
+              <input type="text" class="form-input" id="oauth-client-id" placeholder="your-client-id.apps.googleusercontent.com" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="oauth-client-secret">Client secret</label>
+              <input type="password" class="form-input" id="oauth-client-secret" placeholder="Enter client secret" />
+            </div>
+            <div class="form-hint">Get credentials from <a href="#" id="oauth-help-link" target="_blank">developer console</a></div>
+            <button class="btn btn-primary btn-sm" id="oauth-config-save" style="width: 100%; margin-top: var(--space-2);">Save</button>
+          </div>
+        </div>
+      </div>
+      </div>
+
+      <section id="developer-panel">
+        <h2 class="settings-group-title">Developer</h2>
+      <div class="panel" id="setup-status-panel">
+        <div class="panel-header" id="setup-status-header">
+          <div class="panel-header-left">
+            <span class="panel-collapse-icon" id="setup-status-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
+            <div class="panel-title">Bridge</div>
+          </div>
+        </div>
+        <div class="panel-body" id="setup-status-body">
+          <div id="setup-status-list" class="setup-status-list"></div>
+          <div class="setup-status-actions">
+            <a href="#" id="open-debugging-link" class="btn btn-secondary btn-sm">Open about:debugging</a>
+          </div>
+        </div>
+      </div>
+
+        <div class="panel" id="reload-panel">
+          <button class="btn btn-secondary btn-sm" id="reload-extension-btn" type="button"><i data-icon="rotate-cw"></i> Reload Harbor</button>
+        </div>
+
+      <div class="panel" id="tool-tester-panel">
+        <div class="panel-header" id="tool-tester-header">
+          <div class="panel-header-left">
+            <span class="panel-collapse-icon collapsed" id="tool-tester-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
+            <div class="panel-title">Tool tester</div>
+          </div>
+        </div>
+        <div class="panel-body collapsed" id="tool-tester-body">
           <div class="form-group">
-            <label class="form-label" for="remote-server-transport">Transport</label>
-            <select class="form-input" id="remote-server-transport">
-              <option value="sse">SSE (Server-Sent Events)</option>
-              <option value="websocket">WebSocket</option>
+            <label class="form-label">Server</label>
+            <select class="form-input" id="tool-tester-server">
+              <option value="">Select a server...</option>
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label" for="remote-server-auth">Authorization Header (optional)</label>
-            <input type="text" class="form-input" id="remote-server-auth" placeholder="Bearer your-token" />
+            <label class="form-label">Tool</label>
+            <select class="form-input" id="tool-tester-tool" disabled>
+              <option value="">Select a tool...</option>
+            </select>
           </div>
-          <div class="form-hint" style="margin-bottom: var(--space-2);">
-            Enter the URL of an MCP server that supports SSE or WebSocket transport.
+          <div id="tool-tester-schema" style="display: none;">
+            <div class="form-group">
+              <label class="form-label">Arguments (JSON)</label>
+              <textarea class="form-input" id="tool-tester-args" rows="4" placeholder='{"query": "example"}'></textarea>
+            </div>
+            <div class="form-hint" id="tool-tester-hint" style="margin-bottom: var(--space-2);"></div>
           </div>
-          <div class="form-actions">
-            <button class="btn btn-secondary btn-sm" id="remote-server-test">Test Connection</button>
-            <button class="btn btn-primary btn-sm" id="remote-server-save" style="flex: 1;">Add Server</button>
+          <button class="btn btn-primary btn-sm" id="tool-tester-run" disabled style="width: 100%;">Run tool</button>
+          <div id="tool-tester-result" style="display: none; margin-top: var(--space-3);">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1);">
+              <div class="form-label" style="margin-bottom: 0;">Result</div>
+              <button type="button" class="btn btn-ghost btn-sm" id="tool-tester-copy" title="Copy result to clipboard">Copy</button>
+            </div>
+            <div id="tool-tester-parsed" style="display: none; margin-bottom: var(--space-2); font-size: var(--text-xs);"></div>
+            <pre style="background: var(--color-surface-secondary); padding: var(--space-2); border-radius: var(--radius-sm); font-size: var(--text-xs); overflow-x: auto; max-height: 300px; white-space: pre-wrap; word-break: break-word;"><code id="tool-tester-output"></code></pre>
           </div>
-        </div>
-        <!-- Server secrets form (hidden; shown when Configure is clicked for a server with secretsDecl) -->
-        <div id="server-secrets-form" class="api-key-config" style="display: none; margin-bottom: var(--space-3);">
-          <div class="api-key-header">
-            <span id="server-secrets-title">Credentials</span>
-            <button class="btn btn-ghost btn-sm" id="server-secrets-cancel" type="button" aria-label="Close"><i data-icon="x"></i></button>
-          </div>
-          <div id="server-secrets-fields"></div>
-          <div class="form-actions">
-            <button class="btn btn-primary btn-sm" id="server-secrets-save" type="button">Save</button>
-            <button class="btn btn-ghost btn-sm" id="server-secrets-cancel-btn" type="button">Cancel</button>
-          </div>
-        </div>
-        <div id="servers-list"><!-- Server list rendered here --></div>
-      </div>
-    </div>
-
-    <!-- Tool Tester Panel -->
-    <div class="panel" id="tool-tester-panel">
-      <div class="panel-header" id="tool-tester-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon collapsed" id="tool-tester-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
-          <div class="panel-title">Tool Tester</div>
         </div>
       </div>
-      <div class="panel-body collapsed" id="tool-tester-body">
-        <div class="form-group">
-          <label class="form-label">Server</label>
-          <select class="form-input" id="tool-tester-server">
-            <option value="">Select a server...</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Tool</label>
-          <select class="form-input" id="tool-tester-tool" disabled>
-            <option value="">Select a tool...</option>
-          </select>
-        </div>
-        <div id="tool-tester-schema" style="display: none;">
-          <div class="form-group">
-            <label class="form-label">Arguments (JSON)</label>
-            <textarea class="form-input" id="tool-tester-args" rows="4" placeholder='{"query": "example"}'></textarea>
-          </div>
-          <div class="form-hint" id="tool-tester-hint" style="margin-bottom: var(--space-2);"></div>
-        </div>
-        <button class="btn btn-primary btn-sm" id="tool-tester-run" disabled style="width: 100%;">Run Tool</button>
-        <div id="tool-tester-result" style="display: none; margin-top: var(--space-3);">
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1);">
-            <div class="form-label" style="margin-bottom: 0;">Result</div>
-            <button type="button" class="btn btn-ghost btn-sm" id="tool-tester-copy" title="Copy result to clipboard">Copy</button>
-          </div>
-          <div id="tool-tester-parsed" style="display: none; margin-bottom: var(--space-2); font-size: var(--text-xs);"></div>
-          <pre style="background: var(--color-surface-secondary); padding: var(--space-2); border-radius: var(--radius-sm); font-size: var(--text-xs); overflow-x: auto; max-height: 300px; white-space: pre-wrap; word-break: break-word;"><code id="tool-tester-output"></code></pre>
-        </div>
-      </div>
-    </div>
-
-    <!-- Agent Sessions Panel -->
-    <div class="panel" id="sessions-panel">
-      <div class="panel-header" id="sessions-panel-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon" id="sessions-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
-          <div class="panel-title">Agent Sessions</div>
-        </div>
-        <div class="panel-header-right">
-          <div id="sessions-status-indicator" class="status-indicator disconnected"></div>
-          <span id="sessions-count" class="status-text disconnected">0</span>
-          <button class="btn btn-ghost btn-sm" id="refresh-sessions-btn" title="Refresh"><i data-icon="refresh-cw"></i></button>
-        </div>
-      </div>
-      <div class="panel-body" id="sessions-list">
-        <div class="empty-state">No active sessions.</div>
-      </div>
-    </div>
-
-    <!-- Policy Activity Panel -->
-    <div class="panel" id="activity-panel">
-      <div class="panel-header" id="activity-panel-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon" id="activity-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
-          <div class="panel-title">Activity</div>
-        </div>
-        <div class="panel-header-right">
-          <select class="form-input form-input-sm" id="activity-filter-effect" title="Filter by outcome" style="height: 24px; font-size: var(--text-xs); padding: 0 var(--space-2);">
-            <option value="">All</option>
-            <option value="allow">Allowed</option>
-            <option value="ask">Prompted</option>
-            <option value="preview">Previewed</option>
-            <option value="deny">Denied</option>
-          </select>
-          <button class="btn btn-ghost btn-sm" id="refresh-activity-btn" title="Refresh"><i data-icon="refresh-cw"></i></button>
-        </div>
-      </div>
-      <div class="panel-body" id="activity-body">
-        <div id="activity-summary" style="font-size: var(--text-xs); color: var(--color-text-secondary); margin-bottom: var(--space-2);">Loading…</div>
-        <div id="activity-list">
-          <div class="empty-state">No activity yet.</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Site Permissions Panel -->
-    <div class="panel" id="permissions-panel">
-      <div class="panel-header" id="permissions-panel-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon collapsed" id="permissions-panel-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
-          <div class="panel-title">Site Permissions</div>
-        </div>
-        <div class="panel-header-right">
-          <button class="btn btn-ghost btn-sm" id="refresh-permissions-btn" title="Refresh"><i data-icon="refresh-cw"></i></button>
-        </div>
-      </div>
-      <div class="panel-body collapsed" id="permissions-list">
-        <div class="empty-state">No site permissions granted yet.</div>
-      </div>
-    </div>
-
-    <!-- Browser Agent Capabilities Panel -->
-    <div class="panel" id="api-toggles-panel">
-      <div class="panel-header" id="api-toggles-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon" id="api-toggles-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
-          <div class="panel-title">Browser Agent Capabilities</div>
-        </div>
-      </div>
-      <div class="panel-body" id="api-toggles-body">
-        <div class="feature-flag-item">
-          <div class="feature-flag-info">
-            <div class="feature-flag-name">Text Generation</div>
-            <div class="feature-flag-desc">Sites can send prompts to an AI and get responses back. This is the basic building block for any AI-powered feature.</div>
-            <div class="feature-flag-api"><code>window.ai.prompt()</code></div>
-          </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="flag-textGeneration" checked />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="feature-flag-item">
-          <div class="feature-flag-info">
-            <div class="feature-flag-name">Tool Access</div>
-            <div class="feature-flag-desc">The site's code can call specific tools directly—e.g., "call the Gmail tool to fetch inbox." The developer decides exactly which tools run and when.</div>
-            <div class="feature-flag-api"><code>agent.tools.list()</code> <code>agent.tools.call()</code></div>
-          </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="flag-toolAccess" checked />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="feature-flag-item">
-          <div class="feature-flag-info">
-            <div class="feature-flag-name">Agentic Tool Use</div>
-            <div class="feature-flag-desc">The AI autonomously decides which tools to call. Give it a task like "summarize my unread emails" and it figures out the steps itself. More powerful, but the AI has more control.</div>
-            <div class="feature-flag-api"><code>agent.run()</code></div>
-          </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="flag-toolCalling" checked />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="feature-flag-item">
-          <div class="feature-flag-info">
-            <div class="feature-flag-name">Browser Interaction</div>
-            <div class="feature-flag-desc">The AI can click buttons, fill out forms, and scroll on the current page. Useful for automating tasks within a single site.</div>
-            <div class="feature-flag-api"><code>agent.browser.click()</code> <code>agent.browser.fill()</code> <code>agent.browser.scroll()</code></div>
-          </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="flag-browserInteraction" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="feature-flag-item">
-          <div class="feature-flag-info">
-            <div class="feature-flag-name">Browser Control</div>
-            <div class="feature-flag-desc">The AI can open new tabs, navigate to URLs, and fetch content from other websites. Enables research and multi-site workflows.</div>
-            <div class="feature-flag-api"><code>agent.browser.tabs</code> <code>agent.browser.navigate()</code> <code>agent.browser.fetch()</code></div>
-          </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="flag-browserControl" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="feature-flag-item">
-          <div class="feature-flag-info">
-            <div class="feature-flag-name">Multi-Agent</div>
-            <div class="feature-flag-desc">Multiple AI agents can work together and coordinate. Enables complex workflows where specialized agents collaborate on tasks.</div>
-            <div class="feature-flag-api"><code>agent.a2a</code></div>
-          </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="flag-multiAgent" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="feature-flag-reload-hint" id="feature-flag-reload-hint">
-          <i data-icon="triangle-alert" data-icon-size="14"></i> Reload pages to apply changes
-        </div>
-      </div>
-    </div>
-
-    <!-- Quick Actions Panel -->
-    <div class="panel" id="quick-actions-panel">
-      <div class="panel-header" id="quick-actions-header">
-        <div class="panel-header-left">
-          <span class="panel-collapse-icon" id="quick-actions-toggle"><i data-icon="chevron-down" data-icon-size="14"></i></span>
-          <div class="panel-title">Quick Actions</div>
-        </div>
-      </div>
-      <div class="panel-body" id="quick-actions-body">
-        <div class="quick-actions-grid">
-          <button class="quick-action-btn" id="open-directory-btn" title="Browse MCP server directory">
-            <span class="quick-action-icon"><i data-icon="book-open" data-icon-size="20"></i></span>
-            <span class="quick-action-label">Directory</span>
-          </button>
-        </div>
-      </div>
-    </div>
+      </section>
+    </section>
 
     <script type="module" src="./sidebar.js"></script>
   </body>

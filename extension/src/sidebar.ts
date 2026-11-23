@@ -73,9 +73,6 @@ type ModelInfo = {
   owned_by?: string;
 };
 
-// Header elements
-const headerLogo = document.getElementById('header-logo') as HTMLDivElement;
-
 // Server elements
 const serversEl = document.getElementById('servers') as HTMLDivElement;
 const serversListEl = document.getElementById('servers-list') as HTMLDivElement;
@@ -101,9 +98,10 @@ const serverSecretsSaveBtn = document.getElementById('server-secrets-save') as H
 const serverSecretsCancelBtn = document.getElementById('server-secrets-cancel') as HTMLButtonElement;
 const serverSecretsCancelBtn2 = document.getElementById('server-secrets-cancel-btn') as HTMLButtonElement;
 
-// Bridge status elements
-const bridgeStatusIndicator = document.getElementById('bridge-status-indicator') as HTMLDivElement;
-const bridgeStatusText = document.getElementById('bridge-status-text') as HTMLSpanElement;
+// Bridge notice: shown in the main view only while Harbor can't reach its bridge
+const bridgeNotice = document.getElementById('bridge-notice') as HTMLDivElement;
+const bridgeNoticeError = document.getElementById('bridge-notice-error') as HTMLParagraphElement;
+const welcomeTitle = document.getElementById('welcome-title') as HTMLHeadingElement;
 
 // Setup status panel
 const setupStatusList = document.getElementById('setup-status-list') as HTMLDivElement;
@@ -111,6 +109,7 @@ const setupStatusBody = document.getElementById('setup-status-body') as HTMLDivE
 const setupStatusToggle = document.getElementById('setup-status-toggle') as HTMLSpanElement;
 const setupStatusHeader = document.getElementById('setup-status-header') as HTMLDivElement;
 const openDebuggingLink = document.getElementById('open-debugging-link') as HTMLAnchorElement;
+const DEBUGGING_URL = 'about:debugging#/runtime/this-firefox';
 
 // LLM elements
 const llmPanelHeader = document.getElementById('llm-panel-header') as HTMLDivElement;
@@ -118,7 +117,7 @@ const llmPanelToggle = document.getElementById('llm-panel-toggle') as HTMLSpanEl
 const llmPanelBody = document.getElementById('llm-panel-body') as HTMLDivElement;
 const llmStatusIndicator = document.getElementById('llm-status-indicator') as HTMLDivElement;
 const llmStatusText = document.getElementById('llm-status-text') as HTMLSpanElement;
-const llmPanel = document.getElementById('llm-panel') as HTMLDivElement;
+const builtinModelGroup = document.getElementById('builtin-model-group') as HTMLDivElement;
 const configuredModelsEl = document.getElementById('configured-models') as HTMLDivElement;
 const availableModelsSelect = document.getElementById('available-models') as HTMLSelectElement;
 const addModelBtn = document.getElementById('add-model-btn') as HTMLButtonElement;
@@ -163,6 +162,23 @@ const BRIDGE_STATUS_POLL_INTERVAL = 5000; // 5 seconds
 hydrateIcons();
 
 // =============================================================================
+// Views: the main view, and Settings with everything technical
+// =============================================================================
+
+const mainView = document.getElementById('main-view') as HTMLElement;
+const settingsView = document.getElementById('settings-view') as HTMLElement;
+
+function showView(view: 'main' | 'settings'): void {
+  mainView.hidden = view !== 'main';
+  settingsView.hidden = view !== 'settings';
+  window.scrollTo(0, 0);
+}
+
+document.getElementById('open-settings')?.addEventListener('click', () => showView('settings'));
+document.getElementById('welcome-change-agent')?.addEventListener('click', () => showView('settings'));
+document.getElementById('settings-back')?.addEventListener('click', () => showView('main'));
+
+// =============================================================================
 // Toast notification helper
 // =============================================================================
 
@@ -178,38 +194,11 @@ function showToast(message: string, type: 'info' | 'error' | 'success' = 'info',
   setTimeout(() => toast.remove(), duration);
 }
 
-// =============================================================================
-// Header Logo - Open about:debugging or copy to clipboard
-// =============================================================================
-
-const DEBUGGING_URL = 'about:debugging#/runtime/this-firefox';
-
-headerLogo.addEventListener('click', async () => {
-  try {
-    // Try to open the URL in a new tab
-    // Note: Firefox extensions cannot directly open about: URLs via tabs.create
-    // So we copy to clipboard as the fallback
-    await navigator.clipboard.writeText(DEBUGGING_URL);
-    showToast('Copied debugging URL to clipboard');
-  } catch (err) {
-    console.error('[Sidebar] Failed to copy to clipboard:', err);
-    showToast('Failed to copy URL');
-  }
-});
-
 function updateBridgeStatusUI(connected: boolean, error?: string | null): void {
-  if (connected) {
-    bridgeStatusIndicator.className = 'status-indicator connected';
-    bridgeStatusText.className = 'status-text connected';
-    bridgeStatusText.textContent = 'Connected';
-  } else {
-    bridgeStatusIndicator.className = 'status-indicator disconnected';
-    bridgeStatusText.className = 'status-text disconnected';
-    bridgeStatusText.textContent = 'Disconnected';
-    if (error) {
-      bridgeStatusText.title = error;
-    }
-  }
+  bridgeNotice.hidden = connected;
+  welcomeTitle.textContent = connected ? 'Calm seas today' : 'Waiting at the dock';
+  bridgeNoticeError.textContent = error ?? '';
+  bridgeNoticeError.hidden = connected || !error;
 }
 
 let lastBridgeConnected = false;
@@ -247,9 +236,7 @@ async function checkBridgeStatus(): Promise<void> {
   try {
     const response = await browserAPI.runtime.sendMessage({ type: 'bridge_check_health' }) as BridgeStatus;
     lastBridgeError = response.error ?? null;
-    // Debug: show response in title attribute
     const debugInfo = `connected: ${response.connected}, bridgeReady: ${response.bridgeReady}, error: ${response.error || 'none'}`;
-    bridgeStatusText.title = debugInfo;
     console.log('[Sidebar] Bridge status:', debugInfo);
 
     // Only consider fully ready when both connected AND bridgeReady
@@ -276,8 +263,6 @@ async function checkBridgeStatus(): Promise<void> {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[Sidebar] Failed to check bridge status:', errorMsg);
     lastBridgeError = errorMsg;
-    // Show error in UI for debugging
-    bridgeStatusText.title = `Error: ${errorMsg}`;
     updateBridgeStatusUI(false, errorMsg);
     renderSetupStatus();
     lastBridgeConnected = false;
@@ -695,7 +680,7 @@ remoteServerTestBtn?.addEventListener('click', async () => {
   }
 
   remoteServerTestBtn.disabled = false;
-  remoteServerTestBtn.textContent = 'Test Connection';
+  remoteServerTestBtn.textContent = 'Test connection';
 });
 
 // Save remote server
@@ -739,7 +724,7 @@ remoteServerSaveBtn?.addEventListener('click', async () => {
   }
 
   remoteServerSaveBtn.disabled = false;
-  remoteServerSaveBtn.textContent = 'Add Server';
+  remoteServerSaveBtn.textContent = 'Add server';
 });
 
 // Auto-refresh servers when storage changes (e.g., from Directory page)
@@ -1226,6 +1211,22 @@ function setAgentControlsEnabled(enabled: boolean): void {
   agentFormCheck.disabled = !enabled;
 }
 
+const welcomeAgentName = document.getElementById('welcome-agent-name') as HTMLElement;
+const welcomeAvatarHarbor = document.getElementById('welcome-avatar-harbor') as HTMLElement;
+const welcomeAvatarAgent = document.getElementById('welcome-avatar-agent') as HTMLElement;
+
+/**
+ * Names the agent sites run on in the welcome card, from the "Run sites on"
+ * choice: the lighthouse for Harbor's built-in model, a sparkle for your own.
+ */
+function updateWelcomeAgent(): void {
+  const selected = agentBackendSelect.selectedOptions[0];
+  const ownAgent = Boolean(selected && selected.value);
+  welcomeAgentName.textContent = ownAgent ? selected.textContent : 'Built-in model';
+  welcomeAvatarHarbor.hidden = ownAgent;
+  welcomeAvatarAgent.hidden = !ownAgent;
+}
+
 function renderAgentBackendOptions(): void {
   const selectedId = agentPanel.currentSelection;
   agentBackendSelect.innerHTML = '<option value="">Harbor (built-in model)</option>';
@@ -1236,6 +1237,7 @@ function renderAgentBackendOptions(): void {
     agentBackendSelect.appendChild(option);
   }
   agentBackendSelect.value = selectedId ?? '';
+  updateWelcomeAgent();
   agentCheckBtn.disabled = !agentPanel.isLoaded || !selectedId;
 }
 
@@ -1310,7 +1312,8 @@ async function loadAgentSettings(): Promise<void> {
  * changes, including an agent being removed out from under it.
  */
 function updateLlmPanelForAgentSelection(selectedAgentId: string | null): void {
-  llmPanel.hidden = selectedAgentId !== null;
+  builtinModelGroup.hidden = selectedAgentId !== null;
+  updateWelcomeAgent();
 }
 
 /**
@@ -2036,7 +2039,7 @@ function renderOAuthProviders(providers: Record<string, { configured: boolean; c
     btn.addEventListener('click', async () => {
       const provider = (btn as HTMLElement).dataset.provider;
       if (!provider) return;
-      if (!confirm(`Remove ${provider} OAuth credentials?`)) return;
+      if (!confirm(`Remove your ${provider} sign-in details?`)) return;
       
       (btn as HTMLButtonElement).disabled = true;
       try {
@@ -2087,7 +2090,7 @@ oauthConfigSaveBtn?.addEventListener('click', async () => {
   const clientSecret = oauthClientSecretInput.value.trim();
   
   if (!clientId || !clientSecret) {
-    showToast('Please enter both Client ID and Client Secret', 'error');
+    showToast('Please enter both the client ID and the client secret', 'error');
     return;
   }
   
@@ -2217,17 +2220,11 @@ initFeatureFlags().catch((err) => console.error('[Sidebar] Failed to load featur
 setupFeatureFlagListeners();
 
 // =============================================================================
-// Quick Actions Panel
+// Directory and reload
 // =============================================================================
 
-const quickActionsHeader = document.getElementById('quick-actions-header') as HTMLDivElement;
-const quickActionsToggle = document.getElementById('quick-actions-toggle') as HTMLSpanElement;
-const quickActionsBody = document.getElementById('quick-actions-body') as HTMLDivElement;
 const openDirectoryBtn = document.getElementById('open-directory-btn') as HTMLButtonElement;
 const reloadExtensionBtn = document.getElementById('reload-extension-btn') as HTMLButtonElement;
-
-// Set up panel toggle
-setupPanelToggle(quickActionsHeader, quickActionsToggle, quickActionsBody);
 
 // Open Directory button - opens the MCP server directory
 openDirectoryBtn.addEventListener('click', async () => {
@@ -2525,7 +2522,7 @@ toolTesterRunBtn.addEventListener('click', async () => {
   }
   
   toolTesterRunBtn.disabled = false;
-  toolTesterRunBtn.textContent = 'Run Tool';
+  toolTesterRunBtn.textContent = 'Run tool';
 });
 
 toolTesterCopyBtn?.addEventListener('click', async () => {
@@ -2573,6 +2570,8 @@ type SessionSummary = {
   };
 };
 
+/** Shown only when there are sessions to list. */
+const sessionsPanel = document.getElementById('sessions-panel') as HTMLDivElement;
 const sessionsPanelHeader = document.getElementById('sessions-panel-header') as HTMLDivElement;
 const sessionsPanelToggle = document.getElementById('sessions-panel-toggle') as HTMLSpanElement;
 const sessionsList = document.getElementById('sessions-list') as HTMLDivElement;
@@ -2588,6 +2587,7 @@ async function loadSessions(): Promise<void> {
       error?: string;
     };
 
+    sessionsPanel.hidden = !(response?.ok && response.sessions && response.sessions.length > 0);
     if (response?.ok && response.sessions) {
       renderSessions(response.sessions);
       
@@ -2607,6 +2607,7 @@ async function loadSessions(): Promise<void> {
     }
   } catch (err) {
     console.error('[Sidebar] Failed to load sessions:', err);
+    sessionsPanel.hidden = true;
     sessionsList.innerHTML = '<div class="empty-state">Failed to load sessions.</div>';
   }
 }
@@ -2637,7 +2638,7 @@ function renderSessions(sessions: SessionSummary[]): void {
   sessionsList.innerHTML = sorted.map((session) => {
     const typeClass = session.type === 'explicit' ? 'explicit' : 'implicit';
     const statusClass = session.status === 'terminated' ? 'terminated' : '';
-    const displayName = session.name || (session.type === 'implicit' ? 'Anonymous Session' : 'Agent Session');
+    const displayName = session.name || (session.type === 'implicit' ? 'Anonymous session' : 'Agent session');
     
     // Build capability badges
     const capBadges: string[] = [];

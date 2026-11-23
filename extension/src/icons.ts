@@ -5,18 +5,20 @@
  * bundled, so add one to ICONS before using it.
  */
 import {
-  BadgeCheck, BookOpen, Camera, ChevronDown, Clock,
+  ArrowLeft, BadgeCheck, BookOpen, Camera, ChevronDown, ChevronRight, Clock,
   FileText, Globe, List, Mail, MessageCircle,
   MousePointerClick, Package, Pencil, Play, Plug, RefreshCw, RotateCw, Server,
-  Shield, Star, Tag, TriangleAlert, Volume2, Wrench, X, Zap,
+  Shield, SlidersHorizontal, Sparkles, Star, Tag, TriangleAlert, Volume2, Wrench, X, Zap,
   type IconNode,
 } from 'lucide';
 
 export const ICONS = {
+  'arrow-left': ArrowLeft,
   'badge-check': BadgeCheck,
   'book-open': BookOpen,
   camera: Camera,
   'chevron-down': ChevronDown,
+  'chevron-right': ChevronRight,
   clock: Clock,
   'file-text': FileText,
   globe: Globe,
@@ -32,6 +34,8 @@ export const ICONS = {
   'rotate-cw': RotateCw,
   server: Server,
   shield: Shield,
+  'sliders-horizontal': SlidersHorizontal,
+  sparkles: Sparkles,
   star: Star,
   tag: Tag,
   'triangle-alert': TriangleAlert,

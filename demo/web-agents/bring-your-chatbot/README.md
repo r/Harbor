@@ -17,7 +17,7 @@ browser — opens the chat surface instead. The page writes no chat UI of its ow
    Harbor draws the chat panel on the page. Because the page could reach that panel, Harbor
    treats every message in it as the site's prompt. Your first message prompts Harbor to ask,
    once, whether the site may send prompts to your model (`model:prompt`). If you've selected
-   an agent in Harbor's sidebar (the **Agent** panel, next to LLM Providers), the chat answers
+   an agent in Harbor's sidebar (**Settings → Your agent**), the chat answers
    from that agent instead — with whatever it can do in your setup, including its tools and
    what it remembers about you — and the permission prompt says so. Either way, replies are
    grounded in the page's visible text (the product grid), not the MCP tools this page
