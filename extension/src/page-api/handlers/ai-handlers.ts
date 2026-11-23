@@ -4,7 +4,7 @@
  * Handles text sessions, prompts, and provider management.
  */
 
-import { harborRequest } from '../harbor-core';
+import { harborRequest, createLabelFlow, getSessionLabelFlow, type LabelFlow } from '../harbor-core';
 import type { RequestContext, HandlerResponse, TextSessionState } from './types';
 import type { SessionSummary } from '../types';
 import { errorResponse, successResponse } from './types';
@@ -71,6 +71,7 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
 
   const options = (ctx.payload || {}) as Record<string, unknown>;
   const sessionId = generateSessionId();
+  const labelFlow = createLabelFlow();
 
   console.log('[Web Agents API] handleAiCreateTextSession: Creating session', {
     sessionId,
@@ -92,7 +93,7 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
       // `ctx.signal` aborts on the page's own create-request timeout
       // (injected.ts) or an explicit abort for this request id — either
       // way, the agent shouldn't keep starting once nobody's waiting.
-      await createAcpTextSession(sessionId, backendSetting.agentId, ctx.origin, ctx.tabId, systemPrompt, ctx.signal);
+      await createAcpTextSession(sessionId, backendSetting.agentId, ctx.origin, ctx.tabId, systemPrompt, ctx.signal, labelFlow);
     } catch (e) {
       // A switch cancels an agent still starting; say why.
       if (backendChanged.aborted) return errorResponse(ctx.id, 'ERR_AGENT_FAILED', AGENT_CHANGED_MESSAGE);
@@ -115,6 +116,7 @@ export async function handleAiCreateTextSession(ctx: RequestContext): HandlerRes
     options,
     history: [],
     createdAt: Date.now(),
+    labelFlow,
   });
 
   console.log('[Web Agents API] handleAiCreateTextSession: Session created successfully', sessionId);
@@ -131,6 +133,7 @@ export function registerExplicitTextSession(
   origin: string,
   options: Record<string, unknown>,
   hasLLM = true,
+  labelFlow?: LabelFlow,
 ): void {
   textSessions.set(sessionId, {
     sessionId,
@@ -140,6 +143,7 @@ export function registerExplicitTextSession(
     createdAt: Date.now(),
     explicit: true,
     hasLLM,
+    labelFlow,
   });
 }
 
@@ -215,6 +219,7 @@ export async function resolveTextSession(
         'session.get', { sessionId, origin });
       if (!result.session) throw new Error('Session not found');
       hasLLM = result.session.capabilities.hasLLM;
+      session.labelFlow = getSessionLabelFlow(sessionId, origin);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       if (!HARBOR_SESSION_GONE.test(message)) {
@@ -275,7 +280,7 @@ export async function handleSessionPrompt(ctx: RequestContext): HandlerResponse 
       messages,
       model: session.options.model,
       temperature: session.options.temperature,
-    }, { signal: ctx.signal });
+    }, { signal: ctx.signal, labelFlow: session.labelFlow });
     
     // Add assistant response to history
     session.history.push({ role: 'assistant', content: result.content });

@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ harborRequest: vi.fn() }));
-vi.mock('../harbor-core', () => ({
+vi.mock('../harbor-core', async () => {
+  const { LabelFlow } = await import('../../policy/label-flow');
+  return ({
+  createLabelFlow: () => new LabelFlow(),
+  getSessionLabelFlow: vi.fn(() => new LabelFlow()),
   describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   pageToolsForAgent: vi.fn(async () => null),
   harborRequest: mocks.harborRequest,
-}));
+  });
+});
 vi.mock('../handlers/permission-handlers', () => ({ hasPermission: async () => true }));
 
 import { handleAiCreateTextSession, handleSessionPrompt } from '../handlers/ai-handlers';

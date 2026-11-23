@@ -266,6 +266,7 @@ async function handleMcpListTools(payload: unknown): Promise<ExtensionApiRespons
 async function handleMcpCallTool(
   payload: unknown,
   slot: SessionToolSlot | null = null,
+  labelFlow?: LabelFlow,
 ): Promise<ExtensionApiResponse> {
   const { serverId, toolName, args, origin, tabId } = payload as {
     serverId?: string;
@@ -293,9 +294,16 @@ async function handleMcpCallTool(
       if (!origin || typeof tabId !== 'number') {
         return failure('MCP server not found');
       }
-      const result = await callSiteTool(origin, tabId, serverId, toolName, args || {});
-      if (!result.ok) return failure(result.error);
-      return success({ result: result.result });
+      const scopedTool = listSiteTools(origin, tabId).some(t => t.serverId === serverId && t.name === toolName);
+      try {
+        const result = await callSiteTool(origin, tabId, serverId, toolName, args || {});
+        if (!result.ok) return failure(result.error);
+        return success({ result: result.result });
+      } finally {
+        // Error text is site-controlled output too; unknown or wrong-tab
+        // servers have no scoped tool and cannot label this session.
+        if (scopedTool) labelFlow?.addPageOutput(origin);
+      }
     }
 
     const result = await callTool(serverId, toolName, args || {});
@@ -343,7 +351,7 @@ const SESSION_BUDGET_SPENT: ExtensionApiResponse = {
  */
 function holdSessionToolSlot(
   payload: unknown,
-): { refusal: ExtensionApiResponse } | { slot: SessionToolSlot | null } {
+): { refusal: ExtensionApiResponse } | { slot: SessionToolSlot | null; flow?: LabelFlow } {
   const { sessionId, origin } = (payload || {}) as { sessionId?: unknown; origin?: unknown };
   if (sessionId === undefined) return { slot: null };
   if (typeof sessionId !== 'string' || typeof origin !== 'string') return { refusal: SESSION_GONE };
@@ -364,6 +372,7 @@ function holdSessionToolSlot(
     held = false;
   };
   return {
+    flow: SessionRegistry.getLabelFlow(sessionId, origin),
     slot: {
       commit: (tool) => {
         // The session may have been terminated or expired while a prompt was open.
@@ -889,10 +898,10 @@ export async function routeExtensionApiMessage(
     const held = holdSessionToolSlot(payload);
     if ('refusal' in held) return held.refusal;
     try {
-      const gateFailure = await gatePageCall(type, payload);
+      const gateFailure = await gatePageCall(type, payload, undefined, held.flow ?? options.labelFlow);
       if (gateFailure) return gateFailure;
       if (options.signal?.aborted) return abandoned();
-      return await handleMcpCallTool(payload, held.slot);
+      return await handleMcpCallTool(payload, held.slot, held.flow ?? options.labelFlow);
     } finally {
       held.slot?.release();
     }

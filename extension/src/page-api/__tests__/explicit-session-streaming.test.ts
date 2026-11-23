@@ -6,7 +6,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(), harborStreamRequest: vi.fn(), hasPermission: vi.fn(), getPermissions: vi.fn(),
 }));
-vi.mock('../harbor-core', () => ({
+vi.mock('../harbor-core', async () => {
+  const { LabelFlow } = await import('../../policy/label-flow');
+  return ({
+  createLabelFlow: () => new LabelFlow(),
+  getSessionLabelFlow: vi.fn(() => new LabelFlow()),
   describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
@@ -14,7 +18,8 @@ vi.mock('../harbor-core', () => ({
   pageToolsForAgent: vi.fn(async () => null),
   onHarborSessionEnded: vi.fn(() => () => {}),
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
-}));
+  });
+});
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getFeatureFlags: async () => ({

@@ -4,7 +4,7 @@
  * Handles explicit sessions via Harbor.
  */
 
-import { harborRequest } from '../harbor-core';
+import { harborRequest, getSessionLabelFlow } from '../harbor-core';
 import type { PermissionScope, CreateSessionOptions, SessionSummary } from '../types';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
@@ -76,6 +76,8 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
       return errorResponse(ctx.id, 'ERR_INTERNAL', 'Harbor did not create a session');
     }
 
+    const labelFlow = getSessionLabelFlow(result.sessionId, ctx.origin);
+
     // With an agent selected, the session's prompts run on it, like every
     // other model call (docs/ACP_BACKEND_DESIGN.md section 2). Open the
     // agent session now so the first prompt has one ready. The session's
@@ -92,7 +94,7 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
         const { createAcpTextSession } = await loadAcpTextSession();
         await createAcpTextSession(
           result.sessionId, backend.agentId, ctx.origin, ctx.tabId,
-          typeof systemPrompt === 'string' ? systemPrompt : undefined, ctx.signal,
+          typeof systemPrompt === 'string' ? systemPrompt : undefined, ctx.signal, labelFlow,
         );
       } catch (e) {
         // Don't leave a Harbor session behind that the page never got.
@@ -108,7 +110,7 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
       systemPrompt: options.options?.systemPrompt,
       temperature: options.options?.temperature,
       model: options.capabilities.llm?.model,
-    }, Boolean(options.capabilities.llm));
+    }, Boolean(options.capabilities.llm), labelFlow);
 
     if (options.capabilities.llm && backendChanged.aborted) {
       await harborRequest('session.terminate', { sessionId: result.sessionId, origin: ctx.origin }).catch(() => {});
