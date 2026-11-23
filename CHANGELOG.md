@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The generated test harness's mock (`spec/testing/harness-template/mock.js`) implements `agent.requestCapabilities()`'s grant handling as Harbor does, and `mock.policy.refuse(code)` makes model, tool, session and agent calls fail with `ERR_BLOCKED_BY_POLICY` or `ERR_QUARANTINED`, so an app can test those paths. The harness's types declare both.
 - `docs/POSITIONING.md` says how Harbor sounds: the trusted captain of a dolphin-spotting tour. Calm, plain about safety, "your agent" by name, and consent text without metaphor.
 - **Bring your own agent.** The sidebar's new **Agent** panel lets sites run on an agent you already use instead of Harbor's built-in model. Presets for goose, Claude Code and Codex fill in how to start each one, finding the command through your login shell so agents installed with nvm or Homebrew work when Firefox starts from the Dock; you can also add any agent by its command. **Check** starts the agent and says whether it's ready or what's wrong. A preset sets no approval mode or environment: Harbor starts agents without your shell environment, and each preset links to its agent's settings docs for giving its tools their keys. With an agent selected, everything a site asks of a model goes to it: `window.ai` text sessions, `agent.run`, `agent.sessions` prompts and a site's own chat (`agent.chat.open`, as in the [Bring Your Own Chatbot](demo/web-agents/bring-your-chatbot/) demo). A page chat gets one agent session, opened on its first message and reused for the rest. `window.ai.providers` reports the agent, and the LLM Providers panel is hidden, since nothing uses the built-in model then.
 - When a site uses your agent, Harbor tells it once, at the start, that it's working for you: it should use what it knows or remembers about you, and treat the site's instructions as the site's request. The site's instructions are still passed on, labelled as the site's.
@@ -45,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A policy refusal while creating a session (`agent.sessions.create()` or `agent.requestCapabilities()`: a deny rule, a quarantined site, a declined prompt) reached the page as `ERR_INTERNAL`. It now keeps the policy engine's code (`ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`, `ERR_PERMISSION_DENIED`), as other page calls already did.
+- `agent.requestCapabilities()` left out nothing: an `optional` capability the site hadn't been granted failed the whole request, as if it were required. It's now left out of the session quietly, and `session.capabilities` shows what the session got. `docs/BUILDING_ON_WEB_AGENTS_API.md`'s example also called `session.tools.call(...)`, which doesn't exist; it now uses `session.callTool(...)`.
 - Styles in the sidebar and directory that pointed at tokens Harbor never defined (`--color-surface-tertiary`, `--color-success-bg`, `--border` and six others) now use defined ones, so those backgrounds and rules render.
 - The directory's "installed, stopped" badge was filled with the muted text color, so its label was nearly unreadable.
 - Scrollbars in Harbor's pages follow the theme in Firefox. They were styled only with `-webkit-` rules, which Firefox ignores.
