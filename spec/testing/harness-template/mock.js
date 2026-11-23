@@ -38,6 +38,9 @@ export function installWebAgentsMock(global) {
     toolCallError: null,
     runOutput: 'Mocked agent run output',
     runError: null,
+    // A policy refusal every policy-checked call gets, as Harbor's policy
+    // engine would give it (ERR_BLOCKED_BY_POLICY, ERR_QUARANTINED), or null.
+    policyRefusal: null,
   };
 
   // The scopes Harbor knows (extension/src/page-api/injected.ts).
@@ -68,6 +71,81 @@ export function installWebAgentsMock(global) {
     }
     requested.forEach(s => state.granted.add(s));
     return { granted: true, scopes: scopesResult() };
+  }
+
+  // Harbor runs model, tool, session and agent calls past its policy
+  // engine, which can refuse them without a prompt.
+  function checkPolicy() {
+    if (state.policyRefusal) {
+      const code = state.policyRefusal;
+      throw createApiError(code, code === 'ERR_QUARANTINED'
+        ? 'This site is quarantined.'
+        : 'Blocked by policy.');
+    }
+  }
+
+  // The grants a typed action in requestCapabilities() needs
+  // (extension/src/page-api/injected.ts, scopesForTypedAction).
+  function scopesForTypedAction(action) {
+    if (action.startsWith('model.prompt')) return ['model:prompt'];
+    if (action === 'tool.call') return ['mcp:tools.call'];
+    if (action === 'browser.read.screenshot') return ['browser:activeTab.read', 'browser:activeTab.screenshot'];
+    if (action.startsWith('browser.read.')) return ['browser:activeTab.read'];
+    if (action.startsWith('browser.write.')) return ['browser:activeTab.interact'];
+    return [];
+  }
+
+  // Like Harbor: an optional capability the site hasn't been granted is left
+  // out; a required one it lacks refuses the whole session. Harbor checks
+  // model:prompt for model access and mcp:tools.call for tools, then its
+  // policy engine. Unlike Harbor, the mock doesn't narrow tools to the site's
+  // tool allowlist or fail on a browser grant the site denied.
+  async function requestCapabilities(opts = {}) {
+    const optional = (opts.optional || []).filter(r => scopesForTypedAction(r.action).every(s => state.granted.has(s)));
+    const all = [...(opts.require || []), ...optional];
+    const llm = all.some(r => r.action.startsWith('model.prompt'));
+    const tools = [];
+    for (const r of all) {
+      if (r.action === 'tool.call' && r.server && r.toolNames?.length) r.toolNames.forEach(t => tools.push(`${r.server}/${t}`));
+      else if (r.action === 'tool.call' && r.server) tools.push(`${r.server}/*`);
+    }
+    for (const [needed, scope] of [[llm, 'model:prompt'], [tools.length > 0, 'mcp:tools.call']]) {
+      if (needed && !state.granted.has(scope)) {
+        throw createApiError('ERR_PERMISSION_DENIED', `Permission ${scope} required`);
+      }
+    }
+    checkPolicy();
+    const capabilities = {
+      llm: { allowed: llm },
+      tools: { allowed: tools.length > 0, allowedTools: tools },
+      browser: {
+        readActiveTab: all.some(r => r.action.startsWith('browser.read.')),
+        interact: all.some(r => r.action.startsWith('browser.write.')),
+        screenshot: all.some(r => r.action === 'browser.read.screenshot'),
+      },
+      ...(opts.budget ? { limits: { maxToolCalls: opts.budget.maxToolCalls } } : {}),
+    };
+    const sessionId = 'mock-session-' + Math.random().toString(36).slice(2);
+    const text = createTextSession();
+    return Object.freeze({
+      sessionId,
+      capabilities,
+      async prompt(input) {
+        if (!llm) throw new Error('Session does not have LLM access');
+        return text.prompt(input);
+      },
+      promptStreaming(input) {
+        if (!llm) throw new Error('Session does not have LLM access');
+        return text.promptStreaming(input);
+      },
+      async callTool(tool, args) {
+        if (!capabilities.tools.allowed) throw new Error('Session does not have tool access');
+        if (!tools.includes(tool)) throw new Error(`Tool ${tool} not allowed in this session`);
+        return agent.tools.call({ tool, args });
+      },
+      listAllowedTools() { return tools; },
+      async terminate() {},
+    });
   }
 
   // Harbor asks the user when a page calls the agent API without the scope.
@@ -184,6 +262,7 @@ export function installWebAgentsMock(global) {
       checkFeature();
       if (!agentId || !request) throw createApiError('ERR_INVALID_REQUEST', 'Missing agentId or request');
       requireScope('agents:invoke');
+      checkPolicy();
       const from = requirePageAgent('Must register as an agent before invoking others');
       const target = agentsState.others.get(agentId);
       // Error codes and messages from extension/src/multi-agent/messaging.ts.
@@ -206,6 +285,7 @@ export function installWebAgentsMock(global) {
       checkFeature();
       if (!agentId) throw createApiError('ERR_INVALID_REQUEST', 'Missing agentId');
       requireScope('agents:message');
+      checkPolicy();
       const from = requirePageAgent('Must register as an agent before sending messages');
       const target = agentsState.others.get(agentId);
       if (!target?.onMessage) return { delivered: false };
@@ -226,6 +306,7 @@ export function installWebAgentsMock(global) {
 
   const agent = {
     requestPermissions,
+    requestCapabilities,
     permissions: {
       list: async () => ({ origin: 'http://localhost', scopes: scopesResult() }),
     },
@@ -233,6 +314,7 @@ export function installWebAgentsMock(global) {
     tools: {
       list: async () => state.toolsList,
       call: async ({ tool, args }) => {
+        checkPolicy();
         if (state.toolCallError) {
           const e = createApiError(state.toolCallError.code || 'ERR_TOOL_FAILED', state.toolCallError.message || 'Tool failed');
           throw e;
@@ -241,6 +323,10 @@ export function installWebAgentsMock(global) {
       },
     },
     run: async function* (options) {
+      if (state.policyRefusal) {
+        yield { type: 'error', error: { code: state.policyRefusal, message: 'Blocked by policy.' } };
+        return;
+      }
       if (state.runError) {
         yield { type: 'error', error: { code: state.runError.code || 'ERR_AGENT_FAILED', message: state.runError.message || 'Run failed' } };
         return;
@@ -251,26 +337,26 @@ export function installWebAgentsMock(global) {
     },
   };
 
+  function checkTextSessionError() {
+    checkPolicy();
+    if (state.textSessionError) {
+      throw createApiError(state.textSessionError.code || 'ERR_MODEL_FAILED', state.textSessionError.message || 'Model failed');
+    }
+  }
+
   function createTextSession(sessionOptions = {}) {
     const sessionId = 'mock-session-' + Math.random().toString(36).slice(2);
     return {
       sessionId,
       async prompt(input) {
-        if (state.textSessionError) {
-          const e = createApiError(state.textSessionError.code || 'ERR_MODEL_FAILED', state.textSessionError.message || 'Model failed');
-          throw e;
-        }
+        checkTextSessionError();
         return state.textSessionResponse;
       },
       async *promptStreaming(input) {
-        if (state.textSessionError) {
-          yield { type: 'error', error: { code: state.textSessionError.code || 'ERR_MODEL_FAILED', message: state.textSessionError.message || 'Model failed' } };
-          return;
-        }
+        checkTextSessionError();
         for (const token of (state.textSessionStreamTokens || [state.textSessionResponse])) {
-          yield { type: 'token', token };
+          if (token) yield token;
         }
-        yield { type: 'done' };
       },
       async destroy() {},
     };
@@ -299,6 +385,16 @@ export function installWebAgentsMock(global) {
         state.permissionPolicy = new Set(scopes || []);
         state.granted = new Set(scopes || []);
       },
+    },
+    policy: {
+      /**
+       * Harbor's policy engine refuses every model, tool, session and agent
+       * call with this code until reset(): 'ERR_BLOCKED_BY_POLICY' (a user or
+       * organization rule) or 'ERR_QUARANTINED' (the watchdog quarantined the site).
+       */
+      refuse(code = 'ERR_BLOCKED_BY_POLICY') { state.policyRefusal = code; },
+      /** Calls go through again. */
+      reset() { state.policyRefusal = null; },
     },
     agents: {
       /** Off by default, like Harbor's multiAgent feature: agent.agents calls fail with ERR_FEATURE_DISABLED. Set to true to turn it on. */

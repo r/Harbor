@@ -44,7 +44,7 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk';
 
-import { acpClose, acpOpenStream, listSiteServersForAcp, policyAllowsSiteToolsForAcp, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
+import { acpClose, acpOpenStream, closePageToolEndpoint, listSiteServersForAcp, openPageToolEndpointForAcp, policyAllowsSiteToolsForAcp, requireAgentPromptAction, type AcpBridgeEvent } from './harbor-core';
 import type { SiteMcpServerDescriptor } from '../mcp/site-servers';
 import { hasPermission } from './handlers';
 import { PER_SITE_AGENT_LIMIT, tryAcquireAgentSlot, releaseAgentSlot } from './acp-agent-limits';
@@ -342,13 +342,19 @@ export class AcpAgentBackend implements AgentBackend {
     });
 
     const stream = bridgeToSdkStream(channel, bridgeEvents);
+    let pageEndpointId: string | undefined;
 
     try {
       await app.connectWith(stream, async (ctx) => {
         connectionCtx = ctx;
 
         const siteServers = await siteServerCandidatesForAcp(origin, tabId);
-        const initialized = await initializeAcpSession(ctx, cwd, requestAbort.signal, siteServers);
+        // The calling page's own tools, through the bridge's MCP endpoint
+        // (docs/PAGE_TOOLS_FOR_AGENTS.md §5), held to this run's tool budget.
+        // Closed in the `finally` below, however the run ends.
+        const pageEndpoint = await openPageToolEndpointForAcp(origin, tabId, { maxCalls: req.maxToolCalls });
+        if (pageEndpoint) pageEndpointId = pageEndpoint.endpointId;
+        const initialized = await initializeAcpSession(ctx, cwd, requestAbort.signal, pageEndpoint ? [...siteServers, pageEndpoint] : siteServers);
         if (!initialized.ok) {
           send(initialized.error);
           return;
@@ -397,6 +403,7 @@ export class AcpAgentBackend implements AgentBackend {
     } finally {
       signal.removeEventListener('abort', onPageAbort);
       clearTimeout(timeoutHandle);
+      if (pageEndpointId) await closePageToolEndpoint(pageEndpointId);
     }
   }
 }

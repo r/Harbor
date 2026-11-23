@@ -23,6 +23,19 @@ export async function handleHostRequest(msg: HostRequestMessage): Promise<unknow
   const { method, params, context } = msg;
   const origin = context?.origin;
 
+  // The bridge's page-tools MCP endpoint relaying an ACP agent's tools/list
+  // or tools/call (docs/PAGE_TOOLS_FOR_AGENTS.md §5). Only the bridge's own
+  // endpoint sets this context; a JS MCP server's host requests carry the
+  // context Harbor gave its tool call instead. harbor-core answers only for
+  // an endpoint id it opened itself.
+  if (method === 'page_tools.list' || method === 'page_tools.call') {
+    if (origin !== 'harbor-bridge-page-tools') {
+      throw new Error('Page tool requests come only from the bridge.');
+    }
+    const { handlePageToolsHostRequest } = await import('../page-api/harbor-core');
+    return handlePageToolsHostRequest(method, params);
+  }
+
   // http.get sends no cookies, so any tool may use it.
   if (method === 'http.get') {
     return runHttpGet((params ?? {}) as Record<string, unknown>);

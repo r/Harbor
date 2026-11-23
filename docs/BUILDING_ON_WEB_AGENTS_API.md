@@ -24,7 +24,7 @@ Must be installed (e.g. load unpacked from Harbor’s `extension/dist-firefox/`)
 |------------|------|---------------|
 | **Text generation** | `window.ai.createTextSession()`, `session.prompt()`, `session.promptStreaming()` | The LLM provider and model, or use the user's default |
 | **List/call MCP tools** | `agent.tools.list()`, `agent.tools.call()` | Which MCP servers and tools to integrate (search, files, your own) |
-| **Page tools** | `navigator.modelContext.addTool()` | What JS functions your page exposes as tools to the AI |
+| **Page tools** | `document.modelContext.registerTool()` | What JS functions your page exposes as tools to the AI |
 | **Autonomous agent** | `agent.run({ task })` | Whether the LLM drives tool calls, or you call tools manually |
 | **Sessions** | `agent.sessions.create()`, `session.prompt()`, `session.callTool()` | Scoped sessions with specific tools, limits, and providers |
 | **Browser: read active tab** | `agent.browser.activeTab.readability()` | How to analyze the current page |
@@ -122,16 +122,22 @@ const session = await window.agent.requestCapabilities({
     { action: 'browser.read.activeTab' },
     { action: 'tool.call', server: 'time-wasm', toolNames: ['time.now'] },
   ],
+  optional: [
+    { action: 'browser.write.interact' },
+  ],
   budget: { maxToolCalls: 30, ttlMinutes: 15 },
 });
 
-await session.tools.call('time-wasm', 'time.now', {});
+await session.callTool('time-wasm/time.now', {});
+if (session.capabilities.browser.interact) {
+  // The site holds the grant to click and fill on the page.
+}
 ```
 
 Need more later — e.g. write access once the user clicks "Run"? Ask
 for it with `agent.requestPermissions()`, which shows the prompt, then
 call `agent.requestCapabilities()` again for a new session.
-`requestCapabilities()` doesn't ask for grants itself.
+`requestCapabilities()` doesn't ask for grants itself. A required capability the site hasn't been granted fails the request with `ERR_PERMISSION_DENIED`; an optional one is left out of the session, so check `session.capabilities` before using it.
 
 ### Legacy: `agent.requestPermissions()` (origin-level scopes)
 
@@ -214,13 +220,14 @@ const result = await window.agent.tools.call({
 
 ---
 
-## navigator.modelContext — page tools (WebMCP)
+## document.modelContext — page tools (WebMCP)
 
-Register your own JavaScript functions as tools the AI can call. This implements the [`navigator.modelContext` API from the W3C WebMCP proposal](https://github.com/webmachinelearning/webmcp) — the same API shape Google and Microsoft are standardizing.
+Register your own JavaScript functions as tools the AI can call. This implements `registerTool()` from the [W3C WebMCP draft](https://webmachinelearning.github.io/webmcp/). The draft puts `modelContext` on `document`. Harbor exposes the same object as `navigator.modelContext` too, and keeps `addTool()`/`removeTool()` as older aliases.
 
 ```javascript
-// Register a page tool — runs in page context, no server needed
-navigator.modelContext.addTool({
+// Register a page tool. It runs in page context, so no server is needed.
+const registration = new AbortController();
+await document.modelContext.registerTool({
   name: 'search_products',
   description: 'Search the product catalog by query',
   inputSchema: {
@@ -231,26 +238,28 @@ navigator.modelContext.addTool({
     },
     required: ['query']
   },
-  handler: async ({ query, limit = 10 }) => {
+  execute: async ({ query, limit = 10 }) => {
     return await searchCatalog(query, limit);
   },
-});
+}, { signal: registration.signal });
 
 // Page tools appear in agent.tools.list() with serverId: 'page'
 const tools = await window.agent.tools.list();
 // → [...mcpTools, { name: 'page/search_products', serverId: 'page', ... }]
 
-// Call a page tool — executes locally, never leaves the page
+// Call a page tool yourself. It runs here, in the page.
 const results = await window.agent.tools.call({
   tool: 'page/search_products',
   args: { query: 'red shoes', limit: 5 },
 });
 
-// Remove when no longer needed
-navigator.modelContext.removeTool('search_products');
+// Unregister when no longer needed
+registration.abort();
 ```
 
-Page tools run in your page's JavaScript context. They never cross the extension boundary — no network, no MCP server needed. Choose what your page exposes; the user's AI calls it.
+To support browsers both with and without a native implementation, feature-detect: `const mc = document.modelContext ?? navigator.modelContext;`. Harbor adds the API shortly after the page starts, so a script that checks once at load can miss it: if `mc` is missing, register on the `agent-ready` event instead (`window.addEventListener('agent-ready', register, { once: true })`).
+
+Page tools run in your page's JavaScript context, with no network or MCP server needed. The person's agent can call them too, during the `agent.run()` or `agent.chat.open()` your page starts: Harbor's built-in agent sees them as `page:<host>/<tool>`, and the person's own ACP agent (goose, Claude Code, Codex) gets them as an MCP server named `page:<host>`. Only the name, description and input schema leave the page. They need no permission beyond the one that starts the run or chat. They last as long as the document: a reload drops them, and a hash or `pushState` change doesn't. Treat what your tools return as something an agent will read: return data, not instructions. See [WEB_AGENTS_API.md](WEB_AGENTS_API.md#page-tools-and-the-persons-agent).
 
 ---
 

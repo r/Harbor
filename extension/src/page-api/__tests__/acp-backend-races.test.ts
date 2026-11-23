@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('../handlers', () => ({ hasPermission: mocks.hasPermission }));
 vi.mock('../harbor-core', () => ({
+  openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
+  syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
+  pageToolsForAgent: vi.fn(async () => null),
   acpOpenStream: (agentId: string, workspace: string) => {
     const inner = mocks.bridge.current!.acpOpenStream(agentId, workspace);
     const gate = mocks.openGate.current;

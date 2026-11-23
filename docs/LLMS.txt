@@ -43,7 +43,7 @@ if (caps.features.toolCalling) {
 |--------|---------|
 | `window.ai` | Text generation (Chrome Prompt API compatible) |
 | `window.agent` | Tools, browser control, sessions, multi-agent, MCP, chat |
-| `navigator.modelContext` | WebMCP polyfill — page-defined tools |
+| `document.modelContext` (also `navigator.modelContext`) | WebMCP polyfill — page-defined tools |
 
 `window.harbor.ai` and `window.harbor.agent` are unconditional aliases (used when Chrome's native AI is detected and `window.ai` is left untouched).
 
@@ -385,20 +385,22 @@ await window.agent.agents.orchestrate.route({
 
 ---
 
-## BYOC — `navigator.modelContext` + `agent.mcp` + `agent.chat`
+## BYOC — `document.modelContext` + `agent.mcp` + `agent.chat`
 
 ### Page-declared tools (WebMCP polyfill)
 
 ```javascript
-navigator.modelContext.addTool({
+await document.modelContext.registerTool({
   name: 'add_to_cart',
   description: 'Add a product to the cart',
   inputSchema: { type: 'object', properties: { productId: { type: 'string' } } },
-  handler: async ({ productId }) => { /* … */ },
-});
+  execute: async ({ productId }, { signal }) => { /* … */ },
+}, { signal: controller.signal }); // controller.abort() unregisters
 ```
 
-These show up in `agent.tools.list()` as `page/add_to_cart`.
+These show up in `agent.tools.list()` as `page/add_to_cart`. `registerTool` follows the WebMCP draft: it is async, rejects a duplicate or invalid name (1–128 of `A-Z a-z 0-9 _ - .`) or an empty description with `InvalidStateError`, and rejects a non-empty `exposedTo` with `NotSupportedError`. `navigator.modelContext` is the same object; `addTool({ …, handler })`/`removeTool(name)` remain as older sync aliases.
+
+The person's agent can call page tools during the `agent.run()` or `agent.chat.open()` the page starts. Harbor's built-in agent sees them as `page:<host>/<tool>`, and the person's ACP agent gets an MCP server `page:<host>` on 127.0.0.1 for that session. They need no extra permission: `mcp:tools.*` isn't needed, and a policy rule on server `page:<host>` can refuse them. They last as long as the document; a hash or `pushState` change keeps them. A failed, timed-out (60 s) or orphaned call is `ERR_TOOL_FAILED`. `maxToolCalls` counts them. `window.ai` sessions never get them.
 
 ### Site-hosted MCP server registration
 
