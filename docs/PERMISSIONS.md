@@ -321,7 +321,7 @@ normal
 | 20 tool calls | flagged |
 | 60 tool calls | restricted |
 | 5 cross-origin egresses (a page's own `fetch` isn't counted) | restricted (can't fire yet) |
-| 3 distinct sensitive labels (no window) | restricted (can't fire yet) |
+| 3 distinct sensitive labels (no window) | restricted |
 | 3 label-flow blocks | quarantined |
 | 5 consecutive denials (no window) | quarantined |
 
