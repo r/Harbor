@@ -84,12 +84,12 @@ function expectPolicyRefusal(reply: Reply, code: string) {
   expect(reply.error?.code).toBe(code);
 }
 
-function connectPort(senderUrl: string) {
+function connectPort(senderUrl: string, tabId = 9) {
   const listeners: Array<(m: unknown) => void> = [];
   const posted: Reply[] = [];
   onConnect({
     name: 'harbor-page-api',
-    sender: { url: senderUrl, tab: { id: 9 } },
+    sender: { url: senderUrl, tab: { id: tabId } },
     onMessage: { addListener: (l: (m: unknown) => void) => listeners.push(l) },
     onDisconnect: { addListener: () => {} },
     postMessage: (m: Reply) => posted.push(m),
@@ -129,6 +129,9 @@ describe('a capability session retains trusted output labels', () => {
     expectPolicyRefusal(reply, 'ERR_LABEL_FLOW_BLOCKED');
     const { bridgeChat } = await import('../../llm/chat');
     expect(bridgeChat).not.toHaveBeenCalled();
+    expectPolicyRefusal(await request('agent.tools.call', { tool: TOOL, args: {}, sessionId }), 'ERR_LABEL_FLOW_BLOCKED');
+    const { SessionRegistry } = await import('../../sessions');
+    expect(SessionRegistry.getValidatedSession(sessionId, ORIGIN).usage.toolCallCount).toBe(1);
     expect((await request('session.prompt', { sessionId: other, input: 'dummy input' })).ok).toBe(true);
     expect(bridgeChat).toHaveBeenCalledTimes(1);
   });
@@ -153,13 +156,30 @@ describe('a capability session retains trusted output labels', () => {
     expectPolicyRefusal(await request('session.prompt', { sessionId, input: 'dummy failure followup' }), 'ERR_LABEL_FLOW_BLOCKED');
   });
 
-  it('does not attach labels for an unknown site-owned server', async () => {
-    const request = connectPort(`${ORIGIN}/page`);
+  it.each(['unknown', 'wrong-tab'])('does not attach labels for a %s site-owned server', async (state) => {
+    const request = connectPort(`${ORIGIN}/page`, state === 'wrong-tab' ? 10 : 9);
     const sessionId = await createSession(request, 5);
     const { forgetTabServers } = await import('../../mcp/site-servers');
-    forgetTabServers(9);
+    if (state === 'unknown') forgetTabServers(9);
     expect((await request('agent.tools.call', { tool: TOOL, args: {}, sessionId })).ok).toBe(false);
     expect((await request('session.prompt', { sessionId, input: 'dummy input' })).ok).toBe(true);
+  });
+
+  it('refuses a session that expires during flow lookup before reserving a slot', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 1);
+    const { SessionRegistry } = await import('../../sessions');
+    const reserve = vi.spyOn(SessionRegistry, 'reserveToolCall');
+    vi.spyOn(SessionRegistry, 'getLabelFlow').mockImplementationOnce(() => {
+      SessionRegistry.getValidatedSession(sessionId, ORIGIN).capabilities.limits = { expiresAt: Date.now() - 1 };
+      throw Object.assign(new Error('Session has expired'), { code: 'ERR_SESSION_NOT_FOUND' });
+    });
+    try {
+      expectPolicyRefusal(await request('agent.tools.call', { tool: TOOL, args: {}, sessionId }), 'ERR_SESSION_NOT_FOUND');
+      expect(reserve).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it('ignores a spoofed session id from another origin, and refuses an expired one', async () => {

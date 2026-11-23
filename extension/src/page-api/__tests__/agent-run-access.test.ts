@@ -277,6 +277,6 @@ describe('window.ai session promptStreaming()', () => {
     await receive({ id: 'stream-1', type: 'session.promptStreaming', origin: 'https://example.test',
       payload: { sessionId: 's1', input: 'Hi' } });
     expect(mocks.harborStreamRequest).toHaveBeenCalledWith('llm.chatStream',
-      expect.objectContaining({ origin: 'https://example.test', tabId: 1 }), 'stream-1', expect.any(AbortSignal));
+      expect.objectContaining({ origin: 'https://example.test', tabId: 1 }), 'stream-1', expect.any(AbortSignal), undefined);
   });
 });
