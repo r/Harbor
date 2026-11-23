@@ -294,16 +294,9 @@ async function handleMcpCallTool(
       if (!origin || typeof tabId !== 'number') {
         return failure('MCP server not found');
       }
-      const scopedTool = listSiteTools(origin, tabId).some(t => t.serverId === serverId && t.name === toolName);
-      try {
-        const result = await callSiteTool(origin, tabId, serverId, toolName, args || {});
-        if (!result.ok) return failure(result.error);
-        return success({ result: result.result });
-      } finally {
-        // Error text is site-controlled output too; unknown or wrong-tab
-        // servers have no scoped tool and cannot label this session.
-        if (scopedTool) labelFlow?.addPageOutput(origin);
-      }
+      const result = await callSiteTool(origin, tabId, serverId, toolName, args || {}, labelFlow);
+      if (!result.ok) return failure(result.error);
+      return success({ result: result.result });
     }
 
     const result = await callTool(serverId, toolName, args || {});
@@ -802,7 +795,7 @@ export async function gatePageAction(
   call: { id: string; type: string; origin: string; tabId?: number },
   action: TypedAction,
   resource?: PolicyResource,
-  options: { pageFetch?: boolean; labelFlow?: LabelFlow } = {},
+  options: { pageFetch?: boolean } = {},
 ): Promise<{ code: string; message: string } | null> {
   if (!call.origin) {
     return { code: ErrorCodes.PERMISSION_DENIED, message: `${call.type} requires the calling page's origin` };

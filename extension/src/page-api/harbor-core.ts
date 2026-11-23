@@ -111,7 +111,7 @@ export function checkPageAction(
   call: { id: string; type: string; origin: string; tabId?: number },
   action: PageBrowserAction,
   resource?: { host?: string },
-  options: { pageFetch?: boolean; labelFlow?: LabelFlow } = {},
+  options: { pageFetch?: boolean } = {},
 ): Promise<{ code: string; message: string } | null> {
   return gatePageAction(call, action, resource, options);
 }
@@ -520,23 +520,15 @@ export async function callPageToolForAgent(call: {
   });
   if (denial) throw Object.assign(new Error(denial.message), { code: denial.code });
   call.onAllowed?.();
-  const listing = listPageTools(call.tabId, call.origin);
-  const offered = listing?.generation === call.generation
-    && listing.tools.some(tool => tool.name === call.name) && !call.signal?.aborted;
-  try {
-    return await callPageTool({
-      tabId: call.tabId,
-      origin: call.origin,
-      generation: call.generation,
-      name: call.name,
-      input: call.input,
-      signal: call.signal,
-    });
-  } finally {
-    // A stale/missing tool never returned page content. Actual handler
-    // failures can carry page-authored error text and keep the source labels.
-    if (offered) call.labelFlow?.addPageOutput(call.origin);
-  }
+  return callPageTool({
+    tabId: call.tabId,
+    origin: call.origin,
+    generation: call.generation,
+    name: call.name,
+    input: call.input,
+    signal: call.signal,
+    labelFlow: call.labelFlow,
+  });
 }
 
 // =============================================================================
@@ -766,15 +758,9 @@ export async function callSiteToolForAgent(call: {
   });
   if (denial) throw Object.assign(new Error(denial.message), { code: denial.code });
   call.onAllowed?.();
-  const offered = listSiteTools(call.origin, call.tabId)
-    .some(tool => tool.serverId === call.serverId && tool.name === call.name);
-  try {
-    const result = await callSiteTool(call.origin, call.tabId, call.serverId, call.name, call.input);
-    if (!result.ok) throw Object.assign(new Error(result.error), { code: 'ERR_TOOL_FAILED' });
-    return result.result;
-  } finally {
-    if (offered) call.labelFlow?.addPageOutput(call.origin);
-  }
+  const result = await callSiteTool(call.origin, call.tabId, call.serverId, call.name, call.input, call.labelFlow);
+  if (!result.ok) throw Object.assign(new Error(result.error), { code: 'ERR_TOOL_FAILED' });
+  return result.result;
 }
 
 function hostOf(origin: string): string {
