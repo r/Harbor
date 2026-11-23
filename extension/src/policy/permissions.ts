@@ -1047,17 +1047,17 @@ export const SCOPE_DESCRIPTIONS: Record<PermissionScope, { title: string; descri
   },
   'mcp:tools.list': {
     title: 'List available tools',
-    description: 'See the list of tools from connected MCP servers.',
+    description: 'See the tools available from connected tool servers.',
     risk: 'low',
   },
   'mcp:tools.call': {
     title: 'Execute tools',
-    description: 'Call specific MCP tools like search, file access, or APIs.',
+    description: 'Use specific tools to do things like search, access files, or call online services.',
     risk: 'high',
   },
   'mcp:servers.register': {
-    title: 'Register MCP servers',
-    description: 'Allow the website to register its own MCP server.',
+    title: 'Register tool servers',
+    description: 'Let this site register its own tool server.',
     risk: 'medium',
   },
   // Extension 1: Browser (same-tab)
@@ -1095,7 +1095,7 @@ export const SCOPE_DESCRIPTIONS: Record<PermissionScope, { title: string; descri
   // Extension 2: Web Fetch
   'web:fetch': {
     title: 'Make web requests',
-    description: 'Proxy HTTP requests through the extension (bypasses CORS for allowed domains).',
+    description: 'Use Harbor to make web requests to allowed domains, even when the browser would normally prevent this site from reading the response.',
     risk: 'high',
   },
   // Other
@@ -1132,7 +1132,7 @@ export const SCOPE_DESCRIPTIONS: Record<PermissionScope, { title: string; descri
   },
   'agents:remote': {
     title: 'Connect to remote agents',
-    description: 'Connect to agents running on remote servers via A2A protocol.',
+    description: 'Connect to agents running on remote servers.',
     risk: 'high',
   },
 };

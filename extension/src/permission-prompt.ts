@@ -81,7 +81,7 @@ if (sessionName || sessionType === 'explicit') {
       badges.push('<span class="session-badge explicit">Explicit Session</span>');
     }
     if (requestedLLM) {
-      badges.push('<span class="session-badge llm">LLM</span>');
+      badges.push('<span class="session-badge llm">Model access</span>');
     }
     if (parseInt(requestedTools, 10) > 0) {
       badges.push(`<span class="session-badge tools">${escapeHtml(requestedTools)} Tools</span>`);
