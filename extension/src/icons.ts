@@ -8,7 +8,7 @@ import {
   ArrowLeft, BadgeCheck, BookOpen, Camera, ChevronDown, ChevronRight, Clock,
   FileText, Globe, List, Mail, MessageCircle,
   MousePointerClick, Package, Pencil, Play, Plug, RefreshCw, RotateCw, Server,
-  Settings, Shield, SlidersHorizontal, Sparkles, Star, Tag, TriangleAlert, Volume2, Wrench, X, Zap,
+  Shield, SlidersHorizontal, Sparkles, Star, Tag, TriangleAlert, Volume2, Wrench, X, Zap,
   type IconNode,
 } from 'lucide';
 
@@ -33,7 +33,6 @@ export const ICONS = {
   'refresh-cw': RefreshCw,
   'rotate-cw': RotateCw,
   server: Server,
-  settings: Settings,
   shield: Shield,
   'sliders-horizontal': SlidersHorizontal,
   sparkles: Sparkles,

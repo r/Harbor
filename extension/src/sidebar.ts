@@ -174,9 +174,6 @@ function showView(view: 'main' | 'settings'): void {
   window.scrollTo(0, 0);
 }
 
-document.getElementById('settings-btn')?.addEventListener('click', () => {
-  showView(settingsView.hidden ? 'settings' : 'main');
-});
 document.getElementById('open-settings')?.addEventListener('click', () => showView('settings'));
 document.getElementById('welcome-change-agent')?.addEventListener('click', () => showView('settings'));
 document.getElementById('settings-back')?.addEventListener('click', () => showView('main'));

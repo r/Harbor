@@ -33,6 +33,11 @@ describe('sidebar layout', () => {
     expect(html.slice(html.indexOf("<body"))).not.toMatch(/>\s*Harbor\s*</);
   });
 
+  it("opens straight onto the welcome card, with no header row of its own", () => {
+    expect(html).not.toContain('class="header"');
+    expect(html.slice(html.indexOf("<body"), at("main-view"))).not.toMatch(/<(div|button|svg)\b/);
+  });
+
   it('has a main view and a settings view', () => {
     inOrder(['main-view', 'settings-view']);
     expect(tag('settings-view')).toMatch(/\shidden[\s>]/);
