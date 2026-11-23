@@ -579,8 +579,10 @@ mod tests {
     async fn endpoint_ids_carry_a_random_part_and_never_contain_the_token() {
         let state = test_state();
         let (id, _port, token) = open_for_test(&state).await;
-        let random = id.rsplit('-').next().unwrap();
-        assert!(random.len() >= 16, "endpoint id {id:?} has no random part");
+        // "pt-<counter>-<random>"; the random part is base64url, so it may
+        // itself contain '-'. Take everything after the second '-'.
+        let random = id.splitn(3, '-').nth(2).unwrap_or("");
+        assert_eq!(random.len(), 16, "endpoint id {id:?} has no 16-character random part");
         assert!(!id.contains(&token), "the endpoint id must not reveal the URL token");
     }
 
