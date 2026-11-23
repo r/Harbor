@@ -137,80 +137,21 @@ try {
 
   assert.equal(await value('document.title'), 'Page Tools — Web Agent API');
 
-  // document.modelContext is defined by an async content-script injection
-  // (a feature-flags round trip to the background, then a script fetch),
-  // which loses the race against this demo's own synchronous, load-time
-  // `document.modelContext ?? navigator.modelContext` check almost every
-  // time in this harness — the page decides and logs "needs Harbor" before
-  // the API exists. That race is orthogonal to what this test is proving
-  // (that a *registered* tool reaches the agent), so wait for the API
-  // directly, then run the demo's own registration code ourselves, at a
-  // moment we control instead of racing page parse.
-  async function waitForModelContext(timeoutMs = 10_000) {
+  // Harbor injects the page API after an async round trip, so the demo
+  // often finds no document.modelContext while loading. It then registers
+  // its tools on the `agent-ready` event; waiting for them here checks that
+  // path as well as the round trip below.
+  async function waitForDemoTools(timeoutMs = 15_000) {
     const expires = Date.now() + timeoutMs;
     while (Date.now() < expires) {
-      const ready = await value('typeof (document.modelContext || navigator.modelContext) !== "undefined"');
-      if (ready === true) return;
+      const count = await value('(document.modelContext || navigator.modelContext)?.tools?.length ?? 0');
+      if (count >= 3) return;
       await sleep(200);
     }
-    throw new Error('document.modelContext/navigator.modelContext never became available');
+    throw new Error("The demo never registered its tools (document.modelContext missing, or agent-ready never fired)");
   }
 
-  // Copied verbatim from this demo's own <script> (minus the "if (!mc)"
-  // guard, since we only call this once the API is confirmed present): the
-  // same two document.modelContext.registerTool() calls and the one
-  // navigator.modelContext.addTool() alias call, against the same #log and
-  // .chapter p elements already in the DOM.
-  const REGISTER_DEMO_TOOLS = `
-    (async () => {
-      const log = document.getElementById('log');
-      const say = (line) => { log.textContent += '\\n' + line; };
-      const mc = document.modelContext ?? navigator.modelContext;
-      const paragraphs = () => Array.from(document.querySelectorAll('.chapter p'));
-      function highlight(el) {
-        paragraphs().forEach((p) => p.classList.toggle('highlight', p === el));
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      await mc.registerTool({
-        name: 'reading_position',
-        description: 'Which paragraph the reader is looking at, and the text of every paragraph with its anchor.',
-        inputSchema: { type: 'object', properties: {} },
-        execute: async () => {
-          const visible = paragraphs().find((p) => p.getBoundingClientRect().bottom > 0) ?? paragraphs()[0];
-          say('page handler ran: reading_position -> ' + visible.id);
-          return { current: visible.id, paragraphs: paragraphs().map((p) => ({ anchor: p.id, text: p.textContent })) };
-        },
-      });
-      await mc.registerTool({
-        name: 'go_to',
-        description: 'Scroll to a paragraph by its anchor (p1 to p5) and highlight it.',
-        inputSchema: { type: 'object', properties: { anchor: { type: 'string' } }, required: ['anchor'] },
-        execute: async ({ anchor }) => {
-          const el = document.getElementById(String(anchor));
-          if (!el || !el.matches('.chapter p')) throw new Error('No paragraph with anchor "' + anchor + '"');
-          highlight(el);
-          say('page handler ran: go_to(' + anchor + ')');
-          return { at: anchor };
-        },
-      });
-      mc.addTool({
-        name: 'count_words',
-        description: 'Count the words in a paragraph, by its anchor.',
-        inputSchema: { type: 'object', properties: { anchor: { type: 'string' } }, required: ['anchor'] },
-        handler: async ({ anchor }) => {
-          const el = document.getElementById(String(anchor));
-          if (!el) throw new Error('No paragraph with anchor "' + anchor + '"');
-          const words = el.textContent.trim().split(/\\s+/).length;
-          say('page handler ran: count_words(' + anchor + ') -> ' + words);
-          return words;
-        },
-      });
-      return true;
-    })()
-  `;
-
-  await waitForModelContext();
-  await value(REGISTER_DEMO_TOOLS);
+  await waitForDemoTools();
 
   // The demo registers 3 tools: reading_position and go_to via
   // document.modelContext.registerTool, count_words via the older
@@ -338,11 +279,9 @@ try {
   await sleep(1000);
   frame = await currentFrame();
   value = text => evaluate(frame.consoleActor, text);
-  await waitForModelContext();
-  // Re-run the demo's own registration for the new document — the same
-  // real registerTool/addTool tools, but *not* confirm_tools_present,
-  // which this test added only to the old document.
-  await value(REGISTER_DEMO_TOOLS);
+  // The new document registers the demo's own tools again, but not
+  // confirm_tools_present, which this test added only to the old document.
+  await waitForDemoTools();
   const namesAfterReload = JSON.parse(await value('JSON.stringify(navigator.modelContext.tools.map(t => t.name).sort())'));
   assert.deepEqual(namesAfterReload, ['count_words', 'go_to', 'reading_position'],
     'The demo must re-register its own tools on reload');
