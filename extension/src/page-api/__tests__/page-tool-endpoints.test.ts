@@ -9,10 +9,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetMockBrowser } from '../../__tests__/test-setup';
 
-const mocks = vi.hoisted(() => ({ rpcRequest: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpcRequest: vi.fn(), listSiteTools: vi.fn(), callSiteTool: vi.fn() }));
 vi.mock('../../llm/native-bridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../llm/native-bridge')>()),
   rpcRequest: mocks.rpcRequest,
+}));
+vi.mock('../../mcp/site-servers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../mcp/site-servers')>()),
+  listSiteTools: mocks.listSiteTools,
+  callSiteTool: mocks.callSiteTool,
 }));
 
 const ORIGIN = 'https://tale.example';
@@ -47,6 +52,9 @@ beforeEach(async () => {
     if (method === 'page_tools.close') return { closed: true };
     throw new Error(`unexpected ${method}`);
   });
+  mocks.listSiteTools.mockReset();
+  mocks.listSiteTools.mockReturnValue([]);
+  mocks.callSiteTool.mockReset();
   core = await import('../harbor-core');
   registry = await import('../../mcp/page-tools');
   registry.__resetPageToolsForTests();
@@ -69,7 +77,7 @@ describe('opening an endpoint for an ACP session', () => {
     const endpoint = await core.openPageToolEndpointForAcp(ORIGIN, TAB);
     expect(mocks.rpcRequest).toHaveBeenCalledWith('page_tools.open', {});
     expect(endpoint).toMatchObject({
-      serverId: 'page:tale.example', name: 'page:tale.example', transport: 'streamable-http',
+      serverId: 'page:tale.example', name: 'tale.example', transport: 'streamable-http',
       url: 'http://127.0.0.1:4555/mcp/token1', endpointId: 'pt-1',
     });
   });
@@ -128,6 +136,7 @@ describe("answering the bridge's host requests", () => {
     expect(await result).toEqual({
       content: [{ type: 'text', text: JSON.stringify({ anchor: 'p12', chapter: 3 }) }],
       structuredContent: { anchor: 'p12', chapter: 3 },
+      _meta: { 'harbor/provenance': { source: 'page-tool', origin: ORIGIN } },
     });
   });
 
@@ -136,7 +145,7 @@ describe("answering the bridge's host requests", () => {
     const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB))!;
     const result = core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'go_to', arguments: { anchor: 'p3' } });
     await answerNextCall({ ok: true, result: 'scrolled to p3' });
-    expect(await result).toEqual({ content: [{ type: 'text', text: 'scrolled to p3' }] });
+    expect(await result).toEqual({ content: [{ type: 'text', text: 'scrolled to p3' }], _meta: { 'harbor/provenance': { source: 'page-tool', origin: ORIGIN } } });
   });
 
   it("returns the handler's error as an isError result, not a thrown error", async () => {
@@ -144,7 +153,7 @@ describe("answering the bridge's host requests", () => {
     const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB))!;
     const result = core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'go_to', arguments: {} });
     await answerNextCall({ ok: false, error: { message: 'no such anchor' } });
-    expect(await result).toEqual({ content: [{ type: 'text', text: 'no such anchor' }], isError: true });
+    expect(await result).toEqual({ content: [{ type: 'text', text: 'no such anchor' }], isError: true, _meta: { 'harbor/provenance': { source: 'page-tool', origin: ORIGIN } } });
   });
 
   it('a call on a closed endpoint is an isError result', async () => {
@@ -190,7 +199,7 @@ describe("answering the bridge's host requests", () => {
       .toMatchObject({ isError: true });
     const allowed = core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'go_to', arguments: {} });
     await answerNextCall({ ok: true, result: 'ok' });
-    expect(await allowed).toEqual({ content: [{ type: 'text', text: 'ok' }] });
+    expect(await allowed).toMatchObject({ content: [{ type: 'text', text: 'ok' }] });
   });
 
   it('passes {} when the agent sends non-object arguments', async () => {
@@ -201,5 +210,86 @@ describe("answering the bridge's host requests", () => {
     expect(posted.find((m) => m.type === 'page_tools.call')).toMatchObject({ input: {} });
     await answerNextCall({ ok: true, result: 'ok' });
     await result;
+  });
+});
+
+describe("the site's own MCP server tools, through the same endpoint", () => {
+  const SITE = [{ serverId: 'site:tale.example:tale', name: 'read_tale', description: 'Read up to an anchor', inputSchema: { type: 'object' } }];
+
+  it('opens an endpoint for a site that has server tools and no page tools', async () => {
+    mocks.listSiteTools.mockReturnValue(SITE);
+    const endpoint = await core.openPageToolEndpointForAcp(ORIGIN, TAB);
+    expect(endpoint).toMatchObject({ name: 'tale.example', transport: 'streamable-http' });
+  });
+
+  it('lists page tools by name and site tools as <server>__<tool>', async () => {
+    syncPage();
+    mocks.listSiteTools.mockReturnValue(SITE);
+    const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB))!;
+    const listed = await core.handlePageToolsHostRequest('page_tools.list', { endpointId }) as { tools: Array<{ name: string }> };
+    expect(listed.tools.map((t) => t.name)).toEqual(['go_to', 'reading_position', 'tale__read_tale']);
+  });
+
+  it('calls a site tool through Harbor\'s own connection to the server, policy-checked and budgeted', async () => {
+    mocks.listSiteTools.mockReturnValue(SITE);
+    mocks.callSiteTool.mockResolvedValue({ ok: true, result: { content: [{ type: 'text', text: 'Once upon a time' }] } });
+    const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB, { maxCalls: 1 }))!;
+    const r = await core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'tale__read_tale', arguments: { upTo: 'p4' } });
+    expect(mocks.callSiteTool).toHaveBeenCalledWith(ORIGIN, TAB, 'site:tale.example:tale', 'read_tale', { upTo: 'p4' });
+    // The server's own CallToolResult is passed through, not re-wrapped as JSON text.
+    expect(r).toEqual({ content: [{ type: 'text', text: 'Once upon a time' }], _meta: { 'harbor/provenance': { source: 'site-server', origin: ORIGIN, server: 'site:tale.example:tale' } } });
+    const over = await core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'tale__read_tale', arguments: {} });
+    expect(over).toMatchObject({ isError: true });
+  });
+
+  it('leaves out a server policy refuses', async () => {
+    mocks.listSiteTools.mockReturnValue(SITE);
+    const { Policy } = await import('../../policy/store');
+    const { compileRule } = await import('../../policy/rules');
+    Policy.__setForTesting([compileRule({ source: 'user', id: 'x', effect: 'deny', principal: { origin: '*' }, action: 'tool.list', resource: { server: 'site:*' } } as never)]);
+    syncPage();
+    const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB))!;
+    const listed = await core.handlePageToolsHostRequest('page_tools.list', { endpointId }) as { tools: Array<{ name: string }> };
+    expect(listed.tools.map((t) => t.name)).toEqual(['go_to', 'reading_position']);
+  });
+});
+
+describe('names, provenance and audit on the endpoint', () => {
+  it('prefixes every description with the host and stamps provenance on every tool', async () => {
+    syncPage();
+    mocks.listSiteTools.mockReturnValue([{ serverId: 'site:tale.example:tale', name: 'read_tale', description: 'Read', inputSchema: { type: 'object' } }]);
+    const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB))!;
+    const listed = await core.handlePageToolsHostRequest('page_tools.list', { endpointId }) as { tools: Array<{ name: string; description: string; _meta: unknown }> };
+    expect(listed.tools.map((t) => t.description)).toEqual(['From tale.example: Scroll to an anchor', 'From tale.example: Where the reader is', 'From tale.example: Read']);
+    expect(listed.tools[0]._meta).toEqual({ 'harbor/provenance': { source: 'page-tool', origin: ORIGIN } });
+    expect(listed.tools[2]._meta).toEqual({ 'harbor/provenance': { source: 'site-server', origin: ORIGIN, server: 'site:tale.example:tale' } });
+  });
+
+  it('gives colliding site tool names distinct names that each call the right tool', async () => {
+    mocks.listSiteTools.mockReturnValue([
+      { serverId: 'site:tale.example:x', name: '_y', description: 'first', inputSchema: { type: 'object' } },
+      { serverId: 'site:tale.example:x_', name: 'y', description: 'second', inputSchema: { type: 'object' } },
+    ]);
+    mocks.callSiteTool.mockResolvedValue({ ok: true, result: { content: [{ type: 'text', text: 'ok' }] } });
+    const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB))!;
+    const listed = await core.handlePageToolsHostRequest('page_tools.list', { endpointId }) as { tools: Array<{ name: string }> };
+    expect(listed.tools.map((t) => t.name)).toEqual(['x___y', 'x___y_2']);
+    await core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'x___y_2', arguments: {} });
+    expect(mocks.callSiteTool).toHaveBeenLastCalledWith(ORIGIN, TAB, 'site:tale.example:x_', 'y', {});
+  });
+
+  it('a site tool call after a listing adds only its own tool.call audit entry', async () => {
+    mocks.listSiteTools.mockReturnValue([
+      { serverId: 'site:tale.example:a', name: 't', description: 'a', inputSchema: { type: 'object' } },
+      { serverId: 'site:tale.example:b', name: 't', description: 'b', inputSchema: { type: 'object' } },
+    ]);
+    mocks.callSiteTool.mockResolvedValue({ ok: true, result: { content: [] } });
+    const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB))!;
+    await core.handlePageToolsHostRequest('page_tools.list', { endpointId });
+    const { Audit } = await import('../../policy/audit');
+    const before = Audit.list().length;
+    await core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'a__t', arguments: {} });
+    const added = Audit.list().slice(before).map((r) => r.action);
+    expect(added).toEqual(['tool.call']);
   });
 });

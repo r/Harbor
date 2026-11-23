@@ -10,8 +10,12 @@ const mocks = vi.hoisted(() => ({
   harborRequest: vi.fn(),
   hasPermission: vi.fn(),
   callPageToolForAgent: vi.fn(),
+  callSiteToolForAgent: vi.fn(),
 }));
 vi.mock('../harbor-core', () => ({
+  describedBySite: (_origin: string, d?: string) => d,
+  siteToolsForAgent: vi.fn(async () => []),
+  callSiteToolForAgent: mocks.callSiteToolForAgent,
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   pageToolsForAgent: vi.fn(async () => null),
@@ -65,6 +69,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.hasPermission.mockResolvedValue(true);
   mocks.callPageToolForAgent.mockResolvedValue({ at: 'p3' });
+  mocks.callSiteToolForAgent.mockResolvedValue({ content: [{ type: 'text', text: 'chapter one' }] });
 });
 
 describe('page tools in the built-in agent.run loop', () => {
@@ -111,5 +116,20 @@ describe('page tools in the built-in agent.run loop', () => {
     await run([PAGE_TOOL], call =>
       call === 1 ? toolTurn(['a', 'page_tale_example_go_to'], ['b', 'page_tale_example_go_to']) : { content: 'Done.' }, 1);
     expect(mocks.callPageToolForAgent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a site's own MCP server tools in the built-in agent.run loop", () => {
+  const SITE_TOOL = { serverId: 'site:tale.example:tale', name: 'read_tale', description: 'Read', inputSchema: { type: 'object' } };
+
+  it('calls a site tool through callSiteToolForAgent, with no mcp:tools.call grant', async () => {
+    mocks.hasPermission.mockImplementation(async (_o: string, scope: string) => scope !== 'mcp:tools.call');
+    const { mcpCalls, chats } = await run([SITE_TOOL], call =>
+      call === 1 ? toolTurn(['a', 'site_tale_example_tale_read_tale']) : { content: 'Done.' });
+    expect(mocks.callSiteToolForAgent).toHaveBeenCalledWith(expect.objectContaining({
+      origin: 'https://tale.example', tabId: 9, serverId: 'site:tale.example:tale', name: 'read_tale',
+    }));
+    expect(mcpCalls).toEqual([]);
+    expect(chats[1].messages.find(m => m.role === 'tool')?.content).toContain('chapter one');
   });
 });

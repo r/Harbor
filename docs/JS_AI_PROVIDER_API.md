@@ -447,8 +447,10 @@ Register a website's MCP server for the user's chatbot to use.
 
 Harbor asks the person first (`mcp:servers.register`, remembered per site). Once it's allowed, Harbor connects to the server, asks it for its tools, and offers those tools to the person's agent for this tab only:
 
-- **Harbor's own agent** (`agent.run()`) lists them with the person's other tools, named `<serverId>/<tool>`. They still need `mcp:tools.list` and `mcp:tools.call`, and must be among the tools the site was granted.
-- **The person's own ACP agent** (goose, Claude Code, Codex and so on) gets the server in its session and connects to it directly, if it supports the transport (`streamable-http` or `sse`; no ACP agent takes `websocket`). The site needs `mcp:tools.list` and `mcp:tools.call` for that, and Harbor's policy rules for listing and calling tools apply. The site's per-tool grants don't; the agent's own permission prompts do.
+- **Harbor's own agent** (`agent.run()`) offers them alongside the page's own tools, named `<serverId>/<tool>`.
+- **The person's own ACP agent** (goose, Claude Code, Codex and so on) gets them through Harbor's own MCP endpoint, together with the page's tools, as `<server>__<tool>`. Harbor makes the calls to your server itself, so any transport works (`streamable-http`, `sse` or `websocket`), and the agent never gets your server's URL.
+
+Either way they get the same gate as page tools: no `mcp:tools.list` or `mcp:tools.call` grant and no per-tool allowlist, a policy check on each server and each call, and the audit log. Each tool's description reaches the agent prefixed with your site's host ("From shop.example: ..."), with Harbor's `harbor/provenance` metadata.
 
 The server must be on the page's own origin (`ws://` and `wss://` count as `http://` and `https://`). A page on a loopback host (`localhost`, `127.0.0.1`, `[::1]`) may also register a server on any loopback host; other sites can't, so a site can't reach MCP servers on the person's machine. Harbor checks this, and the transport, before it asks, so the person is never asked about a registration that would be refused. `transport` defaults to `'sse'`; `stdio` isn't supported. Registration is off when the person turns off Tool Access.
 
