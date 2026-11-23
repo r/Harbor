@@ -35,6 +35,16 @@ The sidebar's **Agent** panel, next to LLM Providers, lets you run sites on an a
 
 Once you've selected an agent, everything a site asks of a model goes to it, including a site's own chat (the kind opened with `agent.chat.open`, as in [Bring Your Own Chatbot](../demo/web-agents/bring-your-chatbot/)). Nothing uses Harbor's built-in model then, so the **LLM Providers** panel is hidden. Selecting Harbor's built-in model again brings it back. Switching ends any conversation a site had open, so the site starts a new one on whatever you picked.
 
+### Let your agent use pages (optional)
+
+If you talk to your own agent outside the browser (goose, Claude Code, Codex), it can open pages and use the tools those pages offer, such as a reader's "play" and "pause".
+
+1. In the sidebar's **Agent** panel, turn on **Let your agent open and use pages**.
+2. Copy the command shown there and add it to your agent as an MCP server that runs a command. For example, with Claude Code: `claude mcp add harbor -- <command>`.
+3. Ask your agent to open a page. It can use the pages it opens, and any page you share with **Share this tab with your agent**. It can't see your other tabs.
+
+Your agent can only call the tools a page offers. It can't click, type or read the page. Firefox has to be running with Harbor for your agent to reach it.
+
 ### Install Your First MCP Server
 
 MCP servers give the AI tools like file access, memory, or web search.

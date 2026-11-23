@@ -1,6 +1,6 @@
 # Your agent reaches into the browser: design
 
-Status: decided (2026-11-23). §1–§4 follow the recommended options.
+Status: built. §1–§4 follow the options the maintainer chose on 2026-11-23.
 
 ## Problem
 
