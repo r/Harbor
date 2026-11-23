@@ -232,8 +232,8 @@ already act as the agent. Other local users can't guess the token.
   to tools removed since the list was taken fail cleanly. Adding a `GET`
   stream for `list_changed` is a follow-up if a real agent needs it.
 - **Agents without HTTP MCP.** An agent whose `initialize` reply doesn't
-  declare `mcpCapabilities.http` gets no page tools, and a log line names the
-  agent. A stdio shim is the fallback if goose or Claude Code turn out to
+  declare `mcpCapabilities.http` gets no page tools, and a log line says
+  an HTTP MCP server was left out. A stdio shim is the fallback if goose or Claude Code turn out to
   lack it; this is checked with a real agent during the build.
 - **Page chat sessions.** A chat keeps one agent session. Page tools reach it
   through the endpoint, which lists the tab's tools at call time, so tools

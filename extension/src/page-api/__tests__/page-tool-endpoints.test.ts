@@ -167,6 +167,19 @@ describe("answering the bridge's host requests", () => {
     expect(posted.filter((m) => m.type === 'page_tools.call')).toEqual([]);
   });
 
+  it('holds the budget when the agent sends calls in parallel', async () => {
+    syncPage();
+    const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB, { maxCalls: 1 }))!;
+    const both = [
+      core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'go_to', arguments: {} }),
+      core.handlePageToolsHostRequest('page_tools.call', { endpointId, name: 'go_to', arguments: {} }),
+    ];
+    await answerNextCall({ ok: true, result: 'ok' });
+    const results = await Promise.all(both);
+    expect(results.filter((r) => (r as { isError?: boolean }).isError)).toHaveLength(1);
+    expect(posted.filter((m) => m.type === 'page_tools.call')).toEqual([]);
+  });
+
   it('a refused call spends no budget', async () => {
     syncPage();
     const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB, { maxCalls: 1 }))!;

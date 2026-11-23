@@ -180,6 +180,8 @@ export const builtinAgentBackend: AgentBackend = {
         // The page's own tools need no MCP grant: the grant that started the
         // run covers them, and each call is policy-checked below. Harbor's
         // installed tools still need mcp:tools.call.
+        // A name the run didn't offer counts as an installed tool here, so it
+        // still needs the grant (failing closed).
         const callsMcpTools = toolCalls.some(tc => !isPageToolServer(llmTools.find(t => t.name === tc.function.name)?._serverId));
         if (callsMcpTools && !await hasPermission(origin, 'mcp:tools.call', tabId)) {
           messages.push({ role: 'assistant', content: responseContent || 'I need to use tools but permission was denied.' });
@@ -226,6 +228,7 @@ export const builtinAgentBackend: AgentBackend = {
           }
 
           const toolInfo = llmTools.find(t => t.name === llmToolName);
+
           const serverId = toolInfo?._serverId || '';
           const actualToolName = toolInfo?._toolName || llmToolName;
           const displayName = `${serverId}/${actualToolName}`;

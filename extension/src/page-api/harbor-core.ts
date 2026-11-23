@@ -680,18 +680,23 @@ export async function handlePageToolsHostRequest(method: string, params: unknown
     if (endpoint.maxCalls !== undefined && endpoint.calls >= endpoint.maxCalls) {
       return pageToolErrorResult('Tool call budget exceeded; this call was not run.');
     }
+    // Reserved before anything is awaited, so calls the agent sends in
+    // parallel can't all pass the check above; given back if policy refuses
+    // the call, so a refused call spends no budget.
+    endpoint.calls++;
+    let allowed = false;
     try {
-      // Counted once the policy check has passed, so a refused call spends no budget.
       const result = await callPageToolForAgent({
         origin: endpoint.origin,
         tabId: endpoint.tabId,
         generation: endpoint.generation,
         name,
         input,
-        onAllowed: () => { endpoint.calls++; },
+        onAllowed: () => { allowed = true; },
       });
       return pageToolCallResult(result);
     } catch (e) {
+      if (!allowed) endpoint.calls--;
       return pageToolErrorResult(e instanceof Error && e.message ? e.message : 'Page tool failed');
     }
   }
