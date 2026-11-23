@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The permissions guide's part for users (`docs/PERMISSIONS.md`, Part 4) described a sidebar that never shipped: four tabs, a policy editor with presets and export, "Make this automatic" in Activity, and dedicated egress and sensitive-action prompts. It now describes the sidebar and permission prompt as they are, and lists the rest under "Not built yet".
 - Styles in the sidebar and directory that pointed at tokens Harbor never defined (`--color-surface-tertiary`, `--color-success-bg`, `--border` and six others) now use defined ones, so those backgrounds and rules render.
 - The directory's "installed, stopped" badge was filled with the muted text color, so its label was nearly unreadable.
 - Scrollbars in Harbor's pages follow the theme in Firefox. They were styled only with `-webkit-` rules, which Firefox ignores.
