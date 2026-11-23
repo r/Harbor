@@ -37,6 +37,17 @@ import { checkAction, requireAction } from '../agents/handlers/helpers';
 import type { RequestContext, ResponseSender } from '../agents/handlers/router-types';
 import { backendTagForSetting, isGrantedForBackend } from '../policy/backend-grant';
 import { SessionRegistry } from '../sessions';
+import { LabelFlow } from '../policy/label-flow';
+export type { LabelFlow } from '../policy/label-flow';
+
+/** Internal ownership of one run's or session's information flow. */
+export function createLabelFlow(): LabelFlow {
+  return new LabelFlow();
+}
+
+export function getSessionLabelFlow(sessionId: string, origin: string): LabelFlow {
+  return SessionRegistry.getLabelFlow(sessionId, origin);
+}
 
 // =============================================================================
 // Types
@@ -100,7 +111,7 @@ export function checkPageAction(
   call: { id: string; type: string; origin: string; tabId?: number },
   action: PageBrowserAction,
   resource?: { host?: string },
-  options: { pageFetch?: boolean } = {},
+  options: { pageFetch?: boolean; labelFlow?: LabelFlow } = {},
 ): Promise<{ code: string; message: string } | null> {
   return gatePageAction(call, action, resource, options);
 }
@@ -128,7 +139,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
 export async function harborRequest<T = unknown>(
   type: string,
   payload?: unknown,
-  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  options: { timeoutMs?: number; signal?: AbortSignal; labelFlow?: LabelFlow } = {},
 ): Promise<T> {
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   // Aborts when the caller gives up (the page's own request timed out, or
@@ -152,16 +163,16 @@ export async function harborRequest<T = unknown>(
     // longer, for a permission prompt) timer. Passing `controller.signal`
     // on, rather than `options.signal`, means a late prompt answer is
     // discarded here too, not just when the page itself gave up first.
-    return await Promise.race([dispatch<T>(type, payload, controller.signal), timeout]);
+    return await Promise.race([dispatch<T>(type, payload, controller.signal, options.labelFlow), timeout]);
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener('abort', onCallerAbort);
   }
 }
 
-async function dispatch<T>(type: string, payload: unknown, signal: AbortSignal): Promise<T> {
+async function dispatch<T>(type: string, payload: unknown, signal: AbortSignal, labelFlow?: LabelFlow): Promise<T> {
   if (isExtensionApiType(type)) {
-    const response = await routeExtensionApiMessage({ type, payload }, PAGE_API_SENDER, { signal });
+    const response = await routeExtensionApiMessage({ type, payload }, PAGE_API_SENDER, { signal, labelFlow });
     if (!response.ok) throw createError(response.error ?? 'Unknown error from Harbor', response.code);
     return response.result as T;
   }
@@ -193,6 +204,7 @@ export function harborStreamRequest(
   payload?: unknown,
   requestId?: string,
   signal?: AbortSignal,
+  labelFlow?: LabelFlow,
 ): { stream: AsyncIterable<StreamEvent>; cancel: () => void } {
   if (type !== 'llm.chatStream') {
     throw createError(`harborStreamRequest: unsupported streaming type "${type}"`);
@@ -206,7 +218,7 @@ export function harborStreamRequest(
   else signal?.addEventListener('abort', onCallerAbort, { once: true });
   const release = () => signal?.removeEventListener('abort', onCallerAbort);
 
-  const inner = streamLlmChat(payload, requestId, controller.signal);
+  const inner = streamLlmChat(payload, requestId, controller.signal, labelFlow);
   async function* tracked(): AsyncGenerator<StreamEvent> {
     try {
       yield* inner as AsyncGenerator<StreamEvent>;
@@ -366,7 +378,11 @@ export async function acpClose(channel: string): Promise<void> {
  * would otherwise ask or preview for this action — the same deal a page's
  * own `llm.chat`/`session.create` calls get through `gatePageCall`.
  */
-export async function requireAgentPromptAction(origin: string, tabId?: number): Promise<boolean> {
+export async function checkAgentPromptAction(origin: string, tabId?: number, labelFlow?: LabelFlow): Promise<{ code: string; message: string } | null> {
+  return checkAction(pageToolPolicyContext(origin, tabId), 'model.prompt.agent', { upstreamConsent: 'origin-grant', labelFlow });
+}
+
+export async function requireAgentPromptAction(origin: string, tabId?: number, labelFlow?: LabelFlow): Promise<boolean> {
   const ctx: RequestContext = {
     id: crypto.randomUUID(),
     // `requireAction` never branches on `ctx.type` (only `ctx.id`/`ctx.origin`/
@@ -382,7 +398,7 @@ export async function requireAgentPromptAction(origin: string, tabId?: number): 
     tabId,
   };
   const sender: ResponseSender = { sendResponse: () => {}, sendStreamEvent: () => {} };
-  return requireAction(ctx, sender, 'model.prompt.agent', { upstreamConsent: 'origin-grant' });
+  return requireAction(ctx, sender, 'model.prompt.agent', { upstreamConsent: 'origin-grant', labelFlow });
 }
 
 /**
@@ -506,6 +522,7 @@ export async function callPageToolForAgent(call: {
   name: string;
   input: Record<string, unknown>;
   signal?: AbortSignal;
+  labelFlow?: LabelFlow;
   /** Called once the policy check has allowed the call, before it runs. */
   onAllowed?: () => void;
 }): Promise<unknown> {
@@ -517,17 +534,23 @@ export async function callPageToolForAgent(call: {
     upstreamConsent: 'origin-grant',
     noPrompt: true,
     resource: { server: serverId, tool: call.name },
+    labelFlow: call.labelFlow,
   });
   if (denial) throw Object.assign(new Error(denial.message), { code: denial.code });
   call.onAllowed?.();
-  return callPageTool({
-    tabId: call.tabId,
-    origin: call.origin,
-    generation: call.generation,
-    name: call.name,
-    input: call.input,
-    signal: call.signal,
-  });
+  try {
+    return await callPageTool({
+      tabId: call.tabId,
+      origin: call.origin,
+      generation: call.generation,
+      name: call.name,
+      input: call.input,
+      signal: call.signal,
+    });
+  } finally {
+    // Error text is page content too when the model receives it.
+    call.labelFlow?.addPageOutput(call.origin);
+  }
 }
 
 // =============================================================================
@@ -542,6 +565,7 @@ interface PageToolEndpoint {
   /** An agent.run's tool budget; absent for a page chat. */
   maxCalls?: number;
   calls: number;
+  labelFlow?: LabelFlow;
   /** Endpoint tool name → the site server tool it stands for, from the last listing. */
   siteNames?: Map<string, { serverId: string; tool: string }>;
 }
@@ -559,7 +583,7 @@ const pageToolEndpoints = new Map<string, PageToolEndpoint>();
 export async function openPageToolEndpointForAcp(
   origin: string,
   tabId: number | undefined,
-  options: { maxCalls?: number } = {},
+  options: { maxCalls?: number; labelFlow?: LabelFlow } = {},
 ): Promise<(SiteMcpServerDescriptor & { endpointId: string }) | null> {
   if (tabId === undefined) return null;
   const listing = await pageToolsForAgent(origin, tabId);
@@ -580,7 +604,7 @@ export async function openPageToolEndpointForAcp(
     if (typeof endpointId === 'string') await rpcRequest('page_tools.close', { endpointId }).catch(() => {});
     return null;
   }
-  pageToolEndpoints.set(endpointId, { origin, tabId, generation: listing?.generation ?? -1, maxCalls: options.maxCalls, calls: 0 });
+  pageToolEndpoints.set(endpointId, { origin, tabId, generation: listing?.generation ?? -1, maxCalls: options.maxCalls, calls: 0, labelFlow: options.labelFlow });
   // One MCP server for everything the site offers, named by its host: the
   // page's own tools under their names, its registered servers' tools as
   // `<server>__<tool>` (see siteToolEndpointName).
@@ -654,9 +678,10 @@ export async function handlePageToolsHostRequest(method: string, params: unknown
           serverId: site.serverId,
           name: site.tool,
           input,
+          labelFlow: endpoint.labelFlow,
           onAllowed: () => { allowed = true; },
         });
-        return withProvenance(siteToolCallResult(result), toolProvenance(endpoint.origin, 'site-server', site.serverId));
+        return acpToolResult(endpoint, withProvenance(siteToolCallResult(result), toolProvenance(endpoint.origin, 'site-server', site.serverId)));
       }
       const result = await callPageToolForAgent({
         origin: endpoint.origin,
@@ -664,16 +689,29 @@ export async function handlePageToolsHostRequest(method: string, params: unknown
         generation: endpoint.generation,
         name,
         input,
+        labelFlow: endpoint.labelFlow,
         onAllowed: () => { allowed = true; },
       });
-      return withProvenance(pageToolCallResult(result), toolProvenance(endpoint.origin, 'page-tool'));
+      return acpToolResult(endpoint, withProvenance(pageToolCallResult(result), toolProvenance(endpoint.origin, 'page-tool')));
     } catch (e) {
       if (!allowed) endpoint.calls--;
-      return withProvenance(pageToolErrorResult(e instanceof Error && e.message ? e.message : 'Page tool failed'), toolProvenance(endpoint.origin, 'page-tool'));
+      return acpToolResult(endpoint, withProvenance(pageToolErrorResult(e instanceof Error && e.message ? e.message : 'Page tool failed'), toolProvenance(endpoint.origin, 'page-tool')));
     }
   }
 
   return pageToolErrorResult('Unknown page tools request');
+}
+
+async function acpToolResult(endpoint: PageToolEndpoint, result: unknown): Promise<unknown> {
+  if (endpoint.labelFlow && !endpoint.labelFlow.labels.isEmpty()) {
+    const denial = await checkAction(pageToolPolicyContext(endpoint.origin, endpoint.tabId), 'model.prompt.agent', {
+      labelFlow: endpoint.labelFlow,
+      upstreamConsent: 'origin-grant',
+      noPrompt: true,
+    });
+    if (denial) return pageToolErrorResult(denial.message);
+  }
+  return result;
 }
 
 export function __resetPageToolEndpointsForTests(): void {
@@ -727,6 +765,7 @@ export async function callSiteToolForAgent(call: {
   name: string;
   input: Record<string, unknown>;
   signal?: AbortSignal;
+  labelFlow?: LabelFlow;
   /** Called once the policy check has allowed the call, before it runs. */
   onAllowed?: () => void;
 }): Promise<unknown> {
@@ -737,12 +776,17 @@ export async function callSiteToolForAgent(call: {
     upstreamConsent: 'origin-grant',
     noPrompt: true,
     resource: { server: call.serverId, tool: call.name },
+    labelFlow: call.labelFlow,
   });
   if (denial) throw Object.assign(new Error(denial.message), { code: denial.code });
   call.onAllowed?.();
-  const result = await callSiteTool(call.origin, call.tabId, call.serverId, call.name, call.input);
-  if (!result.ok) throw Object.assign(new Error(result.error), { code: 'ERR_TOOL_FAILED' });
-  return result.result;
+  try {
+    const result = await callSiteTool(call.origin, call.tabId, call.serverId, call.name, call.input);
+    if (!result.ok) throw Object.assign(new Error(result.error), { code: 'ERR_TOOL_FAILED' });
+    return result.result;
+  } finally {
+    call.labelFlow?.addPageOutput(call.origin);
+  }
 }
 
 function hostOf(origin: string): string {
