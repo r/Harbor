@@ -1219,7 +1219,7 @@ const welcomeAgentName = document.getElementById('welcome-agent-name') as HTMLEl
 /** Names the agent sites run on in the welcome card, from the "Run sites on" choice. */
 function updateWelcomeAgent(): void {
   const selected = agentBackendSelect.selectedOptions[0];
-  welcomeAgentName.textContent = selected && selected.value ? selected.textContent : "Harbor's built-in model";
+  welcomeAgentName.textContent = selected && selected.value ? selected.textContent : 'Built-in model';
 }
 
 function renderAgentBackendOptions(): void {

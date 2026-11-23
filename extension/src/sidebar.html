@@ -93,21 +93,26 @@
          the card's top padding, one 1.6rem line at line-height 1.1, then
          where the baseline sits in the next line (about 0.92em), less the
          waves' own height. The title always takes two lines (max-width 9ch). */
+      .welcome {
+        --sea-top: calc(var(--space-6) + 1.6rem * (1.1 + 0.92) + 5px - 24px);
+      }
       .welcome-sea {
         position: absolute;
-        top: calc(var(--space-6) + 1.6rem * (1.1 + 0.92) + 5px - 24px);
+        top: var(--sea-top);
         left: 0;
         width: 100%;
         height: 24px;
       }
+      /* Half a sun, setting on the far wave's crest. */
       .welcome-sun {
         position: absolute;
-        top: 26px;
-        right: 22px;
-        width: 20px;
-        height: 20px;
+        top: calc(var(--sea-top) + 4px - 11px);
+        right: 28px;
+        width: 22px;
+        height: 22px;
         border-radius: var(--radius-full);
         background: var(--color-action);
+        clip-path: inset(0 0 50% 0);
       }
       .welcome h1 {
         position: relative;
@@ -1040,12 +1045,12 @@
         <span class="welcome-sun" aria-hidden="true"></span>
         <svg class="welcome-sea" viewBox="0 0 360 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><defs><linearGradient id="welcome-sea-fade" x1="0" x2="0" y1="0" y2="1"><stop offset="0.45" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient><mask id="welcome-sea-mask"><rect width="360" height="24" fill="url(#welcome-sea-fade)"/></mask></defs><g mask="url(#welcome-sea-mask)" fill="var(--color-accent-primary)"><path d="M0 6 Q22.5 0 45 6 T90 6 T135 6 T180 6 T225 6 T270 6 T315 6 T360 6 V24 H0Z" opacity=".08"/><path d="M0 14 Q22.5 8 45 14 T90 14 T135 14 T180 14 T225 14 T270 14 T315 14 T360 14 V24 H0Z" opacity=".13"/></g></svg>
         <h1 id="welcome-title">Calm seas today</h1>
-        <p>I'll keep watch while you browse, and check with you before a site asks for more.</p>
+        <p>I'll keep watch while you browse, and check with you whenever a site asks for more.</p>
         <div class="welcome-agent">
           <div class="welcome-avatar"><i data-icon="sparkles" data-icon-size="22"></i></div>
           <div class="welcome-agent-text">
-            <b id="welcome-agent-name">Harbor's built-in model</b>
-            <span>Your agent. Sites ask you before they use it.</span>
+            <b id="welcome-agent-name">Built-in model</b>
+            <span>Sites ask before using it.</span>
           </div>
           <button class="link-btn" id="welcome-change-agent" type="button">Change</button>
         </div>
