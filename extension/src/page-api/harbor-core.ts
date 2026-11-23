@@ -531,14 +531,26 @@ export async function pageToolsForAgent(
   if (tabId === undefined) return null;
   const listing = listPageTools(tabId, origin);
   if (!listing) return null;
-  const serverId = pageToolServerId(origin);
+  if (!(await policyAllowsPageToolList(origin, tabId))) return null;
+  return { serverId: pageToolServerId(origin), ...listing };
+}
+
+/**
+ * The `tool.list` policy check for a page's own tools (`page:<host>`), with no
+ * prompt: a rule that asks refuses. Recorded in the audit log either way.
+ */
+export async function policyAllowsPageToolList(origin: string, tabId: number): Promise<boolean> {
   const denial = await checkAction(pageToolPolicyContext(origin, tabId), 'tool.list', {
     upstreamConsent: 'origin-grant',
     noPrompt: true,
-    resource: { server: serverId },
+    resource: { server: pageToolServerId(origin) },
   });
-  if (denial) return null;
-  return { serverId, ...listing };
+  return denial === null;
+}
+
+/** The tab's current page tools, if the page there is `origin`'s (mcp/page-tools.ts). */
+export function listPageToolsForTab(tabId: number, origin: string) {
+  return listPageTools(tabId, origin);
 }
 
 /**

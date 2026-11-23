@@ -36,6 +36,18 @@ export async function handleHostRequest(msg: HostRequestMessage): Promise<unknow
     return handlePageToolsHostRequest(method, params);
   }
 
+  // The person's own agent, outside the browser, reaching into tabs through
+  // harbor-mcp and the bridge (docs/AGENT_REACHES_TABS.md). Only the bridge's
+  // own socket relay sets this context; a JS MCP server can't send
+  // agent_tabs.* at all (the bridge refuses it).
+  if (method === 'agent_tabs.request') {
+    if (origin !== 'harbor-bridge-agent-tabs') {
+      throw new Error('Agent tab requests come only from the bridge.');
+    }
+    const { handleAgentTabsHostRequest } = await import('./agent-tabs-handlers');
+    return handleAgentTabsHostRequest(params);
+  }
+
   // http.get sends no cookies, so any tool may use it.
   if (method === 'http.get') {
     return runHttpGet((params ?? {}) as Record<string, unknown>);
