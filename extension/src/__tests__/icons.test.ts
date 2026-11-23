@@ -19,12 +19,12 @@ const UI_FILES = [
   'page-chat.ts',
 ];
 
-// Emoji, plus the arrows, stars, checks, crosses and triangles used as icons.
-const ICON_GLYPH = /\p{Extended_Pictographic}|[←-⇿⌀-⏿■-◿☀-➿⬀-⯿]|&#(9[0-9]{3}|1[0-2][0-9]{3}|12[0-9]{4});/u;
+// Emoji, plus the arrows, stars, checks, crosses (including Ã) and triangles used as icons.
+const ICON_GLYPH = /\p{Extended_Pictographic}|&times;|[×←-⇿⌀-⏿■-◿☀-➿⬀-⯿]|&#(9[0-9]{3}|1[0-2][0-9]{3}|12[0-9]{4});/u;
 
 describe('icons', () => {
   it('renders a decorative SVG that inherits the text color', () => {
-    const svg = icon('check');
+    const svg = icon('x');
     expect(svg).toMatch(/^<svg class="icon"/);
     expect(svg).toContain('stroke="currentColor"');
     expect(svg).toContain('aria-hidden="true"');
@@ -40,7 +40,7 @@ describe('icons', () => {
   });
 
   it('knows only the icons it bundles', () => {
-    expect(isIconName('sun')).toBe(true);
+    expect(isIconName('zap')).toBe(true);
     expect(isIconName('toString')).toBe(false);
     expect(isIconName('dolphin')).toBe(false);
     for (const node of Object.values(ICONS)) expect(node.length).toBeGreaterThan(0);

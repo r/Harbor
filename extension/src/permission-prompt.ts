@@ -28,45 +28,6 @@ const SCOPE_ICONS: Record<string, IconName> = {
 };
 
 // =============================================================================
-// Theme Management (synced with sidebar)
-// =============================================================================
-
-type Theme = 'light' | 'dark' | 'system';
-
-function getSystemTheme(): 'light' | 'dark' {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function applyTheme(theme: Theme): void {
-  const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
-  document.documentElement.setAttribute('data-theme', effectiveTheme);
-}
-
-function initTheme(): void {
-  const saved = localStorage.getItem('harbor-theme') as Theme | null;
-  const theme = saved || 'system';
-  applyTheme(theme);
-
-  // Listen for system theme changes
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const current = localStorage.getItem('harbor-theme') as Theme | null;
-    if (current === 'system' || !current) {
-      applyTheme('system');
-    }
-  });
-
-  // Listen for theme changes from other windows (sidebar)
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'harbor-theme' && e.newValue) {
-      applyTheme(e.newValue as Theme);
-    }
-  });
-}
-
-// Initialize theme immediately
-initTheme();
-
-// =============================================================================
 // Permission Prompt Logic
 // =============================================================================
 

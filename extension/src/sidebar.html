@@ -1123,7 +1123,6 @@
       </div>
       <div class="header-actions">
         <button class="btn btn-ghost btn-sm" id="reload-extension-btn" title="Reload extension"><i data-icon="rotate-cw"></i></button>
-        <button class="btn btn-ghost btn-sm" id="theme-toggle" title="Toggle theme"><i data-icon="monitor"></i></button>
       </div>
     </div>
 
@@ -1179,7 +1178,7 @@
           <div id="api-key-config" class="api-key-config" style="display: none;">
             <div class="api-key-header">
               <span id="api-key-provider-name">Configure Provider</span>
-              <button class="btn btn-ghost btn-sm" id="api-key-cancel">×</button>
+              <button class="btn btn-ghost btn-sm" id="api-key-cancel" aria-label="Close"><i data-icon="x"></i></button>
             </div>
             <div class="form-group">
               <label class="form-label" for="api-key-input">API Key</label>
@@ -1226,7 +1225,7 @@
         <div id="agent-form" class="api-key-config" style="display: none;">
           <div class="api-key-header">
             <span id="agent-form-title">Add agent</span>
-            <button class="btn btn-ghost btn-sm" id="agent-form-cancel" type="button">&times;</button>
+            <button class="btn btn-ghost btn-sm" id="agent-form-cancel" type="button" aria-label="Close"><i data-icon="x"></i></button>
           </div>
           <div class="form-group">
             <label class="form-label">Preset</label>
@@ -1280,7 +1279,7 @@
         <div id="oauth-config-form" class="api-key-config" style="display: none;">
           <div class="api-key-header">
             <span id="oauth-config-provider-name">Configure Google</span>
-            <button class="btn btn-ghost btn-sm" id="oauth-config-cancel">×</button>
+            <button class="btn btn-ghost btn-sm" id="oauth-config-cancel" aria-label="Close"><i data-icon="x"></i></button>
           </div>
           <div class="form-group">
             <label class="form-label" for="oauth-client-id">Client ID</label>
@@ -1313,7 +1312,7 @@
         <div id="remote-server-form" class="api-key-config" style="display: none; margin-bottom: var(--space-3);">
           <div class="api-key-header">
             <span>Add Remote Server</span>
-            <button class="btn btn-ghost btn-sm" id="remote-server-cancel">×</button>
+            <button class="btn btn-ghost btn-sm" id="remote-server-cancel" aria-label="Close"><i data-icon="x"></i></button>
           </div>
           <div class="form-group">
             <label class="form-label" for="remote-server-url">Server URL</label>
@@ -1346,7 +1345,7 @@
         <div id="server-secrets-form" class="api-key-config" style="display: none; margin-bottom: var(--space-3);">
           <div class="api-key-header">
             <span id="server-secrets-title">Credentials</span>
-            <button class="btn btn-ghost btn-sm" id="server-secrets-cancel" type="button">×</button>
+            <button class="btn btn-ghost btn-sm" id="server-secrets-cancel" type="button" aria-label="Close"><i data-icon="x"></i></button>
           </div>
           <div id="server-secrets-fields"></div>
           <div class="form-actions">

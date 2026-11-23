@@ -5,9 +5,8 @@
  * system sans-serif type with Helvetica Neue headings, white and pale-green
  * surfaces, report green for links and focus, bright green for the main action.
  *
- * Each color is written once as light-dark(<light>, <dark>). The pages set
- * data-theme="light" or "dark" on <html>; without it, the system preference
- * decides.
+ * Each color is written once as light-dark(<light>, <dark>), so every page
+ * follows the system's light or dark setting. There is no in-app switch.
  */
 
 /* ============================================================================
@@ -15,8 +14,6 @@
    ============================================================================ */
 
 :root { color-scheme: light dark; }
-:root[data-theme="light"] { color-scheme: light; }
-:root[data-theme="dark"] { color-scheme: dark; }
 
 /* ============================================================================
    COLOR TOKENS

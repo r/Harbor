@@ -112,7 +112,6 @@ const STORAGE_KEY = 'harbor_wasm_servers';
 
 // DOM elements
 const list = document.getElementById('list') as HTMLDivElement;
-const themeToggle = document.getElementById('theme-toggle') as HTMLButtonElement;
 const installUrlInput = document.getElementById('install-url') as HTMLInputElement;
 const installUrlBtn = document.getElementById('install-url-btn') as HTMLButtonElement;
 const dropZone = document.getElementById('drop-zone') as HTMLDivElement;
@@ -684,55 +683,6 @@ function setupUrlInstall(): void {
   });
 }
 
-// Theme management
-type Theme = 'light' | 'dark' | 'system';
-
-function getSystemTheme(): 'light' | 'dark' {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function applyTheme(theme: Theme): void {
-  const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
-  document.documentElement.setAttribute('data-theme', effectiveTheme);
-  localStorage.setItem('harbor-theme', theme);
-  updateThemeToggle(theme);
-}
-
-function updateThemeToggle(theme: Theme): void {
-  if (!themeToggle) return;
-  const icons = { light: 'sun', dark: 'moon', system: 'monitor' } as const;
-  themeToggle.innerHTML = icon(icons[theme]);
-  themeToggle.title = `Theme: ${theme} (click to change)`;
-}
-
-function initTheme(): void {
-  const saved = localStorage.getItem('harbor-theme') as Theme | null;
-  const theme = saved || 'system';
-  applyTheme(theme);
-
-  // Listen for system theme changes
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const current = localStorage.getItem('harbor-theme') as Theme | null;
-    if (current === 'system' || !current) {
-      applyTheme('system');
-    }
-  });
-
-  // Listen for theme changes from other tabs/windows (sidebar)
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'harbor-theme' && e.newValue) {
-      applyTheme(e.newValue as Theme);
-    }
-  });
-}
-
-function cycleTheme(): void {
-  const current = (localStorage.getItem('harbor-theme') as Theme | null) || 'system';
-  const order: Theme[] = ['system', 'light', 'dark'];
-  const next = order[(order.indexOf(current) + 1) % order.length];
-  applyTheme(next);
-}
-
 // Initialize when DOM is ready
 function init(): void {
   console.log('[Directory] Initializing...');
@@ -740,8 +690,6 @@ function init(): void {
   console.log('[Directory] BUNDLED_SERVERS:', BUNDLED_SERVERS.length);
 
   hydrateIcons();
-  initTheme();
-  themeToggle?.addEventListener('click', cycleTheme);
 
   // Setup URL and file install handlers
   setupUrlInstall();

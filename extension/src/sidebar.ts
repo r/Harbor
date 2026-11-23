@@ -160,76 +160,7 @@ let cachedAvailableModels: ModelInfo[] = [];
 // Bridge status polling
 const BRIDGE_STATUS_POLL_INTERVAL = 5000; // 5 seconds
 
-// =============================================================================
-// Theme Management
-// =============================================================================
-
-type Theme = 'light' | 'dark' | 'system';
-
-function getSystemTheme(): 'light' | 'dark' {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function applyTheme(theme: Theme): void {
-  const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
-  document.documentElement.setAttribute('data-theme', effectiveTheme);
-  localStorage.setItem('harbor-theme', theme);
-  updateThemeToggle(theme);
-}
-
-function updateThemeToggle(theme: Theme): void {
-  const btn = document.getElementById('theme-toggle');
-  if (!btn) return;
-  
-  const icons = { light: 'sun', dark: 'moon', system: 'monitor' } as const;
-  btn.innerHTML = icon(icons[theme]);
-  btn.title = `Theme: ${theme} (click to change)`;
-}
-
-function initTheme(): void {
-  // Safari: Always use system theme and hide the toggle button
-  const isSafariBrowser = typeof browser !== 'undefined' && 
-    navigator.userAgent.includes('Safari') && 
-    !navigator.userAgent.includes('Chrome');
-  
-  if (isSafariBrowser) {
-    // Hide theme toggle button in Safari
-    const themeBtn = document.getElementById('theme-toggle');
-    if (themeBtn) themeBtn.style.display = 'none';
-    
-    // Always follow system theme
-    applyTheme('system');
-    
-    // Listen for system theme changes
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      applyTheme('system');
-    });
-    return;
-  }
-  
-  const saved = localStorage.getItem('harbor-theme') as Theme | null;
-  const theme = saved || 'system';
-  applyTheme(theme);
-  
-  // Listen for system theme changes
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const current = localStorage.getItem('harbor-theme') as Theme | null;
-    if (current === 'system' || !current) {
-      applyTheme('system');
-    }
-  });
-}
-
-function cycleTheme(): void {
-  const current = localStorage.getItem('harbor-theme') as Theme | null || 'system';
-  const order: Theme[] = ['system', 'light', 'dark'];
-  const next = order[(order.indexOf(current) + 1) % order.length];
-  applyTheme(next);
-}
-
-// Initialize theme on load
 hydrateIcons();
-initTheme();
 
 // =============================================================================
 // Toast notification helper
@@ -624,9 +555,6 @@ if (serverSecretsSaveBtn) serverSecretsSaveBtn.addEventListener('click', saveSer
 if (serverSecretsCancelBtn) serverSecretsCancelBtn.addEventListener('click', closeServerSecretsForm);
 if (serverSecretsCancelBtn2) serverSecretsCancelBtn2.addEventListener('click', closeServerSecretsForm);
 
-// Theme toggle
-const themeToggle = document.getElementById('theme-toggle');
-themeToggle?.addEventListener('click', cycleTheme);
 
 addBtn.addEventListener('click', () => {
   fileInput.click();
