@@ -1,12 +1,7 @@
 /**
- * A session created with `limits.maxToolCalls: N` may run N tool calls
- * through `session.callTool()` and no more. The page sends those calls as
- * `agent.tools.call` with the session's id; the budget lives in Harbor's
- * session registry.
- *
- * This drives the real page port, so the calls take the same path a page's
- * do: background.ts's listener, the page handlers, harbor-core's dispatch
- * and the real session registry. Only the MCP host is stubbed.
+ * Drives the real page port, handlers, session registry and policy engine.
+ * A synthetic site-owned MCP output must retain its trusted domain labels
+ * through a later session prompt, including streams, isolation and expiry.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installFakeMcpServer } from '../../mcp/__tests__/support/fake-mcp-server';
@@ -39,7 +34,7 @@ vi.mock('../../policy/permissions', async (importOriginal) => ({
 }));
 
 type Listener = (port: unknown) => void;
-type Reply = { id?: string; ok: boolean; result?: unknown; error?: { code?: string; message: string } };
+type Reply = { id?: string; event?: { type: string; error?: { code?: string } }; done?: boolean; ok: boolean; result?: unknown; error?: { code?: string; message: string } };
 
 const ORIGIN = 'https://accounts.google.com';
 const TOOL = 'site:accounts.google.com:dummy/read';
@@ -83,22 +78,10 @@ afterEach(async () => {
   vi.resetModules();
 });
 
-/** Load policy rules into the same module instance the background uses. */
-async function loadRules(rules: Array<Record<string, unknown>>) {
-  const { Policy } = await import('../../policy/store');
-  const { compileRule } = await import('../../policy/rules');
-  Policy.__setForTesting(rules.map(r => compileRule({ source: 'user', ...r } as never)));
-}
-
 /** A policy refusal reaches the page with the policy engine's code. */
 function expectPolicyRefusal(reply: Reply, code: string) {
   expect(reply.ok).toBe(false);
   expect(reply.error?.code).toBe(code);
-}
-
-async function clearRules() {
-  const { Policy } = await import('../../policy/store');
-  Policy.__reset();
 }
 
 function connectPort(senderUrl: string) {
@@ -112,12 +95,18 @@ function connectPort(senderUrl: string) {
     postMessage: (m: Reply) => posted.push(m),
   });
   let n = 0;
-  return async (type: string, payload: unknown): Promise<Reply> => {
+  const request = async (type: string, payload: unknown): Promise<Reply> => {
     const id = `r${++n}`;
     listeners.forEach(l => l({ id, type, payload }));
     await vi.waitFor(() => expect(posted.some(p => p.id === id)).toBe(true));
     return posted.find(p => p.id === id)!;
   };
+  return Object.assign(request, { stream: async (type: string, payload: unknown) => {
+    const id = `r${++n}`;
+    listeners.forEach(l => l({ id, type, payload }));
+    await vi.waitFor(() => expect(posted.some(p => p.id === id && p.done)).toBe(true));
+    return posted.filter(p => p.id === id);
+  } });
 }
 
 async function createSession(request: ReturnType<typeof connectPort>, maxToolCalls: number) {
@@ -134,13 +123,43 @@ describe('a capability session retains trusted output labels', () => {
     const request = connectPort(`${ORIGIN}/page`);
     const sessionId = await createSession(request, 5);
     const other = await createSession(request, 5);
-    expect((await request('agent.tools.call', { tool: TOOL, args: {}, sessionId })).ok).toBe(true);
-    const reply = await request('session.prompt', { sessionId, input: 'dummy input', labels: [] });
+    const read = await request('agent.tools.call', { tool: TOOL, args: {}, sessionId });
+    expect(read.ok).toBe(true);
+    const reply = await request('session.prompt', { sessionId, input: JSON.stringify(read.result), labels: [] });
     expectPolicyRefusal(reply, 'ERR_LABEL_FLOW_BLOCKED');
     const { bridgeChat } = await import('../../llm/chat');
     expect(bridgeChat).not.toHaveBeenCalled();
     expect((await request('session.prompt', { sessionId: other, input: 'dummy input' })).ok).toBe(true);
     expect(bridgeChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks a later streaming prompt with the same session flow', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 5);
+    expect((await request('agent.tools.call', { tool: TOOL, args: {}, sessionId })).ok).toBe(true);
+    const events = await request.stream('session.promptStreaming', { sessionId, input: 'dummy input' });
+    expect(events).toEqual([expect.objectContaining({ done: true, event: expect.objectContaining({ type: 'error', error: expect.objectContaining({ code: 'ERR_LABEL_FLOW_BLOCKED' }) }) })]);
+    const { bridgeStreamRequest } = await import('../../llm/bridge-client');
+    expect(bridgeStreamRequest).not.toHaveBeenCalled();
+  });
+
+  it('retains labels from site-controlled tool failure text', async () => {
+    // The real transport catches this failure and exposes its text through
+    // callSiteTool; it is output even though it is not a successful result.
+    installFakeMcpServer({ tools: [{ name: 'read' }], onToolCall: () => { throw new Error('dummy tool failure'); } });
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 5);
+    expect((await request('agent.tools.call', { tool: TOOL, args: {}, sessionId })).ok).toBe(false);
+    expectPolicyRefusal(await request('session.prompt', { sessionId, input: 'dummy failure followup' }), 'ERR_LABEL_FLOW_BLOCKED');
+  });
+
+  it('does not attach labels for an unknown site-owned server', async () => {
+    const request = connectPort(`${ORIGIN}/page`);
+    const sessionId = await createSession(request, 5);
+    const { forgetTabServers } = await import('../../mcp/site-servers');
+    forgetTabServers(9);
+    expect((await request('agent.tools.call', { tool: TOOL, args: {}, sessionId })).ok).toBe(false);
+    expect((await request('session.prompt', { sessionId, input: 'dummy input' })).ok).toBe(true);
   });
 
   it('ignores a spoofed session id from another origin, and refuses an expired one', async () => {

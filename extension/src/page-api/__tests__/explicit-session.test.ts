@@ -7,7 +7,11 @@ const mocks = vi.hoisted(() => ({
   hasPermission: vi.fn(),
   getPermissions: vi.fn(),
 }));
-vi.mock('../harbor-core', () => ({
+vi.mock('../harbor-core', async () => {
+  const { LabelFlow } = await import('../../policy/label-flow');
+  return ({
+  createLabelFlow: () => new LabelFlow(),
+  getSessionLabelFlow: vi.fn(() => new LabelFlow()),
   describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
@@ -15,7 +19,8 @@ vi.mock('../harbor-core', () => ({
   pageToolsForAgent: vi.fn(async () => null),
   harborRequest: mocks.harborRequest,
   harborStreamRequest: vi.fn(),
-}));
+  });
+});
 vi.mock('../handlers/permission-handlers', () => ({
   hasPermission: mocks.hasPermission,
   getPermissions: mocks.getPermissions,
