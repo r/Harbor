@@ -19,7 +19,9 @@ URL. Their handlers can only run in the page.
 ## Decisions already made
 
 - **Surface.** The calling page's tools go to the agent work that page starts:
-  `agent.run()` and `agent.chat.open()`. `window.ai` text sessions stay
+  `agent.run()` on either backend, and `agent.chat.open()` on the person's ACP
+  agent. Page chat on Harbor's built-in model has no tools at all, so page tools
+  don't reach it. `window.ai` text sessions stay
   tool-less. This is a deliberate v1 cut. Harbor has no chat the person
   starts: the sidebar's Agent panel only picks and configures the agent.
   Building one is its own subsystem (UI, session lifetime, consent copy) and
@@ -51,8 +53,8 @@ handler(input,{signal}) ◀──call──── relay ◀──── call to 
         └──result──────────────────────────────▶ result (untrusted) ──────▶  MCP result ─────────────▶
 ```
 
-For Harbor's built-in agent, the same registry and gate feed the background's
-tool loop directly. No bridge endpoint is involved.
+For Harbor's built-in agent's `agent.run()`, the same registry and gate feed
+the background's tool loop directly. No bridge endpoint is involved.
 
 ## 1. Page to background: the registry
 
