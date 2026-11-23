@@ -5,6 +5,9 @@
  * its policy gate, and the tab events that end an agent's access.
  */
 import { browserAPI } from '../browser-compat';
+import { bridgeRequest } from '../llm/bridge-client';
+import { registerExtensionPageHandler } from './extension-page-sender';
+import { errorResponse } from './types';
 import { createAgentTabs, type AgentTabsRequest } from '../mcp/agent-tabs';
 import { callPageToolForAgent, listPageToolsForTab, policyAllowsPageToolList } from '../page-api/harbor-core';
 
@@ -53,4 +56,54 @@ export function initializeAgentTabs(): void {
 export function handleAgentTabsHostRequest(params: unknown) {
   const p = (params && typeof params === 'object' ? params : {}) as Partial<AgentTabsRequest>;
   return agentTabs.handleRequest({ agentId: p.agentId, agentName: p.agentName, op: p.op, params: p.params });
+}
+
+// =============================================================================
+// The sidebar's controls (only Harbor's own pages may use these)
+// =============================================================================
+
+async function activeWebTab(): Promise<{ id: number; url: string; title: string; origin: string | null } | null> {
+  const [tab] = await browserAPI.tabs.query({ active: true, lastFocusedWindow: true });
+  if (!tab || tab.id === undefined) return null;
+  let origin: string | null = null;
+  try {
+    const u = new URL(tab.url ?? '');
+    if (u.protocol === 'http:' || u.protocol === 'https:') origin = u.origin;
+  } catch { /* not a web page */ }
+  return { id: tab.id, url: tab.url ?? '', title: tab.title ?? '', origin };
+}
+
+export function registerOutsideAgentHandlers(): void {
+  registerExtensionPageHandler('outside_agents_get', async () => {
+    const stored = await browserAPI.storage.local.get(OUTSIDE_AGENTS_SETTING);
+    let mcpCommand: string | null = null;
+    try {
+      const info = await bridgeRequest<{ mcpCommand?: unknown }>('agent_tabs.info', {});
+      if (typeof info?.mcpCommand === 'string') mcpCommand = info.mcpCommand;
+    } catch { /* bridge not running, or older than this feature */ }
+    const tab = await activeWebTab();
+    return {
+      ok: true,
+      enabled: stored?.[OUTSIDE_AGENTS_SETTING] === true,
+      mcpCommand,
+      activeTab: tab
+        ? { url: tab.url, title: tab.title, shareable: tab.origin !== null, shared: agentTabs.isShared(tab.id) }
+        : null,
+      agents: agentTabs.connectedAgents(),
+    };
+  });
+
+  registerExtensionPageHandler('outside_agents_set_enabled', async (message) => {
+    if (typeof message.enabled !== 'boolean') return errorResponse(new Error('enabled must be true or false'));
+    await browserAPI.storage.local.set({ [OUTSIDE_AGENTS_SETTING]: message.enabled });
+    return { ok: true };
+  });
+
+  registerExtensionPageHandler('outside_agents_share_tab', async (message) => {
+    const tab = await activeWebTab();
+    if (!tab || !tab.origin) return errorResponse(new Error('Only a web page can be shared with your agent'));
+    if (message.share === true) agentTabs.shareTab(tab.id, tab.origin);
+    else agentTabs.unshareTab(tab.id);
+    return { ok: true, shared: agentTabs.isShared(tab.id) };
+  });
 }

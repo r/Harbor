@@ -11,6 +11,7 @@ import {
   type ConfiguredAgent,
 } from './sidebar-agents';
 import { AgentPanelController, type AgentBackendIO } from './sidebar-agent-controller';
+import { initOutsideAgentsSection } from './sidebar-outside-agents';
 import { AgentFormState } from './agent-form-state';
 import { buildAgentPresetDocsHint } from './agent-preset-docs-hint';
 
@@ -1273,6 +1274,31 @@ const agentBackendIO: AgentBackendIO = {
   setBackend: (setting) => sendMessage('agent_backend_set', { setting }),
 };
 const agentPanel = new AgentPanelController(agentBackendIO);
+
+// "Your agent outside the browser": the setting, the command to add Harbor to
+// an agent, and sharing the current tab (docs/AGENT_REACHES_TABS.md).
+const outsideAgents = initOutsideAgentsSection(
+  {
+    enabled: document.getElementById('outside-agents-enabled') as HTMLInputElement,
+    command: document.getElementById('outside-agents-command') as HTMLElement,
+    copy: document.getElementById('outside-agents-copy') as HTMLButtonElement,
+    share: document.getElementById('outside-agents-share') as HTMLButtonElement,
+    shareHint: document.getElementById('outside-agents-share-hint') as HTMLElement,
+    list: document.getElementById('outside-agents-list') as HTMLElement,
+  },
+  {
+    send: (message) => browserAPI.runtime.sendMessage(message),
+    copy: async (text) => {
+      await navigator.clipboard.writeText(text);
+      showToast('Copied');
+    },
+  },
+);
+void outsideAgents.refresh();
+browserAPI.tabs.onActivated?.addListener(() => { void outsideAgents.refresh(); });
+browserAPI.tabs.onUpdated?.addListener((_tabId: number, changeInfo: { url?: string }) => {
+  if (changeInfo.url) void outsideAgents.refresh();
+});
 
 let agentFormPreset: AgentPresetId | 'custom' | null = null;
 /** Which agent (if any) the Add/Edit form is currently editing — Save/Check use this to decide whether to update that agent in place or add a new one. */

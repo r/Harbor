@@ -1258,6 +1258,25 @@
           </div>
           <div class="form-hint" id="agent-form-check-result"></div>
         </div>
+
+        <div class="section-label">Your agent outside the browser</div>
+        <div class="form-group">
+          <label class="form-label" for="outside-agents-enabled" style="display: flex; gap: var(--space-2); align-items: center;">
+            <input type="checkbox" id="outside-agents-enabled" disabled />
+            Let your agent open and use pages
+          </label>
+          <div class="form-hint">Your agent sees only the pages it opens and the pages you share, and uses only the tools those pages offer.</div>
+        </div>
+        <div class="form-group">
+          <div class="form-hint" id="outside-agents-command-hint">Add Harbor to your agent as a command:</div>
+          <pre class="form-input" id="outside-agents-command" style="white-space: pre-wrap; word-break: break-all; user-select: all; margin: var(--space-1) 0;"></pre>
+          <button class="btn btn-secondary btn-sm" id="outside-agents-copy" type="button" disabled>Copy</button>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-secondary btn-sm" id="outside-agents-share" type="button" disabled>Share this tab with your agent</button>
+          <div class="form-hint" id="outside-agents-share-hint"></div>
+        </div>
+        <div class="form-hint" id="outside-agents-list"></div>
       </div>
     </div>
 
