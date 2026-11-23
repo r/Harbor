@@ -45,7 +45,7 @@
     <p class="deck">
       A small surface for browsers to broker AI capabilities to web pages —
       <code>window.ai</code> for text generation, <code>window.agent</code> for tool use,
-      <code>navigator.modelContext</code> (W3C&nbsp;WebMCP) for page-declared tools.
+      <code>document.modelContext</code> (W3C&nbsp;WebMCP) for page-declared tools.
       Compatible with the Chrome Prompt API. Designed to be implementable natively.
     </p>
     <p>Harbor implements the Web Agent API: the API your agent and a site's page talk through.</p>
@@ -109,16 +109,18 @@ for await (const ev of window.agent.run({
   if (ev.type === "final")     console.log(ev.output);
 }</pre>
 
-    <h3 id="model-context"><code>navigator.modelContext</code> — page-declared tools (W3C WebMCP)</h3>
+    <h3 id="model-context"><code>document.modelContext</code> — page-declared tools (W3C WebMCP)</h3>
     <p>
       The page exposes its own JavaScript-backed tools. Any agent — Harbor today,
-      Chrome's Auto Browse tomorrow — can call them.
+      Chrome's Auto Browse tomorrow — can call them. <code>navigator.modelContext</code>
+      is the same object, kept as Harbor's older name; <code>addTool</code>/<code>removeTool</code>
+      are older aliases of <code>registerTool</code> and of aborting its signal. Both keep working.
     </p>
-    <pre class="ex-code" style="white-space: pre">navigator.modelContext.addTool({
+    <pre class="ex-code" style="white-space: pre">document.modelContext.registerTool({
   name:        "search_archive",
   description: "Search our 20-year archive",
   inputSchema: { type: "object", properties: { query: { type: "string" } } },
-  handler:     ({ query }) =&gt; searchArchive(query),
+  execute:     ({ query }) =&gt; searchArchive(query),
 });</pre>
 
     <h2 id="permissions">Permission model</h2>

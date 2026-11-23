@@ -54,7 +54,7 @@ This workflow sits under [AGENTS.md](../AGENTS.md), [ARCHITECTURE.md](../ARCHITE
 | Change area | Read |
 | --- | --- |
 | Any change | `AGENTS.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md` |
-| Page-facing API (`window.ai`, `window.agent`, `navigator.modelContext`) | `docs/WEB_AGENTS_API.md`, `docs/HARBOR_WEB_API_EXPLAINER.md`, `spec/` |
+| Page-facing API (`window.ai`, `window.agent`, `document.modelContext`) | `docs/WEB_AGENTS_API.md`, `docs/HARBOR_WEB_API_EXPLAINER.md`, `spec/` |
 | Permissions and policy | `docs/PERMISSIONS.md`, `spec/security-privacy.md` |
 | Native bridge, LLM providers | `bridge-rs/`, `docs/DEVELOPER_GUIDE.md` |
 | MCP host and servers | `docs/MCP_HOST.md`, `docs/MCP_MANIFEST_SPEC.md`, `docs/MCP_WASM_MANIFEST_SPEC.md`, `docs/JS_MCP_SERVER_SPEC.md` |

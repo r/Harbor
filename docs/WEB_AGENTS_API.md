@@ -595,7 +595,7 @@ try {
 
 Pages can register JavaScript functions as "page tools" that appear alongside MCP tools. Page tools execute in the page context. The person's agent can call them too (see [Page tools and the person's agent](#page-tools-and-the-persons-agent)).
 
-**Registration API:** `document.modelContext`, as in the [WebMCP draft](https://webmachinelearning.github.io/webmcp/). Harbor also exposes the same object as `navigator.modelContext`.
+**Registration API:** `document.modelContext`, as in the [WebMCP draft](https://webmachinelearning.github.io/webmcp/). `navigator.modelContext` is the same object, kept as Harbor's older name.
 
 #### document.modelContext.registerTool(tool, options?)
 
@@ -642,7 +642,7 @@ The promise rejects with:
 
 #### navigator.modelContext.addTool(descriptor) / removeTool(name)
 
-Harbor's older names, kept as aliases. `addTool` registers synchronously and replaces a tool of the same name; `removeTool(name)` returns `true` if a tool was removed.
+`addTool`/`removeTool` are older aliases of `registerTool` and of aborting its signal, kept on `navigator.modelContext`. Both keep working. `addTool` registers synchronously and replaces a tool of the same name; `removeTool(name)` returns `true` if a tool was removed.
 
 ```javascript
 navigator.modelContext.addTool({ name: 'get_cart_items', description: '…', handler: async () => [] });

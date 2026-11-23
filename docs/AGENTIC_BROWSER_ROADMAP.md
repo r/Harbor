@@ -24,7 +24,7 @@ The Web Agent API ships as one browser extension (Harbor) plus a Rust bridge. Th
 | Multi-provider LLM | `ai.providers.list()`, `getActive()` | `model:list` | — | ✅ |
 | MCP tool listing | `agent.tools.list()` | `mcp:tools.list` | `toolAccess` (ON) | ✅ |
 | MCP tool call | `agent.tools.call({tool, args})` | `mcp:tools.call` (+ allowlist) | `toolAccess` (ON) | ✅ |
-| Page-declared tools (W3C WebMCP) | `navigator.modelContext.addTool()` | — | — | ✅ |
+| Page-declared tools (W3C WebMCP) | `document.modelContext.registerTool()` | — | — | ✅ |
 | Autonomous tool-using loop | `agent.run({task})` (typed event stream) | `model:tools` | `toolCalling` (OFF) | ✅ |
 | Read active tab | `agent.browser.activeTab.readability()` | `browser:activeTab.read` | — | ✅ |
 | Same-tab interaction | `activeTab.click/fill/scroll/select/getElements` | `browser:activeTab.interact` | `browserInteraction` (OFF) | ✅ |
@@ -46,7 +46,7 @@ The Web Agent API ships as one browser extension (Harbor) plus a Rust bridge. Th
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                          WEB PAGE                                │
-│  window.ai · window.agent · navigator.modelContext              │
+│  window.ai · window.agent · document.modelContext                │
 └──────────────────────────────┬──────────────────────────────────┘
                                │ postMessage (CHANNEL: harbor_page_api)
                                ▼

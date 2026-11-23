@@ -20,7 +20,7 @@ synchronous `window.agent.capabilities()` call to feature-detect at runtime.
   listConfiguredModels`.
 - `window.agent.requestPermissions`, `permissions.list`, `capabilities()`.
 - `window.agent.tools.list/call` (also covers page tools registered via
-  `navigator.modelContext.addTool`).
+  `document.modelContext.registerTool`).
 - `window.agent.run({ task, maxToolCalls?, systemPrompt? })` (autonomous loop;
   events: `thinking | tool_call | tool_result | final | error`).
 - `window.agent.browser.activeTab.{readability, getElements, click, fill, select,
@@ -34,7 +34,7 @@ synchronous `window.agent.capabilities()` call to feature-detect at runtime.
   `window.agent.chat.{canOpen, open, close}`.
 - `window.agent.agents.*` — register/unregister, discover, invoke, send,
   subscribe/broadcast, orchestrate (`pipeline` / `parallel` / `route`).
-- `navigator.modelContext.addTool` (WebMCP polyfill).
+- `document.modelContext.registerTool` (WebMCP polyfill).
 
 **Proposed but NOT yet in the reference implementation** (treated as future
 work — sections below are kept so the spec reflects the full design intent):
@@ -1142,27 +1142,28 @@ await window.agent.tools.call({
 
 ---
 
-#### Page Tools (`navigator.modelContext`)
+#### Page Tools (`document.modelContext`)
 
-Pages can register JavaScript functions as tools available to the AI via the `navigator.modelContext` polyfill. Page tools run in the page's own JavaScript context and never cross the extension boundary.
+Pages can register JavaScript functions as tools available to the AI via the `document.modelContext` polyfill. Page tools run in the page's own JavaScript context and never cross the extension boundary.
 
 **Registration:**
 ```javascript
-navigator.modelContext.addTool({
+const registration = new AbortController();
+await document.modelContext.registerTool({
   name: 'get_cart_items',
   description: 'Returns current shopping cart contents',
   inputSchema: { type: 'object', properties: {} },
-  handler: async (args) => {
+  execute: async (args, { signal }) => {
     return getCartFromDOM();
   },
-});
+}, { signal: registration.signal });
 ```
 
 **Listing:** Page tools appear in `agent.tools.list()` alongside MCP tools, with `serverId: 'page'` and a `page/` name prefix.
 
 **Calling:** `agent.tools.call({ tool: 'page/get_cart_items' })` executes the handler in page context. Bare names (without the `page/` prefix) also match if a page tool with that name exists.
 
-**Removal:** `navigator.modelContext.removeTool('get_cart_items')` unregisters the tool.
+**Removal:** Abort the signal (`registration.abort()`) to unregister the tool. `navigator.modelContext` is the same object, kept as Harbor's older name; `addTool`/`removeTool` are older aliases of `registerTool` and of aborting its signal (`navigator.modelContext.removeTool('get_cart_items')`). Both keep working.
 
 **Note:** Page tools are not yet available to `agent.run()` (Phase 2).
 

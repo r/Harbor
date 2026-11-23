@@ -156,12 +156,12 @@
       </div>
 
       <div class="codecard">
-        <div class="codecard-head"><span>3 · a page declares its own tool · Harbor API</span><span class="num">navigator.modelContext</span></div>
-<pre><code><span class="tk-n">navigator</span>.<span class="tk-p">modelContext</span>.<span class="tk-f">addTool</span>({
+        <div class="codecard-head"><span>3 · a page declares its own tool · Harbor API</span><span class="num">document.modelContext</span></div>
+<pre><code><span class="tk-n">document</span>.<span class="tk-p">modelContext</span>.<span class="tk-f">registerTool</span>({
   <span class="tk-p">name</span>:        <span class="tk-s">"get_chords"</span>,
   <span class="tk-p">description</span>: <span class="tk-s">"Get the chords for a section of this song"</span>,
   <span class="tk-p">inputSchema</span>: { <span class="tk-p">type</span>: <span class="tk-s">"object"</span>, <span class="tk-p">properties</span>: { <span class="tk-p">section</span>: { <span class="tk-p">type</span>: <span class="tk-s">"string"</span> } } },
-  <span class="tk-p">handler</span>:     ({ <span class="tk-n">section</span> }) =&gt; <span class="tk-f">getChords</span>(<span class="tk-n">section</span>),
+  <span class="tk-p">execute</span>:     ({ <span class="tk-n">section</span> }) =&gt; <span class="tk-f">getChords</span>(<span class="tk-n">section</span>),
 });</code></pre>
       </div>
     </div>
@@ -280,7 +280,7 @@
           <h4>Open a chapter by name.</h4>
           <p>The agent calls the reading site’s <code>open_chapter</code> tool.</p>
         </div>
-        <pre class="ex-code">addTool({ name: "open_chapter", inputSchema: { … } })</pre>
+        <pre class="ex-code">registerTool({ name: "open_chapter", description: "…", inputSchema: { … }, execute })</pre>
       </div>
 
       <div class="example">

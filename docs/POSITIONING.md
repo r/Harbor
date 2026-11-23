@@ -26,7 +26,7 @@ If you're reaching for the literal copy that ships on the site, read `whitepaper
 Harbor is an implementation of a spec, not an endpoint. It's a polyfill: it makes the spec work in today's browsers before any browser builds it in. The spec is the **Web Agent API** (`spec/`), which defines how a web surface and the person's agent talk to each other, in both directions:
 
 - **The page calls the agent** through `window.ai` and `window.agent`.
-- **The agent calls the page's tools** through WebMCP (`navigator.modelContext`).
+- **The agent calls the page's tools** through WebMCP (`document.modelContext`).
 
 We expect most of a person's dealings with companies to go through their agent. Some of the time a company will want to offer something richer than a conversation: an interface, which is what a website is today. That interface needs an API to the person's agent, and the Web Agent API is one proposal for it. Harbor is the working implementation that lets people try it. It's one answer, and it's also meant to push the web toward a standard.
 
@@ -88,7 +88,7 @@ The browser–AI landscape has crystallized into five camps. Harbor is none of t
 
 ### Camp 3 — The standards converging
 
-- **WebMCP** — W3C Community Group draft, April 2026. `navigator.modelContext.addTool()` lets pages declare JavaScript-backed tools an agent can call. **Solves the page-side half** of the problem.
+- **WebMCP** — W3C Community Group draft, April 2026. `document.modelContext.registerTool()` lets pages declare JavaScript-backed tools an agent can call. **Solves the page-side half** of the problem.
 - **Chrome Prompt API** — `window.LanguageModel`, stable in Chrome 138 extensions, in origin trial for web pages. Gives pages on-device Gemini Nano. **One model, one browser**.
 - **Model Context Protocol (MCP)** — Open protocol from Anthropic, now ubiquitous on the backend. Defines how agents talk to tool servers.
 
@@ -149,7 +149,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 | Who pays for inference | Mixed (vendor often subsidizes) | The user | Free, on-device | **The user — including local & free** |
 | Can a website use the AI? | Through the vendor's product, on the vendor's terms | No | Yes, but only on Chrome with Gemini Nano | **Yes, on Firefox and Chrome, with any model the user has configured** |
 | Cross-origin tool calls (MCP) | Vendor-curated | None | Not in scope | **Yes — any MCP server the user trusts** |
-| Page-declared tools (WebMCP) | Sometimes, vendor-mediated | No | Yes | **Yes — implements `navigator.modelContext` today** |
+| Page-declared tools (WebMCP) | Sometimes, vendor-mediated | No | Yes | **Yes — implements `document.modelContext` today** |
 | Permission boundary | Browser-wide / app-wide | Sidebar opt-in | Per-API, on Chrome | **Per-origin, per-scope, revocable** |
 | Prompt-injection surface | Large: agent reads the live DOM autonomously | Small: chat is user-driven | Small: no agent | **Smaller: sites delegate through scoped APIs. Browser-control APIs (click, fill) are a stopgap and run under the person's login.** |
 | Where context lives | With the vendor | With the assistant chat (sometimes synced) | On-device (Gemini Nano cache) | **In the browser, mediated to sites with consent** |
@@ -171,7 +171,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 
 | Layer | Standard | Harbor's stance |
 |---|---|---|
-| Page declares tools | **WebMCP** (`navigator.modelContext`) — W3C CG, April 2026 | We implement it today; we'd happily yield this surface to the spec. |
+| Page declares tools | **WebMCP** (`document.modelContext`) — W3C CG, April 2026 | We implement it today; we'd happily yield this surface to the spec. |
 | Page calls a model | **Chrome Prompt API** (`window.LanguageModel`) — Chrome 138+ | We implement a compatible `window.ai`; same code runs on either. |
 | Cross-origin tools | **MCP** | We host MCP servers (WASM/JS in-browser; native via the Rust bridge); developers pick any servers they want. |
 | Agent reaches a company | **Remote MCP**, **A2A**, **Personal Agent Protocol**, **UCP**, **Web Bot Auth** | Complementary. Harbor doesn't implement them; they're how the person's agent reaches companies directly. |
@@ -194,7 +194,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 - You write `await window.ai.createTextSession()` and the user's model handles it. No keys, no backend, no per-user billing.
 - You pick which MCP servers your app integrates. The user approves them. You don't ship credentials.
 - One code path works against Chrome's Prompt API (when Gemini Nano is available) and against Harbor (when the user has a different model).
-- You expose your domain logic via `navigator.modelContext.addTool()` (the W3C WebMCP API). Any agent — Harbor today, Chrome's tomorrow, Atlas's eventually — can call it.
+- You expose your domain logic via `document.modelContext.registerTool()` (the W3C WebMCP API). Any agent — Harbor today, Chrome's tomorrow, Atlas's eventually — can call it.
 
 ### For people thinking about security and privacy
 

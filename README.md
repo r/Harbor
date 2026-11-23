@@ -6,7 +6,7 @@
 
 This repository contains a browser extension plus a small native bridge that implement the **[Web Agent API](spec/)** specification:
 
-- **Harbor** — The extension. Provides LLM connections (Ollama, OpenAI, Anthropic), hosts MCP servers, manages the native bridge, and exposes `window.ai`, `window.agent`, and `navigator.modelContext` (W3C [WebMCP](https://webmachinelearning.github.io/webmcp/)) to web pages.
+- **Harbor** — The extension. Provides LLM connections (Ollama, OpenAI, Anthropic), hosts MCP servers, manages the native bridge, and exposes `window.ai`, `window.agent`, and `document.modelContext` (W3C [WebMCP](https://webmachinelearning.github.io/webmcp/); `navigator.modelContext` is the same object, kept as Harbor's older name) to web pages.
 
 ---
 
@@ -29,7 +29,7 @@ This repository contains a browser extension plus a small native bridge that imp
 - **Standards** like W3C [WebMCP](https://webmachinelearning.github.io/webmcp/) (April 2026) and Chrome's [Prompt API](https://developer.chrome.com/docs/ai/built-in-apis) solve slices — page-side tools, one on-device model — but neither answers the central question: *how does an arbitrary website call the user's chosen AI, with the user's chosen tools, on whatever browser the user happens to be on?*
 - **Agent-to-company protocols** (remote MCP servers, [A2A](https://a2a-protocol.org), the [Personal Agent Protocol](https://personalagentprotocol.org)) let your agent reach a company's servers. None defines how the company's web page talks to your agent once the page is open.
 
-**The vision:** treat AI like `fetch()`. The browser holds your model connections, your credentials, and your tools. Websites declare what they need through standard APIs (`window.ai`, `window.agent`, `navigator.modelContext`). Permissions are per-origin and revocable. Websites delegate through scoped APIs instead of an agent driving the DOM, which keeps the prompt-injection surface smaller. Harbor also has browser-control APIs that let an agent click, fill and navigate in a page under your login, for sites that don't offer scoped APIs yet. They're a stopgap.
+**The vision:** treat AI like `fetch()`. The browser holds your model connections, your credentials, and your tools. Websites declare what they need through standard APIs (`window.ai`, `window.agent`, `document.modelContext`). Permissions are per-origin and revocable. Websites delegate through scoped APIs instead of an agent driving the DOM, which keeps the prompt-injection surface smaller. Harbor also has browser-control APIs that let an agent click, fill and navigate in a page under your login, for sites that don't offer scoped APIs yet. They're a stopgap.
 
 ```javascript
 // Any website can use AI — no API keys, no backend, no vendor lock-in

@@ -2002,22 +2002,23 @@ const agentApi = Object.freeze({
 });
 
 // =============================================================================
-// navigator.modelContext Polyfill (Web MCP)
+// document.modelContext Polyfill (Web MCP)
 // =============================================================================
 
 /**
- * navigator.modelContext / document.modelContext — the WebMCP surface
- * (https://webmachinelearning.github.io/webmcp/). The draft puts it on
- * `document`; Harbor also keeps it on `navigator`, where it started.
+ * document.modelContext — the WebMCP surface
+ * (https://webmachinelearning.github.io/webmcp/), as the draft puts it on
+ * `document`. `navigator.modelContext` is the same object, kept as Harbor's
+ * older name, from before the draft settled on `document`.
  *
  * Pages call:
  *   await document.modelContext.registerTool(
  *     { name, description, inputSchema, execute(input, { signal }) },
  *     { signal },             // abort to unregister
  *   )
- *   navigator.modelContext.addTool({ name, description, inputSchema, handler })  // older alias
- *   navigator.modelContext.removeTool(name)                                       // older alias
- *   navigator.modelContext.tools  // current snapshot
+ *   navigator.modelContext.addTool({ name, description, inputSchema, handler })  // older alias of registerTool
+ *   navigator.modelContext.removeTool(name)                                       // older alias of aborting the signal
+ *   navigator.modelContext.tools  // current snapshot (same as document.modelContext.tools)
  */
 const TOOL_NAME_PATTERN = /^[A-Za-z0-9_.-]{1,128}$/;
 
@@ -2146,7 +2147,7 @@ try {
     safeDefineProperty('agent', agentApi);
   }
 
-  // Register navigator.modelContext (Web MCP polyfill)
+  // Register navigator.modelContext (Web MCP polyfill; the older alias — document.modelContext is registered below)
   try {
     const existingModelContext = Object.getOwnPropertyDescriptor(navigator, 'modelContext');
     if (!existingModelContext) {
@@ -2160,6 +2161,7 @@ try {
   } catch (e) {
     console.debug('[Web Agents API] Could not define navigator.modelContext:', e);
   }
+  // Register document.modelContext (Web MCP polyfill; the WebMCP draft's name — same object as navigator.modelContext above)
   try {
     if (!Object.getOwnPropertyDescriptor(document, 'modelContext')) {
       Object.defineProperty(document, 'modelContext', {
