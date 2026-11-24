@@ -2284,7 +2284,7 @@ The BYOC extension allows websites to integrate with the user's own AI chatbot r
 
 ### Declarative MCP Server Discovery
 
-Websites can declare MCP server availability via HTML `<link>` elements:
+Websites can declare MCP server availability via HTML `<link>` elements. Harbor reads `rel="mcp-server"` and also `rel="mcp"`, which other tools use; neither link relation is registered yet. A link without `data-transport` means streamable HTTP:
 
 ```html
 <link 

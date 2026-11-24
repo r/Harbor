@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `agent.mcp.discover()` reads `<link rel="mcp">` as well as `<link rel="mcp-server">`, and matches either as one token of a rel list, so `rel="alternate mcp-server"` counts. A link without `data-transport` now reports `transport: "streamable-http"`, MCP's current transport, instead of `"sse"`. A page that passes that value to `agent.mcp.register()` for an SSE-only server should add `data-transport="sse"` to its link, as the Bring Your Own Chatbot demo does.
+
 - An answer from another site's agent now says whose it is. Invoke responses, messages, broadcast events and each orchestration step's result carry `provenance: { source: 'agent', origin, agentId }`, which Harbor fills in from the site that registered the agent, so an agent can't claim to be another site's. Harbor doesn't judge how sensitive the answer is: the page, or the agent or model it passes the answer to, does. See "Where an answer came from" in docs/WEB_AGENTS_API.md.
 
 - The demo directory and examples use Harbor’s public-site typography and green palette, with layouts for phones and system light and dark themes.

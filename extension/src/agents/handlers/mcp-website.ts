@@ -108,11 +108,14 @@ export async function handleMcpDiscover(
   }
 
   try {
-    // Execute script in the tab to find <link rel="mcp-server"> elements
+    // Find the page's <link rel="mcp-server"> and <link rel="mcp">
+    // elements. ~= matches one token of a rel list, so
+    // rel="alternate mcp-server" counts too; the browser returns each
+    // element once even when it carries both tokens.
     const results = await browserAPI.scripting.executeScript({
       target: { tabId },
       func: () => {
-        const links = document.querySelectorAll('link[rel="mcp-server"]');
+        const links = document.querySelectorAll('link[rel~="mcp-server"], link[rel~="mcp"]');
         return Array.from(links).map((link) => ({
           // Resolved against the document (HTMLLinkElement.href), so a
           // relative href reaches agent.mcp.register as the absolute URL it
@@ -122,7 +125,8 @@ export async function handleMcpDiscover(
           name: link.getAttribute('title') || undefined,
           description: link.getAttribute('data-description') || undefined,
           tools: link.getAttribute('data-tools')?.split(',').map(t => t.trim()) || undefined,
-          transport: link.getAttribute('data-transport') || 'sse',
+          // Streamable HTTP is MCP's current transport; a site can still name sse or websocket.
+          transport: link.getAttribute('data-transport') || 'streamable-http',
         }));
       },
     });

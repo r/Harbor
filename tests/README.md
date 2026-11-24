@@ -32,6 +32,16 @@ node tests/e2e/test-getting-started.mjs
 
 This launches Firefox with Harbor in a temporary profile and runs all five checklist steps, including the normal localhost permission prompt, time-tool discovery, a real model tool call, and the displayed response. It starts its own demo server on a free loopback port and closes its browser afterward. It does not seed extension settings or configure a model. The native bridge must already be registered and a default model must be available; ready Apple Intelligence works without a saved model. An unavailable model fails the test rather than being skipped.
 
+## MCP server links in Firefox
+
+After `npm run build` in `extension/`, run from `tests/e2e`:
+
+```bash
+node test-mcp-discover.mjs
+```
+
+It serves a page with several `<link>` declarations on a free loopback port and checks which ones `window.agent.mcp.discover()` reports in Firefox: `rel="mcp-server"` and `rel="mcp"` as tokens of a rel list, matched without regard to case, and `streamable-http` when a link names no `data-transport`. It needs no model and no bridge.
+
 ## Real-site check: tale.fyi
 
 tale.fyi supports Harbor: it declares its MCP server with `<link rel="mcp-server">` and registers page tools through `document.modelContext`. To check that Harbor still works with it, run from `tests/e2e`:
