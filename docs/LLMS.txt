@@ -362,6 +362,8 @@ await window.agent.agents.send(otherId, { hello: 'world' });
 await window.agent.agents.broadcast('event-name', { foo: 1 });
 ```
 
+`timeout` defaults to 30 s and is capped at 5 minutes. If the agent's tab closes, its page reloads, or the tab moves to another site before it answers, `invoke` resolves at once with `{ success: false, error: { code: 'ERR_AGENT_NOT_FOUND' } }`. A page's `onInvoke` handlers get only invocations for agents that page registered.
+
 ### Orchestration
 
 ```javascript
@@ -459,7 +461,7 @@ await window.agent.chat.close(chat.chatId);
 | `ERR_BUDGET_EXCEEDED` | A session's `maxToolCalls` budget is spent |
 | `ERR_TIMEOUT` | Request timed out |
 | `ERR_ELEMENT_NOT_FOUND` | DOM ref not found |
-| `ERR_AGENT_NOT_FOUND` | Agent not registered |
+| `ERR_AGENT_NOT_FOUND` | Agent not registered, or its page went away before answering |
 | `ERR_AGENT_NOT_ACCEPTING` | Agent doesn't accept invocations/messages |
 | `ERR_AGENT_FAILED` | Agent invocation threw |
 | `ERR_HANDLER_FAILED` | Page handler threw |
