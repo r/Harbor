@@ -52,6 +52,8 @@ const pendingInvocations = new Map<string, {
   tabId: number;
   /** When the invocation was sent to the tab's page. */
   sentAt: number;
+  /** The site of the agent it was sent to. */
+  agentOrigin?: string;
 }>();
 
 // Track tabs that have invocation handlers set up (agentId -> tabId)
@@ -151,6 +153,7 @@ export async function handleIncomingInvocation(
       timeout: timeoutId,
       tabId: tabId!,
       sentAt: Date.now(),
+      agentOrigin: registeredAgents.get(agentId)?.origin,
     });
     
     chrome.tabs.sendMessage(tabId!, {
@@ -215,6 +218,33 @@ export function failInvocationsForTab(tabId: number, sentBefore = Infinity): voi
       success: false,
       error: { code: 'ERR_AGENT_NOT_FOUND', message: "The agent's page is gone" },
     });
+  }
+}
+
+/**
+ * The tab now shows `url`. Fail every invocation waiting on an agent from
+ * another site in that tab, and forget those agents here. A navigation
+ * doesn't always close the old page's port (Firefox can keep the page in the
+ * back/forward cache), so this doesn't wait for a disconnect.
+ */
+export function forgetAgentsLeavingTab(tabId: number, url: string): void {
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return;
+  }
+  for (const pending of [...pendingInvocations.values()]) {
+    if (pending.tabId !== tabId || pending.agentOrigin === origin) continue;
+    pending.resolve({
+      success: false,
+      error: { code: 'ERR_AGENT_NOT_FOUND', message: "The agent's page is gone" },
+    });
+  }
+  for (const [agentId, agent] of registeredAgents.entries()) {
+    if (agent.tabId !== tabId || agent.origin === origin) continue;
+    registeredAgents.delete(agentId);
+    agentInvocationTabs.delete(agentId);
   }
 }
 

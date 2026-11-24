@@ -20,7 +20,7 @@ vi.mock('../harbor-core', () => ({
   pageToolsForAgent: vi.fn(async () => null),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   onHarborSessionEnded: vi.fn(() => () => {}),
-  forgetAgentsInTab: vi.fn(),
+  forgetAgentsInTab: vi.fn(), forgetAgentsOffOriginInTab: vi.fn(),
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({

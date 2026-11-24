@@ -15,6 +15,7 @@ import {
   harborRequest,
   harborStreamRequest,
   forgetAgentsInTab,
+  forgetAgentsOffOriginInTab,
   onHarborSessionEnded,
   forgetSiteServersInTab,
   forgetSiteServersOnNavigation,
@@ -60,6 +61,7 @@ import {
   // Agent utilities
   cleanupAgentsForTab,
   failInvocationsForTab,
+  forgetAgentsLeavingTab,
   resolveInvocationResponse,
 } from './handlers';
 import { browserAPI } from '../browser-compat';
@@ -374,7 +376,16 @@ export function initializePageApi(): void {
   // dropped too — tabs.onRemoved above is the backstop for the tab closing
   // outright.
   browserAPI.tabs.onUpdated?.addListener((tabId: number, changeInfo: { url?: string }) => {
-    if (changeInfo.url) forgetSiteServersOnNavigation(tabId, changeInfo.url);
+    if (!changeInfo.url) return;
+    forgetSiteServersOnNavigation(tabId, changeInfo.url);
+    // The same for agents: once the tab is on another site, its old site's
+    // agents go, and invocations waiting on them fail now.
+    forgetAgentsLeavingTab(tabId, changeInfo.url);
+    try {
+      forgetAgentsOffOriginInTab(tabId, new URL(changeInfo.url).origin);
+    } catch {
+      // Not a URL with an origin: nothing to compare.
+    }
   });
 
   // Port connection handler: the page-facing transport.

@@ -25,7 +25,7 @@ vi.mock('../harbor-core', () => ({
   pageToolsForAgent: vi.fn(async () => null),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   onHarborSessionEnded: vi.fn(() => () => {}),
-  forgetAgentsInTab: vi.fn(),
+  forgetAgentsInTab: vi.fn(), forgetAgentsOffOriginInTab: vi.fn(),
   harborRequest: mocks.harborRequest,
   acpOpenStream: (agentId: string, workspace: string) => mocks.bridge.current!.acpOpenStream(agentId, workspace),
   acpSend: (channel: string, message: unknown) => mocks.bridge.current!.acpSend(channel, message),

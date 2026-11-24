@@ -35,7 +35,7 @@ vi.mock('../harbor-core', async () => {
   pageToolsForAgent: vi.fn(async () => null),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   onHarborSessionEnded: vi.fn(() => () => {}),
-  forgetAgentsInTab: vi.fn(),
+  forgetAgentsInTab: vi.fn(), forgetAgentsOffOriginInTab: vi.fn(),
   // This file's tabs.onRemoved tests close a tab, which background.ts's
   // real listener also uses to forget that tab's site-registered MCP
   // servers (mcp/site-servers.ts) — a no-op here since none of these

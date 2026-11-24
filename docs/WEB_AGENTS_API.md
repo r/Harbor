@@ -979,7 +979,7 @@ if (response.success) {
 }
 ```
 
-`timeout` defaults to 30 seconds and is capped at 5 minutes. If the agent's page closes, navigates or reloads before it answers, the invocation fails at once with `ERR_AGENT_NOT_FOUND`.
+`timeout` defaults to 30 seconds and is capped at 5 minutes. If the agent's tab closes, its page reloads, or the tab moves to another site before it answers, the invocation fails at once with `ERR_AGENT_NOT_FOUND`.
 
 ```javascript
 // Send a message (fire and forget)

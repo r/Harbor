@@ -64,6 +64,7 @@ let onConnect: ConnectListener;
 // move a tab to another site without its old page's port closing yet).
 let tabUrls: Map<number, string>;
 let onTabRemoved: (tabId: number) => Promise<void> | void;
+let onTabUpdated: (tabId: number, changeInfo: { url?: string }) => void;
 let runtimeMessageListeners: RuntimeMessageListener[];
 let tabsSendMessage: ReturnType<typeof vi.fn>;
 let grantPermissions: typeof GrantPermissions;
@@ -91,6 +92,7 @@ beforeEach(async () => {
   chromeGlobal.chrome.tabs = {
     ...(chromeGlobal.chrome.tabs as Record<string, unknown>),
     onRemoved: { addListener: (l: typeof onTabRemoved) => { onTabRemoved = l; } },
+    onUpdated: { addListener: (l: typeof onTabUpdated) => { onTabUpdated = l; } },
     get: vi.fn(async (tabId: number) => {
       const url = tabUrls.get(tabId);
       if (!url) throw new Error('no tab');
@@ -485,6 +487,40 @@ describe('multi-agent lifecycle cleanup', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("an invocation waiting on a tab fails at once when the tab moves to another site, even if the old page's port stays open", async () => {
+    vi.useFakeTimers();
+    try {
+      const tab1 = connectPort('https://a.example/page', 1);
+      const tab2 = connectPort('https://b.example/page', 2);
+      const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
+      await registerHandlerAgent(tab2, 'invoker');
+
+      const { settled } = await invokeBelowPagePort(handlerAgentId);
+      // Firefox can keep the old page in the back/forward cache with its
+      // port open: the tab's URL changes, and no disconnect comes.
+      tabUrls.set(1, 'https://evil.example/');
+      onTabUpdated(1, { url: 'https://evil.example/' });
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(settled()).toBeDefined();
+      expect((settled()!.result as { error?: { code: string } }).error?.code).toBe('ERR_AGENT_NOT_FOUND');
+      const { hasAgentHandlers } = await import('../../multi-agent/messaging');
+      const { agentInvocationTabs } = await import('../handlers/agent-handlers');
+      expect(hasAgentHandlers(handlerAgentId)).toBe(false);
+      expect(agentInvocationTabs.has(handlerAgentId)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a tab's agents when its URL changes within the same site", async () => {
+    const tab1 = connectPort('https://a.example/page', 1);
+    const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
+    onTabUpdated(1, { url: 'https://a.example/page#section' });
+    const { hasAgentHandlers } = await import('../../multi-agent/messaging');
+    expect(hasAgentHandlers(handlerAgentId)).toBe(true);
   });
 
   it("a newer page's invocation survives the old page's late disconnect", async () => {

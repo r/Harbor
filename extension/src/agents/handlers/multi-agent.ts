@@ -505,10 +505,26 @@ async function forwardToAgentTab(tabId: number, agentOrigin: string, message: un
 export function forgetTabAgents(tabId: number, registeredBefore = Infinity): void {
   for (const agent of listAllAgents()) {
     if (agent.tabId !== tabId || agent.registeredAt >= registeredBefore) continue;
-    cleanupAgentHandlers(agent.id);
-    if (originAgents.get(agent.origin) === agent.id) originAgents.delete(agent.origin);
-    unregisterAgent(agent.id, agent.origin);
+    forgetAgent(agent);
   }
+}
+
+/**
+ * The tab now shows `origin`: forget its agents from any other origin. A
+ * navigation doesn't always close the old page's port (Firefox can keep the
+ * page in the back/forward cache), so this doesn't wait for a disconnect.
+ */
+export function forgetTabAgentsOffOrigin(tabId: number, origin: string): void {
+  for (const agent of listAllAgents()) {
+    if (agent.tabId !== tabId || agent.origin === origin) continue;
+    forgetAgent(agent);
+  }
+}
+
+function forgetAgent(agent: { id: string; origin: string }): void {
+  cleanupAgentHandlers(agent.id);
+  if (originAgents.get(agent.origin) === agent.id) originAgents.delete(agent.origin);
+  unregisterAgent(agent.id, agent.origin);
 }
 
 /**
