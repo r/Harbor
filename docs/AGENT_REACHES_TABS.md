@@ -109,8 +109,9 @@ they've connected. That's too broad as a default.
 
 - **Connecting is the consent to use the browser at all.** Adding `harbor-mcp`
   to an agent's config is the person's act, and the sidebar shows connected
-  agents. A setting, "Let agents outside the browser open pages", is off until
-  the person turns it on in the Agent panel. Until then every call gets a clear
+  agents. A setting, "Let your agent open and use pages", is off until
+  the person turns it on in Harbor's sidebar (Settings, under "Your agent
+  outside the browser"). Until then every call gets a clear
   error saying where to turn it on.
 - **Per tab:** opened by the agent, or shared by the person (§3).
 - **Per site:** the page offered its tools. They get the same gate as page
@@ -176,8 +177,10 @@ they've connected. That's too broad as a default.
 
 - It answers `agent_tabs.request` only from the bridge's own context.
 - Every answer is a CallToolResult, never a thrown error.
-- When the setting is off, every op returns `isError` with the message: "Turn
-  on 'Agents outside the browser' in Harbor's Agent panel."
+- When the setting is off, every op returns `isError` with the message: "Harbor
+  hasn't allowed this yet. Ask the person to turn on 'Let your agent open and
+  use pages' in Harbor's sidebar, under Settings > Your agent outside the
+  browser."
 
 ## 6. Build units
 

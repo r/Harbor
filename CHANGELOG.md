@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The page-tools demo no longer has its own Ask and Open chat buttons. You ask your own agent to open the page, or share the tab with it, and it uses the page's tools. When "Let your agent open and use pages" is off, the message your agent gets now names that setting and where it is in Harbor's sidebar.
+
 - The permission request and agent question popups use Harbor’s site typography, colors and buttons in both system themes. The permission prompt highlights the site’s stated reason and offers separate actions to deny, allow temporarily, or grant ongoing access.
 
 - Agent runs and sessions carry sensitivity labels from site tools into later calls. Harbor checks the destination before sending data to a model or tool. Separate sessions in the same tab keep independent labels.

@@ -5,7 +5,8 @@
 // and get the handler's result back.
 //
 // Drives the real extension in a fresh Firefox profile against the
-// existing demo (demo/web-agents/page-tools/), unmodified — the same RDP
+// existing demo (demo/web-agents/page-tools/), starting agent.run() in it
+// with START_RUN since the page has no Ask button — the same RDP
 // evaluate-and-poll pattern test-getting-started.mjs uses, since Firefox
 // extension pages aren't reachable through Playwright's page.evaluate.
 //
@@ -23,6 +24,25 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launchFirefox } from '../../scripts/firefox-runner.mjs';
+
+// Starts agent.run() in the demo page with window.__e2eTask, logging to #log.
+const START_RUN = `(() => {
+      const log = document.getElementById('log');
+      const say = (line) => { log.textContent += '\\n' + line; };
+      log.textContent = 'Asking your agent...';
+      (async () => {
+        try {
+          const p = await window.agent.requestPermissions({ scopes: ['model:prompt', 'model:tools'], reason: 'e2e: start a run on this page' });
+          if (!p.granted) throw new Error('Permission denied');
+          for await (const event of window.agent.run({ task: window.__e2eTask, maxToolCalls: 6 })) {
+            if (event.type === 'tool_call') say('agent called ' + event.tool);
+            if (event.type === 'final') say('\\n' + event.output);
+            if (event.type === 'error') say('error: ' + (event.error && event.error.message));
+          }
+        } catch (e) { say('error: ' + e.message); }
+      })();
+      return true;
+    })()`;
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -203,11 +223,13 @@ try {
   }
 
   async function setTask(task) {
-    await value(`document.getElementById('task').value = ${JSON.stringify(task)}; true`);
+    await value(`window.__e2eTask = ${JSON.stringify(task)}; true`);
   }
 
   async function clickRun() {
-    await value('document.getElementById("run").click(); true');
+    // The demo has no Ask button (people ask their own agent), so the test
+    // starts agent.run() from the page itself, as a site's own code would.
+    await value(START_RUN);
   }
 
   async function grantPermissionIfPrompted(timeoutMs = 15_000) {
