@@ -366,6 +366,41 @@ describe('multi-agent lifecycle cleanup', () => {
     expect(agentInvocationTabs.has(handlerAgentId)).toBe(false);
   });
 
+  it("another site's unregister, which Harbor refuses, leaves the agent invocable", async () => {
+    const tab1 = connectPort('https://a.example/page', 1);
+    const tab2 = connectPort('https://b.example/page', 2);
+    const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
+    await registerHandlerAgent(tab2, 'invoker');
+
+    // b.example may register agents of its own, but a.example's isn't one.
+    tab2.send({ id: 'unreg-foreign', type: 'agent.agents.unregister', payload: { agentId: handlerAgentId } });
+    await vi.waitFor(() => expect(tab2.posted.some((p) => p.id === 'unreg-foreign')).toBe(true));
+
+    const { agentInvocationTabs, registeredAgents } = await import('../handlers/agent-handlers');
+    const { hasAgentHandlers } = await import('../../multi-agent/messaging');
+    expect(agentInvocationTabs.has(handlerAgentId)).toBe(true);
+    expect(registeredAgents.has(handlerAgentId)).toBe(true);
+    expect(hasAgentHandlers(handlerAgentId)).toBe(true);
+
+    tab2.send({
+      id: 'invoke-after-foreign-unreg',
+      type: 'agent.agents.invoke',
+      payload: { agentId: handlerAgentId, request: { task: 'summarize' } },
+    });
+    await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalled());
+    expect(tabsSendMessage.mock.calls[0][0]).toBe(1);
+  });
+
+  it("closing a tab forgets its agents' invocation tabs", async () => {
+    const tab1 = connectPort('https://a.example/page', 1);
+    const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
+    const { agentInvocationTabs } = await import('../handlers/agent-handlers');
+    expect(agentInvocationTabs.has(handlerAgentId)).toBe(true);
+
+    await onTabRemoved(1);
+    expect(agentInvocationTabs.has(handlerAgentId)).toBe(false);
+  });
+
   it("an invocation waiting on a tab fails at once when that tab closes", async () => {
     vi.useFakeTimers();
     try {

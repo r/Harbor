@@ -467,7 +467,7 @@ export interface AgentInvocationRequest {
   task: string;
   /** Input data for the task */
   input?: unknown;
-  /** Timeout in milliseconds (default: 30000) */
+  /** Timeout in milliseconds (default: 30000, capped at 300000) */
   timeout?: number;
 }
 

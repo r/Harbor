@@ -259,9 +259,13 @@ export async function handleAgentsUnregister(ctx: RequestContext): HandlerRespon
   }
 
   try {
-    await harborRequest('agents.unregister', { agentId, origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
-    registeredAgents.delete(agentId);
-    agentInvocationTabs.delete(agentId);
+    const unregistered = await harborRequest<boolean>('agents.unregister', { agentId, origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
+    // Harbor refuses to unregister another origin's agent; that agent stays
+    // reachable, so only forget it here when Harbor actually let it go.
+    if (unregistered === true) {
+      registeredAgents.delete(agentId);
+      agentInvocationTabs.delete(agentId);
+    }
     return successResponse(ctx.id, null);
   } catch (e) {
     return harborFailure(ctx.id, e, 'Unregistration failed');

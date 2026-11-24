@@ -1120,7 +1120,7 @@ try {
 | `ERR_SESSION_NOT_FOUND` | Session was destroyed |
 | `ERR_BUDGET_EXCEEDED` | A session's `maxToolCalls` budget is spent |
 | `ERR_HARBOR_NOT_FOUND` | Harbor extension not found |
-| `ERR_AGENT_NOT_FOUND` | Agent not registered |
+| `ERR_AGENT_NOT_FOUND` | Agent not registered, or its page went away before answering |
 | `ERR_AGENT_NOT_ACCEPTING` | Agent not accepting invocations |
 | `ERR_TIMEOUT` | Request timed out |
 | `ERR_ABORTED` | The page aborted an `agent.run` or a `window.ai` prompt, its tab closed, or its port disconnected |

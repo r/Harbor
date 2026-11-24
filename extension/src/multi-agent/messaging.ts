@@ -55,7 +55,7 @@ export const MAX_INVOCATION_TIMEOUT_MS = 5 * 60_000;
  * something that isn't a positive number).
  */
 export function invocationTimeoutMs(requested?: unknown): number {
-  if (typeof requested !== 'number' || !Number.isFinite(requested) || requested <= 0) {
+  if (typeof requested !== 'number' || Number.isNaN(requested) || requested <= 0) {
     return DEFAULT_INVOCATION_TIMEOUT_MS;
   }
   return Math.min(requested, MAX_INVOCATION_TIMEOUT_MS);

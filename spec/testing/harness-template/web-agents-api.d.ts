@@ -132,6 +132,7 @@ interface AgentDiscoveryQuery {
 interface AgentInvocationRequest {
   task: string;
   input?: unknown;
+  /** Milliseconds to wait for the answer. Default 30000; Harbor caps it at 300000. */
   timeout?: number;
 }
 
