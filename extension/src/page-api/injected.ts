@@ -1130,6 +1130,7 @@ function createMultiAgentApi() {
     async register(options: AgentRegisterOptions): Promise<RegisteredAgent> {
       const result = await sendRequest<RegisteredAgent>('agent.agents.register', options);
       currentAgentId = result.id;
+      pageAgentIds.add(result.id);
       
       // Set up event listener for incoming messages/invocations
       setupAgentEventListener();
@@ -1146,6 +1147,7 @@ function createMultiAgentApi() {
         throw new Error('Agent not registered');
       }
       await sendRequest('agent.agents.unregister', { agentId: idToUnregister });
+      pageAgentIds.delete(idToUnregister);
       if (idToUnregister === currentAgentId) {
         currentAgentId = null;
       }
@@ -1342,6 +1344,11 @@ function createMultiAgentApi() {
 // Track processed invocations at the page level to prevent duplicates
 const processedPageInvocations = new Set<string>();
 
+// The agents this page registered. Just after a tab's page is replaced,
+// Harbor can still deliver an invocation meant for the old page's agent to
+// the tab; this page's handlers must never see it.
+const pageAgentIds = new Set<string>();
+
 // Track if event listener is already set up
 let eventListenerSetUp = false;
 
@@ -1366,7 +1373,7 @@ function setupAgentEventListener() {
       agentEvent?: {
         type: 'message' | 'invocation' | 'broadcast';
         message?: AgentMessage;
-        invocation?: AgentInvocationRequest & { from: string; invocationId: string };
+        invocation?: AgentInvocationRequest & { from: string; invocationId: string; agentId?: string };
         broadcast?: { type: string; data: unknown; source: string; provenance?: AgentProvenance };
       };
     };
@@ -1394,6 +1401,19 @@ function setupAgentEventListener() {
       processedPageInvocations.add(invocationId);
       // Clean up after 60 seconds
       setTimeout(() => processedPageInvocations.delete(invocationId), 60000);
+
+      if (!invocation.agentId || !pageAgentIds.has(invocation.agentId)) {
+        dlog('invocation for an agent this page did not register, refusing', invocationId);
+        window.postMessage({
+          channel: 'harbor_page_api',
+          agentInvocationResponse: {
+            invocationId,
+            success: false,
+            error: { code: 'ERR_AGENT_NOT_FOUND', message: 'This page has no such agent' },
+          },
+        }, '*');
+        return;
+      }
 
       dlog('processing invocation', { task: invocation.task, invocationId });
       

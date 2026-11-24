@@ -353,6 +353,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       type: 'invocation',
       invocation: {
         invocationId: message.invocationId,
+        agentId: message.agentId,
         from: message.from,
         task: message.task,
         input: message.input,
