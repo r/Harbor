@@ -44,7 +44,7 @@ ui.shadow.querySelector('.aaf-input input').setAttribute('aria-label', 'Invoice 
 ui.shadow.querySelector('.aaf-input input').placeholder = 'Create an invoice for alice@example.com for 120 EUR';
 const style = document.createElement('style');
 style.textContent = `
-  :host { display: block; min-width: 0; font-family: var(--demo-font-sans); color: var(--demo-text-primary); }
+  :host { display: block; min-width: 0; color-scheme: inherit; font-family: var(--demo-font-sans); color: var(--demo-text-primary); }
   .aaf-toggle { display: none; }
   .aaf-panel { position: static; width: 100%; height: 430px; max-height: none; border: 0; border-radius: 0; box-shadow: none; background: var(--demo-bg-subtle); }
   .aaf-header { gap: 12px; background: var(--demo-bg-surface); color: var(--demo-text-primary); border-color: var(--demo-border-default); }

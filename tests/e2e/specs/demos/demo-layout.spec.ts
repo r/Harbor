@@ -81,6 +81,20 @@ test('the shop opens Harbor chat and explains a denied request', async ({ page, 
   await expect(page.locator('#chat-error-banner')).toHaveText("Harbor didn't let Acme Shop open a chat.");
 });
 
+test('the invoice shadow widget follows the page theme at both widths', async ({ page, demoServer }) => {
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    for (const width of [360, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(demoServer.url + '/web-agents/aaf-invoice/');
+      const surface = await page.locator('aside').evaluate(el => getComputedStyle(el).backgroundColor);
+      const input = await page.locator('#customer_email').evaluate(el => getComputedStyle(el).backgroundColor);
+      await expect(page.locator('.aaf-header')).toHaveCSS('background-color', surface);
+      await expect(page.getByRole('textbox', { name: 'Invoice request' })).toHaveCSS('background-color', input);
+    }
+  }
+});
+
 test('the invoice widget exposes its input and debug control', async ({ page, demoServer }) => {
   await page.goto(demoServer.url + '/web-agents/aaf-invoice/');
   await expect(page.getByRole('textbox', { name: 'Invoice request' })).toBeVisible();

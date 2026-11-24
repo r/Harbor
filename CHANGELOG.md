@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The invoice widget inherits the page's color scheme inside its shadow DOM instead of staying light in dark mode.
 - Page Tools wraps its inline API example on narrow screens instead of overflowing the viewport.
 - Time Agent uses Harbor's supported tool API, and both it and Getting Started request consent for the specific time tool before calling it.
 - Multi-step Form waits for its own delayed panels instead of calling a browser API that does not exist.
