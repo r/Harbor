@@ -4,7 +4,8 @@
 // Drives the real extension in a fresh Firefox profile, as
 // test-agent-answer-provenance.mjs does: two local servers on different
 // ports are two origins. "bank" registers an agent that never answers;
-// "caller" invokes it with a 2-minute timeout; then the bank's tab closes.
+// "caller" invokes it with a 2-minute timeout; then the bank's tab moves to
+// another site, and, in a second round, a bank tab closes.
 // Needs no model and no bridge.
 //
 // Requires: the Firefox extension built (npm run build from extension/).
@@ -164,91 +165,102 @@ try {
   })()`);
   await sleep(1500);
 
-  // --- The bank's page registers an agent that takes the invocation and
-  // never answers.
-  const bank = await pageEval(BANK);
-  await bank(`
-    window.__e2e = null;
-    window.__invoked = 0;
-    (async () => {
-      try {
-        const p = await window.agent.requestPermissions({
-          scopes: ['agents:register', 'agents:crossOrigin'],
-          agentOrigins: [${JSON.stringify(CALLER)}],
-          reason: 'e2e: register the bank agent',
-        });
-        if (!p.granted) throw new Error('bank permission denied');
-        const me = await window.agent.agents.register({ name: 'Bank', acceptsInvocations: true });
-        window.agent.agents.onInvoke(() => { window.__invoked++; return new Promise(() => {}); });
-        window.__e2e = { done: true, id: me.id };
-      } catch (e) { window.__e2e = { done: true, error: e.message }; }
-    })();
-    true
-  `);
-  const bankState = await settle(bank);
-  assert.equal(bankState.error, undefined, 'bank setup failed: ' + bankState.error);
-  console.log('PASS: the bank site registered an agent that never answers.');
+  // Runs one scenario: the bank page at `bankUrl` registers an agent that
+  // takes the invocation and never answers, the caller invokes it with a
+  // long timeout, then `leave(tabId)` takes the bank's page away. The
+  // caller must hear ERR_AGENT_NOT_FOUND within seconds.
+  async function scenario(name, bankUrl, leave) {
+    const bank = await pageEval(bankUrl);
+    await bank(`
+      window.__e2e = null;
+      window.__invoked = 0;
+      (async () => {
+        try {
+          const p = await window.agent.requestPermissions({
+            scopes: ['agents:register', 'agents:crossOrigin'],
+            agentOrigins: [${JSON.stringify(CALLER)}],
+            reason: 'e2e: register the bank agent',
+          });
+          if (!p.granted) throw new Error('bank permission denied');
+          const me = await window.agent.agents.register({ name: 'Bank', acceptsInvocations: true });
+          window.agent.agents.onInvoke(() => { window.__invoked++; return new Promise(() => {}); });
+          window.__e2e = { done: true, id: me.id };
+        } catch (e) { window.__e2e = { done: true, error: e.message }; }
+      })();
+      true
+    `);
+    const bankState = await settle(bank);
+    assert.equal(bankState.error, undefined, `${name}: bank setup failed: ` + bankState.error);
 
-  // --- The caller invokes it with a long timeout.
+    await caller(`
+      window.__e2e = null;
+      (async () => {
+        try {
+          if (!window.__registered) {
+            const p = await window.agent.requestPermissions({
+              scopes: ['agents:register', 'agents:invoke', 'agents:crossOrigin'],
+              agentOrigins: [${JSON.stringify(BANK)}],
+              reason: 'e2e: call the bank agent',
+            });
+            if (!p.granted) throw new Error('caller permission denied');
+            await window.agent.agents.register({ name: 'Caller' });
+            window.__registered = true;
+          }
+          const answer = await window.agent.agents.invoke(${JSON.stringify(bankState.id)}, { task: 'balance', timeout: 120000 });
+          window.__e2e = { done: true, answer };
+        } catch (e) {
+          window.__e2e = { done: true, error: e.message, code: e.code };
+        }
+      })();
+      true
+    `);
+
+    // Wait until the bank's agent has the invocation, granting the caller's
+    // prompts meanwhile.
+    for (let i = 0; i < 120; i++) {
+      if (Number(await bank('String(window.__invoked)')) > 0) break;
+      await grantPrompt(250);
+    }
+    assert.ok(Number(await bank('String(window.__invoked)')) > 0, `${name}: the bank agent never received the invocation`);
+
+    // Match patterns can't name a port, so find the bank's tab by its URL.
+    // An evaluation's promise isn't awaited, so the result is polled.
+    const leftAt = Date.now();
+    await sval(`window.__left = null; (async () => {
+      const tabs = await browser.tabs.query({});
+      const tab = tabs.find(t => (t.url || '') === ${JSON.stringify(bankUrl)});
+      if (!tab) { window.__left = 'no bank tab among ' + tabs.map(t => t.url).join(', '); return; }
+      ${leave}
+      window.__left = 'left ' + tab.id;
+    })(); true`);
+    let left = 'null';
+    for (let i = 0; i < 40 && left === 'null'; i++) {
+      await sleep(100);
+      left = await sval('String(window.__left)');
+    }
+    assert.match(left, /^left /, left);
+
+    const callerState = await settle(caller, 20_000);
+    const since = Date.now() - leftAt;
+    assert.equal(callerState.error, undefined, `${name}: invoke must resolve, not reject: ` + JSON.stringify(callerState));
+    assert.equal(callerState.answer.success, false, `${name}: invoke must fail: ` + JSON.stringify(callerState.answer));
+    assert.equal(callerState.answer.error?.code, 'ERR_AGENT_NOT_FOUND', `${name}: unexpected answer: ` + JSON.stringify(callerState.answer));
+    assert.ok(since < 10_000, `${name}: the caller must hear within seconds, took ${since} ms`);
+    console.log(`PASS: ${name}: the waiting invoke failed with ERR_AGENT_NOT_FOUND in ${since} ms.`);
+  }
+
   const caller = await pageEval(CALLER + '/?caller=1');
-  await caller(`
-    window.__e2e = null;
-    (async () => {
-      try {
-        const p = await window.agent.requestPermissions({
-          scopes: ['agents:register', 'agents:invoke', 'agents:crossOrigin'],
-          agentOrigins: [${JSON.stringify(BANK)}],
-          reason: 'e2e: call the bank agent',
-        });
-        if (!p.granted) throw new Error('caller permission denied');
-        await window.agent.agents.register({ name: 'Caller' });
-        window.__started = Date.now();
-        const answer = await window.agent.agents.invoke(${JSON.stringify(bankState.id)}, { task: 'balance', timeout: 120000 });
-        window.__e2e = { done: true, answer, waitedMs: Date.now() - window.__started };
-      } catch (e) {
-        window.__e2e = { done: true, error: e.message, code: e.code, waitedMs: Date.now() - (window.__started ?? Date.now()) };
-      }
-    })();
-    true
-  `);
 
-  // Wait until the bank's agent has the invocation, granting the caller's
-  // prompts meanwhile.
-  for (let i = 0; i < 120; i++) {
-    if (Number(await bank('String(window.__invoked)')) > 0) break;
-    await grantPrompt(250);
-  }
-  assert.ok(Number(await bank('String(window.__invoked)')) > 0, 'the bank agent never received the invocation');
-  console.log('PASS: the invocation reached the bank agent.');
+  // The bank's tab moves to another site while the caller waits.
+  await scenario('navigating away', BANK + '/', 'await browser.tabs.update(tab.id, { url: ' + JSON.stringify(CALLER + '/elsewhere') + ' });');
 
-  // --- The bank's tab closes while the caller waits.
-  const closedAt = Date.now();
-  // Match patterns can't name a port, so find the bank's tab by its URL.
-  // An evaluation's promise isn't awaited, so the result is polled.
-  await sval(`window.__removed = null; (async () => {
-    const tabs = await browser.tabs.query({});
-    const tab = tabs.find(t => (t.url || '').startsWith(${JSON.stringify(BANK + '/')}));
-    if (!tab) { window.__removed = 'no bank tab among ' + tabs.map(t => t.url).join(', '); return; }
-    await browser.tabs.remove(tab.id);
-    window.__removed = 'removed ' + tab.id;
-  })(); true`);
-  let removed = 'null';
-  for (let i = 0; i < 40 && removed === 'null'; i++) {
-    await sleep(100);
-    removed = await sval('String(window.__removed)');
-  }
-  assert.match(removed, /^removed /, removed);
-
-  const callerState = await settle(caller, 20_000);
-  const sinceClose = Date.now() - closedAt;
-  assert.equal(callerState.error, undefined, 'invoke must resolve, not reject: ' + JSON.stringify(callerState));
-  assert.equal(callerState.answer.success, false, 'invoke must fail: ' + JSON.stringify(callerState.answer));
-  assert.equal(callerState.answer.error?.code, 'ERR_AGENT_NOT_FOUND', 'unexpected answer: ' + JSON.stringify(callerState.answer));
-  assert.ok(sinceClose < 10_000, `the caller must hear within seconds of the tab closing, took ${sinceClose} ms`);
-  console.log(`PASS: closing the agent's tab failed the waiting invoke with ERR_AGENT_NOT_FOUND in ${sinceClose} ms.`);
+  // A fresh bank tab, closed while the caller waits.
+  await sval(`browser.tabs.create({ url: ${JSON.stringify(BANK + '/?n=2')} }); true`);
+  await sleep(1500);
+  await scenario('closing the tab', BANK + '/?n=2', 'await browser.tabs.remove(tab.id);');
 
   assert.deepEqual(pageErrors, [], 'no uncaught page errors: ' + JSON.stringify(pageErrors));
-  console.log('PASS: a waiting invoke fails at once when its agent\'s tab closes, in Firefox.');
+  console.log('PASS: a waiting invoke fails at once when its agent\'s page goes, in Firefox.');
 } finally {
   clearTimeout(deadline);
   if (!keepOpen) await session?.close();
