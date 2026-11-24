@@ -1058,11 +1058,19 @@ interface AgentInvocationRequest {
   timeout?: number;
 }
 
+/** Which site's agent produced an answer. Harbor sets it, never the agent. */
+interface AgentProvenance {
+  source: 'agent';
+  origin: string;
+  agentId: string;
+}
+
 interface AgentInvocationResponse {
   success: boolean;
   result?: unknown;
   error?: { code: string; message: string };
   executionTime?: number;
+  provenance?: AgentProvenance;
 }
 
 interface AgentMessage {
@@ -1073,6 +1081,7 @@ interface AgentMessage {
   payload: unknown;
   correlationId?: string;
   timestamp: number;
+  provenance?: AgentProvenance;
 }
 
 interface PipelineStep {
@@ -1091,7 +1100,7 @@ interface ParallelTask {
 // Store for message and invocation handlers
 const agentMessageHandlers: Array<(message: AgentMessage) => void> = [];
 const agentInvocationHandlers: Array<(request: AgentInvocationRequest & { from: string }) => Promise<unknown>> = [];
-const agentEventSubscriptions = new Map<string, Array<(event: { type: string; data: unknown; source: string }) => void>>();
+const agentEventSubscriptions = new Map<string, Array<(event: { type: string; data: unknown; source: string; provenance?: AgentProvenance }) => void>>();
 
 // Current agent ID (set after registration)
 let currentAgentId: string | null = null;
@@ -1351,7 +1360,7 @@ function setupAgentEventListener() {
         type: 'message' | 'invocation' | 'broadcast';
         message?: AgentMessage;
         invocation?: AgentInvocationRequest & { from: string; invocationId: string };
-        broadcast?: { type: string; data: unknown; source: string };
+        broadcast?: { type: string; data: unknown; source: string; provenance?: AgentProvenance };
       };
     };
     

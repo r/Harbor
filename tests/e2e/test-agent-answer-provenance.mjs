@@ -207,6 +207,8 @@ try {
         if (!p.granted) throw new Error('caller permission denied');
         const me = await window.agent.agents.register({ name: 'Caller', acceptsMessages: true });
         window.agent.agents.onMessage((m) => window.__received.push(m));
+        window.__events = [];
+        await window.agent.agents.subscribe('rates', (e) => window.__events.push(e));
         const answer = await window.agent.agents.invoke(${JSON.stringify(bankState.id)}, { task: 'balance' });
         window.__e2e = { done: true, id: me.id, answer };
       } catch (e) { window.__e2e = { done: true, error: e.message }; }
@@ -231,6 +233,17 @@ try {
   assert.deepEqual(received[0].provenance, { source: 'agent', origin: BANK, agentId: bankState.id },
     'the message must name the bank agent\'s site: ' + JSON.stringify(received[0]));
   console.log('PASS: a message from the bank\'s agent carries the bank site\'s provenance.');
+
+  await bank(`window.agent.agents.broadcast('rates', { apr: 4 }).then(r => { window.__broadcast = r; }); true`);
+  let events = [];
+  for (let i = 0; i < 40 && events.length === 0; i++) {
+    await grantPrompt(250);
+    events = JSON.parse(await caller('JSON.stringify(window.__events)'));
+  }
+  assert.equal(events.length, 1, 'the caller must receive the bank\'s broadcast');
+  assert.deepEqual(events[0].provenance, { source: 'agent', origin: BANK, agentId: bankState.id },
+    'the broadcast must name the bank agent\'s site: ' + JSON.stringify(events[0]));
+  console.log('PASS: a broadcast from the bank\'s agent carries the bank site\'s provenance.');
 
   assert.deepEqual(pageErrors, [], 'no uncaught page errors: ' + JSON.stringify(pageErrors));
   console.log('PASS: agent answers carry Harbor-set provenance in Firefox.');
