@@ -317,6 +317,17 @@ export function broadcastEvent(
 }
 
 /**
+ * Whether Harbor still holds any handler or subscription for an agent.
+ */
+export function hasAgentHandlers(agentId: AgentId): boolean {
+  if (messageHandlers.has(agentId) || invocationHandlers.has(agentId)) return true;
+  for (const subscribers of eventSubscriptions.values()) {
+    if (subscribers.has(agentId)) return true;
+  }
+  return false;
+}
+
+/**
  * Clean up all handlers for an agent.
  */
 export function cleanupAgentHandlers(agentId: AgentId): void {

@@ -60,6 +60,7 @@ type RuntimeMessageListener = (
 ) => boolean | void;
 
 let onConnect: ConnectListener;
+let onTabRemoved: (tabId: number) => Promise<void> | void;
 let runtimeMessageListeners: RuntimeMessageListener[];
 let tabsSendMessage: ReturnType<typeof vi.fn>;
 let grantPermissions: typeof GrantPermissions;
@@ -85,7 +86,7 @@ beforeEach(async () => {
   };
   chromeGlobal.chrome.tabs = {
     ...(chromeGlobal.chrome.tabs as Record<string, unknown>),
-    onRemoved: { addListener: vi.fn() },
+    onRemoved: { addListener: (l: typeof onTabRemoved) => { onTabRemoved = l; } },
     get: vi.fn(async () => { throw new Error('no tab'); }),
     sendMessage: tabsSendMessage,
   };
@@ -115,22 +116,26 @@ afterEach(() => {
 interface TestPort {
   send: (message: unknown) => void;
   posted: Array<{ id?: string; ok: boolean; result?: unknown; error?: { code?: string; message: string } }>;
+  /** The page leaves the tab (navigation, reload or close): its port disconnects. */
+  disconnect: () => void;
 }
 
 function connectPort(senderUrl: string, tabId: number): TestPort {
   const messageListeners: Array<(m: unknown) => void> = [];
+  const disconnectListeners: Array<() => void> = [];
   const posted: TestPort['posted'] = [];
   const port = {
     name: 'harbor-page-api',
     sender: { url: senderUrl, tab: { id: tabId } },
     onMessage: { addListener: (l: (m: unknown) => void) => messageListeners.push(l) },
-    onDisconnect: { addListener: () => {} },
+    onDisconnect: { addListener: (l: () => void) => disconnectListeners.push(l) },
     postMessage: (m: TestPort['posted'][number]) => posted.push(m),
   };
   onConnect(port);
   return {
     send: (message: unknown) => messageListeners.forEach((l) => l(message)),
     posted,
+    disconnect: () => disconnectListeners.forEach((l) => l()),
   };
 }
 
@@ -312,6 +317,140 @@ describe('multi-agent invocation, delivered entirely in-process (no cross-extens
       await vi.waitFor(() => expect(settled).toBeDefined());
       expect(settled!.ok).toBe(true);
       const result = settled!.result as { success: boolean; error?: { code: string } };
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('ERR_TIMEOUT');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * Drive tab 2's invoke of tab 1's agent one layer below tab 2's port, as the
+ * ERR_TIMEOUT test above does: harbor-core.ts's own 30-second page-call
+ * limit would otherwise answer tab 2 first, hiding what the invocation
+ * itself does.
+ */
+async function invokeBelowPagePort(
+  handlerAgentId: string,
+  timeout?: number,
+): Promise<{ settled: () => { ok: boolean; result?: unknown } | undefined }> {
+  const { routeAgentMessage } = await import('../../agents/background-router');
+  let settled: { ok: boolean; result?: unknown } | undefined;
+  routeAgentMessage(
+    {
+      type: 'agents.invoke',
+      payload: { agentId: handlerAgentId, task: 'summarize', timeout, origin: 'https://b.example', tabId: 2 },
+    },
+    (response) => { settled = response; },
+  );
+  await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalled());
+  return { settled: () => settled };
+}
+
+describe('multi-agent lifecycle cleanup', () => {
+  it("unregistering an agent drops its handlers and its invocation tab", async () => {
+    const tab1 = connectPort('https://a.example/page', 1);
+    const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
+
+    const { agentInvocationTabs } = await import('../handlers/agent-handlers');
+    const { hasAgentHandlers } = await import('../../multi-agent/messaging');
+    expect(agentInvocationTabs.has(handlerAgentId)).toBe(true);
+    expect(hasAgentHandlers(handlerAgentId)).toBe(true);
+
+    tab1.send({ id: 'unreg', type: 'agent.agents.unregister', payload: { agentId: handlerAgentId } });
+    await vi.waitFor(() => expect(tab1.posted.some((p) => p.id === 'unreg')).toBe(true));
+    expect(tab1.posted.find((p) => p.id === 'unreg')!.ok).toBe(true);
+
+    expect(hasAgentHandlers(handlerAgentId)).toBe(false);
+    expect(agentInvocationTabs.has(handlerAgentId)).toBe(false);
+  });
+
+  it("an invocation waiting on a tab fails at once when that tab closes", async () => {
+    vi.useFakeTimers();
+    try {
+      const tab1 = connectPort('https://a.example/page', 1);
+      connectPort('https://b.example/page', 2);
+      const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
+      const tab2 = connectPort('https://b.example/other', 2);
+      await registerHandlerAgent(tab2, 'invoker');
+
+      const { settled } = await invokeBelowPagePort(handlerAgentId);
+      await onTabRemoved(1);
+      // Well short of the 30-second invocation timeout.
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(settled()).toBeDefined();
+      const result = settled()!.result as { success: boolean; error?: { code: string } };
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('ERR_AGENT_NOT_FOUND');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("an invocation waiting on a page fails at once when that page navigates away", async () => {
+    vi.useFakeTimers();
+    try {
+      const tab1 = connectPort('https://a.example/page', 1);
+      const tab2 = connectPort('https://b.example/page', 2);
+      const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
+      await registerHandlerAgent(tab2, 'invoker');
+
+      const { settled } = await invokeBelowPagePort(handlerAgentId);
+      tab1.disconnect();
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(settled()).toBeDefined();
+      const result = settled()!.result as { success: boolean; error?: { code: string } };
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('ERR_AGENT_NOT_FOUND');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a newer page's invocation survives the old page's late disconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      const oldPage = connectPort('https://a.example/page', 1);
+      await registerHandlerAgent(oldPage, 'old');
+      await vi.advanceTimersByTimeAsync(5);
+      const newPage = connectPort('https://a.example/page', 1);
+      const handlerAgentId = await registerHandlerAgent(newPage, 'new');
+      const tab2 = connectPort('https://b.example/page', 2);
+      await registerHandlerAgent(tab2, 'invoker');
+      await vi.advanceTimersByTimeAsync(5);
+
+      const { settled } = await invokeBelowPagePort(handlerAgentId);
+      oldPage.disconnect();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(settled()).toBeUndefined();
+
+      const [, sentMessage] = tabsSendMessage.mock.calls[0] as [number, { invocationId: string }];
+      replyAsContentScript(1, { invocationId: sentMessage.invocationId, success: true, result: 'from the new page' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect((settled()!.result as { success: boolean }).success).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('caps a caller-supplied invocation timeout at five minutes', async () => {
+    vi.useFakeTimers();
+    try {
+      const tab1 = connectPort('https://a.example/page', 1);
+      const tab2 = connectPort('https://b.example/page', 2);
+      const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
+      await registerHandlerAgent(tab2, 'invoker');
+
+      const { settled } = await invokeBelowPagePort(handlerAgentId, 24 * 60 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 - 10);
+      expect(settled()).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(20);
+
+      expect(settled()).toBeDefined();
+      const result = settled()!.result as { success: boolean; error?: { code: string } };
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe('ERR_TIMEOUT');
     } finally {
