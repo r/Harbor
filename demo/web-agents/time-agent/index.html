@@ -70,9 +70,13 @@
         <h2 class="demo-card-title">Code</h2>
       </div>
       
-      <pre class="demo-code"><span class="comment">// Call an MCP tool directly</span>
+      <pre class="demo-code"><span class="comment">// First, ask permission for this specific tool.</span>
+await window.agent.requestPermissions({
+  scopes: ['mcp:tools.call'],
+  tools: ['time-wasm/time.now']
+});
 <span class="keyword">const</span> result = <span class="keyword">await</span> window.<span class="property">agent</span>.<span class="property">tools</span>.<span class="method">call</span>({
-  <span class="property">tool</span>: <span class="string">'time.now'</span>,
+  <span class="property">tool</span>: <span class="string">'time-wasm/time.now'</span>,
   <span class="property">args</span>: {}
 });
 console.<span class="method">log</span>(result);</pre>

@@ -40,6 +40,8 @@ function makeElement(): HTMLElement {
     style: {},
     dataset: {},
     children: [] as unknown[],
+    // Real selects always expose a collection, even with no selected option.
+    selectedOptions: [],
     appendChild(child: unknown) { (base.children as unknown[]).push(child); return child; },
     append(...nodes: unknown[]) { (base.children as unknown[]).push(...nodes); },
     remove() {},

@@ -55,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Page Tools wraps its inline API example on narrow screens instead of overflowing the viewport.
+- Time Agent uses Harbor's supported tool API, and both it and Getting Started request consent for the specific time tool before calling it.
+- Multi-step Form waits for its own delayed panels instead of calling a browser API that does not exist.
+- Research Agent streams a bounded source summary instead of timing out on a long non-streaming request. Research Pipeline now uses the configured model rather than always displaying a simulated article; both demos close sessions on success, error and timeout.
+- Research Pipeline renders model responses and source titles as text, with only HTTP(S) source links, rather than interpreting them as HTML.
+- The sidebar Check-then-Save test models a select's `selectedOptions` collection, removing an unhandled test-fixture rejection. The Firefox E2E packages now use matching Playwright 1.65.1 versions and its current Firefox build.
+
 - The Page Summarizer and its Chrome-compatible variant link to the published Web Agent API specification from the demo and bookmarklet.
 
 - `docs/PERMISSIONS.md` Parts 1–3 (how it works, for site authors, for extension contributors) described much that isn't built as if it were. It now matches the code: data labels come from the call itself, aren't carried from one call to the next, and in practice never block a call; the irreversible-write preview is answered by a page's grant; explicit policy rules don't always lose to deny shorthands; only two watchdog triggers can fire, and nothing resets the watchdog but a restart; the element classifier and a trusted manifest's reversibility claim aren't wired into the engine; the policy file's real rule fields and short forms; `requestCapabilities()`'s real options and which actions it turns into capabilities; `agent.tools.call()`'s single-object form; the test mock's real controls; and the contributor walkthroughs' real files and functions (`trustManifest`, `Publishers`, `Pins`, `SensitivityVerdict`). What's designed but not built is marked as such.

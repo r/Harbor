@@ -54,8 +54,22 @@ Open the [Harbor demo directory](https://r.github.io/Harbor/demo/). The demos fo
 - **Text Generation**: Basic prompt → response using `window.ai`
 - **Agent Tasks**: Run autonomous tasks with tool access using `window.agent.run()`
 - **Tool Listing**: View available MCP tools
-- **Streaming Responses**: Token-by-token output (Research Pipeline)
+- **Streaming Responses**: Both research demos use the configured model through `promptStreaming()`, accumulating its text chunks. Their shared `shared/research.js` helper limits context to three 1,500-character source excerpts, allows two minutes for the stream, and closes the session on success, error or timeout. A failed model request shows an error, never a simulated article.
 - **Chat Without Building One**: A page hands the conversation to your agent's chat with `window.agent.chat.open()`
+
+## Demo verification
+
+```bash
+npm ci --prefix tests/e2e
+cd tests/e2e
+npx playwright install firefox
+npx playwright test specs/demos/demo-layout.spec.ts specs/demos/demo-behavior.spec.ts
+npm run test:browser
+```
+
+The layout suite checks all 13 pages at 360px and 1280px in both system themes. Behavior tests use page-boundary API fakes to cover consent, tool names, wizard transitions, research streams, cleanup and failure states; they do not replace testing with Harbor, the bridge and a real model. Keep `playwright` and `@playwright/test` at the same version and install the matching Firefox build after updating them.
+
+For real interactions, use a temporary Firefox profile and enable **Browser Interaction** for Basic Actions and Multi-step Form, **Browser Control** for Research Agent, and **Browser Control** plus **Multi-Agent** for Research Pipeline. Reload after changing flags. Getting Started and Time Agent ask for the specific built-in time tool as well as its scope; listing a tool does not grant permission to call it. The wizard waits for its own DOM transitions locally—there is no `agent.browser.activeTab.waitForSelector()` API.
 
 ## Bring Your Own Chatbot Demo
 

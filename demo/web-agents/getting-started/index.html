@@ -155,7 +155,14 @@ tools.<span class="method">forEach</span>(t => console.<span class="method">log<
         <div class="step-content">
           <div class="step-title">Ask "What time is it?"</div>
           <div class="step-description">Run an AI agent that can use tools to answer</div>
-          <pre class="step-code"><span class="keyword">for await</span> (<span class="keyword">const</span> event <span class="keyword">of</span> window.<span class="property">agent</span>.<span class="method">run</span>({
+          <pre class="step-code">// First, ask permission for the discovered time tool:
+const tools = await window.agent.tools.list();
+const time = tools.find(tool =&gt; tool.name === 'time.now');
+await window.agent.requestPermissions({
+  scopes: ['mcp:tools.call'],
+  tools: [`${time.serverId}/${time.name}`]
+});
+<span class="keyword">for await</span> (<span class="keyword">const</span> event <span class="keyword">of</span> window.<span class="property">agent</span>.<span class="method">run</span>({
   <span class="property">task</span>: <span class="string">'What is the current time?'</span>,
   <span class="property">maxToolCalls</span>: <span class="number">3</span>
 })) {
@@ -248,7 +255,18 @@ console.<span class="method">log</span>(response);</pre>
           window._webAgentDemoThinking = [];
           let tokenText = '';
           
-          // Use the agent API to run with tools (matches displayed code)
+          // Listing tools doesn't grant permission to call them. Ask for the
+          // specific tool this walkthrough needs, not every connected server.
+          const tools = await window.agent.tools.list();
+          const time = tools.find(tool => tool.name === 'time.now');
+          if (!time) throw new Error('Start the built-in Time Server in Harbor, then try again.');
+          const permission = await window.agent.requestPermissions({
+            scopes: ['model:prompt', 'model:tools', 'mcp:tools.list', 'mcp:tools.call'],
+            tools: [`${time.serverId}/${time.name}`],
+            reason: 'Let the walkthrough use the current-time tool.',
+          });
+          if (!permission.granted) throw new Error('Permission denied for the time tool.');
+
           for await (const event of window.agent.run({
             task: 'What is the current time?',
             maxToolCalls: 3

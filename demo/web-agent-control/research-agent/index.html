@@ -267,7 +267,8 @@
     </footer>
   </main>
 
-  <script>
+  <script type="module">
+    import { summarizeResearch } from '../../shared/research.js';
     // DOM Elements
     const searchForm = document.getElementById('search-form');
     const searchInput = document.getElementById('search-input');
@@ -581,33 +582,15 @@ for (const url of resultUrls) {
           code: `const session = await window.ai.createTextSession({
   systemPrompt: 'You are a research assistant...'
 });
-const summary = await session.prompt(combinedContent);`,
+let summary = '';
+for await (const chunk of session.promptStreaming(combinedContent)) {
+  summary += chunk;
+}
+// Close the session in a finally block.`,
           run: async () => {
-            const session = await window.ai.createTextSession({
-              systemPrompt: `You are a research assistant that synthesizes information from multiple sources. 
-Provide a comprehensive, well-organized response that:
-1. Directly answers the query
-2. Integrates information from all sources
-3. Uses inline citations like [1], [2], [3] to reference sources
-4. Is clear and informative
-
-Format your response in clear paragraphs. Do not use markdown headers or bullet points unless necessary.`
-            });
-            
-            const sourcesText = extractedContent.map((src, i) => 
-              `[Source ${i + 1}: ${src.title}]\nURL: ${src.url}\nContent:\n${src.text}\n`
-            ).join('\n---\n');
-            
-            const prompt = `Research query: "${query}"
-
-Here are the sources:
-
-${sourcesText}
-
-Please provide a comprehensive answer to the research query, synthesizing information from these sources. Use [1], [2], [3] etc. to cite which source each piece of information comes from.`;
-            
-            const summary = await session.prompt(prompt);
-            await session.destroy();
+            // Bound the context and stream the answer rather than sending a
+            // long non-streaming request through Harbor's 30-second RPC timer.
+            const summary = await summarizeResearch(query, extractedContent);
             
             window._researchSummary = summary;
             

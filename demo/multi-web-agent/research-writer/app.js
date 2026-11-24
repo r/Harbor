@@ -66,6 +66,8 @@ function waitForWebAgent(timeoutMs = 5000) {
   });
 }
 
+import { summarizeResearch } from '../../shared/research.js';
+
 // Agent colors for arrows
 const AGENT_COLORS = {
   orchestrator: 'var(--demo-accent-primary)',
@@ -591,8 +593,7 @@ async function handleWriteInvocation(input) {
     await delay(500);
     updateStatus(statusRow, 'Writing article...');
     
-    // Use the existing write function
-    const article = await writeSimulated(topic, sources, statusRow);
+    const article = await writeWithLLM(topic, sources, statusRow);
     
     updateStatus(statusRow, '✓ Article complete!', 'success');
     setAgentActive('writer', false);
@@ -971,122 +972,10 @@ async function readPageReal(url, title, statusRow) {
  * Write article using real LLM.
  */
 async function writeWithLLM(topic, sources, statusRow) {
-  console.log('[Writer] Starting LLM generation...');
-  
-  try {
-    console.log('[Writer] Creating text session...');
-    const session = await window.ai.createTextSession();
-    console.log('[Writer] Session created:', session);
-    
-    // Keep source content shorter to speed up generation
-    const sourceText = sources.map((s, i) => 
-      `Source ${i + 1} (${s.title}):\n${s.content.slice(0, 800)}`
-    ).join('\n\n');
-    
-    const prompt = `Write a brief summary about "${topic}" based on these sources:
-
-${sourceText}
-
-Write 150-200 words that synthesizes the key points. Be concise and direct.`;
-
-    console.log('[Writer] Prompt length:', prompt.length);
-    updateStatus(statusRow, 'Generating with AI...');
-    
-    // Use regular prompt with timeout instead of streaming
-    let content = '';
-    
-    // Create a timeout promise
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('LLM timeout after 30s')), 30000);
-    });
-    
-    // Try streaming first
-    try {
-      console.log('[Writer] Starting streaming prompt...');
-      const streamPromise = (async () => {
-        for await (const chunk of session.promptStreaming(prompt)) {
-          content = chunk;
-          // Update status periodically to show progress
-          if (content.length % 100 < 20) {
-            updateStatus(statusRow, `Writing... (${content.length} chars)`);
-          }
-        }
-        return content;
-      })();
-      
-      content = await Promise.race([streamPromise, timeoutPromise]);
-      console.log('[Writer] Streaming complete, length:', content.length);
-    } catch (streamError) {
-      console.log('[Writer] Streaming failed, trying regular prompt:', streamError.message);
-      
-      // Fall back to regular prompt
-      try {
-        content = await Promise.race([
-          session.prompt(prompt),
-          timeoutPromise
-        ]);
-        console.log('[Writer] Regular prompt complete, length:', content.length);
-      } catch (promptError) {
-        console.error('[Writer] Regular prompt also failed:', promptError);
-        throw promptError;
-      }
-    }
-    
-    try {
-      await session.destroy();
-    } catch (e) {
-      console.log('[Writer] Session destroy failed:', e);
-    }
-    
-    if (!content || content.length < 50) {
-      throw new Error('LLM returned insufficient content');
-    }
-    
-    console.log('[Writer] Success! Content length:', content.length);
-    
-    return {
-      title: `${topic}: Key Insights`,
-      content,
-      sources,
-    };
-  } catch (error) {
-    console.error('[Writer] LLM error:', error);
-    updateStatus(statusRow, 'AI failed, using fallback...');
-    return writeSimulated(topic, sources, statusRow);
-  }
-}
-
-/**
- * Simulated article writing.
- */
-async function writeSimulated(topic, sources, statusRow) {
-  await delay(800);
-  updateStatus(statusRow, 'Synthesizing findings...');
-  await delay(600);
-  
-  const sourceSnippets = sources.map(s => s.content.slice(0, 200)).join(' ');
-  
-  const content = `
-Understanding ${topic} is increasingly important in today's world. This article synthesizes findings from ${sources.length} authoritative sources to provide a comprehensive overview.
-
-Research and expert analysis reveal several key insights about ${topic}. The available evidence suggests that this subject has significant implications for individuals seeking to make informed decisions.
-
-According to the sources examined, there are multiple factors to consider when approaching this topic. Recent developments have expanded our understanding, while also raising new questions for future exploration.
-
-Key takeaways from this research include:
-- The importance of evidence-based approaches
-- Multiple perspectives contribute to a fuller understanding
-- Practical applications exist across various contexts
-- Continued research is valuable for deeper insights
-
-In conclusion, ${topic} represents an area where informed understanding can lead to better outcomes. The sources consulted for this article provide a solid foundation for further exploration.
-  `.trim();
-  
-  return {
-    title: `${topic}: Research Summary`,
-    content,
-    sources,
-  };
+  const content = await summarizeResearch(topic, sources, {
+    onProgress: text => updateStatus(statusRow, `Writing... (${text.length} chars)`),
+  });
+  return { title: `${topic}: Key Insights`, content, sources };
 }
 
 // ============================================================================
@@ -1100,29 +989,32 @@ function showOutput(article, elapsedTime) {
   elements.outputWords.textContent = `${article.content.split(/\s+/).length} words`;
   elements.outputTime.textContent = `${elapsedTime.toFixed(1)}s`;
   
-  // Format content
-  const paragraphs = article.content.split('\n\n').filter(p => p.trim());
-  let html = paragraphs.map(p => {
-    if (p.startsWith('- ')) {
-      const items = p.split('\n').map(line => 
-        line.startsWith('- ') ? `<li>${line.slice(2)}</li>` : ''
-      ).join('');
-      return `<ul>${items}</ul>`;
-    }
-    return `<p>${p}</p>`;
-  }).join('');
-  
-  // Add source citations
-  html += `
-    <div class="source-citation">
-      <strong>Sources:</strong><br>
-      ${article.sources.map((s, i) => 
-        `${i + 1}. <a href="${s.url}" target="_blank">${s.title}</a>`
-      ).join('<br>')}
-    </div>
-  `;
-  
-  elements.outputBody.innerHTML = html;
+  // Model output and fetched source titles are text, never page markup.
+  elements.outputBody.replaceChildren();
+  for (const text of article.content.split('\n\n').filter(p => p.trim())) {
+    const paragraph = document.createElement('p');
+    paragraph.textContent = text;
+    elements.outputBody.appendChild(paragraph);
+  }
+  const citations = document.createElement('div');
+  citations.className = 'source-citation';
+  const label = document.createElement('strong');
+  label.textContent = 'Sources:';
+  citations.append(label, document.createElement('br'));
+  article.sources.forEach((source, index) => {
+    const link = document.createElement('a');
+    link.textContent = `${index + 1}. ${source.title}`;
+    try {
+      const url = new URL(source.url);
+      if (url.protocol === 'https:' || url.protocol === 'http:') {
+        link.href = url.href;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+      }
+    } catch { /* Keep an invalid source URL as text. */ }
+    citations.append(link, document.createElement('br'));
+  });
+  elements.outputBody.appendChild(citations);
   
   // Scroll to output
   elements.outputSection.scrollIntoView({ behavior: 'smooth' });
