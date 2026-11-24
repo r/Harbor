@@ -3,6 +3,7 @@
  */
 
 import type { TransportResponse } from '../types';
+import type { LabelFlow } from '../harbor-core';
 
 // =============================================================================
 // Request Context
@@ -62,6 +63,8 @@ export interface TextSessionState {
   options: Record<string, unknown>;
   history: Array<{ role: string; content: string }>;
   createdAt: number;
+  /** Extension-owned labels shared with this capability session, when explicit. */
+  labelFlow?: LabelFlow;
   /** Created by agent.sessions.create; Harbor's registry is the authority on it. */
   explicit?: boolean;
   /** An explicit session created with model access (`capabilities.llm`). */

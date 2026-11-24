@@ -205,3 +205,27 @@ describe('model.prompt.agent gates agent.run on the ACP backend', () => {
     expect(records.some((r) => r.effect !== 'deny' && r.consent === 'origin-grant')).toBe(true);
   });
 });
+
+describe('a session-owned flow reaches the ACP prompt boundary', () => {
+  it.each(['session.prompt', 'session.promptStreaming'] as const)('preserves label refusal for %s before any agent prompt', async (type) => {
+    await setAgentBackend();
+    await grantPrompting();
+    let promptCalls = 0;
+    registerHappyAgent(async () => { promptCalls++; return { stopReason: 'end_turn' }; });
+    const { receive, posted } = connectPort();
+    await receive({ id: 'flow-create', type: 'agent.sessions.create', payload: { capabilities: { llm: {} } } });
+    const created = posted.find(p => p.id === 'flow-create') as unknown as { ok: boolean; result: { sessionId: string } };
+    expect(created.ok).toBe(true);
+    const sessionId = created.result.sessionId;
+    const { SessionRegistry } = await import('../../sessions');
+    // Internal synthetic source label. Pages cannot supply this flow state.
+    SessionRegistry.getLabelFlow(sessionId, ORIGIN).addPageOutput('https://accounts.google.com');
+    await receive({ id: 'flow-prompt', type, payload: { sessionId, input: 'dummy input', labels: [] } });
+    const response = posted.find(p => p.id === 'flow-prompt') as unknown as { error?: { code: string }; event?: { error?: { code: string } } };
+    expect(response.error?.code ?? response.event?.error?.code).toBe('ERR_LABEL_FLOW_BLOCKED');
+    expect(promptCalls).toBe(0);
+    const { Audit } = await import('../../policy/audit');
+    expect(Audit.query({ origin: ORIGIN, action: 'model.prompt.agent' }).some(r => r.errorCode === 'ERR_LABEL_FLOW_BLOCKED')).toBe(true);
+    await receive({ id: 'flow-end', type: 'agent.sessions.terminate', payload: { sessionId } });
+  });
+});

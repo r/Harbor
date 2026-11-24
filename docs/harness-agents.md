@@ -11,11 +11,11 @@ The `harbor-` prefix keeps the names from shadowing built-in roles. These are ru
 | Native agent | Shared role | Claude model / effort | Codex model / reasoning | Pi model / thinking |
 | --- | --- | --- | --- | --- |
 | `harbor-scout` | `scout` | haiku / medium | gpt-6-luna / medium | anthropic/claude-haiku-5-5:medium |
-| `harbor-planner` | `planner` | opus / high | gpt-6.1-sol / high | anthropic/claude-opus-5-5:high |
+| `harbor-planner` | `planner` | opus / high | gpt-6.2-sol / high | anthropic/claude-opus-5-5:high |
 | `harbor-mechanical-builder` | `mechanical-builder` | sonnet / medium | gpt-5.6-terra / medium | anthropic/claude-sonnet-5-5:medium |
-| `harbor-builder` | `builder` | sonnet / high | gpt-6.1-sol / high | anthropic/claude-sonnet-5-5:high |
+| `harbor-builder` | `builder` | sonnet / high | gpt-6.2-sol / high | anthropic/claude-sonnet-5-5:high |
 | `harbor-finder` | `finder` | sonnet / medium | gpt-5.6-terra / medium | anthropic/claude-sonnet-5-5:medium |
-| `harbor-verifier` | `verifier` | opus / high | gpt-6.1-sol / high | anthropic/claude-opus-5-5:high |
+| `harbor-verifier` | `verifier` | opus / high | gpt-6.2-sol / high | anthropic/claude-opus-5-5:high |
 
 Model changes go in the adapters and in this table, not in the role bodies. Announce the role and model that actually ran. If a preset beats a requested override, say so. Don't interrupt an in-flight worker to change tiers.
 

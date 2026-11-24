@@ -142,7 +142,7 @@ async function handleSessionPromptStreaming(
       messages,
       model: session.options.model,
       temperature: session.options.temperature,
-    }, ctx.id, signal);
+    }, ctx.id, signal, session.labelFlow);
 
     let fullContent = '';
 

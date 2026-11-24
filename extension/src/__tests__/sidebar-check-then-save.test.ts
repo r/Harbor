@@ -40,8 +40,6 @@ function makeElement(): HTMLElement {
     style: {},
     dataset: {},
     children: [] as unknown[],
-    // Real selects always expose a collection, even with no selected option.
-    selectedOptions: [],
     appendChild(child: unknown) { (base.children as unknown[]).push(child); return child; },
     append(...nodes: unknown[]) { (base.children as unknown[]).push(...nodes); },
     remove() {},
@@ -72,6 +70,8 @@ function makeDocument() {
     return elementsById.get(id)!;
   }
   const doc = makeElement() as unknown as Record<string, unknown>;
+  // A real select exposes an empty collection even when no backend is selected.
+  Object.assign(getElementById('agent-backend-select'), { selectedOptions: [] });
   doc.getElementById = getElementById;
   doc.createElement = () => makeElement();
   doc.body = makeElement();

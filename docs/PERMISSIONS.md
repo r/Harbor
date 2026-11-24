@@ -25,7 +25,7 @@ Harbor's permission system is built around a different assumption: **most decisi
 
 1. A **typed, declarative policy** so the user (or their org) can decide once, in advance, what's fine — and so a tool can statically reason about what a policy will do.
 2. **Asymmetric defaults** so reading is cheap, persisting reads is opt-in, and writing is expensive.
-3. **Information-flow labels** so sensitive data can't be sent somewhere that shouldn't receive it. Today a label comes from the call itself; carrying a label from one call's output to the next call's input is designed but not built (see [Information-flow labels](#information-flow-labels)).
+3. **Information-flow labels** so sensitive data can't be sent somewhere that shouldn't receive it. A run or session carries labels from tool results into its later policy checks (see [Information-flow labels](#information-flow-labels)).
 4. A **safety net** — sensitivity gates, watchdog containment, and a non-bypassable enforcement chokepoint — that catches misbehavior automatically before a human has to react.
 
 This guide describes what Harbor does today. Where the design goes further than the code, the text says so.
@@ -137,10 +137,10 @@ The `destructive` and `identity` effects exist in the type, and rules can name t
 
 ### Grants
 
-When the engine asks, the person answers in Harbor's permission prompt, which offers **This time only** (the default) or **Always allow**, then **Allow** or **Deny**:
+When the engine asks, the person answers in Harbor's permission prompt, with a direct choice to deny, allow temporarily, or grant ongoing access:
 
-- *This time only* lasts ten minutes, in the tab that asked. Another tab on the same site is asked again.
-- *Always allow* lasts until the person revokes the site in the sidebar.
+- Temporary access lasts ten minutes. Harbor restricts it to the requesting tab when the request carries a tab ID. If concurrent requests from the same origin share a prompt, each requesting tab receives its own grant.
+- Ongoing access lasts until the person revokes the site in the sidebar.
 - *Deny* is remembered until revoked when the prompt came from `agent.requestPermissions()`. A prompt the engine raises on its own (an `ask` rule, a watchdog restriction, a page's chat) stores only a grant; denying it refuses that one call and stores nothing.
 
 Persisting a grant only after repeated trusted use, and a separate session-length grant, are designed but not built.
@@ -161,19 +161,18 @@ The label set, in order of severity:
 
 **What's built.** The engine works out a call's labels at Tier 2 from the call itself:
 
-- **A host**, through a built-in list in `sensitivity.ts`: sign-in providers (Google, Microsoft, Apple, Okta) carry `credentials` and `identity`; Stripe and PayPal carry `payments`, and bank-like names carry `payments` and `identity`; Gmail, Outlook, Slack, Notion and Google Docs carry `confidential`; patient-portal names carry `regulated` and `identity`. There's no setting to extend the list. Page browser calls record their host without classifying it (see [Page calls](#page-calls)). The one call that does classify its host, a remote A2A agent (`agent.delegate.remote`), has no page entry point, so in practice no call's host is classified today.
+- **A host**, through a built-in list in `sensitivity.ts`: sign-in providers (Google, Microsoft, Apple, Okta) carry `credentials` and `identity`; Stripe and PayPal carry `payments`, and bank-like names carry `payments` and `identity`; Gmail, Outlook, Slack, Notion and Google Docs carry `confidential`; patient-portal names carry `regulated` and `identity`. There's no setting to extend the list. Page browser calls record their host without classifying it (see [Page calls](#page-calls)). For page-owned tool results in a run or session, Harbor classifies the origin of the page that supplied the tool. A remote A2A agent call also classifies its host.
 - **A tool's manifest**, from its `riskTags` (`credentials`, `payments`, `identity`, `regulated`, `confidential` and a few synonyms), or, with no tags, from a tool name that suggests secrets or payments. No caller passes a tool manifest to the engine yet.
-- **The input's own labels**, when the caller supplies them. No caller does yet.
+- **Labels from earlier calls.** A run or session accumulates labels. Each subsequent model or tool call in that context checks the accumulated set, even if the page supplies fresh text. The labels expire with that run or session.
 
 At Tier 3, the engine compares those labels with the action's `acceptsLabels` and denies the call with `ERR_LABEL_FLOW_BLOCKED` if it carries any label the action doesn't accept. There's no "ask" outcome here. What each action accepts is fixed in `actions.ts`: `model.prompt.local` accepts every label, `browser.write.interact` accepts `credentials` and `payments` (so a page can be filled in), `model.prompt.remote.firstParty`, `model.prompt.agent` and `network.egress.same_origin` accept `confidential`, and every other action accepts none.
 
 **Not built yet.**
 
-- Carrying a label from one call's output to a later call's input, across a session or an agent run. The engine computes an output label set for each decision, but nothing passes it on.
 - Labelling page content as it's read (a password field in the page text, a `<meta name="harbor:confidential">` tag). The element classifier in `sensitivity.ts` exists but the engine doesn't call it.
 - Per-destination exceptions in the policy file, such as letting `confidential` data reach one company's API.
 
-So Tier 3 never fires today, and a site can't yet be stopped from reading a sensitive page and sending what it read somewhere else, unless a rule, a grant or the watchdog stops it. A page's calls never see `ERR_LABEL_FLOW_BLOCKED`.
+For example, a tool on a payments site can supply a result to a run. A later prompt to a remote model in that run fails because the destination does not accept the payments label. Standalone browser reads have no session identity. A separate session in the same tab starts with its own empty set.
 
 ## The policy file
 
@@ -322,11 +321,11 @@ normal
 | 20 tool calls | flagged |
 | 60 tool calls | restricted |
 | 5 cross-origin egresses (a page's own `fetch` isn't counted) | restricted (can't fire yet) |
-| 3 distinct sensitive labels (no window) | restricted (can't fire yet) |
-| 3 label-flow blocks | quarantined (can't fire yet) |
+| 3 distinct sensitive labels (no window) | restricted |
+| 3 label-flow blocks | quarantined |
 | 5 consecutive denials (no window) | quarantined |
 
-Only the tool-call and consecutive-denial triggers can fire today. The egress count takes only non-page fetches and third-party prompts, and Harbor produces neither; reads only ever carry `confidential`, so three distinct labels can't appear; and Tier 3 never denies (see [Information-flow labels](#information-flow-labels)).
+The egress count takes only non-page fetches and third-party prompts. Page-owned tool outputs can result in label-flow blocks when the next destination refuses their labels.
 
 The state only tightens: an origin never steps back down on its own. It clears when the extension restarts, since the counts live in memory. A `watchdog.resetOrigin` message exists, but nothing in Harbor sends it, and nothing shows an origin's state. The thresholds are `DEFAULT_THRESHOLDS` in `extension/src/policy/watchdog.ts`.
 
@@ -599,7 +598,6 @@ try {
       break;
     case 'ERR_LABEL_FLOW_BLOCKED':
       // The input carries a data label this action doesn't accept.
-      // Reserved: a page's calls don't carry labels yet.
       break;
     case 'ERR_BUDGET_EXCEEDED':
       // The session used up its maxToolCalls.
@@ -644,11 +642,11 @@ The person's installed MCP servers are unchanged: they need `mcp:tools.list`, `m
 
 Whether to call a tool is the agent's and the person's decision. With a verified origin on every tool, an agent or harness can enforce rules such as "money tools only from origins I approved". [rfds/provenance.md](rfds/provenance.md) proposes making that provenance a standard field in ACP.
 
-**Your agent outside the browser** reaches pages through `harbor-mcp`, a command the person adds to their agent. It's off until the person turns on "Let your agent open and use pages" in the Agent panel. The agent sees only tabs it opened (while they stay on the site they first loaded) and tabs the person shares. It can call only those pages' own tools, under the same `page:<host>` policy checks and audit, and at most 60 calls a minute per agent (120 across all agents, `open_page` included). Only the person's own user account can connect: `harbor-mcp` reaches the bridge over `~/.harbor/agent.sock` (mode 0600). See [AGENT_REACHES_TABS.md](AGENT_REACHES_TABS.md).
+**Your agent outside the browser** reaches pages through `harbor-mcp`, a command the person adds to their agent. It's off until the person turns on "Let your agent open and use pages" in Harbor's sidebar, under Settings → Your agent outside the browser. The agent sees only tabs it opened (while they stay on the site they first loaded) and tabs the person shares. It can call only those pages' own tools, under the same `page:<host>` policy checks and audit, and at most 60 calls a minute per agent (120 across all agents, `open_page` included). Only the person's own user account can connect: `harbor-mcp` reaches the bridge over `~/.harbor/agent.sock` (mode 0600). See [AGENT_REACHES_TABS.md](AGENT_REACHES_TABS.md).
 
 A declined Harbor prompt is `ERR_PERMISSION_DENIED`. Any other failure keeps the call's own code (`ERR_TOOL_FAILED`, `ERR_MODEL_FAILED`, `ERR_AGENT_FAILED`), even when a tool or model returns text that looks like one of these codes.
 
-`ERR_LABEL_FLOW_BLOCKED` can't occur on a page's call yet: Harbor doesn't attach data labels to page tool calls or prompts. Handle it anyway; it's reserved for when it does.
+A run or session can return `ERR_LABEL_FLOW_BLOCKED` when its next destination refuses the labels it carries.
 
 ### 6. Pre-action previews
 
@@ -752,7 +750,7 @@ Then have a classifier in `sensitivity.ts` add it to the `labels` of the `Sensit
 
 ## Adding a sensitivity rule
 
-The classifiers are `classifyDomain(host)`, `classifyElement(el)` and `classifyTool(manifest, manifestTrusted)` in `sensitivity.ts`. Each returns a `SensitivityVerdict`: `{ labels, confidence, reason }`. To flag more hosts, add to `DOMAIN_RULES` (though no reachable call classifies its host today; see [Information-flow labels](#information-flow-labels)); to flag more tools, extend `classifyTool`:
+The classifiers are `classifyDomain(host)`, `classifyElement(el)` and `classifyTool(manifest, manifestTrusted)` in `sensitivity.ts`. Each returns a `SensitivityVerdict`: `{ labels, confidence, reason }`. To flag more hosts, add to `DOMAIN_RULES`; to flag more tools, extend `classifyTool`:
 
 ```ts
 // extension/src/policy/sensitivity.ts, inside classifyTool
@@ -821,9 +819,9 @@ When a site asks for something you haven't decided on, Harbor opens a prompt tha
 - the site asking, and its **reason** in its own words (treat it as the site's claim, not Harbor's);
 - each capability it wants, with what it means and how risky it is;
 - for tools, which tools; for an agent, which sites it covers;
-- whether it should hold **This time only** (the default) or **Always allow**.
+- separate actions to deny the request, allow it temporarily, or let the site use the requested capabilities without asking.
 
-**Allow** with *This time only* lasts about ten minutes, in the tab that asked. *Always allow* lasts until you revoke it in **Site permissions**. **Deny** is remembered, so the site doesn't keep asking; revoke it to be asked again.
+The primary action grants ten minutes of access. Ongoing access lasts until you revoke it in **Site permissions**. **Deny** is remembered, so the site doesn't keep asking; revoke it to be asked again.
 
 ## Why did Harbor decide that?
 
@@ -833,7 +831,7 @@ Open **Activity** and click **Why?** on the row. It shows the reason, the resour
 
 A few things to check first, in order:
 
-1. **Did you deny it, or did a grant run out?** Look the site up in **Site permissions**. A *This time only* grant ends after about ten minutes; the next call asks again.
+1. **Did you deny it, or did a grant run out?** Look the site up in **Site permissions**. A temporary grant ends after about ten minutes; the next call asks again.
 2. **Is a whole capability switched off?** Check **Browser agent capabilities**.
 3. **What did the engine say?** Find the call in **Activity** and open **Why?**. It names the tier and rule that fired.
 4. **Does the session hold what the site is using?** A session only has what it asked for and you granted. Anything else fails with `ERR_PERMISSION_DENIED`. **Agent sessions** shows what each session can do.
@@ -860,7 +858,7 @@ The engine in Parts 1–3 supports more than the sidebar shows. These are design
 - **Editing your own policy.** The engine reads a user policy (`harbor_policy_v2` in the extension's local storage) below any managed policy, but nothing in Harbor writes it: there is no editor, import, export, or preset (Conservative, Balanced, Permissive and so on).
 - **Rules from a prompt or from Activity.** No "Always allow if it matches a rule…" in the prompt, no "Make this automatic" or "Always deny" in Activity, and no promoting a site's grant to a global rule.
 - **Destination-aware and sensitive-action prompts.** Egress and sensitive actions go through the same permission prompt above, without the dedicated layouts the design describes.
-- **Session-length grants.** The prompt offers *This time only* and *Always allow*; there is no *Allow for this session*, and it doesn't offer to pin a grant after a few uses.
+- **Session-length grants.** The prompt offers temporary and ongoing access; there is no *Allow for this session*, and it doesn't offer to pin a grant after a few uses.
 - **Sensitive domains, budgets, containment badges, Pause, and a toolbar icon that shows state.**
 
 ---
@@ -905,11 +903,11 @@ Because they're not the same thing, even though v1 treated them as one. A local 
 
 **Q: Why doesn't the prompt default to "Always allow"?**
 
-Because reads can feed exfiltration. Reading a tab is harmless on its own; reading a tab and then sending the contents to a remote LLM is exfiltration. The prompt defaults to *This time only*, which lasts about ten minutes in that tab; you choose *Always allow* yourself.
+Because reads can feed exfiltration. Reading a tab is harmless on its own; reading a tab and then sending the contents to a remote LLM is exfiltration. The primary allow button grants ten minutes of access. The separate action beneath it grants ongoing access.
 
 **Q: Why isn't there a single "Auto-approve everything safe" toggle?**
 
-Because "safe" depends on what your trusted infrastructure looks like. The design answers this with policy presets (a Permissive one among them), but those aren't built yet; see [Not built yet](#not-built-yet). Today, *Always allow* on a site you trust is the closest thing.
+Because "safe" depends on what your trusted infrastructure looks like. The design answers this with policy presets (a Permissive one among them), but those aren't built yet; see [Not built yet](#not-built-yet). Today, granting ongoing access to a site you trust is the closest thing.
 
 **Q: Can a malicious site spoof a `reason` or a manifest to look harmless?**
 
@@ -919,7 +917,7 @@ The `reason` string is always site-supplied, so trust the structural information
 
 The PolicyEngine is the structural defense: even if the agent is convinced by injected instructions to do something dangerous, the engine evaluates the action against your policy and the SensitivityEngine and the data-label flow tracker, all of which are blind to the agent's reasoning. Sensitive actions still confirm; deny rules still deny; tainted data still can't reach a remote model without your consent. None of this prevents the agent from being misled, but it bounds what a misled agent can do.
 
-One limit applies to requests from web pages. The engine gates their calls to the model and to tools, but those calls don't carry data labels yet, so the label check described above doesn't cover them. See [Against Prompt Injection](../spec/security-privacy.md#against-prompt-injection) for what limits a page's session today and what is planned.
+One limit applies to requests from web pages. Label tracking covers calls linked by a run or session. A page can also make standalone calls, and Harbor does not track data copied between independent contexts. See [Against Prompt Injection](../spec/security-privacy.md#against-prompt-injection) for what limits a page's session today and what is planned.
 
 **Q: Can my organization centrally manage this?**
 

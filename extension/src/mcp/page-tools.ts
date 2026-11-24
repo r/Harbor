@@ -18,6 +18,8 @@
  * See docs/PAGE_TOOLS_FOR_AGENTS.md.
  */
 
+import type { LabelFlow } from '../policy/label-flow';
+
 export const PAGE_TOOL_LIMITS = Object.freeze({
   maxTools: 64,
   maxDescriptionBytes: 4 * 1024,
@@ -49,6 +51,7 @@ export interface PageConnection {
 }
 
 interface PendingCall {
+  labelFlow?: LabelFlow;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -192,6 +195,7 @@ export function forgetPageToolsInTab(tabId: number): void {
 }
 
 export interface PageToolCall {
+  labelFlow?: LabelFlow;
   tabId: number;
   origin: string;
   /** The generation the caller listed the tools under. */
@@ -238,7 +242,7 @@ export function callPageTool(call: PageToolCall): Promise<unknown> {
       clearTimeout(timer);
       call.signal?.removeEventListener('abort', onAbort);
     };
-    entry.pending.set(callId, { resolve, reject, timer, cleanup });
+    entry.pending.set(callId, { resolve, reject, timer, cleanup, labelFlow: call.labelFlow });
     call.signal?.addEventListener('abort', onAbort, { once: true });
     try {
       entry.port.postMessage({ type: 'page_tools.call', callId, name: call.name, input: call.input });
@@ -262,6 +266,8 @@ export function resolvePageToolResult(tabId: number, connection: number, message
   if (!call) return false;
   entry.pending.delete(message.callId);
   call.cleanup();
+  // Both a result and an error message can carry content from this page.
+  call.labelFlow?.addPageOutput(entry.origin);
   if (message.ok === true) {
     let size: number;
     try {

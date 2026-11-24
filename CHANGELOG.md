@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The demo directory and examples use Harbor’s public-site typography and green palette, with layouts for phones and system light and dark themes.
 
+- The page-tools demo no longer has its own Ask and Open chat buttons. You ask your own agent to open the page, or share the tab with it, and it uses the page's tools. When "Let your agent open and use pages" is off, the message your agent gets now names that setting and where it is in Harbor's sidebar.
+
+- The permission request and agent question popups use Harbor’s site typography, colors and buttons in both system themes. The permission prompt highlights the site’s stated reason and offers separate actions to deny, allow temporarily, or grant ongoing access.
+
+- Agent runs and sessions carry sensitivity labels from site tools into later calls. Harbor checks the destination before sending data to a model or tool. Separate sessions in the same tab keep independent labels.
+
 - Every tool a site offers your agent, from its page or its MCP server, now reaches the agent with an origin the site can't forge. The description is prefixed "From <host>:", and the tool and its results carry `harbor/provenance` metadata with the site's origin. A site can't make its tools look like another site's. See "Tool spoofing" in docs/PERMISSIONS.md, and a draft proposal to make this a standard ACP field in docs/rfds/provenance.md.
 
 - A site's registered MCP server tools now get the same gate as its page tools, on both Harbor's own model and your agent: no `mcp:tools.list`/`mcp:tools.call` grant and no per-tool allowlist (those would also open your own MCP servers), and a policy check on every server and call. On your ACP agent, they go through Harbor, so each call is checked, counted against the run's budget and audited; your agent no longer gets the server's URL, so WebSocket servers work too. A site's chat on your agent now gets them as well.
@@ -60,9 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-step Form waits for its own delayed panels instead of calling a browser API that does not exist.
 - Research Agent streams a bounded source summary instead of timing out on a long non-streaming request. Research Pipeline now uses the configured model rather than always displaying a simulated article; both demos close sessions on success, error and timeout.
 - Research Pipeline renders model responses and source titles as text, with only HTTP(S) source links, rather than interpreting them as HTML.
-- The sidebar Check-then-Save test models a select's `selectedOptions` collection, removing an unhandled test-fixture rejection. The Firefox E2E packages now use matching Playwright 1.65.1 versions and its current Firefox build.
+- The Firefox E2E packages now use matching Playwright 1.65.1 versions and its current Firefox build.
 
 - The Page Summarizer and its Chrome-compatible variant link to the published Web Agent API specification from the demo and bookmarklet.
+
+- Tabs opened through the page API preserve the caller’s Firefox container and private-browsing state.
 
 - `docs/PERMISSIONS.md` Parts 1–3 (how it works, for site authors, for extension contributors) described much that isn't built as if it were. It now matches the code: data labels come from the call itself, aren't carried from one call to the next, and in practice never block a call; the irreversible-write preview is answered by a page's grant; explicit policy rules don't always lose to deny shorthands; only two watchdog triggers can fire, and nothing resets the watchdog but a restart; the element classifier and a trusted manifest's reversibility claim aren't wired into the engine; the policy file's real rule fields and short forms; `requestCapabilities()`'s real options and which actions it turns into capabilities; `agent.tools.call()`'s single-object form; the test mock's real controls; and the contributor walkthroughs' real files and functions (`trustManifest`, `Publishers`, `Pins`, `SensitivityVerdict`). What's designed but not built is marked as such.
 - A policy refusal while creating a session (`agent.sessions.create()` or `agent.requestCapabilities()`: a deny rule, a quarantined site, a declined prompt) reached the page as `ERR_INTERNAL`. It now keeps the policy engine's code (`ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`, `ERR_PERMISSION_DENIED`), as other page calls already did.

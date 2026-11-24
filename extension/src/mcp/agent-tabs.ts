@@ -28,7 +28,7 @@ export const AGENT_TABS_LIMITS = Object.freeze({
 });
 
 const SETTING_OFF_MESSAGE =
-  "Turn on 'Agents outside the browser' in Harbor's Agent panel to let your agent open and use pages.";
+  "Harbor hasn't allowed this yet. Ask the person to turn on 'Let your agent open and use pages' in Harbor's sidebar, under Settings > Your agent outside the browser.";
 
 export interface AgentTabsRequest {
   agentId: unknown;
@@ -43,7 +43,7 @@ interface PageToolListing {
 }
 
 export interface AgentTabsDeps {
-  /** Whether "Agents outside the browser" is on. */
+  /** Whether "Let your agent open and use pages" is on. */
   isEnabled(): Promise<boolean>;
   /** Open `url` in a new, focused tab; resolves to its tab id. */
   createTab(url: string): Promise<number>;

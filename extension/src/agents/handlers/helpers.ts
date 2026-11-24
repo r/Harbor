@@ -12,6 +12,7 @@ import type { ApiErrorCode, PermissionScope } from '../types';
 import type { RequestContext, ResponseSender } from './router-types';
 import { evaluate, type PolicyResource, type PolicyDecision } from '../../policy/engine';
 import type { TypedAction } from '../../policy/actions';
+import type { LabelFlow } from '../../policy/label-flow';
 import type { LabelSet } from '../../policy/labels';
 import { showPermissionPrompt } from '../../policy/permissions';
 import { grantPermissions } from '../../policy/permissions';
@@ -34,6 +35,8 @@ export interface RequireActionOptions {
   resource?: PolicyResource;
   /** Labels carried on the input (from prior reads). */
   inputLabels?: LabelSet;
+  /** In-process context owned by the run or session. */
+  labelFlow?: LabelFlow;
   /**
    * If the engine returns `ask` or `preview`, fall back to the legacy
    * prompt with this scope. When omitted, we derive a default from the
@@ -112,7 +115,9 @@ export async function checkAction(
     origin: ctx.origin,
     action,
     resource: options.resource,
-    inputLabels: options.inputLabels,
+    inputLabels: options.inputLabels && options.labelFlow
+      ? options.inputLabels.union(options.labelFlow.labels)
+      : options.labelFlow?.labels ?? options.inputLabels,
     reason: options.reason,
     correlationId: ctx.id,
     tabId: ctx.tabId,
@@ -140,7 +145,11 @@ export async function checkAction(
   // The caller may have stopped waiting while the check ran (a prompt can
   // stay open longer than a page's request timeout). Such a call isn't
   // performed, even if the person then allowed it.
-  const proceed = (): ActionDenial | null => (ctx.signal?.aborted ? ABANDONED : null);
+  const proceed = (): ActionDenial | null => {
+    if (ctx.signal?.aborted) return ABANDONED;
+    options.labelFlow?.add(decision.outputLabels);
+    return null;
+  };
 
   if (decision.effect === 'allow') return proceed();
 

@@ -7,7 +7,8 @@
 // "The site's own tools").
 //
 // Drives the real extension in a fresh Firefox profile against the
-// existing demo/web-agents/page-tools/ page (unmodified) for the task UI,
+// existing demo/web-agents/page-tools/ page (agent.run() started in it with
+// START_RUN, since the page has no Ask button),
 // and the real Acme Shop MCP server in
 // demo/web-agents/bring-your-chatbot/mcp-server/http-server.js for the
 // site's tools — the MCP SDK ships that server, per docs/agent-workflow.md's
@@ -41,6 +42,25 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launchFirefox } from '../../scripts/firefox-runner.mjs';
+
+// Starts agent.run() in the demo page with window.__e2eTask, logging to #log.
+const START_RUN = `(() => {
+      const log = document.getElementById('log');
+      const say = (line) => { log.textContent += '\\n' + line; };
+      log.textContent = 'Asking your agent...';
+      (async () => {
+        try {
+          const p = await window.agent.requestPermissions({ scopes: ['model:prompt', 'model:tools'], reason: 'e2e: start a run on this page' });
+          if (!p.granted) throw new Error('Permission denied');
+          for await (const event of window.agent.run({ task: window.__e2eTask, maxToolCalls: 6 })) {
+            if (event.type === 'tool_call') say('agent called ' + event.tool);
+            if (event.type === 'final') say('\\n' + event.output);
+            if (event.type === 'error') say('error: ' + (event.error && event.error.message));
+          }
+        } catch (e) { say('error: ' + e.message); }
+      })();
+      return true;
+    })()`;
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -289,14 +309,16 @@ try {
   console.log('PASS: window.agent.mcp.register registered the Acme Shop server and its tools: ' + JSON.stringify(registerResult.result.tools));
 
   // --- Run a task that needs the site's own search_products tool, through
-  // the demo page's own agent.run() button (its ensurePermission() requests
-  // only model:prompt/model:tools - still no mcp:tools.* grant anywhere in
-  // this test).
+  // agent.run() started in the demo page (START_RUN requests only
+  // model:prompt/model:tools - still no mcp:tools.* grant anywhere in this
+  // test).
   async function setTask(task) {
-    await dval(`document.getElementById('task').value = ${JSON.stringify(task)}; true`);
+    await dval(`window.__e2eTask = ${JSON.stringify(task)}; true`);
   }
   async function clickRun() {
-    await dval('document.getElementById("run").click(); true');
+    // The demo has no Ask button (people ask their own agent), so the test
+    // starts agent.run() from the page itself, as a site's own code would.
+    await dval(START_RUN);
   }
   async function waitForSettledLog(timeoutMs = 120_000) {
     const expires = Date.now() + timeoutMs;

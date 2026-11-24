@@ -32,6 +32,7 @@ beforeEach(() => {
   mocks.hasPermission.mockResolvedValue(true);
   mocks.getFeatureFlags.mockResolvedValue({ browserControl: true });
   vi.stubGlobal('chrome', {
+    runtime: { getURL: () => 'chrome-extension://harbor/' },
     storage: { local: { set: vi.fn(async () => {}), get: vi.fn(async () => ({})) } },
     tabs: {
       create: vi.fn(async ({ url }: { url: string }) => {
@@ -39,7 +40,7 @@ beforeEach(() => {
         tabUrls.set(id, url);
         return { id, url, status: 'complete', active: false, index: 0, windowId: 1, title: '' };
       }),
-      get: vi.fn(async (id: number) => ({ id, url: tabUrls.get(id), status: 'complete' })),
+      get: vi.fn(async (id: number) => ({ id, incognito: false, windowId: 1, url: tabUrls.get(id), status: 'complete' })),
       query: vi.fn(async () => [...tabUrls].map(([id, url]) => ({ id, url }))),
       onUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
     },
@@ -57,7 +58,7 @@ function runInjected(fn: (...a: unknown[]) => unknown, args: unknown[], origin: 
 }
 
 function ctx(type: string, payload: unknown) {
-  return { id: 'r1', type, payload, origin: CALLER };
+  return { id: 'r1', type, payload, origin: CALLER, tabId: 3 };
 }
 
 describe('spawned tab reads are limited to the caller origin', () => {

@@ -117,7 +117,7 @@ function renderToolCall(toolCall: AgentQuestionToolCall): void {
 
 /** Allow-flavoured options are styled distinctly from reject-flavoured ones; anything else (an agent-defined kind this page doesn't know) renders as a reject-styled, i.e. non-default, button. */
 function buttonClass(kind: string): string {
-  return kind.startsWith('allow') ? 'btn-allow' : 'btn-reject';
+  return kind.startsWith('allow') ? 'btn-primary' : 'btn-secondary';
 }
 
 function renderOptions(options: AgentQuestionOption[]): void {

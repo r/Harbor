@@ -59,10 +59,23 @@ const scopes = scopesParam.split(',').filter(Boolean) as PermissionScope[];
 const tools = toolsParam.split(',').filter(Boolean);
 const agentOrigins = agentOriginsParam.split(',').filter(Boolean);
 
-// Render origin
-const originEl = document.getElementById('origin');
-if (originEl) {
-  originEl.textContent = origin;
+// Origins come from the requesting tab. Keep the scheme visible for non-HTTPS sites.
+const site = origin.replace(/^https:\/\//, '');
+const agentOnly = Boolean(agentName) && scopes.length > 0 &&
+  scopes.every((scope) => scope === 'model:prompt' || scope === 'model:tools');
+
+const heading = document.getElementById('heading');
+if (heading) {
+  heading.textContent = agentOnly
+    ? `Let ${site} send requests to ${agentName}?`
+    : `Allow the permissions requested by ${site}?`;
+}
+
+const btnAlways = document.getElementById('btn-always');
+if (btnAlways) {
+  btnAlways.textContent = agentOnly
+    ? `Allow ${site} to use ${agentName} without asking`
+    : `Allow these permissions for ${site} without asking`;
 }
 
 // Render session context (for explicit sessions)
@@ -81,7 +94,7 @@ if (sessionName || sessionType === 'explicit') {
       badges.push('<span class="session-badge explicit">Explicit Session</span>');
     }
     if (requestedLLM) {
-      badges.push('<span class="session-badge llm">LLM</span>');
+      badges.push('<span class="session-badge llm">Model access</span>');
     }
     if (parseInt(requestedTools, 10) > 0) {
       badges.push(`<span class="session-badge tools">${escapeHtml(requestedTools)} Tools</span>`);
@@ -101,15 +114,28 @@ if (sessionName || sessionType === 'explicit') {
 if (reason) {
   const reasonContainer = document.getElementById('reason-container');
   const reasonEl = document.getElementById('reason');
-  if (reasonContainer && reasonEl) {
-    reasonContainer.style.display = 'block';
+  const reasonLabel = document.getElementById('reason-label');
+  if (reasonContainer && reasonEl && reasonLabel) {
+    reasonContainer.hidden = false;
+    reasonLabel.textContent = `Stated reason from ${site}`;
     reasonEl.textContent = reason;
   }
 }
 
 // Render scopes
 const scopesList = document.getElementById('scopes-list');
-if (scopesList) {
+if (agentOnly) {
+  const warning = document.getElementById('agent-warning');
+  if (warning) {
+    warning.hidden = false;
+    warning.textContent = reason
+      ? `${site} can also ask ${agentName} to do other things using its tools and what it remembers about you.`
+      : `${agentName} can act on this site's requests using its tools and what it remembers about you.`;
+  }
+  const scopesHeading = document.getElementById('scopes-heading');
+  if (scopesHeading) scopesHeading.hidden = true;
+  if (scopesList) scopesList.hidden = true;
+} else if (scopesList) {
   if (scopes.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'scopes-empty';
@@ -185,12 +211,12 @@ btnDeny?.addEventListener('click', () => {
   sendResponse({ granted: false, explicitDeny: true, backendTag });
 });
 
-// Handle allow button
+// Each button maps directly to the grant named on it.
 const btnAllow = document.getElementById('btn-grant');
-btnAllow?.addEventListener('click', () => {
-  const grantOnce = (document.getElementById('grant-once') as HTMLInputElement)?.checked;
-  const grantType = grantOnce ? 'granted-once' : 'granted-always';
+btnAllow?.addEventListener('click', () => allow('granted-once'));
+btnAlways?.addEventListener('click', () => allow('granted-always'));
 
+function allow(grantType: 'granted-once' | 'granted-always'): void {
   // Collect selected tools
   const selectedTools: string[] = [];
   const toolCheckboxes = document.querySelectorAll<HTMLInputElement>('#tools-list input[type="checkbox"]');
@@ -209,7 +235,7 @@ btnAllow?.addEventListener('click', () => {
     // Exactly the sites shown above; Harbor grants no site this page didn't show.
     agentOrigins: agentOrigins.length > 0 ? agentOrigins : undefined,
   });
-});
+}
 
 // Send response to background script
 function sendResponse(response: {

@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({ hasPermission: vi.fn() }));
 vi.mock('../handlers/permission-handlers', async (importOriginal) => ({
   ...(await importOriginal<object>()), hasPermission: mocks.hasPermission,
 }));
-vi.mock('../harbor-core', () => ({
+vi.mock('../harbor-core', async () => {
+  const { LabelFlow } = await import('../../policy/label-flow');
+  return ({
+  createLabelFlow: () => new LabelFlow(),
   describedBySite: (_origin: string, d?: string) => d,
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
@@ -23,7 +26,8 @@ vi.mock('../harbor-core', () => ({
     ? { tools: [] } : { content: 'ok' }),
   harborStreamRequest: vi.fn(),
   checkPageAction: vi.fn(async () => null),
-}));
+  });
+});
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getFeatureFlags: async () => ({
@@ -54,12 +58,14 @@ beforeEach(() => {
   vi.stubGlobal('chrome', {
     storage: { local: { set: vi.fn(async () => {}), get: vi.fn(async () => ({})) } },
     tabs: {
+      get: vi.fn(async () => ({ windowId: 1, incognito: false })),
       create: vi.fn(async ({ url }: { url: string }) => ({ id: 7, url, status: 'complete' })),
       onUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
       onRemoved: { addListener: vi.fn() },
     },
     windows: { onRemoved: { addListener: vi.fn() } },
     runtime: {
+      getURL: () => 'chrome-extension://harbor/',
       onConnect: { addListener: vi.fn() },
       onMessage: { addListener: vi.fn() },
       onMessageExternal: { addListener: vi.fn() },

@@ -45,13 +45,13 @@ const isError = (r: unknown) => (r as { isError?: boolean }).isError === true;
 const pageOf = (r: unknown) => (r as { structuredContent: { page: string } }).structuredContent.page;
 
 describe('the setting', () => {
-  it('refuses every op while "Agents outside the browser" is off', async () => {
+  it('refuses every op while "Let your agent open and use pages" is off, naming the setting as the sidebar does', async () => {
     const h = harness();
     h.setEnabled(false);
     for (const op of ['open_page', 'list_pages', 'list_page_tools', 'call_page_tool']) {
       const r = await h.request(op, { url: 'https://tale.example/', page: 'x', tool: 'y', input: {} });
       expect(isError(r)).toBe(true);
-      expect(text(r)).toMatch(/Agents outside the browser/);
+      expect(text(r)).toMatch(/Let your agent open and use pages.*Settings.*Your agent outside the browser/);
     }
     expect(h.deps.createTab).not.toHaveBeenCalled();
   });

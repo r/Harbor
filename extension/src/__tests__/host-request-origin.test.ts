@@ -86,6 +86,6 @@ describe('the bridge relaying an outside agent (agent_tabs.request)', () => {
   it('answers from the bridge relay, and every op is refused while the setting is off (the default)', async () => {
     const result = await handleHostRequest(req({ origin: 'harbor-bridge-agent-tabs' })) as { isError?: boolean; content: Array<{ text: string }> };
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/Agents outside the browser/);
+    expect(result.content[0].text).toMatch(/Let your agent open and use pages.*Settings.*Your agent outside the browser/);
   });
 });
