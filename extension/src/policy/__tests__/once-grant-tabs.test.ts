@@ -50,8 +50,11 @@ it("each tab's Allow once runs out on its own clock", async () => {
   await permissions.grantPermissions(SITE, ['agents:invoke'], 'granted-once', 3);
   vi.setSystemTime(START + 5 * MINUTE);
   await permissions.grantPermissions(SITE, ['agents:invoke'], 'granted-once', 4);
-  vi.setSystemTime(START + 11 * MINUTE);
 
+  // Tab 3's ten minutes include their last moment, and end just after it.
+  vi.setSystemTime(START + 10 * MINUTE);
+  expect(await allowedIn(3)).toEqual([true, true]);
+  vi.setSystemTime(START + 10 * MINUTE + 1);
   expect(await allowedIn(3)).toEqual([false, false]);
   expect(await allowedIn(4)).toEqual([true, true]);
 });
