@@ -10,7 +10,7 @@ vi.mock('../harbor-core', () => ({
   siteToolsForAgent: vi.fn(async () => []),
   openPageToolEndpointForAcp: vi.fn(async () => null), closePageToolEndpoint: vi.fn(async () => {}),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
-  pageToolsForAgent: vi.fn(async () => null), harborRequest: (...args: unknown[]) => harborRequest(...args) }));
+  pageToolsForAgent: vi.fn(async () => null), invocationTimeoutMs: (t?: number) => t ?? 30_000, harborRequest: (...args: unknown[]) => harborRequest(...args) }));
 
 import { handleAgentsRegister, handleAgentsInvoke, handleAgentsSend } from '../handlers/agent-handlers';
 import type { RequestContext } from '../handlers/types';

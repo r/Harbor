@@ -443,12 +443,19 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
  * types above (the `abort` message below), which discards this call's own
  * answer rather than letting a late one still land after the page stopped
  * caring (policy/permissions.ts's `showPermissionPrompt`).
+ *
+ * `agent.agents.invoke` waits on another agent's answer for the
+ * invocation's own `timeout`, which the background caps at 5 minutes
+ * (multi-agent/messaging.ts's MAX_INVOCATION_TIMEOUT_MS) and answers with
+ * ERR_TIMEOUT itself. This leaves a margin past that cap, so it's only a
+ * backstop.
  */
 const REQUEST_TIMEOUT_MS: Record<string, number> = {
   'ai.createTextSession': 2 * 60 * 1000,
   'ai.languageModel.create': 2 * 60 * 1000,
   'session.prompt': 10 * 60 * 1000 + 30 * 1000,
   'agent.requestPermissions': 5 * 60 * 1000,
+  'agent.agents.invoke': 5 * 60 * 1000 + 30 * 1000,
 };
 
 function sendRequest<T>(type: string, payload?: unknown): Promise<T> {

@@ -339,7 +339,13 @@ export async function handleAgentsInvoke(ctx: RequestContext): HandlerResponse {
       origin: ctx.origin,
       tabId: ctx.tabId,
       traceId,
-    }, { signal: ctx.signal });
+    }, {
+      signal: ctx.signal,
+      // The invocation answers ERR_TIMEOUT itself when its own timeout runs
+      // out; this page-call limit is a backstop a little past that, not
+      // harborRequest's 30-second default, which would cut it short.
+      timeoutMs: invocationTimeoutMs(request.timeout) + 10_000,
+    });
 
     return successResponse(ctx.id, result);
   } catch (e) {
