@@ -204,6 +204,53 @@ printf '%s' '{"id":"apple-test","object":"chat.completion","created":0,"model":"
     }
 
     #[tokio::test]
+    async fn tool_schemas_reach_the_helper_in_a_form_apple_can_read() {
+        let fixture = HelperFixture::new(
+            r#"
+cat > "$0.request"
+printf '%s' '{"id":"apple-test","object":"chat.completion","created":0,"model":"apple:system","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}'
+"#,
+        );
+        // tale.fyi's `mark` page tool, as the page registers it.
+        let mark = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "anchor": { "type": "string", "description": "A section or paragraph anchor id from this book." },
+                "note": { "type": ["string", "null"], "maxLength": 4000, "description": "Markdown, stored and shared verbatim if set." },
+                "dueDate": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+                "label": { "type": ["string", "null"], "maxLength": 200 }
+            },
+            "required": ["anchor"],
+            "additionalProperties": false
+        });
+        let request: CompletionRequest = serde_json::from_value(serde_json::json!({
+            "model": MODEL_ID,
+            "messages": [{ "role": "user", "content": "Mark this paragraph." }],
+            "tools": [{ "type": "function", "function": { "name": "page:tale.fyi/mark", "parameters": mark } }]
+        }))
+        .unwrap();
+        complete_with_helper(&fixture.0, request).await.unwrap();
+        let input: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(fixture.0.with_extension("request")).unwrap())
+                .unwrap();
+        let sent = &input["tools"][0]["function"]["parameters"];
+        assert_eq!(
+            sent["properties"]["note"],
+            serde_json::json!({
+                "description": "Markdown, stored and shared verbatim if set.",
+                "anyOf": [{ "type": "string", "maxLength": 4000 }, { "type": "null" }]
+            })
+        );
+        assert_eq!(
+            sent["properties"]["dueDate"],
+            serde_json::json!({ "anyOf": [{ "type": "string" }, { "type": "null" }] })
+        );
+        assert_eq!(sent["properties"]["anchor"]["type"], "string");
+        assert_eq!(sent["required"], serde_json::json!(["anchor"]));
+        assert_eq!(sent["additionalProperties"], false);
+    }
+
+    #[tokio::test]
     async fn helper_errors_and_invalid_completions_propagate() {
         let request = CompletionRequest {
             model: MODEL_ID.to_string(),
