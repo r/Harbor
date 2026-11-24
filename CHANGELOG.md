@@ -63,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `agents.invoke` no longer leaves the caller waiting on a page that's gone. If the agent's tab closes, or its page navigates or reloads, a pending invocation fails at once with `ERR_AGENT_NOT_FOUND`, instead of running out its timeout. An invocation's `timeout` is capped at 5 minutes. Unregistering an agent now drops its handlers and subscriptions, which used to stay behind.
 - The generated test harness's mock answered an agent whose invoke handler throws with `ERR_INVOCATION_FAILED`. Harbor answers `ERR_HANDLER_FAILED`, and the mock now does too. Its agent answers also carry `provenance`, as Harbor's do.
 - The invoice widget inherits the page's color scheme inside its shadow DOM instead of staying light in dark mode.
 - Page Tools wraps its inline API example on narrow screens instead of overflowing the viewport.

@@ -977,7 +977,11 @@ if (response.success) {
 } else {
   console.error('Failed:', response.error);
 }
+```
 
+`timeout` defaults to 30 seconds and is capped at 5 minutes. If the agent's page closes, navigates or reloads before it answers, the invocation fails at once with `ERR_AGENT_NOT_FOUND`.
+
+```javascript
 // Send a message (fire and forget)
 const { delivered } = await window.agent.agents.send('agent-id', {
   type: 'notification',

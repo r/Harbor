@@ -18,6 +18,7 @@ import { gatePageAction, routeExtensionApiMessage, streamLlmChat } from '../exte
 import type { TypedAction } from '../policy/actions';
 import { routeAgentMessage } from '../agents/background-router';
 import { forgetTabAgents } from '../agents/handlers/multi-agent';
+export { invocationTimeoutMs } from '../multi-agent/messaging';
 import { callSiteTool, forgetTabServers, forgetTabServersIfOriginChanged, isSiteServerId, listSiteTools, type SiteMcpServerDescriptor } from '../mcp/site-servers';
 // The page's own tools (document.modelContext), relayed to its port: see
 // docs/PAGE_TOOLS_FOR_AGENTS.md.

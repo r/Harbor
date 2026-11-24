@@ -44,6 +44,23 @@ interface PendingInvocation {
 }
 const pendingInvocations = new Map<string, PendingInvocation>();
 
+/** An invocation's wait when the caller doesn't say. */
+export const DEFAULT_INVOCATION_TIMEOUT_MS = 30_000;
+/** The longest an invocation may wait, whatever the caller asks for. */
+export const MAX_INVOCATION_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * How long an invocation waits for its handler: the caller's timeout, capped
+ * at MAX_INVOCATION_TIMEOUT_MS, or the default when it gives none (or
+ * something that isn't a positive number).
+ */
+export function invocationTimeoutMs(requested?: unknown): number {
+  if (typeof requested !== 'number' || !Number.isFinite(requested) || requested <= 0) {
+    return DEFAULT_INVOCATION_TIMEOUT_MS;
+  }
+  return Math.min(requested, MAX_INVOCATION_TIMEOUT_MS);
+}
+
 // Message ID counter
 let messageIdCounter = 0;
 
@@ -230,14 +247,14 @@ export async function invokeAgent(
   recordInvocationMade(fromAgentId);
   recordInvocationReceived(request.agentId);
 
-  // Execute with timeout
-  const timeout = request.timeout || 30000;
-  
+  const timeout = invocationTimeoutMs(request.timeout);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
   try {
     const result = await Promise.race([
-      handler(request, fromAgentId, trace),
+      handler({ ...request, timeout }, fromAgentId, trace),
       new Promise<AgentInvocationResponse>((_, reject) => {
-        setTimeout(() => reject(new Error('Invocation timeout')), timeout);
+        timer = setTimeout(() => reject(new Error('Invocation timeout')), timeout);
       }),
     ]);
     console.log(`[TRACE ${trace}] Handler returned, success: ${result.success}`);
@@ -256,6 +273,8 @@ export async function invokeAgent(
       },
       executionTime: Date.now() - startTime,
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

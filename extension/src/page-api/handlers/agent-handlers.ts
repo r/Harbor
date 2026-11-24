@@ -4,7 +4,7 @@
  * Handles agent registration, discovery, invocation, and orchestration.
  */
 
-import { harborRequest } from '../harbor-core';
+import { harborRequest, invocationTimeoutMs } from '../harbor-core';
 import type { AgentListEntry } from '../types';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
@@ -47,6 +47,8 @@ const pendingInvocations = new Map<string, {
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
   tabId: number;
+  /** When the invocation was sent to the tab's page. */
+  sentAt: number;
 }>();
 
 // Track tabs that have invocation handlers set up (agentId -> tabId)
@@ -96,7 +98,7 @@ export async function handleIncomingInvocation(
   }
   
   const invocationId = `inv-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const timeout = request.timeout || 30000;
+  const timeout = invocationTimeoutMs(request.timeout);
   
   return new Promise((resolve) => {
     const timeoutId = setTimeout(() => {
@@ -117,6 +119,7 @@ export async function handleIncomingInvocation(
       },
       timeout: timeoutId,
       tabId: tabId!,
+      sentAt: Date.now(),
     });
     
     chrome.tabs.sendMessage(tabId!, {
@@ -162,6 +165,24 @@ export function resolveInvocationResponse(
   }
   pending.resolve(response);
   return true;
+}
+
+/**
+ * The page in a tab has gone (it closed, navigated or reloaded): fail every
+ * invocation still waiting on it, since it can no longer answer. The caller
+ * hears straight away instead of waiting out the timeout.
+ *
+ * `sentBefore` spares invocations sent to a newer page in the tab, when the
+ * old page's disconnect arrives after the new page has started.
+ */
+export function failInvocationsForTab(tabId: number, sentBefore = Infinity): void {
+  for (const pending of [...pendingInvocations.values()]) {
+    if (pending.tabId !== tabId || pending.sentAt >= sentBefore) continue;
+    pending.resolve({
+      success: false,
+      error: { code: 'ERR_AGENT_NOT_FOUND', message: "The agent's page is gone" },
+    });
+  }
 }
 
 // =============================================================================
@@ -240,6 +261,7 @@ export async function handleAgentsUnregister(ctx: RequestContext): HandlerRespon
   try {
     await harborRequest('agents.unregister', { agentId, origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
     registeredAgents.delete(agentId);
+    agentInvocationTabs.delete(agentId);
     return successResponse(ctx.id, null);
   } catch (e) {
     return harborFailure(ctx.id, e, 'Unregistration failed');
@@ -506,9 +528,11 @@ export async function handleAgentsRoute(ctx: RequestContext): HandlerResponse {
 // =============================================================================
 
 export function cleanupAgentsForTab(tabId: number): void {
+  failInvocationsForTab(tabId);
   for (const [agentId, agent] of registeredAgents.entries()) {
     if (agent.tabId === tabId) {
       registeredAgents.delete(agentId);
+      agentInvocationTabs.delete(agentId);
       harborRequest('agents.unregister', { agentId, origin: agent.origin }).catch(() => {});
     }
   }

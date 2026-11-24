@@ -59,6 +59,7 @@ import {
   getAllSpawnedTabs,
   // Agent utilities
   cleanupAgentsForTab,
+  failInvocationsForTab,
   resolveInvocationResponse,
 } from './handlers';
 import { browserAPI } from '../browser-compat';
@@ -499,6 +500,7 @@ export function initializePageApi(): void {
         const newerPageSince = latest && latest.connection !== connection ? latest.at : undefined;
         if (newerPageSince === undefined) latestTabConnection.delete(tabId);
         forgetAgentsInTab(tabId, newerPageSince);
+        failInvocationsForTab(tabId, newerPageSince);
       }
     });
   });

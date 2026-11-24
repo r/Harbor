@@ -100,6 +100,7 @@ import {
   handleAgentsRoute,
   handleIncomingInvocation,
   resolveInvocationResponse,
+  failInvocationsForTab,
   cleanupAgentsForTab,
   registeredAgents,
   agentInvocationTabs,
@@ -264,6 +265,7 @@ export {
 export {
   handleIncomingInvocation,
   resolveInvocationResponse,
+  failInvocationsForTab,
   cleanupAgentsForTab,
   registeredAgents,
   agentInvocationTabs,

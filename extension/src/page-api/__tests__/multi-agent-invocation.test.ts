@@ -444,15 +444,48 @@ describe('multi-agent lifecycle cleanup', () => {
       const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
       await registerHandlerAgent(tab2, 'invoker');
 
+      // A day, far past the cap. (vi.waitFor moves the fake clock while it
+      // polls, so measure the wait with the invocation's own executionTime.)
       const { settled } = await invokeBelowPagePort(handlerAgentId, 24 * 60 * 60 * 1000);
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 - 10);
-      expect(settled()).toBeUndefined();
-      await vi.advanceTimersByTimeAsync(20);
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 
       expect(settled()).toBeDefined();
-      const result = settled()!.result as { success: boolean; error?: { code: string } };
+      const result = settled()!.result as { success: boolean; error?: { code: string }; executionTime: number };
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe('ERR_TIMEOUT');
+      expect(result.executionTime).toBe(5 * 60 * 1000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a page's invoke waits out its own timeout past 30 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const tab1 = connectPort('https://a.example/page', 1);
+      const tab2 = connectPort('https://b.example/page', 2);
+      const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
+      await registerHandlerAgent(tab2, 'invoker');
+
+      // Through tab 2's own port this time, so harbor-core.ts's page-call
+      // limit is in the path.
+      tab2.send({
+        id: 'invoke-long',
+        type: 'agent.agents.invoke',
+        payload: { agentId: handlerAgentId, request: { task: 'summarize', timeout: 60_000 } },
+      });
+      await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalled());
+      const [, sentMessage] = tabsSendMessage.mock.calls[0] as [number, { invocationId: string }];
+
+      await vi.advanceTimersByTimeAsync(45_000);
+      expect(tab2.posted.some((p) => p.id === 'invoke-long')).toBe(false);
+
+      replyAsContentScript(1, { invocationId: sentMessage.invocationId, success: true, result: 'slow answer' });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(tab2.posted.some((p) => p.id === 'invoke-long')).toBe(true));
+      const reply = tab2.posted.find((p) => p.id === 'invoke-long')!;
+      expect(reply.ok).toBe(true);
+      expect((reply.result as { success: boolean; result?: unknown }).result).toBe('slow answer');
     } finally {
       vi.useRealTimers();
     }

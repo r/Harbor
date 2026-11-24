@@ -63,7 +63,7 @@ vi.mock('../handlers', async (importOriginal) => {
     getPermissions: async () => ({ scopes: {}, allowedTools: [] }),
     restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(() => ({})),
     isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
-    cleanupAgentsForTab: vi.fn(), agentInvocationTabs: new Map(),
+    cleanupAgentsForTab: vi.fn(), failInvocationsForTab: vi.fn(), agentInvocationTabs: new Map(),
   };
 });
 

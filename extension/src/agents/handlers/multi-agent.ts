@@ -77,13 +77,6 @@ function callerAgent(ctx: RequestContext): string | undefined {
   return originAgents.get(ctx.origin);
 }
 
-// Track which agents have an invocation handler registered through Harbor's
-// own in-process page API, and where to deliver an invocation (origin/tab).
-const invocationHandlers = new Map<string, {
-  origin: string;
-  tabId?: number;
-}>();
-
 // =============================================================================
 // Agent Registration Handlers
 // =============================================================================
@@ -144,7 +137,8 @@ export async function handleAgentsUnregister(
 
   const result = unregisterAgent(payload.agentId, ctx.origin);
   if (result) {
-    originAgents.delete(ctx.origin);
+    cleanupAgentHandlers(payload.agentId);
+    if (originAgents.get(ctx.origin) === payload.agentId) originAgents.delete(ctx.origin);
   }
 
   sender.sendResponse({ id: ctx.id, ok: true, result });
@@ -512,7 +506,6 @@ export function forgetTabAgents(tabId: number, registeredBefore = Infinity): voi
   for (const agent of listAllAgents()) {
     if (agent.tabId !== tabId || agent.registeredAt >= registeredBefore) continue;
     cleanupAgentHandlers(agent.id);
-    invocationHandlers.delete(agent.id);
     if (originAgents.get(agent.origin) === agent.id) originAgents.delete(agent.origin);
     unregisterAgent(agent.id, agent.origin);
   }
@@ -555,13 +548,7 @@ export function handleAgentsRegisterInvocationHandler(
     return;
   }
 
-  const handlerOrigin = payload?.origin || ctx.origin;
-  const handlerTabId = payload?.tabId || ctx.tabId;
-
-  log('Registering invocation handler for', agentId, 'origin:', handlerOrigin, 'tabId:', handlerTabId);
-
-  // Track where to deliver an invocation for this agent.
-  invocationHandlers.set(agentId, { origin: handlerOrigin, tabId: handlerTabId });
+  log('Registering invocation handler for', agentId);
 
   // Register a handler that delivers invocations to the registered handler,
   // in-process through Harbor's own page API. Every registration is local
@@ -569,15 +556,6 @@ export function handleAgentsRegisterInvocationHandler(
   registerInvocationHandler(agentId, async (request, fromAgentId, traceId) => {
     const trace = traceId || 'no-trace';
     log(`[TRACE ${trace}] Proxy handler called for ${agentId}`);
-
-    if (!invocationHandlers.has(agentId)) {
-      log(`[TRACE ${trace}] ERROR - no invocation handler info`);
-      return {
-        success: false,
-        error: { code: 'ERR_NO_EXTERNAL_HANDLER', message: 'Invocation handler not found' },
-        executionTime: 0,
-      };
-    }
 
     const forwardRequest = {
       from: fromAgentId,
