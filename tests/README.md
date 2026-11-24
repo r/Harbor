@@ -32,6 +32,18 @@ node tests/e2e/test-getting-started.mjs
 
 This launches Firefox with Harbor in a temporary profile and runs all five checklist steps, including the normal localhost permission prompt, time-tool discovery, a real model tool call, and the displayed response. It starts its own demo server on a free loopback port and closes its browser afterward. It does not seed extension settings or configure a model. The native bridge must already be registered and a default model must be available; ready Apple Intelligence works without a saved model. An unavailable model fails the test rather than being skipped.
 
+## Real-site check: tale.fyi
+
+tale.fyi supports Harbor: it declares its MCP server with `<link rel="mcp-server">` and registers page tools through `document.modelContext`. To check that Harbor still works with it, run from `tests/e2e`:
+
+```bash
+npm run test:tale
+```
+
+The person's agent, running outside the browser, opens a Tale book through the real `harbor-mcp` binary and uses Tale's tools: it reads the reading position, moves the reader, finds a passage, points at a paragraph, and plays and pauses. It also checks that `window.agent.mcp.discover()` finds Tale's server. It never calls `mark` or `unmark`, because those publish to tale.fyi.
+
+It needs the network and a live third-party site, so it is run by hand and is not part of `test:all` or CI. It needs the extension built, `harbor-mcp` built (`cargo build --release --manifest-path bridge-rs/Cargo.toml`) and the native bridge registered. It skips if `harbor-mcp` is missing or tale.fyi can't be reached. Pass `--url=<another Tale book>` to try a different book.
+
 ## Test Structure
 
 ```
