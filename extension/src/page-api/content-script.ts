@@ -344,6 +344,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // Clean up old invocations after 60 seconds
   setTimeout(() => processedInvocations.delete(invocationId), 60000);
   
+  // Post into the page only if it's on the agent's site. Harbor checks the
+  // tab before sending, but a navigation can commit between that check and
+  // this delivery; here, in the isolated world, the check reads the document
+  // the invocation actually reached, so another site never sees the task.
+  if (!message.agentOrigin || message.agentOrigin !== window.location.origin) {
+    console.log(`[TRACE ${trace}] Content: invocation for another site's agent, refusing: ${invocationId}`);
+    chrome.runtime.sendMessage({
+      type: 'agentInvocationResponse',
+      response: {
+        invocationId,
+        success: false,
+        error: { code: 'ERR_AGENT_NOT_FOUND', message: "The agent's page is gone" },
+      },
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+
   console.log(`[TRACE ${trace}] Content: Forwarding invocation to page - invocationId: ${invocationId}`);
   
   // Forward to page in the format injected.ts expects

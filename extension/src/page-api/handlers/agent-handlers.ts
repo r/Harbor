@@ -157,6 +157,8 @@ export async function handleIncomingInvocation(
       type: 'agentInvocation',
       invocationId,
       agentId,
+      // The content script posts into the page only if it's on this site.
+      agentOrigin: registeredAgents.get(agentId)?.origin,
       from: request.from,
       task: request.task,
       input: request.input,
