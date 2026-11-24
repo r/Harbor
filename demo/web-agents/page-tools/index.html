@@ -10,8 +10,6 @@
     .page-container { max-width: 760px; margin: 0 auto; }
     .chapter p { line-height: 1.7; padding: var(--demo-space-2) var(--demo-space-3); border-radius: var(--demo-radius-md); transition: background 0.3s; }
     .chapter p.highlight { background: var(--demo-accent-subtle, rgba(200, 120, 80, 0.18)); }
-    .controls { display: flex; gap: var(--demo-space-3); flex-wrap: wrap; margin: var(--demo-space-4) 0; }
-    .controls input { flex: 1; min-width: 240px; }
     .log { background: var(--demo-bg-elevated); border: 1px solid var(--demo-border-default); border-radius: var(--demo-radius-md);
            padding: var(--demo-space-4); font-family: var(--demo-font-mono); font-size: var(--demo-text-sm); white-space: pre-wrap; min-height: 80px; }
   </style>
@@ -22,19 +20,20 @@
       <h1 class="demo-title">Page Tools</h1>
       <p class="demo-subtitle">
         This page offers its own functions to your agent with
-        <code>document.modelContext.registerTool()</code>. The functions run here, in the page.
-        Your agent calls them: Harbor's built-in model in <strong>Ask</strong>, and your own
-        agent (goose, Claude Code, Codex) in both <strong>Ask</strong> and <strong>Open chat</strong>.
+        <code>document.modelContext.registerTool()</code>. The functions run here, in the page,
+        and your own agent calls them. The page has no Ask button: you ask your agent.
       </p>
     </header>
 
     <section class="demo-card demo-mb-6">
-      <h2 class="demo-card-title">Ask your agent about this page</h2>
-      <div class="controls">
-        <input id="task" class="demo-input" value="Take me to the paragraph about the harbor at night, and tell me how many words it has.">
-        <button id="run" class="demo-btn demo-btn-primary">Ask (agent.run)</button>
-        <button id="chat" class="demo-btn">Open chat</button>
-      </div>
+      <h2 class="demo-card-title">Ask your own agent</h2>
+      <p class="demo-text">
+        Add Harbor to your agent (goose, Claude Code, Codex) from Harbor's sidebar: Settings, then
+        <strong>Your agent outside the browser</strong>. Then ask your agent to open this page and
+        take you to the paragraph about the harbor at night. If you've already opened the page
+        yourself, choose <strong>Share this tab with your agent</strong> there.
+      </p>
+      <p class="demo-text">What the page's functions did:</p>
       <div id="log" class="log" aria-live="polite">Tools registered: reading_position, go_to (registerTool), count_words (addTool).</div>
     </section>
 
@@ -109,36 +108,6 @@
         if (registerPageTools()) log.textContent = 'Tools registered: reading_position, go_to (registerTool), count_words (addTool).';
       }, { once: true });
     }
-
-    async function ensurePermission() {
-      const result = await window.agent.requestPermissions({
-        scopes: ['model:prompt', 'model:tools'],
-        reason: 'To let your agent answer questions about this page using its tools',
-      });
-      if (!result.granted) throw new Error('Permission denied');
-    }
-
-    document.getElementById('run').addEventListener('click', async () => {
-      log.textContent = 'Asking your agent...';
-      try {
-        await ensurePermission();
-        for await (const event of window.agent.run({ task: document.getElementById('task').value, maxToolCalls: 6 })) {
-          if (event.type === 'tool_call') say(`agent called ${event.tool}`);
-          if (event.type === 'final') say(`\n${event.output}`);
-          if (event.type === 'error') say(`error: ${event.error?.message}`);
-        }
-      } catch (e) {
-        say(`error: ${e.message}`);
-      }
-    });
-
-    document.getElementById('chat').addEventListener('click', async () => {
-      try {
-        await window.agent.chat.open({ systemPrompt: 'You help the reader with the chapter on this page. Use the page tools to read and navigate it.' });
-      } catch (e) {
-        say(`error: ${e.message}`);
-      }
-    });
   </script>
 </body>
 </html>
