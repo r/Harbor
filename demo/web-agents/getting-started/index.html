@@ -4,9 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Getting Started — Web Agent API</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../shared/styles.css">
   <style>
     body {
@@ -41,21 +38,23 @@
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-secondary));
-      color: white;
+      background: var(--demo-action);
+      color: var(--demo-action-ink);
       box-shadow: var(--demo-shadow-sm);
     }
 
     .btn-primary:hover:not(:disabled) {
-      filter: brightness(1.1);
-      transform: translateY(-1px);
-      box-shadow: var(--demo-shadow-glow);
+      background: var(--demo-action-hover);
+
+      box-shadow: none;
     }
 
     .btn-primary:disabled {
       opacity: 0.4;
       cursor: not-allowed;
     }
+
+    .btn-primary:disabled:has(.spinner) { opacity: 1; }
 
     .btn-secondary {
       background: var(--demo-bg-surface);
@@ -84,16 +83,20 @@
     .footer a:hover {
       color: var(--demo-accent-primary);
     }
+
+    .controls { flex-wrap: wrap; }
+    .btn { min-width: min(180px, 100%); }
+    .btn:focus-visible { outline: 3px solid var(--demo-accent-primary); outline-offset: 3px; }
   </style>
 </head>
-<body class="demo-bg-grid">
+<body>
   <div class="page-container">
     <header class="demo-header">
       <div class="header-badge">
         <span class="dot"></span>
         <span>Interactive Walkthrough</span>
       </div>
-      <h1 class="demo-title demo-text-gradient">Getting Started with the Web Agent API</h1>
+      <h1 class="demo-title">Getting Started with the Web Agent API</h1>
       <p class="demo-subtitle">Step through the basics: detect the API, get permission, and make your first AI-powered tool call.</p>
     </header>
 
@@ -152,7 +155,14 @@ tools.<span class="method">forEach</span>(t => console.<span class="method">log<
         <div class="step-content">
           <div class="step-title">Ask "What time is it?"</div>
           <div class="step-description">Run an AI agent that can use tools to answer</div>
-          <pre class="step-code"><span class="keyword">for await</span> (<span class="keyword">const</span> event <span class="keyword">of</span> window.<span class="property">agent</span>.<span class="method">run</span>({
+          <pre class="step-code">// First, ask permission for the discovered time tool:
+const tools = await window.agent.tools.list();
+const time = tools.find(tool =&gt; tool.name === 'time.now');
+await window.agent.requestPermissions({
+  scopes: ['mcp:tools.call'],
+  tools: [`${time.serverId}/${time.name}`]
+});
+<span class="keyword">for await</span> (<span class="keyword">const</span> event <span class="keyword">of</span> window.<span class="property">agent</span>.<span class="method">run</span>({
   <span class="property">task</span>: <span class="string">'What is the current time?'</span>,
   <span class="property">maxToolCalls</span>: <span class="number">3</span>
 })) {
@@ -245,7 +255,18 @@ console.<span class="method">log</span>(response);</pre>
           window._webAgentDemoThinking = [];
           let tokenText = '';
           
-          // Use the agent API to run with tools (matches displayed code)
+          // Listing tools doesn't grant permission to call them. Ask for the
+          // specific tool this walkthrough needs, not every connected server.
+          const tools = await window.agent.tools.list();
+          const time = tools.find(tool => tool.name === 'time.now');
+          if (!time) throw new Error('Start the built-in Time Server in Harbor, then try again.');
+          const permission = await window.agent.requestPermissions({
+            scopes: ['model:prompt', 'model:tools', 'mcp:tools.list', 'mcp:tools.call'],
+            tools: [`${time.serverId}/${time.name}`],
+            reason: 'Let the walkthrough use the current-time tool.',
+          });
+          if (!permission.granted) throw new Error('Permission denied for the time tool.');
+
           for await (const event of window.agent.run({
             task: 'What is the current time?',
             maxToolCalls: 3
@@ -404,7 +425,7 @@ console.<span class="method">log</span>(response);</pre>
       } else if (success && currentStep === totalSteps - 1) {
         nextBtn.disabled = true;
         nextBtn.textContent = 'Complete! ✓';
-        nextBtn.style.background = 'var(--demo-success)';
+        nextBtn.style.background = 'var(--demo-action)';
         resetBtn.style.display = 'block';
       } else {
         // Error occurred

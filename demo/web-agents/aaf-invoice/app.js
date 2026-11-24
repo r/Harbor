@@ -38,17 +38,42 @@ const planner = new WidgetPlanner(backend);
 const ui = new ChatUI({ onSubmit: handleRequest });
 ui.setModels([], '');
 ui.shadow.querySelector('.aaf-model-select').remove();
+ui.shadow.querySelector('.aaf-header h2').textContent = 'Invoice agent';
+ui.shadow.querySelector('.aaf-debug-toggle').textContent = 'Debug';
 ui.shadow.querySelector('.aaf-input input').setAttribute('aria-label', 'Invoice request');
 ui.shadow.querySelector('.aaf-input input').placeholder = 'Create an invoice for alice@example.com for 120 EUR';
 const style = document.createElement('style');
 style.textContent = `
-  :host { display: block; font-family: system-ui, sans-serif; }
+  :host { display: block; min-width: 0; color-scheme: inherit; font-family: var(--demo-font-sans); color: var(--demo-text-primary); }
   .aaf-toggle { display: none; }
-  .aaf-panel { position: static; width: 100%; height: 430px; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
-  .aaf-header { background: #265d43; color: white; }
+  .aaf-panel { position: static; width: 100%; height: 430px; max-height: none; border: 0; border-radius: 0; box-shadow: none; background: var(--demo-bg-subtle); }
+  .aaf-header { gap: 12px; background: var(--demo-bg-surface); color: var(--demo-text-primary); border-color: var(--demo-border-default); }
   .aaf-header h2 { font-size: 16px; }
-  .aaf-btn-primary, .aaf-msg.user { background: #265d43; }
-  .aaf-badge { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+  .aaf-header-right { flex-wrap: wrap; justify-content: flex-end; }
+  .aaf-debug-toggle { color: var(--demo-text-secondary); opacity: 1; font-family: inherit; font-size: 12px; }
+  .aaf-debug-toggle.active { border-color: var(--demo-accent-primary); }
+  .aaf-debug summary, .aaf-debug-section strong { color: var(--demo-text-secondary); }
+  .aaf-debug summary:hover { color: var(--demo-accent-primary); }
+  .aaf-debug-section pre { background: var(--demo-bg-elevated); border-color: var(--demo-border-default); color: var(--demo-text-primary); font-family: var(--demo-font-mono); }
+  .aaf-badge { max-width: 130px; overflow: hidden; text-overflow: ellipsis; background: var(--demo-success-dim); color: var(--demo-success); }
+  .aaf-badge.offline { background: var(--demo-bg-elevated); color: var(--demo-text-secondary); }
+  .aaf-messages { min-height: 0; }
+  .aaf-msg { min-width: 0; overflow-wrap: anywhere; }
+  .aaf-msg.user { background: var(--demo-action); color: var(--demo-action-ink); }
+  .aaf-msg.assistant { background: var(--demo-bg-surface); border-color: var(--demo-border-default); }
+  .aaf-msg.system { background: var(--demo-warning-dim); border-color: var(--demo-warning); color: var(--demo-text-primary); }
+  .aaf-msg.error { background: var(--demo-error-dim); border-color: var(--demo-error); color: var(--demo-error); }
+  .aaf-msg pre { background: var(--demo-bg-elevated); color: var(--demo-text-primary); font-family: var(--demo-font-mono); }
+  .aaf-input { background: var(--demo-bg-surface); border-color: var(--demo-border-default); flex-wrap: wrap; }
+  .aaf-input input { min-width: 0; width: 100%; flex-basis: 160px; color: var(--demo-text-primary); background: var(--demo-bg-base); border-color: var(--demo-border-strong); }
+  .aaf-input input:disabled { background: var(--demo-bg-elevated); color: var(--demo-text-secondary); }
+  .aaf-input input:focus { border-color: var(--demo-accent-primary); }
+  .aaf-btn { flex-shrink: 0; }
+  .aaf-btn-primary { background: var(--demo-action); color: var(--demo-action-ink); }
+  .aaf-btn-primary:hover:not(:disabled) { background: var(--demo-action-hover); }
+  .aaf-btn-secondary { background: var(--demo-bg-elevated); color: var(--demo-text-primary); }
+  .aaf-btn-secondary:hover:not(:disabled) { background: var(--demo-bg-overlay); }
+  :focus-visible { outline: 2px solid var(--demo-accent-primary); outline-offset: 2px; }
 `;
 ui.shadow.appendChild(style);
 document.querySelector('#assistant').appendChild(ui.host);

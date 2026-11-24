@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The demo directory and examples use Harbor’s public-site typography and green palette, with layouts for phones and system light and dark themes.
+
 - The page-tools demo no longer has its own Ask and Open chat buttons. You ask your own agent to open the page, or share the tab with it, and it uses the page's tools. When "Let your agent open and use pages" is off, the message your agent gets now names that setting and where it is in Harbor's sidebar.
 
 - The permission request and agent question popups use Harbor’s site typography, colors and buttons in both system themes. The permission prompt highlights the site’s stated reason and offers separate actions to deny, allow temporarily, or grant ongoing access.
@@ -58,6 +60,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AGENTS.md` — `whitepaper/` description updated to reflect the static-HTML structure and `docs/POSITIONING.md` flagged as the messaging source-of-truth.
 
 ### Fixed
+
+- The invoice widget inherits the page's color scheme inside its shadow DOM instead of staying light in dark mode.
+- Page Tools wraps its inline API example on narrow screens instead of overflowing the viewport.
+- Time Agent uses Harbor's supported tool API, and both it and Getting Started request consent for the specific time tool before calling it.
+- Multi-step Form waits for its own delayed panels instead of calling a browser API that does not exist.
+- Research Agent streams a bounded source summary instead of timing out on a long non-streaming request. Research Pipeline now uses the configured model rather than always displaying a simulated article; both demos close sessions on success, error and timeout.
+- Research Pipeline renders model responses and source titles as text, with only HTTP(S) source links, rather than interpreting them as HTML.
+- The Firefox E2E packages now use matching Playwright 1.65.1 versions and its current Firefox build.
+
+- The Page Summarizer and its Chrome-compatible variant link to the published Web Agent API specification from the demo and bookmarklet.
 
 - Tabs opened through the page API preserve the caller’s Firefox container and private-browsing state.
 

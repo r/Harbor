@@ -3,84 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Page Not Found - Web Agent API Demos</title>
-  
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  
+  <meta name="color-scheme" content="light dark">
+  <title>Page not found — Harbor demos</title>
   <link rel="stylesheet" href="shared/styles.css">
   <style>
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      padding: var(--demo-space-6);
-      text-align: center;
-    }
-
-    .error-code {
-      font-size: 6rem;
-      font-weight: var(--demo-weight-bold);
-      line-height: 1;
-      margin-bottom: var(--demo-space-4);
-      background: linear-gradient(90deg, var(--demo-accent-primary), var(--demo-accent-secondary));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .error-title {
-      font-size: var(--demo-text-2xl);
-      font-weight: var(--demo-weight-bold);
-      color: var(--demo-text-primary);
-      margin-bottom: var(--demo-space-3);
-    }
-
-    .error-message {
-      font-size: var(--demo-text-base);
-      color: var(--demo-text-secondary);
-      max-width: 400px;
-      margin-bottom: var(--demo-space-8);
-    }
-
-    .back-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--demo-space-2);
-      padding: var(--demo-space-3) var(--demo-space-6);
-      background: linear-gradient(90deg, var(--demo-accent-primary), var(--demo-accent-secondary));
-      color: white;
-      border: none;
-      border-radius: var(--demo-radius-md);
-      font-family: var(--demo-font-sans);
-      font-size: var(--demo-text-sm);
-      font-weight: var(--demo-weight-semibold);
-      text-decoration: none;
-      cursor: pointer;
-      transition: all var(--demo-transition-fast);
-    }
-
-    .back-btn:hover {
-      filter: brightness(1.1);
-      transform: translateY(-2px);
-      box-shadow: var(--demo-shadow-glow);
-      color: white;
-    }
+    body { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; padding: 0 28px; }
+    .error-header { width: min(1180px, 100%); margin: 0 auto; padding: 24px 0; border-bottom: 1px solid var(--demo-border-default); }
+    .error-brand { display: inline-flex; align-items: baseline; gap: 10px; font-size: 1.6rem; font-weight: 750; letter-spacing: -.03em; text-decoration: none; color: var(--demo-text-primary); }
+    .error-mark { width: 17px; height: 17px; background: repeating-linear-gradient(0deg, currentColor 0 3px, transparent 3px 5px); border: 1.5px solid currentColor; transform: skewY(-14deg); }
+    .error-main { width: min(720px, 100%); margin: auto; padding: 64px 0 96px; }
+    .error-code { font: .8rem var(--demo-font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--demo-accent-primary); margin-bottom: 24px; }
+    h1 { max-width: 12ch; font-size: clamp(3.4rem, 8vw, 6rem); line-height: .98; font-weight: 750; letter-spacing: -.06em; margin-bottom: 28px; }
+    .error-message { max-width: 44ch; font-size: 1.15rem; line-height: 1.6; color: var(--demo-text-secondary); margin-bottom: 32px; }
+    .error-back { display: inline-flex; align-items: center; gap: 24px; padding: 13px 20px; font-weight: 650; text-decoration: none; background: var(--demo-accent-primary); color: var(--demo-bg-base); border: 1px solid var(--demo-accent-primary); }
+    .error-back:hover { background: var(--demo-bg-surface); color: var(--demo-text-primary); }
+    a:focus-visible { outline: 3px solid var(--demo-accent-primary); outline-offset: 5px; }
+    @media (max-width: 480px) { body { padding: 0 20px; } }
   </style>
 </head>
-<body class="demo-bg-glow">
-  <div class="error-code">404</div>
-  <h1 class="error-title">Page Not Found</h1>
-  <p class="error-message">
-    The page you're looking for doesn't exist or has been moved. 
-    Check out our available demos instead.
-  </p>
-  <a href="./" class="back-btn">
-    &#8592; Back to Demos
-  </a>
+<body>
+  <header class="error-header"><a class="error-brand" href="./"><span class="error-mark" aria-hidden="true"></span>Harbor</a></header>
+  <main class="error-main">
+    <p class="error-code">404 · Harbor demos</p>
+    <h1>Page not found.</h1>
+    <p class="error-message">The page you’re looking for does not exist or has moved. Find a working example in the demo directory.</p>
+    <a href="./" class="error-back"><span aria-hidden="true">←</span> Back to demos</a>
+  </main>
 </body>
 </html>

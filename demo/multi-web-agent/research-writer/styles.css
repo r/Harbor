@@ -6,7 +6,7 @@ body {
   flex-direction: column;
   align-items: center;
   min-height: 100vh;
-  padding: var(--demo-space-10) 0;
+  padding: var(--demo-space-10) var(--demo-space-4);
 }
 
 /* Input Section */
@@ -89,7 +89,7 @@ body {
 
 .sequence-header {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   border-bottom: 1px solid var(--demo-border-default);
   background: var(--demo-bg-elevated);
@@ -117,29 +117,16 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  transition: all var(--demo-transition-normal);
-}
-
-.agent-icon.orchestrator {
-  background: linear-gradient(135deg, var(--demo-accent-primary), #e66000);
-}
-
-.agent-icon.searcher {
-  background: linear-gradient(135deg, #00ddff, #0090ed);
-}
-
-.agent-icon.reader {
-  background: linear-gradient(135deg, #30e60b, #00b347);
-}
-
-.agent-icon.writer {
-  background: linear-gradient(135deg, #ffbd4f, #ff9400);
+  color: var(--demo-accent-primary);
+  background: var(--demo-accent-glow);
+  border: 1px solid var(--demo-border-default);
+  transition: border-color var(--demo-transition-normal);
 }
 
 .agent-icon.active {
-  box-shadow: 0 0 20px currentColor;
-  transform: scale(1.1);
+  border-color: var(--demo-accent-primary);
+  outline: 2px solid var(--demo-accent-primary);
+  outline-offset: 3px;
 }
 
 .agent-label {
@@ -163,7 +150,7 @@ body {
   right: 0;
   bottom: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   pointer-events: none;
 }
 
@@ -231,7 +218,7 @@ body {
 /* Grid layout for messages */
 .message-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: center;
   min-height: inherit;
 }
@@ -245,7 +232,8 @@ body {
 
 /* Arrow styling */
 .arrow-cell {
-  padding: 0 20px;
+  padding: 0 4px;
+  min-width: 0;
 }
 
 .arrow-wrapper {
@@ -259,7 +247,7 @@ body {
 .arrow-line-right {
   height: 2px;
   flex: 1;
-  min-width: 20px;
+  min-width: 4px;
 }
 
 .arrow-line-right {
@@ -305,13 +293,15 @@ body {
   border-radius: 20px;
   border: 2px solid;
   background: var(--demo-bg-surface);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  white-space: nowrap;
-  flex-shrink: 0;
+
+  min-width: 0;
+  max-width: 100%;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .arrow-label-text {
-  font-size: 12px;
+  font-size: var(--demo-text-xs);
   font-weight: 500;
   color: var(--demo-text-primary);
 }
@@ -319,30 +309,10 @@ body {
 /* Activation box (when agent is processing) */
 .activation-box {
   width: 16px;
-  background: var(--demo-bg-elevated);
-  border: 2px solid var(--demo-border-strong);
+  background: var(--demo-accent-glow);
+  border: 2px solid var(--demo-accent-primary);
   border-radius: 3px;
   min-height: 24px;
-}
-
-.activation-box.orchestrator {
-  border-color: var(--demo-accent-primary);
-  background: rgba(255, 148, 0, 0.1);
-}
-
-.activation-box.searcher {
-  border-color: #00ddff;
-  background: rgba(0, 221, 255, 0.1);
-}
-
-.activation-box.reader {
-  border-color: #30e60b;
-  background: rgba(48, 230, 11, 0.1);
-}
-
-.activation-box.writer {
-  border-color: #ffbd4f;
-  background: rgba(255, 189, 79, 0.1);
 }
 
 /* Status node */
@@ -356,7 +326,8 @@ body {
   border-radius: var(--demo-radius-md);
   font-size: var(--demo-text-xs);
   color: var(--demo-text-secondary);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .status-node.success {
@@ -473,7 +444,7 @@ body {
 /* Responsive */
 @media (max-width: 800px) {
   .sequence-header {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   
   .agent-icon {
@@ -483,9 +454,23 @@ body {
   
   .agent-label {
     font-size: var(--demo-text-xs);
+    overflow-wrap: anywhere;
   }
+
+  .agent-column { min-width: 0; padding: var(--demo-space-3) var(--demo-space-1); }
+  .messages { padding: 0; }
+  .arrow-label { padding: var(--demo-space-2); border-radius: var(--demo-radius-sm); }
+  .status-node { padding: var(--demo-space-2) var(--demo-space-1); flex-wrap: wrap; }
+  .message-cell { min-width: 0; }
+  .self-message { min-width: 0; }
+  .self-message .arrow-label { max-width: 100%; }
+
   
   .input-row {
     flex-direction: column;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-row, .status-node .spinner { animation: none; }
 }

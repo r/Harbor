@@ -4,9 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Basic Actions — Web Agent API</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../shared/styles.css" />
   <script src="../shared/agent.js"></script>
   <style>
@@ -15,7 +12,7 @@
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
-      padding: var(--demo-space-10) 0;
+      padding: var(--demo-space-10) var(--demo-space-4);
     }
 
     .field-group {
@@ -33,15 +30,6 @@
     label {
       font-size: var(--demo-text-sm);
       color: var(--demo-text-secondary);
-    }
-
-    select.demo-input {
-      appearance: none;
-      background-image: linear-gradient(45deg, transparent 50%, var(--demo-text-muted) 50%),
-        linear-gradient(135deg, var(--demo-text-muted) 50%, transparent 50%);
-      background-position: calc(100% - 18px) calc(1rem + 2px), calc(100% - 13px) calc(1rem + 2px);
-      background-size: 5px 5px, 5px 5px;
-      background-repeat: no-repeat;
     }
 
     .summary {
@@ -106,16 +94,21 @@
       color: var(--demo-text-primary);
     }
 
+
+    .field { min-width: 0; }
+    .summary-row { gap: var(--demo-space-3); flex-wrap: wrap; }
+    .summary-row span { overflow-wrap: anywhere; }
+    @media (max-width: 520px) { .field-group { grid-template-columns: minmax(0, 1fr); } }
   </style>
 </head>
-<body class="demo-bg-grid">
+<body>
   <main class="page-container">
     <header class="demo-header">
       <div class="header-badge">
         <span class="dot"></span>
         <span>Interactive Walkthrough</span>
       </div>
-      <h1 class="demo-title demo-text-gradient">Basic Actions</h1>
+      <h1 class="demo-title">Basic Actions</h1>
       <p class="demo-subtitle">Practice <code>click</code>, <code>fill</code>, and <code>select</code> on a simple form.</p>
     </header>
 
@@ -133,7 +126,6 @@
 
       <section class="demo-card">
         <div class="demo-card-header">
-          <div class="demo-card-icon">📝</div>
           <div>
             <div class="demo-card-title">Action Playground</div>
             <p class="demo-text-sm">Fill the form, toggle the checkbox, and submit.</p>
@@ -186,7 +178,6 @@
 
       <section class="demo-card">
         <div class="demo-card-header">
-          <div class="demo-card-icon">🔐</div>
           <div>
             <div class="demo-card-title">Permissions</div>
             <p class="demo-text-sm">Required for this page.</p>
@@ -403,7 +394,7 @@
       if (walkthroughIndex >= walkthroughSteps.length - 1) {
         walkthroughNextBtn.disabled = true;
         walkthroughNextBtn.textContent = 'Complete! ✓';
-        walkthroughNextBtn.style.background = 'var(--demo-success)';
+        walkthroughNextBtn.style.background = 'var(--demo-action)';
         walkthroughResetBtn.style.display = 'inline-flex';
       } else {
         walkthroughNextBtn.disabled = false;

@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AAF Invoice · Harbor</title>
+  <title>Invoice demo · Harbor</title>
+  <link rel="stylesheet" href="../../shared/styles.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header><a href="../../">Harbor demos</a><span>AAF billing sample</span></header>
+  <header><a href="../../">Harbor demos</a><span>Working demo · AAF invoice</span></header>
   <main>
-    <div class="intro"><h1>Create an invoice</h1><p>Ask your AI to fill the form. Review the details, then save a local draft.</p></div>
+    <div class="intro"><h1>Create an invoice</h1><p>Ask your agent to fill the form. Review the details, then save a local draft.</p></div>
     <div class="workspace">
       <section class="card" aria-label="Invoice details">
       <form
@@ -88,12 +89,12 @@
       </form>
         <p class="drafts"><output id="draft-count">0</output> local drafts</p>
       </section>
-      <aside id="assistant" aria-label="Invoice assistant">
+      <aside id="assistant" aria-label="Invoice agent">
         <p class="hint">Choose your provider and model in Harbor.</p>
         <p id="connection" role="status" aria-live="polite">Send a request to connect to Harbor.</p>
       </aside>
     </div>
-    <details class="help"><summary>Try this demo</summary><p>Enter “Create an invoice for alice@example.com for 120 EUR” in the assistant. Check the fields before pressing Save draft. Drafts stay in this browser.</p><p>To use a different AI, switch the configured provider in Harbor and send another request. Each request uses a fresh session.</p><a href="README.md">Setup and verification walkthrough</a></details>
+    <details class="help"><summary>Try this demo</summary><p>Enter “Create an invoice for alice@example.com for 120 EUR” in the chat. Check the fields before pressing Save draft. Drafts stay in this browser.</p><p>To use a different model, switch the configured provider in Harbor and send another request. Each request uses a fresh session.</p><a href="README.md">Setup and verification walkthrough</a></details>
   </main>
   <script type="module" src="app.js"></script>
 </body>

@@ -3,384 +3,154 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Web Agent API Demos</title>
-  <meta name="description" content="Interactive demos for the Web Agent API - explore AI-powered browser capabilities with window.ai and window.agent">
-  
-  <!-- Open Graph / Social -->
-  <meta property="og:title" content="Web Agent API Demos">
-  <meta property="og:description" content="Interactive demos for the Web Agent API - explore AI-powered browser capabilities">
+  <meta name="color-scheme" content="light dark">
+  <title>Demos — Harbor</title>
+  <meta name="description" content="Try the Web Agent API with Harbor: page tools, your chosen AI, and permissioned browser actions.">
+  <meta property="og:title" content="Demos — Harbor">
+  <meta property="og:description" content="Working examples of pages talking to your chosen AI through the Web Agent API.">
   <meta property="og:type" content="website">
-  
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  
   <link rel="stylesheet" href="shared/styles.css">
   <style>
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100vh;
-      padding: var(--demo-space-10) var(--demo-space-6);
-    }
-
-    .page-container {
-      max-width: 720px;
-      width: 100%;
-    }
-
-    .demos-grid {
-      display: flex;
-      flex-direction: column;
-      gap: var(--demo-space-3);
-    }
-
-    .demo-link {
-      display: block;
-      text-decoration: none;
-      color: inherit;
-    }
-
-    .demo-link:hover .demo-card {
-      border-color: var(--demo-accent-primary);
-      box-shadow: 0 0 0 1px var(--demo-accent-primary), var(--demo-shadow-glow);
-      transform: translateY(-2px);
-    }
-
-    .demo-card-content {
-      display: flex;
-      align-items: flex-start;
-      gap: var(--demo-space-4);
-    }
-
-    .demo-card-icon {
-      width: 44px;
-      height: 44px;
-      background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-secondary));
-      border-radius: var(--demo-radius-md);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      flex-shrink: 0;
-    }
-
-    .demo-card-text {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .demo-card-title {
-      font-size: var(--demo-text-base);
-      font-weight: var(--demo-weight-semibold);
-      color: var(--demo-text-primary);
-      margin-bottom: var(--demo-space-1);
-      display: flex;
-      align-items: center;
-      gap: var(--demo-space-2);
-      flex-wrap: wrap;
-    }
-
-    .demo-card-description {
-      font-size: var(--demo-text-sm);
-      color: var(--demo-text-secondary);
-      line-height: var(--demo-leading-relaxed);
-    }
-
-    .demo-card-description code {
-      font-size: var(--demo-text-xs);
-    }
-
-    .extension-note {
-      margin-top: var(--demo-space-10);
-      padding: var(--demo-space-5);
-      background: var(--demo-bg-surface);
-      border: 1px solid var(--demo-border-default);
-      border-radius: var(--demo-radius-lg);
-      font-size: var(--demo-text-sm);
-      color: var(--demo-text-secondary);
-      text-align: center;
-    }
-
-    .extension-note strong {
-      color: var(--demo-text-primary);
-    }
-
-    .demo-section-title {
-      font-size: var(--demo-text-lg);
-      font-weight: var(--demo-weight-semibold);
-      color: var(--demo-text-primary);
-      margin-top: var(--demo-space-10);
-      margin-bottom: var(--demo-space-2);
-      display: flex;
-      align-items: center;
-      gap: var(--demo-space-2);
-    }
-
-    .demo-section-title::before {
-      content: '';
-      width: 4px;
-      height: 20px;
-      background: linear-gradient(180deg, var(--demo-accent-primary), var(--demo-accent-secondary));
-      border-radius: 2px;
-    }
-
-    .demo-section-desc {
-      font-size: var(--demo-text-sm);
-      color: var(--demo-text-muted);
-      margin-bottom: var(--demo-space-4);
-    }
-
-    .footer-links {
-      margin-top: var(--demo-space-8);
-      display: flex;
-      justify-content: center;
-      gap: var(--demo-space-6);
-      font-size: var(--demo-text-sm);
-    }
-
-    .footer-links a {
-      color: var(--demo-text-muted);
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: var(--demo-space-2);
-      transition: color var(--demo-transition-fast);
-    }
-
-    .footer-links a:hover {
-      color: var(--demo-accent-primary);
+    body { min-height: 100vh; }
+    .catalog-wrap { width: min(1180px, 100%); margin: 0 auto; padding: 0 28px; }
+    .catalog-nav { border-bottom: 1px solid var(--demo-border-default); }
+    .catalog-nav-inner { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .catalog-brand { display: inline-flex; align-items: baseline; gap: 10px; color: var(--demo-text-primary); text-decoration: none; font-size: 1.6rem; font-weight: 750; letter-spacing: -.03em; }
+    .catalog-mark { width: 17px; height: 17px; background: repeating-linear-gradient(0deg, currentColor 0 3px, transparent 3px 5px); border: 1.5px solid currentColor; transform: skewY(-14deg); }
+    .catalog-nav-links { display: flex; flex-wrap: wrap; gap: 24px; font-size: var(--demo-text-sm); }
+    .catalog-nav-links a, .catalog-footer a { color: var(--demo-text-secondary); text-decoration: none; }
+    .catalog-nav-links a:hover, .catalog-footer a:hover { color: var(--demo-accent-primary); text-decoration: underline; text-underline-offset: 4px; }
+    .catalog-hero { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(260px, .75fr); gap: clamp(32px, 6vw, 96px); padding: clamp(48px, 7vw, 88px) 0 56px; align-items: start; }
+    .catalog-eyebrow { color: var(--demo-text-muted); font: .78rem var(--demo-font-mono); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 20px; }
+    .catalog-hero h1 { max-width: 12ch; font-size: clamp(3.3rem, 7vw, 6rem); line-height: .97; letter-spacing: -.065em; font-weight: 750; margin: 0 0 28px; }
+    .catalog-lead { max-width: 52ch; color: var(--demo-text-secondary); font-size: 1.15rem; line-height: 1.6; margin: 0 0 28px; }
+    .catalog-start { display: inline-flex; gap: 24px; align-items: center; background: var(--demo-accent-primary); color: var(--demo-bg-base); padding: 13px 20px; font-weight: 650; text-decoration: none; border: 1px solid var(--demo-accent-primary); }
+    .catalog-start:hover { color: var(--demo-text-primary); background: var(--demo-bg-surface); }
+    .catalog-setup { padding: 24px; border: 1px solid var(--demo-border-default); background: var(--demo-bg-subtle); }
+    .catalog-setup h2 { margin: 0 0 16px; font-size: 1.25rem; letter-spacing: -.02em; }
+    .catalog-setup ol { padding-left: 20px; color: var(--demo-text-secondary); font-size: var(--demo-text-sm); }
+    .catalog-setup li { margin-bottom: 14px; padding-left: 4px; }
+    .catalog-setup p { color: var(--demo-text-secondary); font-size: var(--demo-text-sm); margin: 16px 0 0; }
+    .catalog-setup a, .catalog-notes a { color: var(--demo-accent-primary); text-underline-offset: 3px; }
+    .catalog-section { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(0, 2fr); gap: 48px; padding: 40px 0; border-top: 1px solid var(--demo-border-default); scroll-margin-top: 24px; }
+    .catalog-section h2 { font-size: 1.6rem; letter-spacing: -.04em; margin: 0 0 12px; }
+    .catalog-section-intro p { font-size: var(--demo-text-sm); color: var(--demo-text-secondary); max-width: 28ch; line-height: 1.6; }
+    .catalog-list { list-style: none; padding: 0; margin: 0; }
+    .catalog-list li + li { border-top: 1px solid var(--demo-border-default); }
+    .catalog-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; padding: 22px 12px; color: inherit; text-decoration: none; }
+    .catalog-list li:first-child .catalog-entry { padding-top: 0; }
+    .catalog-entry:hover { background: var(--demo-bg-subtle); color: inherit; }
+    .catalog-entry h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 8px; font-size: 1.125rem; font-weight: 650; letter-spacing: -.02em; }
+    .catalog-entry:hover h3 { color: var(--demo-accent-primary); }
+    .catalog-entry p { margin: 0; max-width: 68ch; font-size: var(--demo-text-sm); line-height: 1.6; color: var(--demo-text-secondary); }
+    .catalog-entry code { overflow-wrap: anywhere; }
+    .catalog-arrow { font-size: 1.25rem; color: var(--demo-accent-primary); }
+    .catalog-notes { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; border-top: 1px solid var(--demo-border-default); padding: 40px 0; }
+    .catalog-notes h2 { font-size: 1.125rem; margin: 0 0 12px; }
+    .catalog-notes p { font-size: var(--demo-text-sm); color: var(--demo-text-secondary); line-height: 1.7; margin: 0; }
+    .catalog-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 20px; padding: 24px 0 36px; border-top: 1px solid var(--demo-border-default); font-size: var(--demo-text-sm); color: var(--demo-text-muted); }
+    .catalog-footer-links { display: flex; flex-wrap: wrap; gap: 24px; }
+    a:focus-visible { outline: 3px solid var(--demo-accent-primary); outline-offset: 5px; }
+    @media (max-width: 720px) {
+      .catalog-wrap { padding: 0 20px; }
+      .catalog-nav-inner { padding: 16px 0; align-items: flex-start; flex-direction: column; gap: 12px; }
+      .catalog-nav-links { gap: 20px; }
+      .catalog-hero, .catalog-section, .catalog-notes { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+      .catalog-hero { padding: 40px 0; }
+      .catalog-section { padding: 32px 0; }
+      .catalog-section-intro p { max-width: 52ch; }
+      .catalog-entry { padding-left: 0; padding-right: 0; gap: 16px; }
     }
   </style>
 </head>
-<body class="demo-bg-glow">
-  <div class="page-container">
-    <header class="demo-header">
-      <div class="demo-logo">&#9875;</div>
-      <h1 class="demo-title">Web Agent API <span class="demo-text-gradient">Demos</span></h1>
-      <p class="demo-subtitle">
-        Choose your LLM. Choose your MCP servers. Choose your tools.
-        The Web Agent API (<code>window.ai</code>, <code>window.agent</code>, <code>document.modelContext</code>)
-        gives you the building blocks &mdash; every integration decision is yours.
-      </p>
-    </header>
-
-    <!-- Web Agents -->
-    <h2 class="demo-section-title">Web Agents</h2>
-    <p class="demo-section-desc">Choose an LLM, pick your tools, build with the API</p>
-
-    <div class="demos-grid">
-      <a href="web-agents/getting-started/" class="demo-link">
-        <div class="demo-card">
-          <div class="demo-card-content">
-            <div class="demo-card-icon">&#128640;</div>
-            <div class="demo-card-text">
-              <div class="demo-card-title">
-                Getting Started
-                <span class="demo-badge">Start Here</span>
-              </div>
-              <p class="demo-card-description">
-                Interactive walkthrough — step through detecting the Web Agent API, 
-                requesting permissions, and making your first tool call.
-              </p>
-            </div>
-          </div>
-        </div>
-      </a>
-
-      <a href="web-agents/aaf-invoice/" class="demo-link">
-        <div class="demo-card">
-          <div class="demo-card-content">
-            <div class="demo-card-text">
-              <div class="demo-card-title">AAF Invoice</div>
-              <p class="demo-card-description">Ask your Harbor-selected AI to fill an invoice, review the details, and save a local draft.</p>
-            </div>
-          </div>
-        </div>
-      </a>
-
-      <a href="web-agents/summarizer/" class="demo-link">
-        <div class="demo-card">
-          <div class="demo-card-content">
-            <div class="demo-card-icon">&#128196;</div>
-            <div class="demo-card-text">
-              <div class="demo-card-title">Page Summarizer</div>
-              <p class="demo-card-description">
-                Simple bookmarklet-style demo using <code>window.ai.createTextSession()</code>
-                to summarize the current page. Shows Chrome API compatibility.
-              </p>
-            </div>
-          </div>
-        </div>
-      </a>
-
-      <a href="web-agents/summarizer/chrome-compat.html" class="demo-link">
-        <div class="demo-card">
-          <div class="demo-card-content">
-            <div class="demo-card-icon">&#128260;</div>
-            <div class="demo-card-text">
-              <div class="demo-card-title">Chrome Compat Demo</div>
-              <p class="demo-card-description">
-                Same summarizer but using the Chrome-compatible 
-                <code>window.ai.languageModel.create()</code> API style.
-              </p>
-            </div>
-          </div>
-        </div>
-      </a>
-
-      <a href="web-agents/bring-your-chatbot/" class="demo-link">
-        <div class="demo-card">
-          <div class="demo-card-content">
-            <div class="demo-card-icon">&#128722;</div>
-            <div class="demo-card-text">
-              <div class="demo-card-title">
-                Bring Your Own Chatbot
-              </div>
-              <p class="demo-card-description">
-                A shop page that opens your agent's chat with one <code>agent.chat.open()</code> call:
-                no chat UI of its own.
-              </p>
-            </div>
-          </div>
-        </div>
-      </a>
-
-      <a href="web-agents/page-tools/" class="demo-link">
-        <div class="demo-card">
-          <div class="demo-card-content">
-            <div class="demo-card-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
-            <div class="demo-card-text">
-              <div class="demo-card-title">
-                Page Tools
-              </div>
-              <p class="demo-card-description">
-                A page offers its own functions with <code>document.modelContext.registerTool()</code>,
-                and your agent calls them.
-              </p>
-            </div>
-          </div>
-        </div>
-      </a>
+<body>
+  <header class="catalog-nav">
+    <div class="catalog-wrap catalog-nav-inner">
+      <a class="catalog-brand" href="https://r.github.io/Harbor/" aria-label="Harbor home"><span class="catalog-mark" aria-hidden="true"></span>Harbor</a>
+      <nav class="catalog-nav-links" aria-label="Main navigation">
+        <a href="#web-agents">Demos</a>
+        <a href="https://github.com/r/harbor/blob/main/QUICKSTART.md">Setup guide</a>
+        <a href="https://github.com/r/harbor">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+  <main class="catalog-wrap">
+    <div class="catalog-hero">
+      <div>
+        <p class="catalog-eyebrow">Web Agent API · working examples</p>
+        <h1>Try your AI on the web.</h1>
+        <p class="catalog-lead">A page can ask to use your AI. Your agent can call the page’s tools. Explore both directions with Harbor, your chosen model, and permissions you control.</p>
+        <a class="catalog-start" href="web-agents/getting-started/">Start the walkthrough <span aria-hidden="true">→</span></a>
+      </div>
+      <aside class="catalog-setup" aria-labelledby="setup-heading">
+        <h2 id="setup-heading">Before you begin</h2>
+        <ol>
+          <li>Follow the <a href="https://github.com/r/harbor/blob/main/QUICKSTART.md">Quickstart</a> to build Harbor and its native bridge.</li>
+          <li>Load the single Harbor extension from <code>extension/dist-firefox/</code> in Firefox.</li>
+          <li>Check that the bridge is connected and your model is ready. Then open a demo and review its permission request.</li>
+        </ol>
+        <p>Harbor supplies <code>window.ai</code>, <code>window.agent</code>, and <code>document.modelContext</code>. You choose the model and connected MCP servers.</p>
+      </aside>
     </div>
 
-    <!-- Web Agent Control -->
-    <h2 class="demo-section-title">Web Agent Control</h2>
-    <p class="demo-section-desc">Choose how the AI interacts with the page &mdash; click, fill, scroll, or observe</p>
+    <section class="catalog-section" id="web-agents" aria-labelledby="web-agents-heading">
+      <div class="catalog-section-intro">
+        <h2 id="web-agents-heading">Pages &amp; your agent</h2>
+        <p>Start with a model call, connect a tool, or let a page open your agent’s chat.</p>
+      </div>
+      <ul class="catalog-list">
+        <li><a class="catalog-entry" href="web-agents/getting-started/"><div><h3>Getting Started</h3><p>Detect the API, request permissions and make your first tool call.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="web-agents/summarizer/"><div><h3>Page Summarizer</h3><p>Summarize a page with <code>window.ai.createTextSession()</code>. Includes a bookmarklet to try on other pages.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="web-agents/summarizer/chrome-compat.html"><div><h3>Page Summarizer (Chrome API)</h3><p>The summarizer using the Chrome-compatible <code>window.ai.languageModel.create()</code> API style.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="web-agents/time-agent/"><div><h3>Time Agent</h3><p>A small MCP example: call the <code>time.now</code> tool and inspect the result.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="web-agents/bring-your-chatbot/"><div><h3>Bring Your Own Chatbot</h3><p>A shop page opens your agent’s chat with <code>agent.chat.open()</code>, using the model you configured in Harbor.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="web-agents/page-tools/"><div><h3>Page Tools</h3><p>A page offers its own functions with <code>document.modelContext.registerTool()</code>, and your agent calls them.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="web-agents/aaf-invoice/"><div><h3>AAF Invoice</h3><p>Ask your Harbor-selected AI to fill an invoice, review the details, and save a local draft.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+      </ul>
+    </section>
 
-    <div class="demos-grid">
-      <a href="web-agent-control/basic-actions/" class="demo-link">
-        <div class="demo-card">
-          <div class="demo-card-content">
-            <div class="demo-card-icon">&#129514;</div>
-            <div class="demo-card-text">
-              <div class="demo-card-title">
-                Basic Actions
-                <span class="demo-badge">Start Here</span>
-              </div>
-              <p class="demo-card-description">
-                Practice <code>click</code>, <code>fill</code>, and <code>select</code> on a simple form.
-              </p>
-            </div>
-          </div>
-        </div>
-      </a>
+    <section class="catalog-section" aria-labelledby="browser-heading">
+      <div class="catalog-section-intro">
+        <h2 id="browser-heading">Browser actions</h2>
+        <p>Try clicking, filling forms and navigating with your agent on pages that have yet to offer tools.</p>
+      </div>
+      <ul class="catalog-list">
+        <li><a class="catalog-entry" href="web-agent-control/basic-actions/"><div><h3>Basic Actions</h3><p>Practice <code>click</code>, <code>fill</code>, and <code>select</code> on a simple form.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="web-agent-control/multi-step-form/"><div><h3>Multi-step Form</h3><p>Validate fields, advance between steps, and wait for the next panel.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+        <li><a class="catalog-entry" href="web-agent-control/research-agent/"><div><h3>Research Agent</h3><p>Search the web, fetch result pages, and synthesize findings with <code>agent.browser.fetch()</code> and <code>DOMParser</code>. Falls back to Wikipedia if Google blocks search.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+      </ul>
+    </section>
 
-      <a href="web-agent-control/multi-step-form/" class="demo-link">
-        <div class="demo-card">
-          <div class="demo-card-content">
-            <div class="demo-card-icon">&#129517;</div>
-            <div class="demo-card-text">
-              <div class="demo-card-title">Multi-step Form</div>
-              <p class="demo-card-description">
-                Validate fields, advance between steps, and use <code>waitForSelector</code>.
-              </p>
-            </div>
-          </div>
-        </div>
-      </a>
+    <section class="catalog-section" aria-labelledby="multi-heading">
+      <div class="catalog-section-intro">
+        <h2 id="multi-heading">Agents together</h2>
+        <p>Follow a task as several agents pass work between them.</p>
+      </div>
+      <ul class="catalog-list">
+        <li><a class="catalog-entry" href="multi-web-agent/research-writer/"><div><h3>Research Pipeline</h3><p>A sequence diagram follows an Orchestrator, Searcher, Reader, and Writer as they research a topic and turn findings into an article.</p></div><span class="catalog-arrow" aria-hidden="true">↗</span></a></li>
+      </ul>
+    </section>
 
-      <a href="web-agent-control/research-agent/" class="demo-link">
-        <div class="demo-card">
-          <div class="demo-card-content">
-            <div class="demo-card-icon">&#128300;</div>
-            <div class="demo-card-text">
-              <div class="demo-card-title">
-                Research Agent
-                <span class="demo-badge demo-badge-info">Fetch</span>
-              </div>
-              <p class="demo-card-description">
-                Search the web (falling back to Wikipedia if Google blocks it), fetch multiple
-                result pages, and synthesize findings with AI using
-                <code>agent.browser.fetch()</code> and <code>DOMParser</code>.
-              </p>
-            </div>
-          </div>
-        </div>
-      </a>
+    <div class="catalog-notes">
+      <section aria-labelledby="webmcp-heading">
+        <h2 id="webmcp-heading">How pages offer tools</h2>
+        <p>Harbor implements <code>document.modelContext</code> from the <a href="https://github.com/webmachinelearning/webmcp">W3C WebMCP proposal</a>. Pages register JavaScript tools that agents can call. The Web Agent API also lets pages ask to use the person’s chosen AI.</p>
+      </section>
+      <section aria-labelledby="build-heading">
+        <h2 id="build-heading">Build your own example</h2>
+        <p>Give your coding assistant the <a href="https://github.com/r/Harbor/blob/main/docs/BUILDING_ON_WEB_AGENTS_API.md">starter guide</a> for the API, examples, and capabilities. Add it to your project and start building a page that works with the visitor’s AI.</p>
+      </section>
     </div>
-
-    <!-- Multi Web Agent -->
-    <h2 class="demo-section-title">Multi Web Agent</h2>
-    <p class="demo-section-desc">Choose your agent topology &mdash; pipelines, parallel, or custom routing</p>
-
-    <div class="demos-grid">
-      <a href="multi-web-agent/research-writer/" class="demo-link">
-        <div class="demo-card">
-          <div class="demo-card-content">
-            <div class="demo-card-icon">&#128300;</div>
-            <div class="demo-card-text">
-              <div class="demo-card-title">
-                Research Pipeline
-                <span class="demo-badge">4 Agents</span>
-              </div>
-              <p class="demo-card-description">
-                Four agents collaborate in a sequence diagram view: Orchestrator coordinates,
-                Searcher queries Google, Reader extracts content from pages, and Writer 
-                synthesizes findings into an article.
-              </p>
-            </div>
-          </div>
-        </div>
-      </a>
+  </main>
+  <footer class="catalog-wrap">
+    <div class="catalog-footer">
+      <span>Harbor · a working proposal for the web</span>
+      <div class="catalog-footer-links">
+        <a href="https://github.com/r/harbor">GitHub</a>
+        <a href="https://github.com/webmachinelearning/webmcp">W3C WebMCP proposal</a>
+        <a href="https://github.com/r/Harbor/blob/main/docs/BUILDING_ON_WEB_AGENTS_API.md">Starter guide</a>
+      </div>
     </div>
-
-    <div class="extension-note">
-      <strong>Note:</strong> These demos require a Web Agent API implementation (like Harbor) to be installed.
-      You choose the LLM backend (Ollama, llamafile, cloud providers) and which MCP servers to connect.
-      The implementation provides <code>window.ai</code>, <code>window.agent</code>, and <code>document.modelContext</code>.
-    </div>
-
-    <div class="build-with-ai-note" style="margin-top: var(--demo-space-6); padding: var(--demo-space-5); background: linear-gradient(135deg, var(--demo-bg-surface) 0%, color-mix(in srgb, var(--demo-accent-primary) 8%, transparent) 100%); border: 1px solid var(--demo-border-default); border-radius: var(--demo-radius-lg); font-size: var(--demo-text-sm);">
-      <strong style="color: var(--demo-text-primary);">Aligned with the W3C WebMCP proposal</strong>
-      <p style="margin: var(--demo-space-2) 0 0; color: var(--demo-text-secondary);">
-        Harbor implements <code>document.modelContext</code> from the
-        <a href="https://github.com/webmachinelearning/webmcp" style="color: var(--demo-accent-primary); font-weight: 600;">W3C WebMCP proposal</a>
-        &mdash; the emerging standard for pages to register JavaScript tools that AI agents can call.
-        Same API shape proposed by Google and Microsoft, available today.
-      </p>
-    </div>
-
-    <div class="build-with-ai-note" style="margin-top: var(--demo-space-3); padding: var(--demo-space-5); background: var(--demo-bg-surface); border: 1px solid var(--demo-border-default); border-radius: var(--demo-radius-lg); font-size: var(--demo-text-sm);">
-      <strong style="color: var(--demo-text-primary);">Build on this with Cursor, Claude, or Copilot?</strong>
-      <p style="margin: var(--demo-space-2) 0 0; color: var(--demo-text-secondary);">
-        Copy our <a href="../docs/BUILDING_ON_WEB_AGENTS_API.md" style="color: var(--demo-accent-primary); font-weight: 600;">starter guide</a> into your project so the API, examples, and capabilities are in context. No Harbor clone required — just add the doc and point your AI at it.
-      </p>
-    </div>
-
-    <div class="footer-links">
-      <a href="https://github.com/r/harbor">
-        <span>GitHub</span>
-      </a>
-      <a href="https://github.com/webmachinelearning/webmcp">
-        <span>W3C WebMCP proposal</span>
-      </a>
-      <a href="../docs/BUILDING_ON_WEB_AGENTS_API.md">
-        <span>Starter guide</span>
-      </a>
-    </div>
-  </div>
+  </footer>
 </body>
 </html>

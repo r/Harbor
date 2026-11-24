@@ -4,9 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Page Summarizer — Web Agent API</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../shared/styles.css">
   <style>
     body {
@@ -36,21 +33,21 @@
       align-items: center;
       gap: var(--demo-space-3);
       padding: var(--demo-space-4) var(--demo-space-8);
-      background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-tertiary));
-      color: white;
+      background: var(--demo-action);
+      color: var(--demo-action-ink);
       text-decoration: none;
       border-radius: var(--demo-radius-lg);
       font-size: var(--demo-text-base);
       font-weight: var(--demo-weight-semibold);
-      box-shadow: var(--demo-shadow-glow);
+      box-shadow: none;
       cursor: grab;
-      transition: transform 0.2s, box-shadow 0.2s;
+      transition: background-color 0.15s;
     }
 
     .bookmarklet-link:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--demo-shadow-lg), var(--demo-shadow-glow);
-      color: white;
+
+      background: var(--demo-action-hover);
+      color: var(--demo-action-ink);
     }
 
     .bookmarklet-link:active {
@@ -85,8 +82,8 @@
     .step-number {
       width: 28px;
       height: 28px;
-      background: linear-gradient(135deg, var(--demo-accent-primary), var(--demo-accent-tertiary));
-      color: white;
+      background: var(--demo-action);
+      color: var(--demo-action-ink);
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -147,10 +144,10 @@
     }
 
     .overlay-preview {
-      background: rgba(0, 0, 0, 0.85);
+      background: var(--demo-bg-elevated);
       border-radius: var(--demo-radius-md);
       padding: var(--demo-space-5);
-      color: white;
+      color: var(--demo-text-primary);
     }
 
     .overlay-preview-header {
@@ -159,7 +156,7 @@
       justify-content: space-between;
       margin-bottom: var(--demo-space-3);
       padding-bottom: var(--demo-space-3);
-      border-bottom: 1px solid rgba(255,255,255,0.1);
+      border-bottom: 1px solid var(--demo-border-default);
     }
 
     .overlay-preview-title {
@@ -170,10 +167,10 @@
     .overlay-preview-close {
       width: 24px;
       height: 24px;
-      background: rgba(255,255,255,0.1);
+      background: var(--demo-bg-overlay);
       border: none;
       border-radius: var(--demo-radius-sm);
-      color: white;
+      color: var(--demo-text-primary);
       cursor: pointer;
       font-size: var(--demo-text-sm);
     }
@@ -181,7 +178,7 @@
     .overlay-preview-content {
       font-size: var(--demo-text-sm);
       line-height: var(--demo-leading-relaxed);
-      color: rgba(255,255,255,0.85);
+      color: var(--demo-text-secondary);
     }
 
     /* Other link */
@@ -224,25 +221,31 @@
     .ideas-list strong {
       color: var(--demo-text-primary);
     }
+
+    .step-content { min-width: 0; }
+    .bookmarklet-link { max-width: 100%; }
+    .comparison-value { min-width: 0; overflow-wrap: anywhere; }
+    @media (max-width: 480px) {
+      .page-container { padding: var(--demo-space-8) var(--demo-space-4); }
+      .comparison-row { flex-direction: column; }
+      .comparison-label { flex-basis: auto; }
+    }
   </style>
 </head>
-<body class="demo-bg-glow">
+<body>
   <div class="page-container">
     <header class="demo-header">
-      <div class="demo-logo">📄</div>
-      <h1 class="demo-title demo-text-gradient">Page Summarizer</h1>
+      <h1 class="demo-title">Page Summarizer</h1>
       <p class="demo-subtitle">A bookmarklet that summarizes any webpage using the Web Agent API</p>
     </header>
 
     <div class="demo-card demo-mb-6">
       <div class="demo-card-header">
-        <div class="demo-card-icon">🔖</div>
         <h2 class="demo-card-title">Get the Bookmarklet</h2>
       </div>
       
       <div class="bookmarklet-section">
         <a class="bookmarklet-link" id="bookmarklet" href="#">
-          <span>📝</span>
           <span>Summarize Page</span>
         </a>
         <p class="bookmarklet-hint">
@@ -276,11 +279,9 @@
 
       <div class="requirements">
         <div class="requirement">
-          <span class="requirement-icon">⚓</span>
           <span>Requires Web Agent API</span>
         </div>
         <div class="requirement">
-          <span class="requirement-icon">🤖</span>
           <span>Requires LLM configured</span>
         </div>
       </div>
@@ -289,8 +290,8 @@
         <div class="preview-label">Preview: What you'll see</div>
         <div class="overlay-preview">
           <div class="overlay-preview-header">
-            <span class="overlay-preview-title">📄 Page Summary</span>
-            <button class="overlay-preview-close">×</button>
+            <span class="overlay-preview-title">Page Summary</span>
+            <button class="overlay-preview-close" aria-label="Close preview">×</button>
           </div>
           <div class="overlay-preview-content">
             This article discusses the key features of the new API, including improved performance, better error handling, and simplified authentication. The main takeaways are...
@@ -301,7 +302,6 @@
 
     <div class="demo-card demo-mb-6">
       <div class="demo-card-header">
-        <div class="demo-card-icon">💻</div>
         <h2 class="demo-card-title">How It Works</h2>
       </div>
       
@@ -345,14 +345,12 @@
       </p>
 
       <a href="chrome-compat.html" class="link-other">
-        <span>🔵</span>
         <span>See the Chrome API version →</span>
       </a>
     </div>
 
     <div class="demo-card">
       <div class="demo-card-header">
-        <div class="demo-card-icon">🛠️</div>
         <h2 class="demo-card-title">Build Your Own</h2>
       </div>
       
@@ -370,7 +368,7 @@
     </div>
 
     <footer class="demo-footer">
-      <p>Built with the <a href="https://r.github.io/Harbor/spec/explainer.html" target="_blank">Web Agent API</a> — Local AI in your browser</p>
+      <p>Built with the <a href="https://r.github.io/Harbor/spec.html" target="_blank">Web Agent API</a></p>
       <p style="margin-top: var(--demo-space-2);"><a href="../../">← Back to Demos</a></p>
     </footer>
   </div>
@@ -385,193 +383,139 @@
     return;
   }
 
-  // Load fonts
-  const fontLink = document.createElement('link');
-  fontLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap';
-  fontLink.rel = 'stylesheet';
-  document.head.appendChild(fontLink);
-
   // Create overlay UI
   const overlay = document.createElement('div');
   overlay.id = 'demo-summary-overlay';
   overlay.innerHTML = \`
     <style>
       #demo-summary-overlay {
+        --summary-bg: #ffffff;
+        --summary-surface: #f6f8f5;
+        --summary-ink: #151b17;
+        --summary-soft: #344338;
+        --summary-rule: #c4ccc2;
+        --summary-accent: #176435;
+        --summary-error: #a4262c;
+        color-scheme: light dark;
         position: fixed;
-        top: 20px;
-        right: 20px;
-        bottom: 20px;
+        inset: 20px 20px 20px auto;
         width: 400px;
         max-width: calc(100vw - 40px);
-        background: #0e0e14;
-        color: #f0f0f5;
-        font-family: 'Inter', system-ui, sans-serif;
+        background: var(--summary-bg);
+        color: var(--summary-ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
         font-size: 14px;
         line-height: 1.6;
         z-index: 2147483647;
-        border-radius: 16px;
-        border: 1px solid rgba(255,255,255,0.1);
-        box-shadow: 
-          0 25px 50px -12px rgba(0,0,0,0.5),
-          0 0 30px rgba(139, 92, 246, 0.15);
+        border-radius: 6px;
+        border: 1px solid var(--summary-rule);
+        box-shadow: 0 12px 36px #0002;
         display: flex;
         flex-direction: column;
-        animation: demoSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
         overflow: hidden;
+        text-align: left;
       }
-      @keyframes demoSlideIn {
-        from { 
-          transform: translateX(30px) scale(0.96); 
-          opacity: 0; 
-        }
-        to { 
-          transform: translateX(0) scale(1); 
-          opacity: 1; 
+      @media (prefers-color-scheme: dark) {
+        #demo-summary-overlay {
+          --summary-bg: #181c20;
+          --summary-surface: #20262b;
+          --summary-ink: #eef2ef;
+          --summary-soft: #c2cec5;
+          --summary-rule: #455249;
+          --summary-accent: #9cdd9e;
+          --summary-error: #ffb4b4;
         }
       }
-      #demo-summary-overlay * {
+      #demo-summary-overlay *, #demo-summary-overlay *::before, #demo-summary-overlay *::after {
         box-sizing: border-box;
         margin: 0;
         padding: 0;
       }
-      .demo-header {
+      #demo-summary-overlay .demo-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 14px 20px;
-        background: linear-gradient(180deg, #14141c 0%, #0e0e14 100%);
-        border-bottom: 1px solid rgba(255,255,255,0.08);
+        padding: 12px 16px;
+        background: var(--summary-surface);
+        border-bottom: 1px solid var(--summary-rule);
+        text-align: left;
       }
-      .demo-title {
-        font-size: 12px;
-        font-weight: 600;
-        letter-spacing: 0.04em;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        color: #e0e0e8;
-        text-transform: uppercase;
+      #demo-summary-overlay .demo-title {
+        font-size: 16px;
+        font-weight: 650;
+        color: var(--summary-ink);
+        letter-spacing: -.015em;
       }
-      .demo-title-icon {
-        width: 26px;
-        height: 26px;
-        background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
-        border-radius: 7px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 13px;
-        box-shadow: 0 0 16px rgba(139, 92, 246, 0.25);
-      }
-      .demo-close {
-        width: 26px;
-        height: 26px;
-        background: rgba(255,255,255,0.05);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 6px;
-        color: #808090;
+      #demo-summary-overlay .demo-badge { font-size: 12px; color: var(--summary-soft); }
+      #demo-summary-overlay .demo-close {
+        width: 36px;
+        height: 36px;
+        background: var(--summary-bg);
+        border: 1px solid var(--summary-rule);
+        border-radius: 4px;
+        color: var(--summary-ink);
         cursor: pointer;
-        font-size: 15px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.15s ease;
+        font: inherit;
+        font-size: 20px;
       }
-      .demo-close:hover {
-        background: rgba(255,255,255,0.1);
-        color: #f0f0f5;
-      }
-      .demo-content {
+      #demo-summary-overlay .demo-close:hover { background: var(--summary-surface); }
+      #demo-summary-overlay :focus-visible { outline: 3px solid var(--summary-accent); outline-offset: 2px; }
+      #demo-summary-overlay .demo-content {
         flex: 1;
-        padding: 20px 24px;
+        min-height: 0;
+        padding: 20px;
         overflow-y: auto;
-        background: #0e0e14;
+        overflow-wrap: anywhere;
       }
-      .demo-content::-webkit-scrollbar {
-        width: 6px;
-      }
-      .demo-content::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .demo-content::-webkit-scrollbar-thumb {
-        background: rgba(255,255,255,0.1);
-        border-radius: 3px;
-      }
-      .demo-content::-webkit-scrollbar-thumb:hover {
-        background: rgba(255,255,255,0.15);
-      }
-      .demo-content p {
+      #demo-summary-overlay .demo-content p {
         font-size: 14px;
-        line-height: 1.55;
-        color: #b8b8c8;
-        margin-bottom: 12px;
-        letter-spacing: -0.01em;
+        line-height: 1.65;
+        color: var(--summary-soft);
+        margin-bottom: 14px;
       }
-      .demo-content p:first-child {
-        font-size: 14px;
-        color: #e8e8f0;
-        font-weight: 500;
-      }
-      .demo-content p:last-child {
-        margin-bottom: 0;
-      }
-      .demo-loading {
+      #demo-summary-overlay .demo-content p:last-child { margin-bottom: 0; }
+      #demo-summary-overlay .demo-loading {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        height: 200px;
-        color: #606070;
+        min-height: 160px;
+        color: var(--summary-soft);
         gap: 16px;
       }
-      .demo-spinner {
-        width: 36px;
-        height: 36px;
-        border: 3px solid rgba(255,255,255,0.1);
-        border-top-color: #8b5cf6;
+      #demo-summary-overlay .demo-spinner {
+        width: 30px;
+        height: 30px;
+        border: 3px solid var(--summary-rule);
+        border-top-color: var(--summary-accent);
         border-radius: 50%;
-        animation: demoSpin 0.8s linear infinite;
+        animation: harborSummarySpin .8s linear infinite;
       }
-      @keyframes demoSpin {
-        to { transform: rotate(360deg); }
-      }
-      .demo-loading-text {
-        font-size: 13px;
-        font-weight: 500;
-        color: #606070;
-      }
-      .demo-error {
-        background: rgba(239, 68, 68, 0.1);
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        border-radius: 8px;
+      @keyframes harborSummarySpin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { #demo-summary-overlay .demo-spinner { animation: none; } }
+      #demo-summary-overlay .demo-loading-text { font-size: 14px; color: var(--summary-soft); }
+      #demo-summary-overlay .demo-error {
+        border: 1px solid currentColor;
+        border-radius: 4px;
         padding: 16px;
-        color: #ef4444;
-        font-size: 13px;
-        line-height: 1.5;
+        color: var(--summary-error);
+        font-size: 14px;
       }
-      .demo-footer {
-        padding: 10px 20px;
-        border-top: 1px solid rgba(255,255,255,0.05);
-        font-size: 10px;
-        color: #505060;
+      #demo-summary-overlay .demo-footer {
+        padding: 12px 16px;
+        border-top: 1px solid var(--summary-rule);
+        font-size: 12px;
+        color: var(--summary-soft);
         text-align: center;
-        background: #0a0a0f;
+        background: var(--summary-surface);
       }
-      .demo-footer a {
-        color: #8b5cf6;
-        text-decoration: none;
-        font-weight: 600;
-      }
-      .demo-footer a:hover {
-        text-decoration: underline;
-      }
+      #demo-summary-overlay .demo-footer a { color: var(--summary-accent); text-decoration: underline; }
     </style>
     <div class="demo-header">
       <span class="demo-title">
-        <span class="demo-title-icon">📄</span>
         Summary
       </span>
-      <button class="demo-close" onclick="this.closest('#demo-summary-overlay').remove()">×</button>
+      <button class="demo-close" aria-label="Close summary" onclick="this.closest('#demo-summary-overlay').remove()">×</button>
     </div>
     <div class="demo-content" id="demo-summary-content">
       <div class="demo-loading">
@@ -580,7 +524,7 @@
       </div>
     </div>
     <div class="demo-footer">
-      Powered by <a href="https://r.github.io/Harbor/spec/explainer.html" target="_blank">Web Agent API</a>
+      Powered by <a href="https://r.github.io/Harbor/spec.html" target="_blank">Web Agent API</a>
     </div>
   \`;
   
