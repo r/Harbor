@@ -39,7 +39,13 @@ const [{ createExtensionRunner }, firefoxApp, { connectWithMaxRetries }, { defau
 ]);
 
 const keepOpen = process.argv.includes('--keep-open');
-const taleUrl = process.argv.find(a => a.startsWith('--url='))?.slice('--url='.length) || 'https://tale.fyi/dracula';
+// Drop any #anchor: Tale only renames the anchor in the address when go_to's
+// target differs from the one the page was opened at.
+const taleUrl = (() => {
+  const url = new URL(process.argv.find(a => a.startsWith('--url='))?.slice('--url='.length) || 'https://tale.fyi/dracula');
+  url.hash = '';
+  return url.href;
+})();
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Tale may add tools; these are the ones this test relies on being present.
@@ -175,6 +181,9 @@ try {
     return true;
   })()`);
   await sleep(1000);
+  const enabled = await evaluate(sidebarFrame.consoleActor, 'document.getElementById("outside-agents-enabled").checked');
+  check('"Let your agent open and use pages" reads back on', enabled === true);
+  if (enabled !== true) throw new Error('The outside-agent setting did not turn on; cannot continue');
 
   mcpSession = openHarborMcpSession({ HARBOR_AGENT_SOCKET: socketPath });
   const init = await mcpSession.send('initialize', { protocolVersion: '2025-06-18', clientInfo: { name: 'tale-interop-e2e' } });
@@ -218,7 +227,8 @@ try {
   check('reading_position reflects the move', /"readingLineAnchor":"chapter-1-p2"/.test(text(after)));
 
   const found = await call('find', { query: 'Bistritz' });
-  check('find returns matching passages', found?.isError !== true && /"matches":\[\{"anchor"/.test(text(found)));
+  const firstMatch = (() => { try { return JSON.parse(text(found)).matches?.[0]; } catch { return null; } })();
+  check('find returns matching passages', found?.isError !== true && typeof firstMatch?.anchor === 'string', firstMatch?.anchor);
 
   const pointed = await call('point_at', { anchor: 'chapter-1-p1' });
   const painted = await inTale(`CSS.highlights ? CSS.highlights.has('tale-point-at') : 'no CSS.highlights'`);
@@ -227,9 +237,10 @@ try {
   const unknown = await call('go_to', { anchor: 'no-such-anchor' });
   check('a bad anchor comes back as a typed result', /"error":"unknown_anchor"/.test(text(unknown)));
 
-  // In a fresh profile narration may not start; any of Tale's typed answers is fine.
+  // In a fresh profile narration may not start, and some books have no
+  // read-along at all; any of Tale's typed answers is fine.
   const played = await call('play', {});
-  check('play answers', /"playing":true|needs_gesture|narration_unavailable/.test(text(played)));
+  check('play answers', /"playing":true|needs_gesture|narration_unavailable|no_read_along/.test(text(played)));
   const paused = await call('pause', {});
   check('pause answers', /"playing":false/.test(text(paused)));
 
