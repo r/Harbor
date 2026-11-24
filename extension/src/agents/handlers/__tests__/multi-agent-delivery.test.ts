@@ -130,7 +130,12 @@ describe('broadcasts reach only sites the sender may reach', () => {
     expect(prompts).toEqual([]);
     await vi.waitFor(() => expect(tabMessages).toHaveLength(1));
     expect(tabMessages).toEqual([
-      { tabId: 5, message: { type: 'agentEvent', event: { type: 'broadcast', broadcast: { type: 'news', data: { n: 1 }, source: expect.any(String) } } } },
+      { tabId: 5, message: { type: 'agentEvent', event: { type: 'broadcast', broadcast: {
+        type: 'news',
+        data: { n: 1 },
+        source: expect.any(String),
+        provenance: { source: 'agent', origin: A, agentId: expect.any(String) },
+      } } } },
     ]);
     expect(onB).toBeTruthy();
   });

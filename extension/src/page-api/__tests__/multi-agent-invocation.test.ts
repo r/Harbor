@@ -190,6 +190,37 @@ describe('multi-agent invocation, delivered entirely in-process (no cross-extens
     expect(result.result).toEqual({ summary: "tab 1's answer" });
   });
 
+  it("tells tab 2 which site's agent answered, whatever tab 1's answer claims", async () => {
+    const tab1 = connectPort('https://a.example/page', 1);
+    const tab2 = connectPort('https://b.example/page', 2);
+
+    const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
+    await registerHandlerAgent(tab2, 'invoker');
+
+    tab2.send({
+      id: 'invoke-p',
+      type: 'agent.agents.invoke',
+      payload: { agentId: handlerAgentId, request: { task: 'summarize' } },
+    });
+
+    await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalled());
+    const [, sentMessage] = tabsSendMessage.mock.calls[0] as [number, { invocationId: string }];
+    replyAsContentScript(1, {
+      invocationId: sentMessage.invocationId,
+      success: true,
+      result: 'ok',
+      provenance: { source: 'agent', origin: 'https://bank.example', agentId: 'someone-else' },
+    });
+
+    await vi.waitFor(() => expect(tab2.posted.some((p) => p.id === 'invoke-p')).toBe(true));
+    const invokeReply = tab2.posted.find((p) => p.id === 'invoke-p')!;
+    expect((invokeReply.result as { provenance?: unknown }).provenance).toEqual({
+      source: 'agent',
+      origin: 'https://a.example',
+      agentId: handlerAgentId,
+    });
+  });
+
   it("a reply claiming to be from a different tab does not resolve tab 1's pending invocation", async () => {
     const tab1 = connectPort('https://a.example/page', 1);
     const tab2 = connectPort('https://b.example/page', 2);

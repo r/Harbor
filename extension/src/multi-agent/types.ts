@@ -100,6 +100,18 @@ export interface AgentSummary {
 /**
  * Message between agents
  */
+/**
+ * Which site's agent produced an answer. Harbor sets it from its own
+ * registry and overwrites anything the agent supplied, so the receiver can
+ * judge how sensitive the answer is. See docs/rfds/provenance.md.
+ */
+export interface AgentProvenance {
+  source: 'agent';
+  /** The origin that registered the agent. */
+  origin: string;
+  agentId: AgentId;
+}
+
 export interface AgentMessage {
   /** Unique message ID */
   id: string;
@@ -115,6 +127,8 @@ export interface AgentMessage {
   correlationId?: string;
   /** Timestamp */
   timestamp: number;
+  /** The sending agent's site. */
+  provenance?: AgentProvenance;
 }
 
 /**
@@ -146,6 +160,8 @@ export interface AgentInvocationResponse {
   };
   /** Execution time in milliseconds */
   executionTime: number;
+  /** The answering agent's site; absent when Harbor answered instead (not found, refused, timed out). */
+  provenance?: AgentProvenance;
 }
 
 /**
@@ -160,6 +176,8 @@ export interface AgentEvent {
   source: AgentId;
   /** Timestamp */
   timestamp: number;
+  /** The broadcasting agent's site. */
+  provenance?: AgentProvenance;
 }
 
 // =============================================================================
@@ -432,6 +450,8 @@ export interface SupervisorTaskResult {
   attempts: number;
   /** Execution time in milliseconds */
   executionTime: number;
+  /** The site of the worker that answered last. */
+  provenance?: AgentProvenance;
 }
 
 /**

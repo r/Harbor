@@ -173,6 +173,11 @@ export function installWebAgentsMock(global) {
     }
   }
 
+  // Which site's agent sent an answer, as Harbor stamps it (extension/src/multi-agent/messaging.ts).
+  function provenanceOf(info) {
+    return info ? { source: 'agent', origin: info.origin, agentId: info.id } : undefined;
+  }
+
   function makeAgentInfo(options) {
     const now = Date.now();
     return {
@@ -276,9 +281,14 @@ export function installWebAgentsMock(global) {
       const started = Date.now();
       try {
         const result = await target.onInvoke({ ...request, from });
-        return { success: true, result, executionTime: Date.now() - started };
+        return { success: true, result, executionTime: Date.now() - started, provenance: provenanceOf(target.info) };
       } catch (e) {
-        return { success: false, error: { code: 'ERR_INVOCATION_FAILED', message: e instanceof Error ? e.message : String(e) } };
+        // In Harbor a page agent's handler that throws still answers, as ERR_HANDLER_FAILED.
+        return {
+          success: false,
+          error: { code: 'ERR_HANDLER_FAILED', message: e instanceof Error ? e.message : String(e) },
+          provenance: provenanceOf(target.info),
+        };
       }
     },
     async send(agentId, payload) {
@@ -289,7 +299,10 @@ export function installWebAgentsMock(global) {
       const from = requirePageAgent('Must register as an agent before sending messages');
       const target = agentsState.others.get(agentId);
       if (!target?.onMessage) return { delivered: false };
-      target.onMessage({ id: `msg-mock-${agentsState.nextId++}`, from, to: agentId, type: 'request', payload, timestamp: Date.now() });
+      target.onMessage({
+        id: `msg-mock-${agentsState.nextId++}`, from, to: agentId, type: 'request', payload, timestamp: Date.now(),
+        provenance: provenanceOf(agentsState.pageAgent),
+      });
       return { delivered: true };
     },
     onMessage(handler) {
@@ -421,14 +434,21 @@ export function installWebAgentsMock(global) {
         const started = Date.now();
         try {
           const result = await handler({ ...request, from: fromAgentId });
-          return { success: true, result, executionTime: Date.now() - started };
+          return { success: true, result, executionTime: Date.now() - started, provenance: provenanceOf(agentsState.pageAgent) };
         } catch (e) {
-          return { success: false, error: { code: 'ERR_INVOCATION_FAILED', message: e instanceof Error ? e.message : String(e) } };
+          return {
+            success: false,
+            error: { code: 'ERR_HANDLER_FAILED', message: e instanceof Error ? e.message : String(e) },
+            provenance: provenanceOf(agentsState.pageAgent),
+          };
         }
       },
       /** Deliver a message from another agent to the page's onMessage handlers. */
       sendToPage(fromAgentId, payload) {
-        const message = { id: `msg-mock-${agentsState.nextId++}`, from: fromAgentId, to: agentsState.pageAgentId, type: 'request', payload, timestamp: Date.now() };
+        const message = {
+          id: `msg-mock-${agentsState.nextId++}`, from: fromAgentId, to: agentsState.pageAgentId, type: 'request', payload, timestamp: Date.now(),
+          provenance: provenanceOf(agentsState.others.get(fromAgentId)?.info),
+        };
         agentsState.messageHandlers.forEach(h => h(message));
         return message;
       },

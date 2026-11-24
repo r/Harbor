@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- An answer from another site's agent now says whose it is. Invoke responses, messages, broadcast events and each orchestration step's result carry `provenance: { source: 'agent', origin, agentId }`, which Harbor fills in from the site that registered the agent, so an agent can't claim to be another site's. Harbor doesn't judge how sensitive the answer is: the page, or the agent or model it passes the answer to, does. See "Where an answer came from" in docs/WEB_AGENTS_API.md.
+
 - The demo directory and examples use Harbor’s public-site typography and green palette, with layouts for phones and system light and dark themes.
 
 - The page-tools demo no longer has its own Ask and Open chat buttons. You ask your own agent to open the page, or share the tab with it, and it uses the page's tools. When "Let your agent open and use pages" is off, the message your agent gets now names that setting and where it is in Harbor's sidebar.
@@ -61,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The generated test harness's mock answered an agent whose invoke handler throws with `ERR_INVOCATION_FAILED`. Harbor answers `ERR_HANDLER_FAILED`, and the mock now does too. Its agent answers also carry `provenance`, as Harbor's do.
 - The invoice widget inherits the page's color scheme inside its shadow DOM instead of staying light in dark mode.
 - Page Tools wraps its inline API example on narrow screens instead of overflowing the viewport.
 - Time Agent uses Harbor's supported tool API, and both it and Getting Started request consent for the specific time tool before calling it.

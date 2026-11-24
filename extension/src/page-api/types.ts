@@ -472,6 +472,17 @@ export interface AgentInvocationRequest {
 }
 
 /**
+ * Which site's agent produced an answer. Harbor sets it from its own
+ * registry, never from the agent, so the receiver can judge how sensitive
+ * the answer is.
+ */
+export interface AgentProvenance {
+  source: 'agent';
+  origin: string;
+  agentId: AgentId;
+}
+
+/**
  * Response from invoking an agent.
  */
 export interface AgentInvocationResponse {
@@ -482,6 +493,8 @@ export interface AgentInvocationResponse {
     message: string;
   };
   executionTime?: number;
+  /** Absent when Harbor answered instead of the agent (not found, refused, timed out). */
+  provenance?: AgentProvenance;
 }
 
 /**
@@ -495,6 +508,7 @@ export interface AgentMessage {
   payload: unknown;
   correlationId?: string;
   timestamp: number;
+  provenance?: AgentProvenance;
 }
 
 /**
@@ -505,6 +519,7 @@ export interface AgentEvent {
   data: unknown;
   source: AgentId;
   timestamp: number;
+  provenance?: AgentProvenance;
 }
 
 /**

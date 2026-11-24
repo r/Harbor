@@ -31,6 +31,7 @@ import {
   handleOrchestrateParallel,
   handleOrchestrateRoute,
   handleOrchestrateSupervisor,
+  forgetTabAgents,
 } from '../multi-agent';
 
 const A = 'https://a.example';
@@ -69,6 +70,8 @@ let onA: string;
 let onBank: string;
 
 beforeEach(async () => {
+  // Each test starts with no agents, so a site's caller agent is this test's.
+  for (const tabId of Object.values(TAB)) forgetTabAgents(tabId);
   resetMockBrowser();
   Policy.__reset();
   setWatchdogResolver(() => ({ status: 'normal' }));

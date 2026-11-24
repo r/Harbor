@@ -16,6 +16,8 @@ import type {
   AgentInvocationRequest,
   AgentInvocationResponse,
   AgentEvent,
+  AgentProvenance,
+  RegisteredAgent,
 } from './types';
 import {
   getAgent,
@@ -112,6 +114,15 @@ export function unsubscribeFromAllEvents(agentId: AgentId): void {
 // =============================================================================
 
 /**
+ * Which site's agent sent an answer, from Harbor's registry. Always set by
+ * Harbor, after anything the agent returned, so an agent can't claim another
+ * site's provenance.
+ */
+function provenanceOf(agent: RegisteredAgent): AgentProvenance {
+  return { source: 'agent', origin: agent.origin, agentId: agent.id };
+}
+
+/**
  * Send a message from one agent to another. No permission check here: the
  * caller (`handleAgentsSend`) checks a cross-origin recipient's site first.
  */
@@ -143,6 +154,7 @@ export async function sendMessage(
     type: 'event',
     payload,
     timestamp: Date.now(),
+    provenance: provenanceOf(fromAgent),
   };
 
   const handler = messageHandlers.get(toAgentId);
@@ -233,6 +245,7 @@ export async function invokeAgent(
     return {
       ...result,
       executionTime: Date.now() - startTime,
+      provenance: provenanceOf(toAgent),
     };
   } catch (error) {
     return {
@@ -266,11 +279,13 @@ export function broadcastEvent(
     return { delivered: 0, failed: 0 };
   }
 
+  const sourceAgent = getAgent(sourceAgentId);
   const event: AgentEvent = {
     type: eventType,
     data,
     source: sourceAgentId,
     timestamp: Date.now(),
+    ...(sourceAgent ? { provenance: provenanceOf(sourceAgent) } : {}),
   };
 
   let delivered = 0;
@@ -289,7 +304,7 @@ export function broadcastEvent(
         from: sourceAgentId,
         to: subscriberId,
         type: 'broadcast',
-        payload: { type: event.type, data: event.data, source: event.source },
+        payload: { type: event.type, data: event.data, source: event.source, provenance: event.provenance },
         timestamp: Date.now(),
       });
       delivered++;

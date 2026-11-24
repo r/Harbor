@@ -135,11 +135,20 @@ interface AgentInvocationRequest {
   timeout?: number;
 }
 
+/** Which site's agent produced an answer. Harbor sets it, never the agent. */
+interface AgentProvenance {
+  source: 'agent';
+  origin: string;
+  agentId: string;
+}
+
 interface AgentInvocationResponse {
   success: boolean;
   result?: unknown;
   error?: { code: string; message: string };
   executionTime?: number;
+  /** Absent when Harbor answered instead of the agent (not found, refused, timed out). */
+  provenance?: AgentProvenance;
 }
 
 interface AgentMessage {
@@ -150,6 +159,7 @@ interface AgentMessage {
   payload: unknown;
   correlationId?: string;
   timestamp: number;
+  provenance?: AgentProvenance;
 }
 
 interface PipelineStep {
@@ -169,6 +179,7 @@ interface AgentEvent {
   type: string;
   data: unknown;
   source: string;
+  provenance?: AgentProvenance;
 }
 
 /** `window.agent.agents`. Needs Harbor's multiAgent feature; otherwise every call fails with ERR_FEATURE_DISABLED. */
