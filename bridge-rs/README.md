@@ -19,7 +19,7 @@ The bridge is a Rust binary that runs locally and communicates with the browser 
 cargo build --release
 ```
 
-The binary is created at `target/release/harbor-bridge`. On Apple silicon, building with the macOS 26 SDK or later also produces `harbor-apple-model`. Keep the two executables together. The companion uses Apple’s Foundation Models framework on-device.
+The binary is created at `target/release/harbor-bridge`. On Apple silicon, building with the macOS 26 SDK or later also produces `harbor-apple-model`. Keep the two executables together. The companion uses Apple’s Foundation Models framework on-device. Apple's model reads only part of JSON Schema, so the bridge rewrites each tool's input schema first (`src/llm/apple.rs`): nullable types and `oneOf` become `anyOf`, and `pattern` is dropped. The companion leaves out a tool whose schema it still can't read, names it on stderr, and the bridge logs that as a warning. `apple/test_adapter.py <path to harbor-apple-model>` exercises the companion against the real model.
 
 ### Install (Firefox and Chrome)
 
