@@ -93,7 +93,8 @@ private func completion(_ request: [String: Any]) async throws -> [String: Any] 
             parameters = try JSONDecoder().decode(GenerationSchema.self, from: encoded)
         } catch {
             // One tool Apple's model can't describe must not cost the whole run.
-            FileHandle.standardError.write(Data("Left out tool \(name): Apple Intelligence can't read its input schema (\(error.localizedDescription))\n".utf8))
+            // The name is the page's, so it is quoted and escaped to stay on one line.
+            FileHandle.standardError.write(Data("Left out tool \(name.debugDescription): Apple Intelligence can't read its input schema (\(error.localizedDescription))\n".utf8))
             continue
         }
         tools.append(HarborTool(name: alias, originalName: name,

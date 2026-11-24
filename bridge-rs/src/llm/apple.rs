@@ -107,8 +107,12 @@ fn apple_schema(schema: &mut serde_json::Value) {
         return;
     };
     map.remove("pattern");
-    if let Some(one_of) = map.remove("oneOf") {
-        map.entry("anyOf").or_insert(one_of);
+    // With anyOf already there, oneOf can't merge into it without changing
+    // its meaning; leaving it makes the helper drop this one tool instead.
+    if !map.contains_key("anyOf") {
+        if let Some(one_of) = map.remove("oneOf") {
+            map.insert("anyOf".into(), one_of);
+        }
     }
     if let Some(serde_json::Value::Array(types)) = map.get("type").cloned() {
         let non_null: Vec<_> = types
@@ -141,12 +145,31 @@ fn apple_schema(schema: &mut serde_json::Value) {
     if !map.contains_key("type") && map.contains_key("properties") {
         map.insert("type".into(), "object".into());
     }
-    for key in ["properties", "$defs", "definitions"] {
+    for key in [
+        "properties",
+        "patternProperties",
+        "dependentSchemas",
+        "$defs",
+        "definitions",
+    ] {
         if let Some(serde_json::Value::Object(children)) = map.get_mut(key) {
             children.values_mut().for_each(apple_schema);
         }
     }
-    for key in ["items", "additionalProperties", "not", "anyOf", "allOf"] {
+    for key in [
+        "items",
+        "prefixItems",
+        "contains",
+        "additionalProperties",
+        "propertyNames",
+        "not",
+        "if",
+        "then",
+        "else",
+        "anyOf",
+        "oneOf",
+        "allOf",
+    ] {
         match map.get_mut(key) {
             Some(serde_json::Value::Array(children)) => children.iter_mut().for_each(apple_schema),
             Some(child) => apple_schema(child),
@@ -377,6 +400,26 @@ printf '%s' '{"id":"apple-test","object":"chat.completion","created":0,"model":"
                 "tags": { "type": "array", "items": { "type": "string" } },
                 "inner": { "type": "object", "properties": { "code": { "anyOf": [{ "type": "string" }, { "type": "null" }] } } }
             } })
+        );
+        // Every place a subschema can sit loses its pattern too.
+        assert_eq!(
+            apple(json!({ "type": "object", "properties": {
+                "pair": { "type": "array", "prefixItems": [{ "type": "string", "pattern": "a" }], "contains": { "type": "string", "pattern": "b" } },
+                "map": { "type": "object", "patternProperties": { "^x": { "type": "string", "pattern": "c" } }, "propertyNames": { "pattern": "^x" } },
+                "cond": { "if": { "pattern": "d" }, "then": { "pattern": "e" }, "else": { "pattern": "f" } }
+            } })),
+            json!({ "type": "object", "properties": {
+                "pair": { "type": "array", "prefixItems": [{ "type": "string" }], "contains": { "type": "string" } },
+                "map": { "type": "object", "patternProperties": { "^x": { "type": "string" } }, "propertyNames": {} },
+                "cond": { "if": {}, "then": {}, "else": {} }
+            } })
+        );
+        // oneOf beside anyOf stays (rewritten) rather than being silently dropped.
+        assert_eq!(
+            apple(
+                json!({ "type": "object", "properties": { "a": { "anyOf": [{ "type": "string" }], "oneOf": [{ "type": "string", "pattern": "x" }] } } })
+            ),
+            json!({ "type": "object", "properties": { "a": { "anyOf": [{ "type": "string" }], "oneOf": [{ "type": "string" }] } } })
         );
         // A tool with no schema, or one without type, still describes an object.
         assert_eq!(

@@ -50,9 +50,16 @@ print("PASS reject unmatched tools, unknown roles and unsupported images")
 unreadable = {"type": "function", "function": {"name": "page/either", "description": "Takes a string or a number.", "parameters": {"type": "object", "properties": {"value": {"type": ["string", "number"]}}}}}
 result = subprocess.run([binary, "chat"], input=json.dumps({"model": "apple:system", "messages": [{"role": "user", "content": "What is the current weather in Paris? Use the weather tool."}], "tools": [unreadable, tool]}), text=True, capture_output=True, timeout=60)
 assert result.returncode == 0, result.stderr
-assert "Left out tool page/either" in result.stderr, result.stderr
+assert 'Left out tool "page/either"' in result.stderr, result.stderr
 assert json.loads(result.stdout)["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "weather/get_current", result.stdout
 print("PASS leave out only the tool whose schema can't be read")
+
+# A page-chosen name can't add lines to the bridge log.
+forged = dict(unreadable, function=dict(unreadable["function"], name="evil\nERROR: forged"))
+result = subprocess.run([binary, "chat"], input=json.dumps({"model": "apple:system", "messages": [{"role": "user", "content": "Say hi."}], "tools": [forged]}), text=True, capture_output=True, timeout=60)
+assert result.returncode == 0, result.stderr
+assert result.stderr.count("\n") == 1 and '"evil\\nERROR: forged"' in result.stderr, result.stderr
+print("PASS a left-out tool's name stays on one log line")
 
 # A nullable field, as the bridge rewrites `type: ["string", "null"]`.
 mark = {"type": "function", "function": {"name": "page/mark", "description": "Mark a paragraph in the open book, with an optional note.", "parameters": {"type": "object", "properties": {
