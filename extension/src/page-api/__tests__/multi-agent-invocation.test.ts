@@ -60,6 +60,9 @@ type RuntimeMessageListener = (
 ) => boolean | void;
 
 let onConnect: ConnectListener;
+// What each tab shows now, for tabs.get (set by connectPort; a test can
+// move a tab to another site without its old page's port closing yet).
+let tabUrls: Map<number, string>;
 let onTabRemoved: (tabId: number) => Promise<void> | void;
 let runtimeMessageListeners: RuntimeMessageListener[];
 let tabsSendMessage: ReturnType<typeof vi.fn>;
@@ -73,6 +76,7 @@ beforeEach(async () => {
   await chrome.storage.local.set({ 'harbor-page-api-flags': { multiAgent: true } });
 
   runtimeMessageListeners = [];
+  tabUrls = new Map();
   tabsSendMessage = vi.fn(() => Promise.resolve());
 
   const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> };
@@ -87,7 +91,11 @@ beforeEach(async () => {
   chromeGlobal.chrome.tabs = {
     ...(chromeGlobal.chrome.tabs as Record<string, unknown>),
     onRemoved: { addListener: (l: typeof onTabRemoved) => { onTabRemoved = l; } },
-    get: vi.fn(async () => { throw new Error('no tab'); }),
+    get: vi.fn(async (tabId: number) => {
+      const url = tabUrls.get(tabId);
+      if (!url) throw new Error('no tab');
+      return { id: tabId, url };
+    }),
     sendMessage: tabsSendMessage,
   };
 
@@ -122,6 +130,7 @@ interface TestPort {
 
 function connectPort(senderUrl: string, tabId: number): TestPort {
   const messageListeners: Array<(m: unknown) => void> = [];
+  tabUrls.set(tabId, senderUrl);
   const disconnectListeners: Array<() => void> = [];
   const posted: TestPort['posted'] = [];
   const port = {
@@ -334,6 +343,7 @@ describe('multi-agent invocation, delivered entirely in-process (no cross-extens
 async function invokeBelowPagePort(
   handlerAgentId: string,
   timeout?: number,
+  expectDelivery = true,
 ): Promise<{ settled: () => { ok: boolean; result?: unknown } | undefined }> {
   const { routeAgentMessage } = await import('../../agents/background-router');
   let settled: { ok: boolean; result?: unknown } | undefined;
@@ -344,7 +354,7 @@ async function invokeBelowPagePort(
     },
     (response) => { settled = response; },
   );
-  await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalled());
+  if (expectDelivery) await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalled());
   return { settled: () => settled };
 }
 
@@ -399,6 +409,38 @@ describe('multi-agent lifecycle cleanup', () => {
 
     await onTabRemoved(1);
     expect(agentInvocationTabs.has(handlerAgentId)).toBe(false);
+  });
+
+  it("sends nothing to a tab that has moved to another site, before the old page's port closes", async () => {
+    const tab1 = connectPort('https://a.example/page', 1);
+    const tab2 = connectPort('https://b.example/page', 2);
+    const handlerAgentId = await registerHandlerAgent(tab1, 'handler');
+    await registerHandlerAgent(tab2, 'invoker');
+
+    tabUrls.set(1, 'https://evil.example/');
+    const { settled } = await invokeBelowPagePort(handlerAgentId, undefined, false);
+    await vi.waitFor(() => expect(settled()).toBeDefined());
+
+    expect(tabsSendMessage).not.toHaveBeenCalled();
+    const result = settled()!.result as { success: boolean; error?: { code: string } };
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('ERR_AGENT_NOT_FOUND');
+  });
+
+  it("sends nothing to a reloaded page for the agent its previous page registered", async () => {
+    const oldPage = connectPort('https://a.example/page', 1);
+    const tab2 = connectPort('https://b.example/page', 2);
+    const oldAgentId = await registerHandlerAgent(oldPage, 'old');
+    await registerHandlerAgent(tab2, 'invoker');
+    await new Promise((r) => setTimeout(r, 5));
+
+    // The same site, reloaded: a new page connects before the old port closes.
+    connectPort('https://a.example/page', 1);
+    const { settled } = await invokeBelowPagePort(oldAgentId, undefined, false);
+    await vi.waitFor(() => expect(settled()).toBeDefined());
+
+    expect(tabsSendMessage).not.toHaveBeenCalled();
+    expect((settled()!.result as { error?: { code: string } }).error?.code).toBe('ERR_AGENT_NOT_FOUND');
   });
 
   it("an invocation waiting on a tab fails at once when that tab closes", async () => {

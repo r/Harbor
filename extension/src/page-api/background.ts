@@ -63,6 +63,7 @@ import {
   resolveInvocationResponse,
 } from './handlers';
 import { browserAPI } from '../browser-compat';
+import { forgetLatestPage, latestPage, notePageConnected } from './tab-pages';
 
 const PORT_NAME = 'harbor-page-api';
 
@@ -377,10 +378,10 @@ export function initializePageApi(): void {
   });
 
   // Port connection handler: the page-facing transport.
-  // Each page connection, numbered, and the latest one in each tab with when
-  // it connected: a reloaded page's old connection can close after the new one opens.
+  // Each page connection is numbered; tab-pages.ts keeps the latest one in
+  // each tab, since a reloaded page's old connection can close after the new
+  // one opens.
   let pageConnections = 0;
-  const latestTabConnection = new Map<number, { connection: number; at: number }>();
 
   browserAPI.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     if (port.name !== PORT_NAME) return;
@@ -389,7 +390,7 @@ export function initializePageApi(): void {
     const tabId = port.sender?.tab?.id;
     // Which page connection this is, in its tab (see the disconnect below).
     const connection = ++pageConnections;
-    if (tabId !== undefined) latestTabConnection.set(tabId, { connection, at: Date.now() });
+    if (tabId !== undefined) notePageConnected(tabId, connection);
     const cookieStoreId = (port.sender?.tab as (chrome.tabs.Tab & { cookieStoreId?: string }) | undefined)?.cookieStoreId;
 
     // One AbortController per in-flight request on this port, keyed by
@@ -496,9 +497,9 @@ export function initializePageApi(): void {
       if (tabId !== undefined && (port.sender?.frameId ?? 0) === 0) {
         // If a newer page in this tab has connected already, spare the
         // agents it registered: only this page's agents go.
-        const latest = latestTabConnection.get(tabId);
+        const latest = latestPage(tabId);
         const newerPageSince = latest && latest.connection !== connection ? latest.at : undefined;
-        if (newerPageSince === undefined) latestTabConnection.delete(tabId);
+        if (newerPageSince === undefined) forgetLatestPage(tabId);
         forgetAgentsInTab(tabId, newerPageSince);
         failInvocationsForTab(tabId, newerPageSince);
       }

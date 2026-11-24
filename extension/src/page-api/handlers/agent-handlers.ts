@@ -8,6 +8,7 @@ import { harborRequest, invocationTimeoutMs } from '../harbor-core';
 import type { AgentListEntry } from '../types';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
+import { latestPage } from '../tab-pages';
 
 /**
  * A failed Harbor call, reported with Harbor's own code (ERR_PERMISSION_DENIED,
@@ -34,6 +35,8 @@ const registeredAgents = new Map<string, {
   tabId: number;
   name: string;
   capabilities: string[];
+  /** When the page API registered it; compared with the tab's latest page. */
+  registeredAt: number;
 }>();
 
 // Track pending invocations waiting for responses from pages. Bound to the
@@ -73,6 +76,24 @@ async function registerProxyInvocationHandler(agentId: string, origin: string, t
 }
 
 /**
+ * Whether the page that registered `agentId` still shows in `tabId`: the tab
+ * is on the agent's site, and no newer page has connected there since the
+ * agent registered.
+ */
+async function agentPageStillInTab(agentId: string, tabId: number): Promise<boolean> {
+  const agent = registeredAgents.get(agentId);
+  if (!agent) return false;
+  const latest = latestPage(tabId);
+  if (latest && latest.at > agent.registeredAt) return false;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    return !!tab?.url && new URL(tab.url).origin === agent.origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Handle an invocation request from Harbor for one of our registered agents.
  */
 export async function handleIncomingInvocation(
@@ -95,6 +116,16 @@ export async function handleIncomingInvocation(
   
   if (!tabId) {
     return { success: false, error: { code: 'ERR_NO_TAB', message: 'Agent tab not found' } };
+  }
+
+  // Send nothing to the tab unless the page that registered the agent is
+  // still the one there. Just after the tab's page is replaced, the old
+  // page's agent is still registered until its disconnect is handled, and
+  // the content script would post the caller's task and input straight
+  // into the new page, which may be another site.
+  if (!(await agentPageStillInTab(agentId, tabId))) {
+    console.log(`[TRACE ${trace}] handleIncomingInvocation - the agent's page has left tab ${tabId}`);
+    return { success: false, error: { code: 'ERR_AGENT_NOT_FOUND', message: "The agent's page is gone" } };
   }
   
   const invocationId = `inv-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -230,6 +261,7 @@ export async function handleAgentsRegister(ctx: RequestContext): HandlerResponse
       tabId: tabId || 0,
       name: result.name,
       capabilities: result.capabilities,
+      registeredAt: Date.now(),
     });
     
     if (result.acceptsInvocations) {

@@ -249,12 +249,16 @@ export async function invokeAgent(
 
   const timeout = invocationTimeoutMs(request.timeout);
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
 
   try {
     const result = await Promise.race([
       handler({ ...request, timeout }, fromAgentId, trace),
       new Promise<AgentInvocationResponse>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Invocation timeout')), timeout);
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error('Invocation timed out'));
+        }, timeout);
       }),
     ]);
     console.log(`[TRACE ${trace}] Handler returned, success: ${result.success}`);
@@ -268,7 +272,7 @@ export async function invokeAgent(
     return {
       success: false,
       error: {
-        code: 'ERR_INVOCATION_FAILED',
+        code: timedOut ? 'ERR_TIMEOUT' : 'ERR_INVOCATION_FAILED',
         message: error instanceof Error ? error.message : 'Invocation failed',
       },
       executionTime: Date.now() - startTime,

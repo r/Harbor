@@ -1,9 +1,12 @@
 /**
  * An invocation reaches a page's `onInvoke` handlers only for an agent that
- * page registered. Just after a tab's page is replaced, Harbor can still
- * deliver an invocation meant for the old page's agent to the tab; the new
- * page, which may be another site, must not see the caller's task or input,
- * and answers ERR_AGENT_NOT_FOUND so the caller hears at once.
+ * page registered, and is otherwise answered ERR_AGENT_NOT_FOUND.
+ *
+ * This is the second layer. It runs in the page's own world, after the
+ * content script has posted the invocation there, so it can't keep the task
+ * from the page. The background is what keeps an old page's invocation out
+ * of a replaced tab (handleIncomingInvocation's agentPageStillInTab, tested
+ * in multi-agent-invocation.test.ts).
  *
  * Runs the real injected.ts in a VM, as injected-request-timeouts.test.js does.
  */
