@@ -5,19 +5,19 @@
  * 
  * Protocol: Simple JSON-RPC over HTTP/HTTPS
  * 
- * Endpoints:
+ * Endpoints Harbor uses:
  * - GET  /agent-info     - Get agent metadata
- * - POST /invoke         - Invoke the agent with a task
- * - POST /message        - Send a message to the agent
  * - GET  /health         - Check if agent is reachable
+ *
+ * Harbor connects to, lists and pings remote agents. It doesn't invoke or
+ * message them: nothing called the invoke and message clients, so they were
+ * removed rather than left to ship answers without provenance.
  */
 
 import type {
   AgentId,
   RemoteAgentEndpoint,
   RemoteAgentInfo,
-  AgentInvocationRequest,
-  AgentInvocationResponse,
   AgentSummary,
 } from './types';
 
@@ -124,123 +124,6 @@ export async function pingRemoteAgent(agentId: AgentId): Promise<boolean> {
   } catch {
     agent.reachable = false;
     return false;
-  }
-}
-
-/**
- * Invoke a remote agent.
- */
-export async function invokeRemoteAgent(
-  agentId: AgentId,
-  request: AgentInvocationRequest,
-): Promise<AgentInvocationResponse> {
-  const startTime = Date.now();
-  const agent = remoteAgents.get(agentId);
-
-  if (!agent) {
-    return {
-      success: false,
-      error: { code: 'ERR_AGENT_NOT_FOUND', message: 'Remote agent not connected' },
-      executionTime: Date.now() - startTime,
-    };
-  }
-
-  try {
-    const invokeUrl = new URL('/invoke', agent.endpoint.url).toString();
-    const response = await fetch(invokeUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        ...getAuthHeaders(agent.endpoint),
-      },
-      body: JSON.stringify({
-        task: request.task,
-        input: request.input,
-      }),
-    });
-
-    if (!response.ok) {
-      return {
-        success: false,
-        error: {
-          code: 'ERR_REMOTE_FAILED',
-          message: `Remote agent returned ${response.status}: ${response.statusText}`,
-        },
-        executionTime: Date.now() - startTime,
-      };
-    }
-
-    const result = await response.json() as {
-      success: boolean;
-      result?: unknown;
-      error?: { code: string; message: string };
-    };
-
-    agent.lastPing = Date.now();
-    agent.reachable = true;
-
-    return {
-      success: result.success,
-      result: result.result,
-      error: result.error,
-      executionTime: Date.now() - startTime,
-    };
-  } catch (error) {
-    agent.reachable = false;
-    return {
-      success: false,
-      error: {
-        code: 'ERR_NETWORK',
-        message: error instanceof Error ? error.message : 'Network error',
-      },
-      executionTime: Date.now() - startTime,
-    };
-  }
-}
-
-/**
- * Send a message to a remote agent.
- */
-export async function sendRemoteMessage(
-  agentId: AgentId,
-  payload: unknown,
-): Promise<{ delivered: boolean; error?: string }> {
-  const agent = remoteAgents.get(agentId);
-
-  if (!agent) {
-    return { delivered: false, error: 'Remote agent not connected' };
-  }
-
-  try {
-    const messageUrl = new URL('/message', agent.endpoint.url).toString();
-    const response = await fetch(messageUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        ...getAuthHeaders(agent.endpoint),
-      },
-      body: JSON.stringify({ payload }),
-    });
-
-    agent.lastPing = Date.now();
-    agent.reachable = response.ok;
-
-    if (!response.ok) {
-      return {
-        delivered: false,
-        error: `Remote agent returned ${response.status}`,
-      };
-    }
-
-    return { delivered: true };
-  } catch (error) {
-    agent.reachable = false;
-    return {
-      delivered: false,
-      error: error instanceof Error ? error.message : 'Network error',
-    };
   }
 }
 

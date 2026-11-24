@@ -38,7 +38,9 @@ Harbor sends its own `_meta` key today (`harbor/provenance`, below) to show the 
 
 4. **On tool results** (a recommendation for MCP, since tools themselves are MCP's domain). A client that relays tool calls can put the same object under `_meta` on each `Tool` in `tools/list` and on each `CallToolResult`, so the provenance survives into the model's context.
 
-5. **No new trust.** Provenance is a claim by the client, which the agent already trusts to relay prompts. It tells the agent who the client says the request came from, and lets the agent's policy act on that. It doesn't authenticate the website itself.
+5. **On answers between agents.** When one agent calls, messages or broadcasts to another through the client, the answer can carry the same object with `source: "agent"`, the answering agent's origin and its id, so the caller (and any model it passes the answer to) knows whose answer it is.
+
+6. **No new trust.** Provenance is a claim by the client, which the agent already trusts to relay prompts. It tells the agent who the client says the request came from, and lets the agent's policy act on that. It doesn't authenticate the website itself.
 
 ## Shiny future
 
@@ -51,6 +53,7 @@ The same field lets an agent with memory decide, per turn, how much of what it r
 **Harbor already sends these**, as `_meta` keys pending a standard:
 
 - Prompts: `session/prompt` carries `_meta: {"harbor/provenance": {"source": "website" | "page-chat", "origin": "<site origin>"}}`, set from the browser's own record of the calling page.
+- Answers between agents: when a page calls another site's agent through `window.agent.agents`, Harbor puts `provenance: {"source": "agent", "origin": "<agent's site>", "agentId": "<id>"}` on the invoke response, each message and broadcast event, and each orchestration step's result. Harbor sets it from its own registry after the agent answers, so the agent can't choose it.
 - Tools: when Harbor serves a site's tools to the agent through its own local MCP endpoint, each listed tool and each result carries `_meta: {"harbor/provenance": {"source": "page-tool" | "site-server", "origin": "<site origin>", "server": "<id>"}}`. The endpoint's server name is the site's host, chosen by Harbor, not the site.
 
 **Plan:**
@@ -72,3 +75,4 @@ The same field lets an agent with memory decide, per turn, how much of what it r
 ## Revision history
 
 - Draft: first version, from Harbor's implementation.
+- Draft: added provenance on answers between agents.

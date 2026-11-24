@@ -1008,6 +1008,18 @@ A broadcast reaches agents subscribed to that event on your own site, and on oth
 
 Messages and broadcasts reach a page agent registered with `acceptsMessages` (the default). If Harbor refuses an agent call, the error keeps Harbor's code, such as `ERR_PERMISSION_DENIED` or `ERR_NOT_REGISTERED`.
 
+#### Where an answer came from
+
+Every answer from an agent says which site's agent sent it, in a `provenance` field:
+
+```javascript
+{ source: 'agent', origin: 'https://bank.example', agentId: 'agent-…' }
+```
+
+It's on an `invoke()` response, a message passed to `onMessage`, an event passed to a `subscribe()` handler, each pipeline step in `stepResults`, each parallel task in `taskResults`, a route's `invocationResult` and each supervisor task in `results`. Harbor fills it in from the site that registered the agent, after the agent answers, so an agent can't claim to be another site's. It's missing only when Harbor answered instead of an agent: the agent wasn't found, a check refused the call, or it timed out.
+
+Harbor doesn't decide how sensitive an answer is. `provenance` tells you, and any agent or model you pass the answer to, whose it is, so you and it can decide. Pass it along with the answer if you hand the answer on.
+
 #### Orchestration Patterns
 
 An orchestration call needs `agents:invoke`. Harbor then checks each step's agent just before that step runs, the same way it checks a direct `invoke`. An agent on another origin needs an `agents:crossOrigin` grant for that agent's site, so the user may be asked partway through a pipeline. A route checks only the agent it picks. If the user refuses a step, a pipeline stops there. In a parallel run, only that task fails.

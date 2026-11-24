@@ -58,6 +58,8 @@ describe('multi-agent flow against the mock', () => {
     const response = await agent.agents.invoke(agents[0].id, { task: 'summarize', input: { text: 'long article' } });
     expect(response.success).toBe(true);
     expect(response.result).toEqual({ task: 'summarize', summary: 'short: long article' });
+    // Harbor says which site's agent answered.
+    expect(response.provenance).toEqual({ source: 'agent', origin: 'http://localhost', agentId: summarizer.id });
 
     const sent = await agent.agents.send(summarizer.id, { hello: 'there' });
     expect(sent.delivered).toBe(true);
@@ -98,6 +100,16 @@ describe('multi-agent flow against the mock', () => {
     await agent.agents.register({ name: 'Writer' });
     const response = await agent.agents.invoke('agent-nope', { task: 'summarize' });
     expect(response).toMatchObject({ success: false, error: { code: 'ERR_AGENT_NOT_FOUND' } });
+  });
+
+  it('reports an agent whose handler throws as its own failed answer', async () => {
+    const { agent } = globalThis;
+    await agent.requestPermissions({ scopes: ['agents:register', 'agents:invoke'] });
+    await agent.agents.register({ name: 'Writer' });
+    const broken = mock.agents.addAgent({ name: 'Broken' }, { onInvoke: () => { throw new Error('nope'); } });
+    const response = await agent.agents.invoke(broken.id, { task: 'x' });
+    expect(response).toMatchObject({ success: false, error: { code: 'ERR_HANDLER_FAILED', message: 'nope' } });
+    expect(response.provenance).toEqual({ source: 'agent', origin: 'http://localhost', agentId: broken.id });
   });
 
   it('requires registering before invoking another agent', async () => {

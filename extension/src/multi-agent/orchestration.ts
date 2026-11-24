@@ -28,6 +28,7 @@ import type {
   SupervisorTaskResult,
   SupervisorAssignmentStrategy,
   CreateSupervisorOptions,
+  AgentProvenance,
 } from './types';
 import { invokeAgent } from './messaging';
 import { getAgent } from './registry';
@@ -78,6 +79,8 @@ export interface PipelineStepResult {
   result?: unknown;
   error?: string;
   executionTime: number;
+  /** The step agent's site; absent when Harbor answered instead. */
+  provenance?: AgentProvenance;
 }
 
 /**
@@ -130,6 +133,7 @@ export async function executePipeline(
       result: response.result,
       error: response.error?.message,
       executionTime: Date.now() - stepStartTime,
+      provenance: response.provenance,
     };
 
     stepResults.push(stepResult);
@@ -205,6 +209,8 @@ export interface ParallelTaskResult {
   result?: unknown;
   error?: string;
   executionTime: number;
+  /** The task agent's site; absent when Harbor answered instead. */
+  provenance?: AgentProvenance;
 }
 
 /**
@@ -247,6 +253,7 @@ export async function executeParallel(
       result: response.result,
       error: response.error?.message,
       executionTime: Date.now() - taskStartTime,
+      provenance: response.provenance,
     };
   });
 
@@ -536,6 +543,7 @@ export async function executeSupervisor(
             result: response.result,
             attempts,
             executionTime: Date.now() - taskStartTime,
+            provenance: response.provenance,
           };
         } else {
           lastError = response.error?.message ?? 'Unknown error';

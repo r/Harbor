@@ -23,6 +23,8 @@
     "test:host-request": "node test-host-request.mjs",
     "test:page-tools-agent": "node test-page-tools-agent.mjs",
     "test:page-tools-agent:keep-open": "node test-page-tools-agent.mjs --keep-open",
+    "test:agent-provenance": "node test-agent-answer-provenance.mjs",
+    "test:agent-provenance:keep-open": "node test-agent-answer-provenance.mjs --keep-open",
     "test:outside-agent": "node test-outside-agent.mjs",
     "test:outside-agent:keep-open": "node test-outside-agent.mjs --keep-open",
     "test:wasm": "node test-wasm-server.mjs",
