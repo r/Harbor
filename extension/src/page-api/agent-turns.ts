@@ -41,6 +41,8 @@ export interface AgentTurnRecord {
   agentId: string;
   prompt: string;
   tools: AgentTurnToolCall[];
+  /** Tool calls left out of `tools` once it reached `MAX_TOOLS_PER_TURN`. */
+  moreTools?: number;
   /** Unset while the turn is still running. */
   outcome?: AgentTurnOutcome;
   /** The turn used tools and ended without the page getting its answer, and the person hasn't opened the feed since. */
@@ -58,6 +60,14 @@ export const AGENT_TURNS_STORAGE_KEY = 'harbor_agent_turns';
 export const MAX_TURNS = 200;
 /** Longer prompts are cut to this many characters in the record. */
 export const MAX_PROMPT_CHARS = 4_000;
+/** Tool calls kept per turn; the rest are only counted. The agent decides how many it makes. */
+export const MAX_TOOLS_PER_TURN = 100;
+/** Longer tool titles and kinds, which come from the agent, are cut to this many characters. */
+export const MAX_TOOL_TITLE_CHARS = 200;
+
+function cut(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
 
 type ExtensionApi = {
   storage?: { local?: { get(key: string): Promise<Record<string, unknown>>; set(items: Record<string, unknown>): Promise<void> } };
@@ -101,7 +111,7 @@ function endRecord(turn: AgentTurnRecord, outcome: AgentTurnOutcome): AgentTurnR
     ...turn,
     outcome,
     endedAt: turn.endedAt ?? Date.now(),
-    unseen: outcome !== 'answered' && turn.tools.length > 0,
+    unseen: outcome !== 'answered' && (turn.tools.length > 0 || (turn.moreTools ?? 0) > 0),
   };
 }
 
@@ -155,11 +165,12 @@ export function startAgentTurn(info: { origin: string; api: AgentTurnApi; agentI
     origin: info.origin,
     api: info.api,
     agentId: info.agentId,
-    prompt: info.prompt.length > MAX_PROMPT_CHARS ? `${info.prompt.slice(0, MAX_PROMPT_CHARS)}…` : info.prompt,
+    prompt: cut(info.prompt, MAX_PROMPT_CHARS),
     tools: [],
     unseen: false,
   };
   const toolIndex = new Map<string, number>();
+  const omitted = new Set<string>();
   let ended = false;
 
   void load().then(() => {
@@ -169,10 +180,19 @@ export function startAgentTurn(info: { origin: string; api: AgentTurnApi; agentI
   });
 
   return {
-    toolCall(toolCallId, title, kind) {
+    toolCall(toolCallId, rawTitle, rawKind) {
       if (ended) return;
+      const title = rawTitle ? cut(rawTitle, MAX_TOOL_TITLE_CHARS) : rawTitle;
+      const kind = rawKind ? cut(rawKind, MAX_TOOL_TITLE_CHARS) : rawKind;
       const known = toolIndex.get(toolCallId);
       if (known === undefined) {
+        if (toolIndex.size >= MAX_TOOLS_PER_TURN) {
+          if (!omitted.has(toolCallId)) {
+            omitted.add(toolCallId);
+            update(id, (t) => ({ ...t, moreTools: (t.moreTools ?? 0) + 1 }));
+          }
+          return;
+        }
         toolIndex.set(toolCallId, toolIndex.size);
         const call: AgentTurnToolCall = { title: title || kind || 'Tool call' };
         if (kind) call.kind = kind;

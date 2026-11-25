@@ -87,6 +87,18 @@ describe('the stored record', () => {
     expect(await turns.listAgentTurns()).toHaveLength(turns.MAX_TURNS);
   });
 
+  it("bounds the agent's tool calls in one turn, and their titles, and counts the ones left out", async () => {
+    const r = turns.startAgentTurn({ origin: 'https://a.test', api: 'agent.run', agentId: 'agent', prompt: 'p' });
+    for (let i = 0; i < turns.MAX_TOOLS_PER_TURN + 7; i++) r.toolCall(`c${i}`, 't'.repeat(turns.MAX_TOOL_TITLE_CHARS + 50), 'k'.repeat(500));
+    r.end('cancelled');
+    const [only] = await turns.listAgentTurns();
+    expect(only.tools).toHaveLength(turns.MAX_TOOLS_PER_TURN);
+    expect(only.moreTools).toBe(7);
+    expect(only.tools[0].title.length).toBe(turns.MAX_TOOL_TITLE_CHARS + 1);
+    expect(only.tools[0].kind!.length).toBeLessThanOrEqual(turns.MAX_TOOL_TITLE_CHARS + 1);
+    expect(only.unseen).toBe(true);
+  });
+
   it('cuts a very long prompt', async () => {
     turns.startAgentTurn({ origin: 'https://a.test', api: 'agent.run', agentId: 'agent', prompt: 'x'.repeat(turns.MAX_PROMPT_CHARS + 50) }).end('answered');
     const [only] = await turns.listAgentTurns();

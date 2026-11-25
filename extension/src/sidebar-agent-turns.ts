@@ -39,8 +39,9 @@ export function renderAgentTurns(turns: readonly AgentTurnRecord[], highlighted:
   return turns.slice().reverse().map((t) => {
     const outcome = OUTCOME[t.outcome ?? 'running'];
     const flagged = highlighted.has(t.id);
+    const more = t.moreTools ? ` and ${t.moreTools} more` : '';
     const tools = t.tools.length
-      ? t.tools.map((c) => escapeHtml(c.title)).join(', ')
+      ? t.tools.map((c) => escapeHtml(c.title)).join(', ') + more
       : 'No tools used';
     const time = new Date(t.startedAt).toLocaleTimeString();
     return `
