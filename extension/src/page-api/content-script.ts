@@ -124,9 +124,13 @@ function failInFlight(message: string): void {
 // Harbor is told why first, so it keeps the page's sessions on the
 // person's own agent for when the page comes back.
 let portClosedForCache = false;
+// Names this document to Harbor across the cache, so the page that comes
+// back gets its own sessions and no other page's. Kept in this isolated
+// world, out of the page's reach.
+const documentToken = crypto.randomUUID();
 window.addEventListener('pagehide', (event: PageTransitionEvent) => {
   if (!event.persisted || !backgroundPort) return;
-  try { backgroundPort.postMessage({ type: 'page_hidden' }); } catch { /* already closed */ }
+  try { backgroundPort.postMessage({ type: 'page_hidden', token: documentToken }); } catch { /* already closed */ }
   backgroundPort.disconnect();
   backgroundPort = null;
   portClosedForCache = true;
@@ -140,7 +144,7 @@ window.addEventListener('pageshow', (event: PageTransitionEvent) => {
   if (!event.persisted) return;
   if (portClosedForCache) {
     portClosedForCache = false;
-    getBackgroundPort().postMessage({ type: 'page_shown' });
+    getBackgroundPort().postMessage({ type: 'page_shown', token: documentToken });
   }
   window.postMessage({ channel: CHANNEL, pageRestored: true }, '*');
 });
@@ -257,6 +261,15 @@ window.addEventListener('message', async (event: MessageEvent) => {
   if (!data.request) return;
 
   const request = data.request;
+  // Only this script says a page is going into or back from the cache.
+  const requestType: string = request.type;
+  if (requestType === 'page_hidden' || requestType === 'page_shown') {
+    window.postMessage({
+      channel: CHANNEL,
+      response: { id: request.id, ok: false, error: { code: 'ERR_INVALID_REQUEST', message: 'Unknown request type' } },
+    }, '*');
+    return;
+  }
   const isStreamingRequest = request.type === 'session.promptStreaming' || request.type === 'agent.run';
 
   const port = getBackgroundPort();

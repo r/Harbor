@@ -704,7 +704,7 @@ describe('a tab (or its port) going away while a session is still opening', () =
     const sessionId = (await createViaPort(port)).result as string;
 
     // The content script says the page is going into the cache, then closes its port.
-    await port.receive({ type: 'page_hidden' });
+    await port.receive({ type: 'page_hidden', token: 'page-a' });
     port.disconnect();
     await new Promise((r) => setTimeout(r, 10));
     const { isAcpTextSession } = await import('../acp-text-session-registry');
@@ -713,7 +713,7 @@ describe('a tab (or its port) going away while a session is still opening', () =
 
     // Back: the same page, on a new port in the same tab.
     const restored = connectPort(ORIGIN, port.tabId);
-    await restored.receive({ type: 'page_shown' });
+    await restored.receive({ type: 'page_shown', token: 'page-a' });
     const reply = await promptViaPort(restored, sessionId, 'hello again');
     expect(reply.ok).toBe(true);
   });
@@ -727,7 +727,7 @@ describe('a tab (or its port) going away while a session is still opening', () =
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      await port.receive({ type: 'page_hidden' });
+      await port.receive({ type: 'page_hidden', token: 'page-a' });
       port.disconnect();
       await vi.advanceTimersByTimeAsync(29 * 60_000);
       const { isAcpTextSession } = await import('../acp-text-session-registry');
@@ -740,6 +740,99 @@ describe('a tab (or its port) going away while a session is still opening', () =
     }
   });
 
+  it("a cached page's 30 minutes never end the next page's live session", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const a = connectPort();
+    const aSession = (await createViaPort(a)).result as string;
+    // B is the tab's next page; its port connected before A's closed.
+    const b = connectPort(ORIGIN, a.tabId);
+    const bSession = (await createViaPort(b)).result as string;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await a.receive({ type: 'page_hidden', token: 'page-a' });
+      a.disconnect();
+      await vi.advanceTimersByTimeAsync(31 * 60_000);
+      const { isAcpTextSession } = await import('../acp-text-session-registry');
+      expect(isAcpTextSession(aSession)).toBe(false);
+      expect(isAcpTextSession(bSession)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("one page coming back doesn't stop another cached page's 30 minutes", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const a = connectPort();
+    await createViaPort(a);
+    await a.receive({ type: 'page_hidden', token: 'page-a' });
+    a.disconnect();
+    const b = connectPort(ORIGIN, a.tabId);
+    const bSession = (await createViaPort(b)).result as string;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await b.receive({ type: 'page_hidden', token: 'page-b' });
+      b.disconnect();
+      // Back to A.
+      const restored = connectPort(ORIGIN, a.tabId);
+      await restored.receive({ type: 'page_shown', token: 'page-a' });
+      await vi.advanceTimersByTimeAsync(31 * 60_000);
+      const { isAcpTextSession } = await import('../acp-text-session-registry');
+      expect(isAcpTextSession(bSession)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a later page leaving without the cache doesn't end a cached page's session", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const a = connectPort();
+    const aSession = (await createViaPort(a)).result as string;
+    await a.receive({ type: 'page_hidden', token: 'page-a' });
+    a.disconnect();
+    const b = connectPort(ORIGIN, a.tabId);
+    b.disconnect();
+    await new Promise((r) => setTimeout(r, 10));
+    const { isAcpTextSession } = await import('../acp-text-session-registry');
+    expect(isAcpTextSession(aSession)).toBe(true);
+  });
+
+  it("a page showing with another page's token doesn't take its sessions", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const a = connectPort();
+    const aSession = (await createViaPort(a)).result as string;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await a.receive({ type: 'page_hidden', token: 'page-a' });
+      a.disconnect();
+      const other = connectPort(ORIGIN, a.tabId);
+      await other.receive({ type: 'page_shown', token: 'guess' });
+      await vi.advanceTimersByTimeAsync(31 * 60_000);
+      const { isAcpTextSession } = await import('../acp-text-session-registry');
+      expect(isAcpTextSession(aSession)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a cached page's session gives up its agent slot when the site needs one", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const a = connectPort();
+    const aSession = (await createViaPort(a)).result as string;
+    const second = (await createViaPort(a)).result as string;
+    await a.receive({ type: 'page_hidden', token: 'page-a' });
+    a.disconnect();
+    const b = connectPort(ORIGIN, a.tabId);
+    const created = await createViaPort(b);
+    expect(created.ok).toBe(true);
+    const { isAcpTextSession } = await import('../acp-text-session-registry');
+    expect(isAcpTextSession(aSession) && isAcpTextSession(second)).toBe(false);
+  });
+
   it("doesn't let a later cached page in the tab push back an earlier page's 30 minutes", async () => {
     await setAcpBackend(AGENT_ID);
     registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
@@ -748,12 +841,12 @@ describe('a tab (or its port) going away while a session is still opening', () =
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      await port.receive({ type: 'page_hidden' });
+      await port.receive({ type: 'page_hidden', token: 'page-a' });
       port.disconnect();
       await vi.advanceTimersByTimeAsync(20 * 60_000);
       // The next page in the tab goes into the cache too.
       const next = connectPort(ORIGIN, port.tabId);
-      await next.receive({ type: 'page_hidden' });
+      await next.receive({ type: 'page_hidden', token: 'page-b' });
       next.disconnect();
       await vi.advanceTimersByTimeAsync(10 * 60_000);
       const { isAcpTextSession } = await import('../acp-text-session-registry');

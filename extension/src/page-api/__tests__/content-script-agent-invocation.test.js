@@ -41,7 +41,7 @@ function load(origin) {
     getElementById: () => null,
     addEventListener: vi.fn(),
   };
-  runInNewContext(bundled, { window, chrome, document, console: { log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }, setTimeout, clearTimeout, Promise });
+  runInNewContext(bundled, { window, chrome, document, console: { log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }, setTimeout, clearTimeout, Promise, crypto: globalThis.crypto });
   const invoke = (agentOrigin, invocationId) => {
     const sendResponse = vi.fn();
     const message = { type: 'agentInvocation', invocationId, agentId: 'agent-1', agentOrigin, from: 'agent-caller', task: 'secret task', input: { secret: 1 } };
@@ -109,7 +109,7 @@ function loadWithPort(origin) {
     getElementById: () => null,
     addEventListener: vi.fn(),
   };
-  runInNewContext(bundled, { window, chrome, document, console: { log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }, setTimeout, clearTimeout, Promise });
+  runInNewContext(bundled, { window, chrome, document, console: { log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }, setTimeout, clearTimeout, Promise, crypto: globalThis.crypto });
   const fire = (type, event) => (windowListeners[type] || []).forEach((l) => l(event));
   const fromPage = (data) => fire('message', { source: window, data: { channel: 'harbor_page_api', ...data } });
   return { window, fire, fromPage, pagePosts, ports, runtimeListeners };
@@ -123,7 +123,7 @@ describe('content script and the back/forward cache', () => {
 
     cs.fire('pagehide', { persisted: true });
     // Harbor hears why the port closes, so it can keep the page's own-agent sessions.
-    expect(cs.ports[0].postMessage).toHaveBeenCalledWith({ type: 'page_hidden' });
+    expect(cs.ports[0].postMessage).toHaveBeenCalledWith({ type: 'page_hidden', token: expect.any(String) });
     expect(cs.ports[0].disconnect).toHaveBeenCalled();
     expect(cs.pagePosts).toContainEqual(expect.objectContaining({
       response: expect.objectContaining({ id: 'r1', ok: false }),
@@ -138,7 +138,8 @@ describe('content script and the back/forward cache', () => {
     expect(cs.pagePosts).toContainEqual(expect.objectContaining({ pageRestored: true }));
     // A new port at once, so Harbor counts this page as the tab's own again.
     expect(cs.ports).toHaveLength(2);
-    expect(cs.ports[1].postMessage).toHaveBeenCalledWith({ type: 'page_shown' });
+    const hidden = cs.ports[0].postMessage.mock.calls.find(([m]) => m.type === 'page_hidden')[0];
+    expect(cs.ports[1].postMessage).toHaveBeenCalledWith({ type: 'page_shown', token: hidden.token });
 
     cs.fromPage({ request: { id: 'r2', type: 'agent.agents.list' } });
     expect(cs.ports).toHaveLength(2);
@@ -148,6 +149,15 @@ describe('content script and the back/forward cache', () => {
     const cs = loadWithPort('https://a.example');
     cs.fire('pageshow', { persisted: false });
     expect(cs.pagePosts.some((d) => d?.pageRestored)).toBe(false);
+  });
+
+  it("refuses a page's own request posing as the content script's page_hidden or page_shown", () => {
+    const cs = loadWithPort('https://a.example');
+    cs.fromPage({ request: { id: 'f1', type: 'page_hidden', token: 'x' } });
+    cs.fromPage({ request: { id: 'f2', type: 'page_shown', token: 'x' } });
+    const sent = cs.ports.flatMap((p) => p.postMessage.mock.calls.map(([m]) => m));
+    expect(sent.some((m) => m.type === 'page_hidden' || m.type === 'page_shown')).toBe(false);
+    expect(cs.pagePosts).toContainEqual(expect.objectContaining({ response: expect.objectContaining({ id: 'f1', ok: false }) }));
   });
 
   it('passes a cancelled invocation on to the page', () => {

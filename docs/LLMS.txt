@@ -362,7 +362,7 @@ await window.agent.agents.send(otherId, { hello: 'world' });
 await window.agent.agents.broadcast('event-name', { foo: 1 });
 ```
 
-`timeout` defaults to 30 s and is capped at 5 minutes. If the agent's tab closes, its page reloads, navigates or goes into the back/forward cache before it answers, `invoke` resolves at once with `{ success: false, error: { code: 'ERR_AGENT_NOT_FOUND' } }`. When the caller stops waiting, the handler's `request.signal` aborts. A page's `onInvoke`, `onMessage` and `subscribe()` handlers get only what's meant for agents that page registered. A page restored by Back gets its agents back under the same ids, with its subscriptions, page tools, MCP servers and own-agent `window.ai` sessions. Orchestration calls run for up to 30 minutes. `unregister()` rejects with `ERR_AGENT_NOT_FOUND` for an id that isn't registered or is another site's.
+`timeout` defaults to 30 s and is capped at 5 minutes. If the agent's tab closes, its page reloads, navigates or goes into the back/forward cache before it answers, `invoke` resolves at once with `{ success: false, error: { code: 'ERR_AGENT_NOT_FOUND' } }`. When the caller stops waiting, the handler's `request.signal` aborts. A page's `onInvoke`, `onMessage` and `subscribe()` handlers get only what's meant for agents that page registered. A page restored by Back gets its agents back under the same ids, with its subscriptions, page tools and MCP servers; its own-agent `window.ai` sessions are kept for up to 30 minutes while it's cached. Orchestration calls run for up to 30 minutes. `unregister()` rejects with `ERR_AGENT_NOT_FOUND` for an id that isn't registered or is another site's.
 
 ### Orchestration
 

@@ -784,3 +784,16 @@ describe('orchestration page calls', () => {
     }
   });
 });
+
+describe('an invocation whose caller gave up before delivery', () => {
+  it('is never sent to the agent page', async () => {
+    const tab1 = connectPort('https://a.example/page', 1);
+    const agentId = await registerHandlerAgent(tab1, 'handler');
+    const { handleIncomingInvocation } = await import('../handlers/agent-handlers');
+    const controller = new AbortController();
+    controller.abort();
+    const result = await handleIncomingInvocation(agentId, { from: 'x', task: 't' }, undefined, controller.signal);
+    expect(result.error?.code).toBe('ERR_ABORTED');
+    expect(tabsSendMessage).not.toHaveBeenCalled();
+  });
+});

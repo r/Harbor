@@ -47,7 +47,7 @@ function load() {
     getElementById: () => null,
     addEventListener: vi.fn(),
   };
-  runInNewContext(bundled, { window, chrome, document, console: { log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }, setTimeout, clearTimeout, Promise });
+  runInNewContext(bundled, { window, chrome, document, console: { log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }, setTimeout, clearTimeout, Promise, crypto: globalThis.crypto });
   const fromPage = (data) => windowListeners.forEach((l) => l({ source: window, data: { channel: 'harbor_page_api', ...data } }));
   const fromBackground = (m) => portListeners.forEach((l) => l(m));
   return { pagePosts, portPosts, fromPage, fromBackground };

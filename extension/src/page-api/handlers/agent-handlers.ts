@@ -126,7 +126,12 @@ export async function handleIncomingInvocation(
   // page's agent is still registered until its disconnect is handled, and
   // the content script would post the caller's task and input straight
   // into the new page, which may be another site.
-  if (!(await agentPageStillInTab(agentId, tabId))) {
+  const pageStillThere = await agentPageStillInTab(agentId, tabId);
+  // The caller may have given up while that was checked: send nothing.
+  if (signal?.aborted) {
+    return { success: false, error: { code: 'ERR_ABORTED', message: 'The caller stopped waiting' } };
+  }
+  if (!pageStillThere) {
     console.log(`[TRACE ${trace}] handleIncomingInvocation - the agent's page has left tab ${tabId}`);
     return { success: false, error: { code: 'ERR_AGENT_NOT_FOUND', message: "The agent's page is gone" } };
   }

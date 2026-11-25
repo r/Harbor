@@ -38,6 +38,7 @@ import {
   isAcpTextSession,
   promptStreamingAcpTextSession,
   cleanupAcpTextSessionsForTab,
+  destroyAcpTextSession,
   destroyAllAcpTextSessions,
 } from './acp-text-session';
 import type { TransportStreamEvent } from './types';
@@ -344,8 +345,43 @@ export function initializePageApi(): void {
     void endExplicitTextSession(sessionId, origin);
   });
 
+  // A page that went into the back/forward cache keeps its sessions on the
+  // person's own agent, so they work again if it comes back. Each cached
+  // page is held on its own, under a token only its content script knows:
+  // its sessions end 30 minutes after it left (Firefox keeps a cached page
+  // that long at most), when its tab closes, or sooner if its site needs
+  // the agent slot for a new session. Back, the page takes them up again.
+  const CACHED_PAGE_SESSION_MS = 30 * 60_000;
+  const cachedPages = new Map<string, {
+    tabId: number;
+    origin: string;
+    sessions: Set<string>;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+  const endSessions = async (sessionIds: Iterable<string>) => {
+    await Promise.all([...sessionIds].map(async (sessionId) => {
+      forgetTextSession(sessionId);
+      await destroyAcpTextSession(sessionId).catch(() => { /* best-effort */ });
+    }));
+  };
+  const endCachedPage = async (token: string) => {
+    const page = cachedPages.get(token);
+    if (!page) return;
+    cachedPages.delete(token);
+    clearTimeout(page.timer);
+    await endSessions(page.sessions);
+  };
+  /** The site's oldest cached page, whose sessions go first when the site needs a slot. */
+  const oldestCachedPageOf = (origin: string) => [...cachedPages.entries()].find(([, page]) => page.origin === origin)?.[0];
+
   // Clean up spawned tabs when they are closed.
   browserAPI.tabs.onRemoved.addListener(async (tabId: number) => {
+    // Its cached pages go with it (their sessions end with the tab's, below).
+    for (const [token, page] of [...cachedPages]) {
+      if (page.tabId !== tabId) continue;
+      clearTimeout(page.timer);
+      cachedPages.delete(token);
+    }
     // The page's own tools (document.modelContext) go with the tab.
     forgetPageToolsInTab(tabId);
     const wasTracked = Object.values(getAllSpawnedTabs()).some(tabs => tabs.includes(tabId));
@@ -395,20 +431,6 @@ export function initializePageApi(): void {
   // one opens.
   let pageConnections = 0;
 
-  // A page that went into the back/forward cache keeps its sessions on the
-  // person's own agent, so they work again if it comes back. They end when
-  // the tab closes, when a page in the tab leaves without the cache, or
-  // at most 30 minutes after the first page left (Firefox keeps a cached
-  // page that long at most). The tab's sessions aren't told apart by page,
-  // so one clock per tab, which a later page doesn't restart.
-  const CACHED_PAGE_SESSION_MS = 30 * 60_000;
-  const cachedPageSessionTimers = new Map<number, ReturnType<typeof setTimeout>>();
-  /** Stops the clock on a cached page's sessions: it came back, or they're ending anyway. */
-  const stopCachedPageClock = (tabId: number) => {
-    clearTimeout(cachedPageSessionTimers.get(tabId));
-    cachedPageSessionTimers.delete(tabId);
-  };
-
   browserAPI.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     if (port.name !== PORT_NAME) return;
 
@@ -431,8 +453,11 @@ export function initializePageApi(): void {
     // still in flight on it.
     const runControllers = new Map<string, AbortController>();
     // The content script says the page is going into the back/forward cache
-    // just before it closes this port.
-    let hiddenForCache = false;
+    // just before it closes this port, with the token that names the page.
+    let cacheToken: string | undefined;
+    // The sessions on the person's own agent this page has open: they end
+    // when it leaves, or wait for it while it's cached.
+    const ownSessions = new Set<string>();
 
     port.onMessage.addListener(async (message: { id: string; type: string; payload: unknown }) => {
       // The page's own tools (document.modelContext): its descriptor list,
@@ -457,12 +482,19 @@ export function initializePageApi(): void {
       }
 
       if (message?.type === 'page_hidden') {
-        hiddenForCache = true;
+        const token = (message as { token?: unknown }).token;
+        if (typeof token === 'string' && token) cacheToken = token;
         return;
       }
       if (message?.type === 'page_shown') {
-        // Back from the cache: its sessions stay.
-        if (tabId !== undefined) stopCachedPageClock(tabId);
+        // Back from the cache: this page takes up its own sessions again.
+        const token = (message as { token?: unknown }).token;
+        const page = typeof token === 'string' ? cachedPages.get(token) : undefined;
+        if (page && page.tabId === tabId && page.origin === origin) {
+          cachedPages.delete(token as string);
+          clearTimeout(page.timer);
+          for (const sessionId of page.sessions) ownSessions.add(sessionId);
+        }
         return;
       }
 
@@ -507,7 +539,17 @@ export function initializePageApi(): void {
           return;
         }
 
-        const response = await routeMessage(ctx);
+        let response = await routeMessage(ctx);
+        if (ctx.type === 'ai.createTextSession' || ctx.type === 'ai.languageModel.create') {
+          // A cached page of this site gives up its agent slot first.
+          const busy = (r: typeof response) => !r.ok && (r as { error?: { code?: string } }).error?.code === 'ERR_AGENT_BUSY';
+          for (let token = oldestCachedPageOf(origin); busy(response) && token; token = oldestCachedPageOf(origin)) {
+            await endCachedPage(token);
+            response = await routeMessage(ctx);
+          }
+          const sessionId = response.ok ? (response as { result?: unknown }).result : undefined;
+          if (typeof sessionId === 'string' && isAcpTextSession(sessionId)) ownSessions.add(sessionId);
+        }
         try {
           port.postMessage(response);
         } catch {
@@ -531,16 +573,21 @@ export function initializePageApi(): void {
       // port without ever firing tabs.onRemoved. A page that went into the
       // back/forward cache keeps them for a while instead, in case it's
       // restored.
-      if (tabId !== undefined && hiddenForCache) {
-        // A clock already running for an earlier cached page in this tab
-        // keeps its deadline: a later page leaving must not push it back.
-        if (!cachedPageSessionTimers.has(tabId)) cachedPageSessionTimers.set(tabId, setTimeout(() => {
-          cachedPageSessionTimers.delete(tabId);
-          void cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
-        }, CACHED_PAGE_SESSION_MS));
-      } else if (tabId !== undefined) {
-        stopCachedPageClock(tabId);
-        void cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
+      // Only this page's own sessions: another page's in the tab, cached or
+      // newer, aren't this disconnect's to end. One still opening is
+      // cancelled by its request's own signal, aborted above.
+      const live = [...ownSessions].filter((sessionId) => isAcpTextSession(sessionId));
+      if (tabId !== undefined && cacheToken && live.length > 0) {
+        const token = cacheToken;
+        void endCachedPage(token);
+        cachedPages.set(token, {
+          tabId,
+          origin,
+          sessions: new Set(live),
+          timer: setTimeout(() => { void endCachedPage(token); }, CACHED_PAGE_SESSION_MS),
+        });
+      } else {
+        void endSessions(live);
       }
       // The page's agents go with it, so nothing more is delivered to this
       // tab for them once it shows another page. Only the top frame runs the
