@@ -267,7 +267,7 @@ function pageToolMetadata(tool: { title?: unknown; outputSchema?: unknown; annot
   return {
     ...(typeof tool.title === 'string' && tool.title ? { title: tool.title } : {}),
     ...(isPlainToolObject(tool.outputSchema) ? { outputSchema: tool.outputSchema } : {}),
-    ...(annotations ? { annotations } : {}),
+    ...(annotations && Object.keys(annotations).length > 0 ? { annotations } : {}),
   };
 }
 

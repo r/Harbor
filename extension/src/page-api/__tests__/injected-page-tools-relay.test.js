@@ -141,6 +141,14 @@ describe("a tool's title, outputSchema and annotations", () => {
     expect(p.requests('page_tools.sync').at(-1).payload.tools[0].annotations).toEqual({ readOnlyHint: true });
   });
 
+  it('leaves out annotations with no hint it knows', async () => {
+    const p = page();
+    await p.mc.registerTool({ ...tool('a'), annotations: { trustMe: true } });
+    await tick();
+    expect('annotations' in p.mc.tools[0]).toBe(false);
+    expect('annotations' in p.requests('page_tools.sync').at(-1).payload.tools[0]).toBe(false);
+  });
+
   it('leaves out ones of the wrong type, and still registers the tool', async () => {
     const p = page();
     await p.mc.registerTool({ ...tool('odd'), title: 5, outputSchema: [], annotations: 'read-only' });
