@@ -77,7 +77,9 @@ behavior is unchanged.
 - a description is at most 4 KB, and an `inputSchema` at most 64 KB
   serialized and must be a plain object;
 - a `title`, if present, is a string of at most 1 KB, and an `outputSchema`
-  follows the `inputSchema` rules;
+  follows the `inputSchema` rules. An `outputSchema` whose `type` isn't
+  `"object"` is left out (the tool stays), because MCP allows no other and an
+  MCP SDK client rejects a whole tool list that has one;
 - `annotations`, if present, must be a plain object. Harbor keeps only MCP's
   `ToolAnnotations` hints of the right type (`title` as a string;
   `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint` as
@@ -88,7 +90,15 @@ behavior is unchanged.
 and the ACP endpoint's `tools/list`, so the agent can tell a read-only tool
 from one that publishes. No Harbor gate reads them: a tool marked
 `readOnlyHint: true` is policy-checked and audited like any other
-(`page-tools-gate.test.ts`). Harbor's built-in agent's `agent.run()` sends its
+(`page-tools-gate.test.ts`). The person's agent may still act on them, for
+example by asking less before a tool marked read-only; that's its call, and
+Harbor's own checks run either way. A `title` is the page's too: unlike the
+description, it isn't prefixed with the site's host, so `_meta`'s
+`harbor/provenance` is what says where the tool came from. A page that
+declares an `outputSchema` should return an object that matches it: an MCP
+client may reject a call whose result has no `structuredContent`.
+
+Harbor's built-in agent's `agent.run()` sends its
 model only a name, description and input schema, because the model's tool
 format has no place for the rest.
 

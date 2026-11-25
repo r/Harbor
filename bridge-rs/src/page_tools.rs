@@ -393,10 +393,11 @@ fn initialize_result(params: &Value) -> Value {
     })
 }
 
-/// Only `name`, `description` and `inputSchema` survive from whatever the
-/// extension sends for one tool - this is page-supplied data crossing a
-/// trust boundary, so nothing else riding along with it is passed on
-/// unexamined.
+/// Only MCP's Tool fields Harbor knows (`name`, `title`, `description`,
+/// `inputSchema`, `outputSchema`, `annotations`) and Harbor's `_meta`
+/// survive from whatever the extension sends for one tool - this is
+/// page-supplied data crossing a trust boundary, so nothing else riding
+/// along with it is passed on unexamined.
 fn normalize_tool(tool: &Value) -> Value {
     let mut out = serde_json::Map::new();
     if let Some(name) = tool.get("name") {
@@ -416,7 +417,12 @@ fn normalize_tool(tool: &Value) -> Value {
     if let Some(title) = tool.get("title").filter(|t| t.is_string()) {
         out.insert("title".to_string(), title.clone());
     }
-    if let Some(output) = tool.get("outputSchema").filter(|s| s.is_object()) {
+    // MCP allows only an object-typed outputSchema; a client rejects a whole
+    // tools/list with any other.
+    if let Some(output) = tool
+        .get("outputSchema")
+        .filter(|s| s.get("type").and_then(Value::as_str) == Some("object"))
+    {
         out.insert("outputSchema".to_string(), output.clone());
     }
     if let Some(annotations) = tool.get("annotations").filter(|a| a.is_object()) {

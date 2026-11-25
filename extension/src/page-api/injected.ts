@@ -253,10 +253,21 @@ function pageToolMetadata(tool: { title?: unknown; outputSchema?: unknown; annot
   outputSchema?: Record<string, unknown>;
   annotations?: Record<string, unknown>;
 } {
+  // Only the MCP hints, so nothing else in the page's object (a function, a
+  // Proxy) can make postMessage fail and drop every tool from the sync.
+  let annotations: Record<string, unknown> | undefined;
+  if (isPlainToolObject(tool.annotations)) {
+    const raw = tool.annotations;
+    annotations = {};
+    if (typeof raw.title === 'string') annotations.title = raw.title;
+    for (const hint of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']) {
+      if (typeof raw[hint] === 'boolean') annotations[hint] = raw[hint];
+    }
+  }
   return {
     ...(typeof tool.title === 'string' && tool.title ? { title: tool.title } : {}),
     ...(isPlainToolObject(tool.outputSchema) ? { outputSchema: tool.outputSchema } : {}),
-    ...(isPlainToolObject(tool.annotations) ? { annotations: tool.annotations } : {}),
+    ...(annotations ? { annotations } : {}),
   };
 }
 

@@ -107,8 +107,10 @@ function copySchema(schema: unknown): Record<string, unknown> | null {
     return null;
   }
   if (byteLength(serialized) > PAGE_TOOL_LIMITS.maxSchemaBytes) return null;
-  // A fresh copy: nothing the page holds a reference to.
-  return JSON.parse(serialized) as Record<string, unknown>;
+  // A fresh copy: nothing the page holds a reference to. An object that
+  // serializes to something else (a Date, a boxed string) isn't a schema.
+  const copy: unknown = JSON.parse(serialized);
+  return isPlainObject(copy) ? copy : null;
 }
 
 /**
@@ -152,7 +154,10 @@ function validateTools(payload: unknown): PageToolDescriptor[] | null {
     if (outputSchema !== undefined) {
       const copy = copySchema(outputSchema);
       if (!copy) return null;
-      tool.outputSchema = copy;
+      // MCP's Tool allows only an object-typed outputSchema, and an MCP SDK
+      // client rejects a whole tools/list with any other, losing every tool.
+      // Leave it out, as before Harbor passed outputSchema on.
+      if (copy.type === 'object') tool.outputSchema = copy;
     }
     if (annotations !== undefined) {
       if (!isPlainObject(annotations)) return null;
