@@ -506,7 +506,7 @@ Requires `multiAgent` flag and `agents:register` / `agents:invoke` (or similar) 
 
 Sites can declare an MCP server and open a chat that uses the user’s model plus site tools.
 
-- **HTML:** `<link rel="mcp-server" href="https://site.example/mcp" title="Site" data-tools="tool1,tool2">`
+- **HTML:** `<link rel="mcp-server" href="https://site.example/mcp" title="Site" data-tools="tool1,tool2">` (`rel="mcp"` works too; add `data-transport="sse"` or `"websocket"` if the server doesn't speak streamable HTTP)
 - **Discover:** `agent.mcp.discover()`
 - **Register:** `agent.mcp.register({ url, name, tools })`
 - **Open chat:** `agent.chat.open({ systemPrompt, tools, style })`

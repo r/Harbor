@@ -1142,7 +1142,7 @@ BYOC allows websites to integrate with the user's own AI chatbot instead of embe
 
 ### Declaring MCP Servers (HTML)
 
-Add a `<link>` element to declare your MCP server:
+Add a `<link>` element to declare your MCP server. Harbor also accepts `rel="mcp"`. Without `data-transport`, Harbor assumes streamable HTTP; set `data-transport="sse"` or `"websocket"` for those servers:
 
 ```html
 <link 

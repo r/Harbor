@@ -499,58 +499,6 @@ export interface AgentCapabilitiesReport {
 }
 
 // =============================================================================
-// BYOC (Bring Your Own Chatbot) Types
-// =============================================================================
-
-export interface DeclaredMCPServer {
-  url: string;
-  title: string;
-  description?: string;
-  tools?: string[];
-  transport?: 'sse' | 'websocket';
-}
-
-export interface MCPServerRegistration {
-  url: string;
-  name: string;
-  description?: string;
-  tools?: string[];
-  transport?: 'sse' | 'websocket';
-}
-
-export interface MCPRegistrationResult {
-  success: boolean;
-  serverId?: string;
-  error?: {
-    code: 'USER_DENIED' | 'INVALID_URL' | 'CONNECTION_FAILED' | 'NOT_SUPPORTED';
-    message: string;
-  };
-}
-
-export type ChatAvailability = 'readily' | 'no';
-
-export interface ChatOpenOptions {
-  initialMessage?: string;
-  systemPrompt?: string;
-  tools?: string[];
-  sessionId?: string;
-  style?: {
-    theme?: 'light' | 'dark' | 'auto';
-    accentColor?: string;
-    position?: 'right' | 'left' | 'center';
-  };
-}
-
-export interface ChatOpenResult {
-  success: boolean;
-  chatId?: string;
-  error?: {
-    code: 'USER_DENIED' | 'NOT_AVAILABLE' | 'ALREADY_OPEN';
-    message: string;
-  };
-}
-
-// =============================================================================
 // Message Protocol Types (for transport layer)
 // =============================================================================
 

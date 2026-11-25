@@ -1602,7 +1602,9 @@ const agentApi = Object.freeze({
    */
   mcp: Object.freeze({
     /**
-     * Discover MCP servers declared on this page via <link rel="mcp-server">.
+     * Discover MCP servers declared on this page via <link rel="mcp-server">
+     * or <link rel="mcp">. A link with no data-transport reports
+     * 'streamable-http'.
      * 
      * @example
      * const servers = await window.agent.mcp.discover();

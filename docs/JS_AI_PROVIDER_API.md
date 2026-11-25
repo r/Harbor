@@ -392,7 +392,7 @@ Websites can declare MCP server availability via HTML, similar to RSS feeds:
   title="Shop Assistant"
   data-description="Search products, manage cart"
   data-tools="search_products,get_cart,add_to_cart"
-  data-transport="sse"
+  data-transport="streamable-http"
 >
 ```
 
@@ -400,18 +400,18 @@ Websites can declare MCP server availability via HTML, similar to RSS feeds:
 
 | Attribute | Required | Description |
 |-----------|----------|-------------|
-| `rel` | ✓ | Must be `"mcp-server"` |
+| `rel` | ✓ | Contains `mcp-server` or `mcp`, as one token of the list (`rel="mcp-server"`, `rel="alternate mcp"`) |
 | `href` | ✓ | URL of the MCP server endpoint |
 | `title` | ✓ | Human-readable name |
 | `data-description` | | Description of capabilities |
 | `data-tools` | | Comma-separated tool names |
-| `data-transport` | | `"sse"` (default) or `"websocket"` |
+| `data-transport` | | `"streamable-http"` (default), `"sse"` or `"websocket"` |
 
 ---
 
 ### agent.mcp.discover()
 
-Get MCP servers declared via `<link rel="mcp-server">` on the current page.
+Get MCP servers declared via `<link rel="mcp-server">` or `<link rel="mcp">` on the current page. Each link is reported once, with its `href` resolved against the page. A link with no `data-transport` reports `transport: "streamable-http"`.
 
 **Signature:**
 ```typescript
