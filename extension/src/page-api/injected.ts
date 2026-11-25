@@ -1630,7 +1630,8 @@ const agentApi = Object.freeze({
      *   url: 'http://localhost:3001/mcp',
      *   name: 'My Shop Assistant',
      *   tools: ['search_products', 'add_to_cart'],
-     *   transport: 'sse',
+     *   // Optional: 'streamable-http' (the default), 'sse' or 'websocket'.
+     *   transport: 'streamable-http',
      * });
      */
     register: FEATURE_FLAGS.toolAccess
