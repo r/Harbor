@@ -26,6 +26,8 @@ export type ApiErrorCode =
   | 'ERR_INVALID_REQUEST'
   // Multi-agent: the caller hasn't registered as an agent.
   | 'ERR_NOT_REGISTERED'
+  // Multi-agent: no such agent, or one the caller may not act on.
+  | 'ERR_AGENT_NOT_FOUND'
   // Typed-permission decisions surface these.
   | 'ERR_BLOCKED_BY_POLICY'
   | 'ERR_LABEL_FLOW_BLOCKED'

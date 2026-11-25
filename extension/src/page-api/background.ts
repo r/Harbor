@@ -62,6 +62,7 @@ import {
   cleanupAgentsForTab,
   failInvocationsForTab,
   forgetAgentsLeavingTab,
+  forgetPageAgentsInTab,
   resolveInvocationResponse,
 } from './handlers';
 import { browserAPI } from '../browser-compat';
@@ -512,6 +513,7 @@ export function initializePageApi(): void {
         const newerPageSince = latest && latest.connection !== connection ? latest.at : undefined;
         if (newerPageSince === undefined) forgetLatestPage(tabId);
         forgetAgentsInTab(tabId, newerPageSince);
+        forgetPageAgentsInTab(tabId, newerPageSince);
         failInvocationsForTab(tabId, newerPageSince);
       }
     });

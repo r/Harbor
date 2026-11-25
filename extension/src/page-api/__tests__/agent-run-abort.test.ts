@@ -33,7 +33,7 @@ vi.mock('../handlers', () => ({
   resolveTextSession: mocks.resolveTextSession, recordExplicitPrompt: vi.fn(), forgetTextSession: vi.fn(),
   restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
   isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
-  cleanupAgentsForTab: vi.fn(), failInvocationsForTab: vi.fn(), agentInvocationTabs: new Map(),
+  cleanupAgentsForTab: vi.fn(), failInvocationsForTab: vi.fn(), forgetPageAgentsInTab: vi.fn(), agentInvocationTabs: new Map(),
 }));
 
 let receive: (message: unknown) => Promise<void>;

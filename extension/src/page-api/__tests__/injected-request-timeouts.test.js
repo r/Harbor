@@ -196,4 +196,15 @@ describe('per-type request timeouts', () => {
       expect(abortedIds()).toContain(id);
     });
   });
+
+  describe('agent.agents.orchestrate.*', () => {
+    it('waits past 30 seconds, since each step runs its own invocation', async () => {
+      const { window } = page({ multiAgent: true });
+      const state = track(window.agent.agents.orchestrate.pipeline({ steps: [{ agentId: 'agent-1', task: 'a' }] }, 'x'));
+
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+      expect(state.error).toBeUndefined();
+      expect(state.settled).toBe(false);
+    });
+  });
 });

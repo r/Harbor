@@ -95,30 +95,44 @@ function getBackgroundPort(): RuntimePort {
 
     backgroundPort.onDisconnect.addListener(() => {
       backgroundPort = null;
-      // Reject all pending requests
-      for (const [id, pending] of pendingRequests) {
-        pending.sendResponse({
-          id,
-          ok: false,
-          error: { code: 'ERR_INTERNAL', message: 'Background connection lost' },
-        });
-      }
-      pendingRequests.clear();
-      
-      // End all active streams
-      for (const [id, stream] of activeStreams) {
-        stream.sendEvent({
-          id,
-          event: { type: 'error', error: { code: 'ERR_INTERNAL', message: 'Background connection lost' } },
-          done: true,
-        });
-      }
-      activeStreams.clear();
+      failInFlight('Background connection lost');
     });
   }
 
   return backgroundPort;
 }
+
+/** Fail every request and stream still waiting on the port, which has closed. */
+function failInFlight(message: string): void {
+  for (const [id, pending] of pendingRequests) {
+    pending.sendResponse({ id, ok: false, error: { code: 'ERR_INTERNAL', message } });
+  }
+  pendingRequests.clear();
+  for (const [id, stream] of activeStreams) {
+    stream.sendEvent({ id, event: { type: 'error', error: { code: 'ERR_INTERNAL', message } }, done: true });
+  }
+  activeStreams.clear();
+}
+
+// A page going into the back/forward cache has left the tab, as far as
+// Harbor is concerned, even though Firefox may keep its port open. Closing
+// the port here tells Harbor now: it forgets the page's agents, fails
+// invocations waiting on it, and counts the next page as the tab's own.
+// (A port closed from this side gets no onDisconnect, so in-flight calls
+// are failed here.)
+window.addEventListener('pagehide', (event: PageTransitionEvent) => {
+  if (!event.persisted || !backgroundPort) return;
+  backgroundPort.disconnect();
+  backgroundPort = null;
+  failInFlight('The page was hidden');
+});
+
+// Back from the cache: the page script gets its agents, subscriptions and
+// page tools back from Harbor. Its next call opens a new port.
+window.addEventListener('pageshow', (event: PageTransitionEvent) => {
+  if (!event.persisted) return;
+  window.postMessage({ channel: CHANNEL, pageRestored: true }, '*');
+});
 
 /**
  * Fetch feature flags from background script.
@@ -326,6 +340,15 @@ const processedInvocations = new Set<string>();
 
 // Listen for invocation requests from background and forward to page
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  // The caller stopped waiting: the page's handler is told through its
+  // request's signal.
+  if (message?.type === 'agentInvocationCancel' && typeof message.invocationId === 'string') {
+    window.postMessage({
+      channel: CHANNEL,
+      agentEvent: { type: 'invocationCancel', invocationId: message.invocationId },
+    }, '*');
+    return false;
+  }
   if (message?.type !== 'agentInvocation') {
     return false;
   }

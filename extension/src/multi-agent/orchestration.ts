@@ -46,6 +46,7 @@ async function invokeChecked(
   request: AgentInvocationRequest,
   invokerAgentId: AgentId,
   gate: StepGate,
+  signal?: AbortSignal,
 ): Promise<AgentInvocationResponse> {
   const startTime = Date.now();
   let refusal: Awaited<ReturnType<StepGate>>;
@@ -62,7 +63,15 @@ async function invokeChecked(
   if (refusal) {
     return { success: false, error: refusal, executionTime: Date.now() - startTime };
   }
-  return invokeAgent(request, invokerAgentId);
+  // The page that started the orchestration gave up: start no more steps.
+  if (signal?.aborted) {
+    return {
+      success: false,
+      error: { code: 'ERR_ABORTED', message: 'The caller stopped waiting' },
+      executionTime: Date.now() - startTime,
+    };
+  }
+  return invokeAgent(request, invokerAgentId, undefined, signal);
 }
 
 // =============================================================================
@@ -105,6 +114,7 @@ export async function executePipeline(
   initialInput: unknown,
   invokerAgentId: AgentId,
   gate: StepGate,
+  signal?: AbortSignal,
 ): Promise<PipelineResult> {
   const startTime = Date.now();
   const stepResults: PipelineStepResult[] = [];
@@ -124,7 +134,7 @@ export async function executePipeline(
     };
 
     // Invoke the agent
-    const response = await invokeChecked(request, invokerAgentId, gate);
+    const response = await invokeChecked(request, invokerAgentId, gate, signal);
 
     const stepResult: PipelineStepResult = {
       stepId: step.id,
@@ -231,6 +241,7 @@ export async function executeParallel(
   execution: ParallelExecution,
   invokerAgentId: AgentId,
   gate: StepGate,
+  signal?: AbortSignal,
 ): Promise<ParallelResult> {
   const startTime = Date.now();
   const tasks = Array.isArray(execution.tasks) ? execution.tasks : [];
@@ -245,7 +256,7 @@ export async function executeParallel(
       input: task.input,
     };
 
-    const response = await invokeChecked(request, invokerAgentId, gate);
+    const response = await invokeChecked(request, invokerAgentId, gate, signal);
 
     return {
       agentId: task.agentId,
@@ -319,6 +330,7 @@ export async function executeRouter(
   task: string,
   invokerAgentId: AgentId,
   gate: StepGate,
+  signal?: AbortSignal,
 ): Promise<RouterResult> {
   let selectedAgentId: AgentId | undefined;
   let matchedCondition: string | null = null;
@@ -357,7 +369,7 @@ export async function executeRouter(
     input,
   };
 
-  const result = await invokeChecked(request, invokerAgentId, gate);
+  const result = await invokeChecked(request, invokerAgentId, gate, signal);
 
   return {
     routerId: router.id,
@@ -440,6 +452,7 @@ export async function executeSupervisor(
   tasks: SupervisorTask[],
   invokerAgentId: AgentId,
   gate: StepGate,
+  signal?: AbortSignal,
 ): Promise<SupervisorResult> {
   const startTime = Date.now();
   const results: SupervisorTaskResult[] = [];
@@ -531,7 +544,7 @@ export async function executeSupervisor(
           input: task.input,
         };
 
-        const response = await invokeChecked(request, invokerAgentId, gate);
+        const response = await invokeChecked(request, invokerAgentId, gate, signal);
 
         // Mark worker as not busy
         state.busyCount--;

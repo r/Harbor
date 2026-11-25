@@ -44,14 +44,17 @@ function generateAgentId(): AgentId {
 }
 
 /**
- * Register a new agent.
+ * Register a new agent. `restoreId` gives it back an id Harbor forgot when
+ * its page left the tab; the caller checks that the id is that page's to
+ * reclaim. A live id is never reused.
  */
 export function registerAgent(
   options: AgentRegistrationOptions,
   origin: string,
   tabId?: number,
+  restoreId?: AgentId,
 ): RegisteredAgent {
-  const id = generateAgentId();
+  const id = restoreId && !agents.has(restoreId) ? restoreId : generateAgentId();
   const now = Date.now();
 
   const agent: RegisteredAgent = {

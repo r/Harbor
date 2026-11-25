@@ -456,6 +456,12 @@ const REQUEST_TIMEOUT_MS: Record<string, number> = {
   'session.prompt': 10 * 60 * 1000 + 30 * 1000,
   'agent.requestPermissions': 5 * 60 * 1000,
   'agent.agents.invoke': 5 * 60 * 1000 + 30 * 1000,
+  // Orchestration runs one invocation per step, and may ask the person
+  // about a step partway through. The background's own limit is 30 minutes
+  // (agent-handlers.ts's ORCHESTRATION_PAGE_CALL_MS); this is a backstop.
+  'agent.agents.orchestrate.pipeline': 30 * 60 * 1000 + 30 * 1000,
+  'agent.agents.orchestrate.parallel': 30 * 60 * 1000 + 30 * 1000,
+  'agent.agents.orchestrate.route': 30 * 60 * 1000 + 30 * 1000,
 };
 
 function sendRequest<T>(type: string, payload?: unknown): Promise<T> {
@@ -1065,6 +1071,13 @@ interface AgentInvocationRequest {
   timeout?: number;
 }
 
+/**
+ * An invocation as an `onInvoke` handler gets it. `signal` aborts when the
+ * caller stops waiting (the invocation timed out, or the caller's page
+ * went); any answer after that is dropped.
+ */
+type IncomingInvocation = AgentInvocationRequest & { from: string; signal: AbortSignal };
+
 /** Which site's agent produced an answer. Harbor sets it, never the agent. */
 interface AgentProvenance {
   source: 'agent';
@@ -1106,7 +1119,7 @@ interface ParallelTask {
 
 // Store for message and invocation handlers
 const agentMessageHandlers: Array<(message: AgentMessage) => void> = [];
-const agentInvocationHandlers: Array<(request: AgentInvocationRequest & { from: string }) => Promise<unknown>> = [];
+const agentInvocationHandlers: Array<(request: IncomingInvocation) => Promise<unknown>> = [];
 const agentEventSubscriptions = new Map<string, Array<(event: { type: string; data: unknown; source: string; provenance?: AgentProvenance }) => void>>();
 
 // Current agent ID (set after registration)
@@ -1130,7 +1143,10 @@ function createMultiAgentApi() {
     async register(options: AgentRegisterOptions): Promise<RegisteredAgent> {
       const result = await sendRequest<RegisteredAgent>('agent.agents.register', options);
       currentAgentId = result.id;
-      pageAgentIds.add(result.id);
+      // Kept to register it again if the page comes back from the
+      // back/forward cache; restoreAgentId is the restore's own field.
+      const { restoreAgentId: _restore, ...kept } = options as AgentRegisterOptions & { restoreAgentId?: unknown };
+      pageAgents.set(result.id, kept);
       
       // Set up event listener for incoming messages/invocations
       setupAgentEventListener();
@@ -1147,7 +1163,7 @@ function createMultiAgentApi() {
         throw new Error('Agent not registered');
       }
       await sendRequest('agent.agents.unregister', { agentId: idToUnregister });
-      pageAgentIds.delete(idToUnregister);
+      pageAgents.delete(idToUnregister);
       if (idToUnregister === currentAgentId) {
         currentAgentId = null;
       }
@@ -1230,7 +1246,7 @@ function createMultiAgentApi() {
      *   throw new Error('Unknown task');
      * });
      */
-    onInvoke(handler: (request: AgentInvocationRequest & { from: string }) => Promise<unknown>): () => void {
+    onInvoke(handler: (request: IncomingInvocation) => Promise<unknown>): () => void {
       agentInvocationHandlers.push(handler);
       return () => {
         const index = agentInvocationHandlers.indexOf(handler);
@@ -1344,10 +1360,49 @@ function createMultiAgentApi() {
 // Track processed invocations at the page level to prevent duplicates
 const processedPageInvocations = new Set<string>();
 
-// The agents this page registered. Just after a tab's page is replaced,
-// Harbor can still deliver an invocation meant for the old page's agent to
-// the tab; this page's handlers must never see it.
-const pageAgentIds = new Set<string>();
+// The agents this page registered, with the options it registered them
+// with. Just after a tab's page is replaced, Harbor can still deliver mail
+// or an invocation meant for the old page's agent to the tab; this page's
+// handlers must never see it.
+const pageAgents = new Map<string, AgentRegisterOptions>();
+
+// Invocations this page's handlers are working on, so the caller giving up
+// can abort the handler's request.signal.
+const runningInvocations = new Map<string, AbortController>();
+
+// Back from the back/forward cache (the content script says so): Harbor
+// forgot this page's agents, subscriptions and page tools when it left the
+// tab, so they're registered again. Harbor gives each agent back its old id
+// when it can, so nothing changes for the page.
+window.addEventListener('message', (event: MessageEvent) => {
+  if (event.source !== window) return;
+  const data = event.data as { channel?: string; pageRestored?: unknown } | null;
+  if (data?.channel !== CHANNEL || data.pageRestored !== true) return;
+  void restoreAfterBackForwardCache();
+});
+
+async function restoreAfterBackForwardCache(): Promise<void> {
+  for (const [oldId, options] of [...pageAgents]) {
+    try {
+      const result = await sendRequest<RegisteredAgent>('agent.agents.register', { ...options, restoreAgentId: oldId });
+      if (result.id !== oldId) {
+        pageAgents.delete(oldId);
+        pageAgents.set(result.id, options);
+        if (currentAgentId === oldId) currentAgentId = result.id;
+      }
+    } catch (e) {
+      dwarn('could not register agent again after a back/forward cache restore', oldId, e);
+      pageAgents.delete(oldId);
+      if (currentAgentId === oldId) currentAgentId = null;
+    }
+  }
+  for (const eventType of agentEventSubscriptions.keys()) {
+    await sendRequest('agent.agents.subscribe', { eventType }).catch((e) => {
+      dwarn('could not subscribe again after a back/forward cache restore', eventType, e);
+    });
+  }
+  schedulePageToolSync();
+}
 
 // Track if event listener is already set up
 let eventListenerSetUp = false;
@@ -1371,10 +1426,14 @@ function setupAgentEventListener() {
     const data = event.data as {
       channel?: string;
       agentEvent?: {
-        type: 'message' | 'invocation' | 'broadcast';
+        type: 'message' | 'invocation' | 'invocationCancel' | 'broadcast';
         message?: AgentMessage;
         invocation?: AgentInvocationRequest & { from: string; invocationId: string; agentId?: string };
         broadcast?: { type: string; data: unknown; source: string; provenance?: AgentProvenance };
+        /** The agent a broadcast is for. */
+        agentId?: string;
+        /** The invocation a cancel is for. */
+        invocationId?: string;
       };
     };
     
@@ -1382,7 +1441,15 @@ function setupAgentEventListener() {
     
     const { type, message, invocation, broadcast } = data.agentEvent;
     
-    if (type === 'message' && message) {
+    if (type === 'invocationCancel') {
+      const id = data.agentEvent.invocationId;
+      if (typeof id === 'string') runningInvocations.get(id)?.abort();
+    } else if (type === 'message' && message) {
+      // Only mail for an agent this page registered.
+      if (typeof message.to !== 'string' || !pageAgents.has(message.to)) {
+        dlog('message for an agent this page did not register, dropping', message.id);
+        return;
+      }
       // Dispatch to message handlers
       for (const handler of agentMessageHandlers) {
         try {
@@ -1402,7 +1469,7 @@ function setupAgentEventListener() {
       // Clean up after 60 seconds
       setTimeout(() => processedPageInvocations.delete(invocationId), 60000);
 
-      if (!invocation.agentId || !pageAgentIds.has(invocation.agentId)) {
+      if (!invocation.agentId || !pageAgents.has(invocation.agentId)) {
         dlog('invocation for an agent this page did not register, refusing', invocationId);
         window.postMessage({
           channel: 'harbor_page_api',
@@ -1417,21 +1484,33 @@ function setupAgentEventListener() {
 
       dlog('processing invocation', { task: invocation.task, invocationId });
       
-      // Dispatch to invocation handlers and send response
+      // Dispatch to invocation handlers and send response. The handler's
+      // request carries a signal that aborts if the caller stops waiting.
+      const controller = new AbortController();
+      runningInvocations.set(invocationId, controller);
+      const request: IncomingInvocation = { ...invocation, signal: controller.signal };
       let result: unknown;
       let error: { code: string; message: string } | undefined;
       
-      for (const handler of agentInvocationHandlers) {
-        try {
-          result = await handler(invocation);
-          break; // Use first handler's result
-        } catch (e) {
-          error = {
-            code: 'ERR_HANDLER_FAILED',
-            message: e instanceof Error ? e.message : 'Handler failed',
-          };
+      try {
+        for (const handler of agentInvocationHandlers) {
+          try {
+            result = await handler(request);
+            error = undefined;
+            break; // Use first handler's result
+          } catch (e) {
+            error = {
+              code: 'ERR_HANDLER_FAILED',
+              message: e instanceof Error ? e.message : 'Handler failed',
+            };
+          }
         }
+      } finally {
+        runningInvocations.delete(invocationId);
       }
+
+      // The caller gave up; Harbor has already answered it.
+      if (controller.signal.aborted) return;
       
       // Send response back
       window.postMessage({
@@ -1444,6 +1523,12 @@ function setupAgentEventListener() {
         },
       }, '*');
     } else if (type === 'broadcast' && broadcast) {
+      // Only events for an agent this page registered.
+      const recipient = data.agentEvent.agentId;
+      if (typeof recipient !== 'string' || !pageAgents.has(recipient)) {
+        dlog('broadcast for an agent this page did not register, dropping', broadcast.type);
+        return;
+      }
       // Dispatch to event subscribers
       const handlers = agentEventSubscriptions.get(broadcast.type);
       if (handlers) {
@@ -1999,7 +2084,7 @@ const agentApi = Object.freeze({
         check();
         return real.onMessage(handler);
       },
-      onInvoke: (handler: (request: AgentInvocationRequest & { from: string }) => Promise<unknown>) => {
+      onInvoke: (handler: (request: IncomingInvocation) => Promise<unknown>) => {
         check();
         return real.onInvoke(handler);
       },

@@ -122,6 +122,8 @@ describe('a page restored from the back/forward cache', () => {
     p.deliver({ pageRestored: true });
     await vi.waitFor(() => expect(p.requests('agent.agents.register')).toHaveLength(2));
     answer(p, 'agent.agents.register', { id: 'agent-new', name: 'Mine' });
+    // The page takes the new id once the register call resolves.
+    await new Promise((r) => setTimeout(r, 0));
 
     p.deliver(invocation('agent-new', 'inv-new'));
     await vi.waitFor(() => expect(p.invocationResponses()).toHaveLength(1));

@@ -65,6 +65,34 @@ import { handleIncomingInvocation } from '../../page-api/handlers/agent-handlers
 const originAgents = new Map<string, string>();
 
 /**
+ * Agents Harbor forgot because their page left its tab, kept so the same
+ * page can have them back under the same id if the browser restores it from
+ * the back/forward cache. Only the same site in the same tab may reclaim
+ * one. Firefox keeps a cached page for up to 30 minutes.
+ */
+const forgottenPageAgents = new Map<string, { origin: string; tabId: number; at: number }>();
+const FORGOTTEN_AGENT_TTL_MS = 30 * 60 * 1000;
+
+function rememberForgottenAgent(agent: { id: string; origin: string; tabId?: number }): void {
+  if (agent.tabId === undefined) return;
+  const now = Date.now();
+  for (const [id, entry] of forgottenPageAgents) {
+    if (now - entry.at > FORGOTTEN_AGENT_TTL_MS) forgottenPageAgents.delete(id);
+  }
+  forgottenPageAgents.set(agent.id, { origin: agent.origin, tabId: agent.tabId, at: now });
+}
+
+/** The id to register under: a forgotten agent's own, if this page may reclaim it. */
+function reclaimableId(restoreAgentId: unknown, origin: string, tabId: number | undefined): string | undefined {
+  if (typeof restoreAgentId !== 'string') return undefined;
+  const entry = forgottenPageAgents.get(restoreAgentId);
+  if (!entry || entry.origin !== origin || entry.tabId !== tabId) return undefined;
+  if (Date.now() - entry.at > FORGOTTEN_AGENT_TTL_MS || getAgent(restoreAgentId)) return undefined;
+  forgottenPageAgents.delete(restoreAgentId);
+  return restoreAgentId;
+}
+
+/**
  * The calling page's agent: the one registered from the caller's own tab,
  * or else the latest one its site registered. With a site open in two tabs,
  * each tab acts as its own agent.
@@ -92,10 +120,15 @@ export async function handleAgentsRegister(
     return;
   }
 
-  const options = ctx.payload as AgentRegistrationOptions;
+  const options = ctx.payload as AgentRegistrationOptions & { restoreAgentId?: unknown };
 
   try {
-    const agent = registerAgent(options, ctx.origin, ctx.tabId);
+    const agent = registerAgent(
+      options,
+      ctx.origin,
+      ctx.tabId,
+      reclaimableId(options.restoreAgentId, ctx.origin, ctx.tabId),
+    );
     originAgents.set(ctx.origin, agent.id);
 
     sender.sendResponse({
@@ -136,10 +169,18 @@ export async function handleAgentsUnregister(
   const payload = ctx.payload as { agentId: string };
 
   const result = unregisterAgent(payload.agentId, ctx.origin);
-  if (result) {
-    cleanupAgentHandlers(payload.agentId);
-    if (originAgents.get(ctx.origin) === payload.agentId) originAgents.delete(ctx.origin);
+  if (!result) {
+    // Another site's agent gets the same answer as an id that doesn't
+    // exist, so the refusal doesn't reveal that the agent is there.
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_AGENT_NOT_FOUND', message: 'Agent not found' },
+    });
+    return;
   }
+  cleanupAgentHandlers(payload.agentId);
+  if (originAgents.get(ctx.origin) === payload.agentId) originAgents.delete(ctx.origin);
 
   sender.sendResponse({ id: ctx.id, ok: true, result });
 }
@@ -309,6 +350,9 @@ export async function handleAgentsInvoke(
     },
     fromAgentId,
     traceId,
+    // The caller giving up (its page went, or its own call timed out)
+    // cancels the invocation in the target's page too.
+    ctx.signal,
   );
   
   log(`[TRACE ${traceId}] invokeAgentHandler complete, success: ${result.success}`);
@@ -470,9 +514,11 @@ export function handleAgentsRegisterMessageHandler(
   // arrive as broadcast messages and go to the page's subscribers.
   registerMessageHandler(agent.id, (message) => {
     if (!tabId) return;
+    // A broadcast names the agent it's for, as a message does in `to`, so
+    // the page can refuse mail for an agent it didn't register.
     const event =
       message.type === 'broadcast'
-        ? { type: 'broadcast', broadcast: message.payload }
+        ? { type: 'broadcast', broadcast: message.payload, agentId: agent.id }
         : { type: 'message', message };
     void forwardToAgentTab(tabId, agent.origin, { type: 'agentEvent', event });
   });
@@ -521,7 +567,8 @@ export function forgetTabAgentsOffOrigin(tabId: number, origin: string): void {
   }
 }
 
-function forgetAgent(agent: { id: string; origin: string }): void {
+function forgetAgent(agent: { id: string; origin: string; tabId?: number }): void {
+  rememberForgottenAgent(agent);
   cleanupAgentHandlers(agent.id);
   if (originAgents.get(agent.origin) === agent.id) originAgents.delete(agent.origin);
   unregisterAgent(agent.id, agent.origin);
@@ -569,7 +616,7 @@ export function handleAgentsRegisterInvocationHandler(
   // Register a handler that delivers invocations to the registered handler,
   // in-process through Harbor's own page API. Every registration is local
   // now: there is no second extension to forward to.
-  registerInvocationHandler(agentId, async (request, fromAgentId, traceId) => {
+  registerInvocationHandler(agentId, async (request, fromAgentId, traceId, signal) => {
     const trace = traceId || 'no-trace';
     log(`[TRACE ${trace}] Proxy handler called for ${agentId}`);
 
@@ -583,7 +630,7 @@ export function handleAgentsRegisterInvocationHandler(
     log(`[TRACE ${trace}] Delivering in-process via Harbor's own page API...`);
     const startTime = Date.now();
     try {
-      const response = await handleIncomingInvocation(agentId, forwardRequest, trace);
+      const response = await handleIncomingInvocation(agentId, forwardRequest, trace, signal);
       log(`[TRACE ${trace}] handleIncomingInvocation returned, success: ${response.success}`);
       return { ...response, executionTime: Date.now() - startTime };
     } catch (e) {
@@ -685,7 +732,7 @@ export async function handleOrchestratePipeline(
     })),
   };
 
-  const result = await executePipeline(pipeline, payload.initialInput, agentId, orchestrationStepGate(ctx, 'Pipeline'));
+  const result = await executePipeline(pipeline, payload.initialInput, agentId, orchestrationStepGate(ctx, 'Pipeline'), ctx.signal);
   // The page API promises { success, result, stepResults }; Harbor calls the result finalOutput.
   sender.sendResponse({ id: ctx.id, ok: true, result: { ...result, result: result.finalOutput } });
 }
@@ -735,7 +782,7 @@ export async function handleOrchestrateParallel(
     return;
   }
 
-  const result = await executeParallel(execution, agentId, orchestrationStepGate(ctx, 'Parallel'));
+  const result = await executeParallel(execution, agentId, orchestrationStepGate(ctx, 'Parallel'), ctx.signal);
   // Web Agents API / Margin expect { success, results, combined }; Harbor returns taskResults + combinedOutput.
   sender.sendResponse({
     id: ctx.id,
@@ -786,7 +833,7 @@ export async function handleOrchestrateRoute(
     defaultAgentId: payload.config.defaultAgentId,
   };
 
-  const result = await executeRouter(router, payload.input, payload.task, agentId, orchestrationStepGate(ctx, 'Route'));
+  const result = await executeRouter(router, payload.input, payload.task, agentId, orchestrationStepGate(ctx, 'Route'), ctx.signal);
   // The page API promises the chosen agent's invocation response ({ success, result?, error? });
   // the routing details stay alongside it.
   sender.sendResponse({ id: ctx.id, ok: true, result: { ...result, ...result.invocationResult } });
@@ -815,7 +862,7 @@ export async function handleOrchestrateSupervisor(
     return;
   }
 
-  const result = await executeSupervisor(payload.supervisor, payload.tasks, agentId, orchestrationStepGate(ctx, 'Supervisor'));
+  const result = await executeSupervisor(payload.supervisor, payload.tasks, agentId, orchestrationStepGate(ctx, 'Supervisor'), ctx.signal);
   sender.sendResponse({ id: ctx.id, ok: true, result });
 }
 
