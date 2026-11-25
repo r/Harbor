@@ -109,8 +109,13 @@ const APPLE_KEYWORDS: [&str; 23] = [
     "examples",
 ];
 
-/// How many `$ref`s deep a schema is inlined before the rest is dropped.
+/// How many `$ref`s deep one branch is inlined before the rest is dropped.
 const MAX_REF_DEPTH: usize = 8;
+
+/// How many `$ref`s one tool's schema may inline in total. Without it, a
+/// definition whose many properties refer back to it grows exponentially
+/// within the depth limit.
+const MAX_REF_INLINES: usize = 32;
 
 /// Rewrite a tool's input schema into the JSON Schema that Apple's
 /// `GenerationSchema` reads, so one tool's schema can't fail the whole run.
@@ -128,7 +133,8 @@ fn apple_tool_parameters(parameters: &mut serde_json::Value) {
         *parameters = serde_json::json!({});
     }
     let definitions = local_definitions(parameters);
-    apple_schema(parameters, &definitions, 0);
+    let mut inlines_left = MAX_REF_INLINES;
+    apple_schema(parameters, &definitions, 0, &mut inlines_left);
     let map = parameters.as_object_mut().expect("parameters is an object");
     map.entry("type").or_insert_with(|| "object".into());
     if map.get("type").and_then(|t| t.as_str()) == Some("object") {
@@ -154,16 +160,32 @@ fn apple_schema(
     schema: &mut serde_json::Value,
     definitions: &serde_json::Map<String, serde_json::Value>,
     depth: usize,
+    inlines_left: &mut usize,
 ) {
     let serde_json::Value::Object(map) = schema else {
         return;
     };
     let mut depth = depth;
-    // Inline a local reference; its siblings apply on top of it.
+    // Inline a local reference. Its siblings apply on top of it, and both
+    // lists of required properties hold.
     while let Some(serde_json::Value::String(reference)) = map.remove("$ref") {
         match definitions.get(&reference) {
-            Some(serde_json::Value::Object(target)) if depth < MAX_REF_DEPTH => {
-                let siblings = std::mem::replace(map, target.clone());
+            Some(serde_json::Value::Object(target))
+                if depth < MAX_REF_DEPTH && *inlines_left > 0 =>
+            {
+                *inlines_left -= 1;
+                let mut siblings = std::mem::replace(map, target.clone());
+                if let (
+                    Some(serde_json::Value::Array(shared)),
+                    Some(serde_json::Value::Array(own)),
+                ) = (map.get("required"), siblings.get_mut("required"))
+                {
+                    for name in shared {
+                        if !own.contains(name) {
+                            own.push(name.clone());
+                        }
+                    }
+                }
                 map.extend(siblings);
                 depth += 1;
             }
@@ -211,7 +233,7 @@ fn apple_schema(
     }
     if let Some(serde_json::Value::Object(properties)) = map.get_mut("properties") {
         for property in properties.values_mut() {
-            apple_schema(property, definitions, depth);
+            apple_schema(property, definitions, depth, inlines_left);
         }
     }
     // An array of `items` is the older tuple form, which Apple doesn't read.
@@ -220,12 +242,12 @@ fn apple_schema(
     }
     for key in ["items", "additionalProperties"] {
         if let Some(child @ serde_json::Value::Object(_)) = map.get_mut(key) {
-            apple_schema(child, definitions, depth);
+            apple_schema(child, definitions, depth, inlines_left);
         }
     }
     if let Some(serde_json::Value::Array(choices)) = map.get_mut("anyOf") {
         for choice in choices {
-            apple_schema(choice, definitions, depth);
+            apple_schema(choice, definitions, depth, inlines_left);
         }
     }
 }
@@ -520,12 +542,39 @@ printf '%s' '{"id":"apple-test","object":"chat.completion","created":0,"model":"
                 "required": ["city"]
             })
         );
+        // The older tuple form of items isn't one Apple reads.
+        assert_eq!(
+            apple(
+                json!({ "type": "object", "properties": { "pair": { "type": "array", "items": [{ "type": "string" }, { "type": "integer" }] } } })
+            ),
+            json!({ "type": "object", "properties": { "pair": { "type": "array" } } })
+        );
+        // A shared definition's required properties still hold where it's used.
+        assert_eq!(
+            apple(
+                json!({ "type": "object", "$defs": { "Place": { "type": "object", "properties": { "city": { "type": "string" }, "note": { "type": "string" } }, "required": ["city"] } }, "properties": { "stop": { "$ref": "#/$defs/Place", "required": ["note"] } } })
+            )["properties"]["stop"]["required"],
+            json!(["note", "city"])
+        );
         // A reference that loops or points nowhere isn't followed forever.
         let looped = apple(
             json!({ "type": "object", "$defs": { "Node": { "type": "object", "properties": { "next": { "$ref": "#/$defs/Node" } } } }, "properties": { "head": { "$ref": "#/$defs/Node" }, "lost": { "$ref": "#/$defs/Missing" } } }),
         );
         assert_eq!(looped["properties"]["lost"], json!({}));
         assert!(serde_json::to_string(&looped).unwrap().len() < 4096);
+    }
+
+    #[test]
+    fn wide_self_references_stay_small() {
+        use serde_json::json;
+        let fields: serde_json::Map<String, serde_json::Value> = (0..12)
+            .map(|i| (format!("f{i}"), json!({ "$ref": "#/$defs/Node" })))
+            .collect();
+        let schema = json!({ "type": "object", "$defs": { "Node": { "type": "object", "properties": fields } }, "properties": { "root": { "$ref": "#/$defs/Node" } } });
+        let started = std::time::Instant::now();
+        let out = apple(schema);
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert!(serde_json::to_string(&out).unwrap().len() < 64 * 1024);
     }
 
     #[tokio::test]

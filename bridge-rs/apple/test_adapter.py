@@ -76,7 +76,9 @@ print("PASS nullable fields as anyOf")
 import pathlib
 import re
 source = (pathlib.Path(__file__).resolve().parent.parent / "src/llm/apple.rs").read_text()
-kept = re.findall(r'"([A-Za-z]+)"', re.search(r"const APPLE_KEYWORDS: \[&str; \d+\] = \[(.*?)\];", source, re.S).group(1))
+declared = re.search(r"const APPLE_KEYWORDS: \[&str; (\d+)\] = \[(.*?)\];", source, re.S)
+kept = re.findall(r'"([A-Za-z]+)"', declared.group(2))
+assert len(kept) == int(declared.group(1)), f"read {len(kept)} of {declared.group(1)} kept keywords from apple.rs"
 bookmark = {"type": "function", "function": {"name": "page/bookmark", "description": "Save a bookmark in the open travel book.", "parameters": {
     "type": "object",
     "title": "Bookmark",
