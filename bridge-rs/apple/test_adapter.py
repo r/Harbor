@@ -70,3 +70,34 @@ choice = invoke({"model": "apple:system", "messages": [{"role": "user", "content
 assert choice["finish_reason"] == "tool_calls", choice
 assert json.loads(choice["message"]["tool_calls"][0]["function"]["arguments"])["anchor"] == "chapter-1-p2", choice
 print("PASS nullable fields as anyOf")
+
+# Every keyword the bridge keeps (APPLE_KEYWORDS in src/llm/apple.rs) must
+# still be one Apple's model accepts. If a macOS update drops one, this fails.
+import pathlib
+import re
+source = (pathlib.Path(__file__).resolve().parent.parent / "src/llm/apple.rs").read_text()
+kept = re.findall(r'"([A-Za-z]+)"', re.search(r"const APPLE_KEYWORDS: \[&str; \d+\] = \[(.*?)\];", source, re.S).group(1))
+bookmark = {"type": "function", "function": {"name": "page/bookmark", "description": "Save a bookmark in the open travel book.", "parameters": {
+    "type": "object",
+    "title": "Bookmark",
+    "description": "A bookmark to save.",
+    "properties": {
+        "page": {"type": "integer", "minimum": 1, "maximum": 400, "description": "The page number."},
+        "rating": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 6, "multipleOf": 0.5},
+        "label": {"type": "string", "minLength": 1, "maxLength": 40, "default": "Read later", "examples": ["Read later"]},
+        "colour": {"type": "string", "enum": ["red", "blue"]},
+        "kind": {"const": "bookmark"},
+        "saved": {"type": "string", "format": "date"},
+        "tags": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 3, "uniqueItems": True},
+        "extra": {"type": "object", "additionalProperties": {"type": "string"}},
+        "note": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    },
+    "required": ["page", "label"],
+    "additionalProperties": False,
+}}}
+used = set(re.findall(r'"([A-Za-z]+)":', json.dumps(bookmark["function"]["parameters"])))
+assert not set(kept) - used, f"test schema is missing kept keywords: {sorted(set(kept) - used)}"
+choice = invoke({"model": "apple:system", "messages": [{"role": "user", "content": "Bookmark page 12 of my travel book with the label 'Rome'. Use the bookmark tool."}], "tools": [bookmark]})
+assert choice["finish_reason"] == "tool_calls", choice
+assert json.loads(choice["message"]["tool_calls"][0]["function"]["arguments"])["page"] == 12, choice
+print(f"PASS every kept schema keyword ({len(kept)}) reaches the model")
