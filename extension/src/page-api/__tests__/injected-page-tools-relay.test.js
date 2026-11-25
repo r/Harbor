@@ -153,6 +153,9 @@ describe("a tool's title, outputSchema and annotations", () => {
     const p = page();
     await p.mc.registerTool({ ...tool('odd'), title: 5, outputSchema: [], annotations: 'read-only' });
     await tick();
+    const [listed] = p.mc.tools;
+    expect(listed.name).toBe('odd');
+    expect(['title', 'outputSchema', 'annotations'].filter((k) => k in listed)).toEqual([]);
     expect(Object.keys(p.requests('page_tools.sync').at(-1).payload.tools[0]).sort()).toEqual(['description', 'inputSchema', 'name']);
   });
 });

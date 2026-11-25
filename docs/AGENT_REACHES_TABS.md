@@ -71,7 +71,7 @@ Unix sockets cover macOS and Linux. Windows (a named pipe) is left for later.
 | --- | --- |
 | `open_page(url)` | Opens `url` in a new tab, brought to the front so the person can see it and press play. Returns a `page` handle. |
 | `list_pages()` | The pages this agent may use, with handle, URL, title and whether they offer tools. |
-| `list_page_tools(page)` | The page's tools: name, description and input schema. |
+| `list_page_tools(page)` | The page's tools: name, description and input schema, plus title, output schema and annotations when the page sets them. |
 | `call_page_tool(page, tool, input)` | Runs the tool in the page and returns its result as untrusted output. |
 
 Why general tools, rather than each page tool as its own MCP tool:
