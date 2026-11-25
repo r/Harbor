@@ -1192,7 +1192,7 @@ document.getElementById('chat-btn').onclick = () => {
 
 ### Implementing Your MCP Server
 
-Your MCP server needs to support HTTP/SSE transport. See the [BYOC demo](../demo/bring-your-chatbot/) for a complete example.
+Harbor connects to your MCP server over streamable HTTP unless you pass `transport: 'sse'` or `transport: 'websocket'` to `register()`. The [BYOC demo](../demo/web-agents/bring-your-chatbot/) is a complete example; its server speaks SSE, so its `<link>` says `data-transport="sse"`.
 
 ### Graceful Degradation
 

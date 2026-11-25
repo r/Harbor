@@ -190,8 +190,9 @@ export async function handleMcpRegister(
     return;
   }
 
-  // H2: an omitted transport defaults to sse.
-  const transport = rawTransport ?? 'sse';
+  // An omitted transport means streamable HTTP, MCP's current transport,
+  // the same default discover() reports for a link with no data-transport.
+  const transport = rawTransport ?? 'streamable-http';
 
   if (transport === 'stdio') {
     sender.sendResponse({

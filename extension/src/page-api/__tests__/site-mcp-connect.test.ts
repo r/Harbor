@@ -129,12 +129,26 @@ async function grantToolAccess(origin: string, tabId: number, allowedTools: stri
   await grantPermissions(origin, ['mcp:tools.list', 'mcp:tools.call'], 'granted-always', tabId, allowedTools);
 }
 
-describe('H2: an omitted transport defaults to sse', () => {
-  it('connects via sse when transport is omitted entirely', async () => {
+describe('an omitted transport defaults to streamable HTTP', () => {
+  it('connects over streamable HTTP when transport is omitted entirely', async () => {
+    const server = installFakeMcpServer({ tools: [{ name: 'search', description: 'search products' }] });
     const page = connectPort(`${SHOP}/page`, TAB);
     const reply = await page.request('agent.mcp.register', { url: `${SHOP}/mcp`, name: 'Shop' });
     expect(reply.ok, reply.error?.message).toBe(true);
     expect(reply.result).toMatchObject({ tools: ['search'] });
+    // Streamable HTTP mints a session on initialize and never opens an EventSource.
+    expect(server.sseConnections).toHaveLength(0);
+    expect(server.sessionId).not.toBeNull();
+    expect(server.requests[0]).toMatchObject({ url: `${SHOP}/mcp`, method: 'POST', body: { method: 'initialize' } });
+  });
+
+  it('still connects over sse when the page asks for it', async () => {
+    const server = installFakeMcpServer({ tools: [{ name: 'search', description: 'search products' }] });
+    const page = connectPort(`${SHOP}/page`, TAB);
+    const reply = await page.request('agent.mcp.register', { url: `${SHOP}/mcp`, name: 'Shop', transport: 'sse' });
+    expect(reply.ok, reply.error?.message).toBe(true);
+    expect(server.sseConnections).toHaveLength(1);
+    expect(server.sessionId).toBeNull();
   });
 });
 
