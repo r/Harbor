@@ -94,7 +94,7 @@ export async function handleSessionsCreate(ctx: RequestContext): HandlerResponse
         const { createAcpTextSession } = await loadAcpTextSession();
         await createAcpTextSession(
           result.sessionId, backend.agentId, ctx.origin, ctx.tabId,
-          typeof systemPrompt === 'string' ? systemPrompt : undefined, ctx.signal, labelFlow,
+          typeof systemPrompt === 'string' ? systemPrompt : undefined, ctx.signal, labelFlow, 'agent.sessions',
         );
       } catch (e) {
         // Don't leave a Harbor session behind that the page never got.

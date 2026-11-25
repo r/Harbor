@@ -155,6 +155,8 @@ async function createExplicitSession(port: Port): Promise<string> {
   const sessionId = `explicit-turn-${explicitCount++}`;
   mocks.harborRequest.mockImplementation(async (method: string) => {
     if (method === 'session.create') return { sessionId, capabilities: {} };
+    // resolveTextSession asks Harbor whether an explicit session still has model access.
+    if (method === 'session.get') return { session: { sessionId, capabilities: { hasLLM: true } } };
     return { bridgeReady: true };
   });
   const id = crypto.randomUUID();

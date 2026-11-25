@@ -65,6 +65,7 @@ import {
   stopReasonOutcome,
   type CancelReason,
 } from './acp-connection';
+import { startAgentTurn, unansweredTurnOutcome, type AgentTurnApi, type AgentTurnRecorder } from './agent-turns';
 
 /** State for whichever `session/prompt` call is currently running, read by the handlers `open()` registers once for the life of the connection. */
 interface PendingTurn {
@@ -73,6 +74,8 @@ interface PendingTurn {
   requestAbort: AbortController;
   runEnded: AbortController;
   onMessageChunk: (text: string) => void;
+  /** Harbor's own record of this turn (agent-turns.ts), set once the prompt is sent; unset for a page chat, which isn't recorded. */
+  recorder?: AgentTurnRecorder;
   /** Sends `session/cancel` once for this turn and aborts its request; used by this turn's own timeout/page-abort, and by the mid-turn grant recheck below. */
   triggerCancel: (reason: CancelReason) => void;
 }
@@ -115,6 +118,8 @@ export class AcpTextSession {
     /** `'website'` for a `window.ai` text session (the default); a page chat (`handlers/page-chat-agent-sessions.ts`) passes `'page-chat'` so the provenance `_meta` on every prompt says so. */
     private readonly provenanceSource: 'website' | 'page-chat' = 'website',
     private readonly labelFlow?: LabelFlow,
+    /** Which page API this session serves, for Harbor's record of each turn (agent-turns.ts). Unset for a page chat: the person typed that turn in Harbor's own UI. */
+    private readonly turnApi?: AgentTurnApi,
   ) {}
 
   /**
@@ -304,6 +309,9 @@ export class AcpTextSession {
           return;
         case 'tool_call':
         case 'tool_call_update': {
+          // Recorded even once the turn is cancelled: the agent may already
+          // have run it, and Harbor's record is where the person finds out.
+          turn?.recorder?.toolCall(update.toolCallId, update.title, update.kind);
           // window.ai has no events for tool calls, so nothing is relayed
           // to the page here — but a turn can run for minutes while the
           // agent uses its own tools, and the site's grant can be revoked
@@ -424,6 +432,9 @@ export class AcpTextSession {
       // so a failed first turn still doesn't get it resent on the next one.
       this.firstPromptSent = true;
 
+      if (this.turnApi) {
+        turn.recorder = startAgentTurn({ origin: this.origin, api: this.turnApi, agentId: this.agentId, prompt: input });
+      }
       const result = await ctx.request(
         AGENT_METHODS.session_prompt,
         { sessionId, prompt, _meta: provenanceMeta(this.origin, this.provenanceSource) },
@@ -433,11 +444,16 @@ export class AcpTextSession {
       turn.runEnded.abort();
 
       const outcome = stopReasonOutcome(result.stopReason, turn.cancelReason);
-      if (!outcome.ok) return { ok: false, error: outcome.error };
+      if (!outcome.ok) {
+        turn.recorder?.end(unansweredTurnOutcome(turn.cancelReason));
+        return { ok: false, error: outcome.error };
+      }
+      turn.recorder?.end('answered');
       return { ok: true, text: this.scrub(accumulatedText) };
     } catch (e) {
       turn.terminalSent = true;
       turn.runEnded.abort();
+      turn.recorder?.end(unansweredTurnOutcome(turn.cancelReason));
       if (turn.cancelReason) return { ok: false, error: cancelReasonEvent(turn.cancelReason) };
       return { ok: false, error: agentFailedEvent(this.scrub(e instanceof Error ? e.message : 'Agent run failed')) };
     } finally {
@@ -490,6 +506,7 @@ export async function createAcpTextSession(
   systemPrompt: string | undefined,
   signal?: AbortSignal,
   labelFlow?: LabelFlow,
+  turnApi: AgentTurnApi = 'window.ai',
 ): Promise<void> {
   registerPendingOpen(sessionId, tabId);
   // `cancelPendingOpensForTab` (the tab closing, or its port disconnecting
@@ -501,7 +518,7 @@ export async function createAcpTextSession(
   setPendingOpenAbort(sessionId, () => tabAbort.abort());
   const openSignal = signal ? combineAbortSignals([signal, tabAbort.signal]) : tabAbort.signal;
 
-  const session = new AcpTextSession(agentId, origin, tabId, systemPrompt, 'website', labelFlow);
+  const session = new AcpTextSession(agentId, origin, tabId, systemPrompt, 'website', labelFlow, turnApi);
   try {
     await session.open(openSignal);
   } catch (e) {

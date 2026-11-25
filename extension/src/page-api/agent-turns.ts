@@ -22,6 +22,8 @@
  * being suspended. Only the newest `MAX_TURNS` are kept.
  */
 
+import type { CancelReason } from './acp-connection';
+
 export type AgentTurnApi = 'window.ai' | 'agent.sessions' | 'agent.run';
 export type AgentTurnOutcome = 'answered' | 'failed' | 'cancelled' | 'timed-out';
 
@@ -136,6 +138,12 @@ function update(id: string, fn: (turn: AgentTurnRecord) => AgentTurnRecord): voi
     turns[index] = fn(turns[index]);
     return persist();
   });
+}
+
+/** How a turn that didn't answer ended, from why Harbor cancelled it (`null`: it wasn't cancelled, so it failed). */
+export function unansweredTurnOutcome(reason: CancelReason | null): AgentTurnOutcome {
+  if (reason === 'timeout') return 'timed-out';
+  return reason ? 'cancelled' : 'failed';
 }
 
 /** Starts recording a turn whose prompt is about to be sent to the agent. */
