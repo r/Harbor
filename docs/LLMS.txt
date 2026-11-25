@@ -411,6 +411,8 @@ The person's agent can call page tools during the `agent.run()` the page starts 
       title="Shop" data-tools="search,add_to_cart">
 ```
 
+`discover()` also reads `rel="mcp"`. A link without `data-transport` reports `'streamable-http'`.
+
 ```javascript
 const servers = await window.agent.mcp.discover();
 
@@ -418,7 +420,7 @@ const reg = await window.agent.mcp.register({
   url: 'https://shop.example/mcp',
   name: 'Shop Assistant',
   tools: ['search', 'add_to_cart'],
-  transport: 'sse',  // 'sse' | 'stdio' | 'streamable-http'
+  transport: 'streamable-http',  // 'streamable-http' | 'sse' | 'websocket'
 });
 
 await window.agent.mcp.unregister(reg.serverId);

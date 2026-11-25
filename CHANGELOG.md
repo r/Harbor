@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `agent.mcp.discover()` reads `<link rel="mcp">` as well as `<link rel="mcp-server">`, and matches either as one token of a rel list, so `rel="alternate mcp-server"` counts. A link without `data-transport` now reports `transport: "streamable-http"`, MCP's current transport, instead of `"sse"`. A page that passes that value to `agent.mcp.register()` for an SSE-only server should add `data-transport="sse"` to its link, as the Bring Your Own Chatbot demo does.
+- `docs/LLMS.txt` listed `'stdio'` as a transport for `agent.mcp.register()`, which refuses it, and left out `'websocket'`, which it accepts. It now lists `'streamable-http' | 'sse' | 'websocket'`.
+
 - An answer from another site's agent now says whose it is. Invoke responses, messages, broadcast events and each orchestration step's result carry `provenance: { source: 'agent', origin, agentId }`, which Harbor fills in from the site that registered the agent, so an agent can't claim to be another site's. Harbor doesn't judge how sensitive the answer is: the page, or the agent or model it passes the answer to, does. See "Where an answer came from" in docs/WEB_AGENTS_API.md.
 
 - The demo directory and examples use Harbor’s public-site typography and green palette, with layouts for phones and system light and dark themes.
@@ -74,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `agents.orchestrate.pipeline`, `parallel` and `route` stopped after 30 seconds, while each step can take that long alone. They now run for up to 30 minutes, and start no more steps once the page stops waiting.
 - When a page had more than one `onInvoke` handler and an earlier one threw, a later one's answer was reported as the earlier one's error.
 - The generated test harness's mock now models the invocation timeout and its 5-minute cap, an agent's page going while an invocation waits (`mock.agents.removeAgent()`), the handler's `signal`, and a refused `unregister()`. Its types no longer say `broadcast()` always fails.
+- **Apple Intelligence no longer fails a whole run over one page tool's schema.** A tool with a nullable field (`"type": ["string", "null"]`) made every `agent.run` on the page fail with "The data couldn't be read because it isn't in the correct format", and one with a `pattern` failed it with "An unsupported generation guide was used", even when the run never needed that tool. The bridge now sends Apple's model only the schema keywords it reads, and drops every other one at any depth, `pattern` included (page tools still check their own input). It inlines local `$ref`s and rewrites nullable types and `oneOf` as `anyOf`, so a keyword nobody has tried yet can't fail the run. A tool whose schema still can't be read, such as one taking `["string", "number"]`, is left out of that run and named in the bridge log.
 - The generated test harness's mock answered an agent whose invoke handler throws with `ERR_INVOCATION_FAILED`. Harbor answers `ERR_HANDLER_FAILED`, and the mock now does too. Its agent answers also carry `provenance`, as Harbor's do.
 - The invoice widget inherits the page's color scheme inside its shadow DOM instead of staying light in dark mode.
 - Page Tools wraps its inline API example on narrow screens instead of overflowing the viewport.

@@ -87,8 +87,16 @@ private func completion(_ request: [String: Any]) async throws -> [String: Any] 
         let alias = "harbor_tool_\(index)"
         aliases[name] = alias
         schema["title"] = alias + "_arguments"
-        let encoded = try JSONSerialization.data(withJSONObject: schema)
-        let parameters = try JSONDecoder().decode(GenerationSchema.self, from: encoded)
+        let parameters: GenerationSchema
+        do {
+            let encoded = try JSONSerialization.data(withJSONObject: schema)
+            parameters = try JSONDecoder().decode(GenerationSchema.self, from: encoded)
+        } catch {
+            // One tool Apple's model can't describe must not cost the whole run.
+            // The name is the page's, so it is quoted and escaped to stay on one line.
+            FileHandle.standardError.write(Data("Left out tool \(name.debugDescription): Apple Intelligence can't read its input schema (\(error.localizedDescription))\n".utf8))
+            continue
+        }
         tools.append(HarborTool(name: alias, originalName: name,
                                 description: function["description"] as? String ?? name,
                                 parameters: parameters, requests: requests))

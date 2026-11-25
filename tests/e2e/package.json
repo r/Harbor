@@ -29,6 +29,8 @@
     "test:agent-invoke-lifecycle:keep-open": "node test-agent-invoke-lifecycle.mjs --keep-open",
     "test:outside-agent": "node test-outside-agent.mjs",
     "test:outside-agent:keep-open": "node test-outside-agent.mjs --keep-open",
+    "test:tale": "node test-tale-fyi.mjs",
+    "test:tale:keep-open": "node test-tale-fyi.mjs --keep-open",
     "test:wasm": "node test-wasm-server.mjs",
     "test:all": "npm run test:bridge && npm run test:harbor && npm run test:wasm && npm run test:mcp && npm run test:browser",
     "test:markdown": "node test-chat-markdown-sanitize.mjs"
