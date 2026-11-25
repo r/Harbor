@@ -117,6 +117,26 @@ describe('syncPageTools validation', () => {
     expect(listPageTools(TAB, ORIGIN)?.tools.map(t => t.name)).toEqual(['keep']);
   });
 
+  it.each([
+    ['an array type', { type: 'array', items: { type: 'string' } }],
+    ['no type', { properties: {} }],
+  ])("leaves out an outputSchema with %s, which MCP doesn't allow, and keeps the tool", (_label, outputSchema) => {
+    // MCP's Tool type requires outputSchema.type "object"; an SDK client
+    // rejects a whole tools/list that breaks it, losing every tool.
+    expect(syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port: fakePort() }, { tools: [tool('a', { outputSchema })] })).toBe(true);
+    const [listed] = listPageTools(TAB, ORIGIN)!.tools;
+    expect(listed.name).toBe('a');
+    expect('outputSchema' in listed).toBe(false);
+  });
+
+  it('drops the whole sync for a schema that is an object but not a plain one, such as a Date', () => {
+    const port = fakePort();
+    syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port }, { tools: [tool('keep')] });
+    expect(syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port }, { tools: [tool('a', { outputSchema: new Date(0) })] })).toBe(false);
+    expect(syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port }, { tools: [tool('a', { inputSchema: new Date(0) })] })).toBe(false);
+    expect(listPageTools(TAB, ORIGIN)?.tools.map(t => t.name)).toEqual(['keep']);
+  });
+
   it("copies outputSchema, so the page's object can't change what the agent sees", () => {
     const outputSchema: Record<string, unknown> = { type: 'object' };
     syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port: fakePort() }, { tools: [tool('a', { outputSchema })] });

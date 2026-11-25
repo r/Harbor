@@ -134,6 +134,13 @@ describe("a tool's title, outputSchema and annotations", () => {
     });
   });
 
+  it('sends only the annotation hints it knows, so a function in annotations cannot fail the sync', async () => {
+    const p = page();
+    await p.mc.registerTool({ ...tool('a'), annotations: { readOnlyHint: true, onCall: () => 1, nested: { x: 1 } } });
+    await tick();
+    expect(p.requests('page_tools.sync').at(-1).payload.tools[0].annotations).toEqual({ readOnlyHint: true });
+  });
+
   it('leaves out ones of the wrong type, and still registers the tool', async () => {
     const p = page();
     await p.mc.registerTool({ ...tool('odd'), title: 5, outputSchema: [], annotations: 'read-only' });

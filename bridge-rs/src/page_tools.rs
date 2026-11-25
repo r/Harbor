@@ -989,6 +989,8 @@ mod tests {
                     },
                     // Wrong types are dropped, not passed on.
                     { "name": "odd", "title": 5, "outputSchema": [], "annotations": "yes" },
+                    // MCP requires outputSchema.type "object".
+                    { "name": "list", "outputSchema": { "type": "array" } },
                 ],
             })),
         );
@@ -1001,6 +1003,7 @@ mod tests {
         assert!(tools[1].get("title").is_none());
         assert!(tools[1].get("outputSchema").is_none());
         assert!(tools[1].get("annotations").is_none());
+        assert!(tools[2].get("outputSchema").is_none());
     }
 
     #[tokio::test]
