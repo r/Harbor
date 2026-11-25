@@ -592,8 +592,13 @@ registration.abort();
 |-------|----------|-------|
 | `name` | yes | 1–128 ASCII letters, digits, `_`, `-` or `.` |
 | `description` | yes | Must not be empty |
+| `title` | no | A human-readable name, passed to the agent as MCP's `title` |
 | `inputSchema` | no | JSON Schema for the input |
+| `outputSchema` | no | JSON Schema for the result. Passed to the agent only when its `type` is `"object"`, as MCP requires; return a matching object |
+| `annotations` | no | MCP's tool hints: `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`. Harbor passes on only these, with the right types. They inform the person's agent; Harbor's own permission and policy checks ignore them |
 | `execute(input, { signal })` | yes | `handler` is accepted as an older name |
+
+A `title`, `outputSchema` or `annotations` of the wrong type is left out; the tool still registers. `document.modelContext.tools` lists each tool with the fields Harbor kept.
 
 The promise rejects with:
 
