@@ -7,8 +7,10 @@
  * Opening the feed is what clears the toolbar badge. So when the sidebar
  * loads with unseen turns, it opens the activity panel itself, and any
  * refresh while the panel is open marks new unseen turns seen. Turns that
- * were unseen when this sidebar first showed them stay highlighted until it
- * closes, so clearing the badge doesn't also hide which turns it was for.
+ * were unseen when this sidebar first showed them stay highlighted for as
+ * long as this sidebar stays open, even if the Activity panel is collapsed
+ * and opened again, so clearing the badge doesn't also hide which turns it
+ * was for.
  */
 
 import { escapeHtml } from './html-escape';
