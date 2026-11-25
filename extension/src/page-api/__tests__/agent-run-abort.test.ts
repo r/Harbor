@@ -20,7 +20,7 @@ vi.mock('../harbor-core', () => ({
   pageToolsForAgent: vi.fn(async () => null),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   onHarborSessionEnded: vi.fn(() => () => {}),
-  forgetAgentsInTab: vi.fn(),
+  forgetAgentsInTab: vi.fn(), forgetAgentsOffOriginInTab: vi.fn(),
   harborRequest: mocks.harborRequest, harborStreamRequest: mocks.harborStreamRequest,
 }));
 vi.mock('../policy/feature-flags', async (importOriginal) => ({
@@ -33,7 +33,7 @@ vi.mock('../handlers', () => ({
   resolveTextSession: mocks.resolveTextSession, recordExplicitPrompt: vi.fn(), forgetTextSession: vi.fn(),
   restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
   isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
-  cleanupAgentsForTab: vi.fn(), agentInvocationTabs: new Map(),
+  cleanupAgentsForTab: vi.fn(), failInvocationsForTab: vi.fn(), forgetPageAgentsInTab: vi.fn(), agentInvocationTabs: new Map(),
 }));
 
 let receive: (message: unknown) => Promise<void>;

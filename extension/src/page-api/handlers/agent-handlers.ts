@@ -4,10 +4,11 @@
  * Handles agent registration, discovery, invocation, and orchestration.
  */
 
-import { harborRequest } from '../harbor-core';
+import { harborRequest, invocationTimeoutMs } from '../harbor-core';
 import type { AgentListEntry } from '../types';
 import type { RequestContext, HandlerResponse } from './types';
 import { errorResponse, successResponse } from './types';
+import { latestPage } from '../tab-pages';
 
 /**
  * A failed Harbor call, reported with Harbor's own code (ERR_PERMISSION_DENIED,
@@ -34,6 +35,8 @@ const registeredAgents = new Map<string, {
   tabId: number;
   name: string;
   capabilities: string[];
+  /** When the page API registered it; compared with the tab's latest page. */
+  registeredAt: number;
 }>();
 
 // Track pending invocations waiting for responses from pages. Bound to the
@@ -47,6 +50,10 @@ const pendingInvocations = new Map<string, {
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
   tabId: number;
+  /** When the invocation was sent to the tab's page. */
+  sentAt: number;
+  /** The site of the agent it was sent to. */
+  agentOrigin?: string;
 }>();
 
 // Track tabs that have invocation handlers set up (agentId -> tabId)
@@ -71,12 +78,31 @@ async function registerProxyInvocationHandler(agentId: string, origin: string, t
 }
 
 /**
+ * Whether the page that registered `agentId` still shows in `tabId`: the tab
+ * is on the agent's site, and no newer page has connected there since the
+ * agent registered.
+ */
+async function agentPageStillInTab(agentId: string, tabId: number): Promise<boolean> {
+  const agent = registeredAgents.get(agentId);
+  if (!agent) return false;
+  const latest = latestPage(tabId);
+  if (latest && latest.at > agent.registeredAt) return false;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    return !!tab?.url && new URL(tab.url).origin === agent.origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Handle an invocation request from Harbor for one of our registered agents.
  */
 export async function handleIncomingInvocation(
   agentId: string,
   request: { from: string; task: string; input?: unknown; timeout?: number },
-  traceId?: string
+  traceId?: string,
+  signal?: AbortSignal,
 ): Promise<{ success: boolean; result?: unknown; error?: { code: string; message: string } }> {
   const trace = traceId || 'no-trace';
   
@@ -94,44 +120,73 @@ export async function handleIncomingInvocation(
   if (!tabId) {
     return { success: false, error: { code: 'ERR_NO_TAB', message: 'Agent tab not found' } };
   }
+
+  // Send nothing to the tab unless the page that registered the agent is
+  // still the one there. Just after the tab's page is replaced, the old
+  // page's agent is still registered until its disconnect is handled, and
+  // the content script would post the caller's task and input straight
+  // into the new page, which may be another site.
+  const pageStillThere = await agentPageStillInTab(agentId, tabId);
+  // The caller may have given up while that was checked: send nothing.
+  if (signal?.aborted) {
+    return { success: false, error: { code: 'ERR_ABORTED', message: 'The caller stopped waiting' } };
+  }
+  if (!pageStillThere) {
+    console.log(`[TRACE ${trace}] handleIncomingInvocation - the agent's page has left tab ${tabId}`);
+    return { success: false, error: { code: 'ERR_AGENT_NOT_FOUND', message: "The agent's page is gone" } };
+  }
   
   const invocationId = `inv-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const timeout = request.timeout || 30000;
-  
+  const timeout = invocationTimeoutMs(request.timeout);
+  const pageTabId = tabId;
+
   return new Promise((resolve) => {
-    const timeoutId = setTimeout(() => {
+    // The invocation is over for the caller while the agent's page may
+    // still be working on it: tell the page to stop, and drop its answer.
+    const cancelInPage = (error: { code: string; message: string }) => {
+      if (!pendingInvocations.has(invocationId)) return;
+      clearTimeout(timeoutId);
       pendingInvocations.delete(invocationId);
-      resolve({ success: false, error: { code: 'ERR_TIMEOUT', message: 'Invocation timed out' } });
+      signal?.removeEventListener('abort', onAbort);
+      chrome.tabs.sendMessage(pageTabId, { type: 'agentInvocationCancel', invocationId }).catch(() => {});
+      resolve({ success: false, error });
+    };
+    const onAbort = () => cancelInPage({ code: 'ERR_ABORTED', message: 'The caller stopped waiting' });
+    const timeoutId = setTimeout(() => {
+      cancelInPage({ code: 'ERR_TIMEOUT', message: 'Invocation timed out' });
     }, timeout);
-    
+    const settle = (response: { success: boolean; result?: unknown; error?: { code: string; message: string } }) => {
+      clearTimeout(timeoutId);
+      pendingInvocations.delete(invocationId);
+      signal?.removeEventListener('abort', onAbort);
+      resolve(response);
+    };
+
     pendingInvocations.set(invocationId, {
-      resolve: (response) => {
-        clearTimeout(timeoutId);
-        pendingInvocations.delete(invocationId);
-        resolve(response as { success: boolean; result?: unknown; error?: { code: string; message: string } });
-      },
-      reject: (error) => {
-        clearTimeout(timeoutId);
-        pendingInvocations.delete(invocationId);
-        resolve({ success: false, error: { code: 'ERR_FAILED', message: error.message } });
-      },
+      resolve: (response) => settle(response as { success: boolean; result?: unknown; error?: { code: string; message: string } }),
+      reject: (error) => settle({ success: false, error: { code: 'ERR_FAILED', message: error.message } }),
       timeout: timeoutId,
       tabId: tabId!,
+      sentAt: Date.now(),
+      agentOrigin: registeredAgents.get(agentId)?.origin,
     });
     
     chrome.tabs.sendMessage(tabId!, {
       type: 'agentInvocation',
       invocationId,
       agentId,
+      // The content script posts into the page only if it's on this site.
+      agentOrigin: registeredAgents.get(agentId)?.origin,
       from: request.from,
       task: request.task,
       input: request.input,
       traceId: trace,
     }).catch((error) => {
-      clearTimeout(timeoutId);
-      pendingInvocations.delete(invocationId);
-      resolve({ success: false, error: { code: 'ERR_SEND_FAILED', message: error.message } });
+      settle({ success: false, error: { code: 'ERR_SEND_FAILED', message: error.message } });
     });
+
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -162,6 +217,51 @@ export function resolveInvocationResponse(
   }
   pending.resolve(response);
   return true;
+}
+
+/**
+ * The page in a tab has gone (it closed, navigated or reloaded): fail every
+ * invocation still waiting on it, since it can no longer answer. The caller
+ * hears straight away instead of waiting out the timeout.
+ *
+ * `sentBefore` spares invocations sent to a newer page in the tab, when the
+ * old page's disconnect arrives after the new page has started.
+ */
+export function failInvocationsForTab(tabId: number, sentBefore = Infinity): void {
+  for (const pending of [...pendingInvocations.values()]) {
+    if (pending.tabId !== tabId || pending.sentAt >= sentBefore) continue;
+    pending.resolve({
+      success: false,
+      error: { code: 'ERR_AGENT_NOT_FOUND', message: "The agent's page is gone" },
+    });
+  }
+}
+
+/**
+ * The tab now shows `url`. Fail every invocation waiting on an agent from
+ * another site in that tab, and forget those agents here. A navigation
+ * doesn't always close the old page's port (Firefox can keep the page in the
+ * back/forward cache), so this doesn't wait for a disconnect.
+ */
+export function forgetAgentsLeavingTab(tabId: number, url: string): void {
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return;
+  }
+  for (const pending of [...pendingInvocations.values()]) {
+    if (pending.tabId !== tabId || pending.agentOrigin === origin) continue;
+    pending.resolve({
+      success: false,
+      error: { code: 'ERR_AGENT_NOT_FOUND', message: "The agent's page is gone" },
+    });
+  }
+  for (const [agentId, agent] of registeredAgents.entries()) {
+    if (agent.tabId !== tabId || agent.origin === origin) continue;
+    registeredAgents.delete(agentId);
+    agentInvocationTabs.delete(agentId);
+  }
 }
 
 // =============================================================================
@@ -209,6 +309,7 @@ export async function handleAgentsRegister(ctx: RequestContext): HandlerResponse
       tabId: tabId || 0,
       name: result.name,
       capabilities: result.capabilities,
+      registeredAt: Date.now(),
     });
     
     if (result.acceptsInvocations) {
@@ -238,8 +339,13 @@ export async function handleAgentsUnregister(ctx: RequestContext): HandlerRespon
   }
 
   try {
-    await harborRequest('agents.unregister', { agentId, origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
-    registeredAgents.delete(agentId);
+    const unregistered = await harborRequest<boolean>('agents.unregister', { agentId, origin: ctx.origin, tabId: ctx.tabId }, { signal: ctx.signal });
+    // Harbor refuses to unregister another origin's agent; that agent stays
+    // reachable, so only forget it here when Harbor actually let it go.
+    if (unregistered === true) {
+      registeredAgents.delete(agentId);
+      agentInvocationTabs.delete(agentId);
+    }
     return successResponse(ctx.id, null);
   } catch (e) {
     return harborFailure(ctx.id, e, 'Unregistration failed');
@@ -317,7 +423,13 @@ export async function handleAgentsInvoke(ctx: RequestContext): HandlerResponse {
       origin: ctx.origin,
       tabId: ctx.tabId,
       traceId,
-    }, { signal: ctx.signal });
+    }, {
+      signal: ctx.signal,
+      // The invocation answers ERR_TIMEOUT itself when its own timeout runs
+      // out; this page-call limit is a backstop a little past that, not
+      // harborRequest's 30-second default, which would cut it short.
+      timeoutMs: invocationTimeoutMs(request.timeout) + 10_000,
+    });
 
     return successResponse(ctx.id, result);
   } catch (e) {
@@ -411,6 +523,14 @@ export async function handleAgentsBroadcast(ctx: RequestContext): HandlerRespons
 // Orchestration Handlers
 // =============================================================================
 
+/**
+ * How long a page's orchestration call may run. Each step keeps its own
+ * invocation timeout, and the person may be asked about a step partway
+ * through, so a pipeline can run well past harborRequest's 30-second
+ * default. This is a backstop, not a step limit.
+ */
+export const ORCHESTRATION_PAGE_CALL_MS = 30 * 60_000;
+
 export async function handleAgentsPipeline(ctx: RequestContext): HandlerResponse {
   const { config, initialInput } = ctx.payload as {
     config: { steps: Array<{ agentId: string; task: string; inputTransform?: string; outputTransform?: string }> };
@@ -431,7 +551,7 @@ export async function handleAgentsPipeline(ctx: RequestContext): HandlerResponse
       initialInput,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    }, { signal: ctx.signal });
+    }, { signal: ctx.signal, timeoutMs: ORCHESTRATION_PAGE_CALL_MS });
 
     return successResponse(ctx.id, result);
   } catch (e) {
@@ -460,7 +580,7 @@ export async function handleAgentsParallel(ctx: RequestContext): HandlerResponse
       config,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    }, { signal: ctx.signal });
+    }, { signal: ctx.signal, timeoutMs: ORCHESTRATION_PAGE_CALL_MS });
 
     return successResponse(ctx.id, result);
   } catch (e) {
@@ -493,7 +613,7 @@ export async function handleAgentsRoute(ctx: RequestContext): HandlerResponse {
       task,
       origin: ctx.origin,
       tabId: ctx.tabId,
-    }, { signal: ctx.signal });
+    }, { signal: ctx.signal, timeoutMs: ORCHESTRATION_PAGE_CALL_MS });
 
     return successResponse(ctx.id, result);
   } catch (e) {
@@ -506,11 +626,26 @@ export async function handleAgentsRoute(ctx: RequestContext): HandlerResponse {
 // =============================================================================
 
 export function cleanupAgentsForTab(tabId: number): void {
+  failInvocationsForTab(tabId);
   for (const [agentId, agent] of registeredAgents.entries()) {
     if (agent.tabId === tabId) {
       registeredAgents.delete(agentId);
+      agentInvocationTabs.delete(agentId);
       harborRequest('agents.unregister', { agentId, origin: agent.origin }).catch(() => {});
     }
+  }
+}
+
+/**
+ * The page in a tab has gone: forget the agents it registered here.
+ * `registeredBefore` spares agents a newer page in the tab registered.
+ * Harbor's own registry forgets them separately (forgetTabAgents).
+ */
+export function forgetPageAgentsInTab(tabId: number, registeredBefore = Infinity): void {
+  for (const [agentId, agent] of registeredAgents.entries()) {
+    if (agent.tabId !== tabId || agent.registeredAt >= registeredBefore) continue;
+    registeredAgents.delete(agentId);
+    agentInvocationTabs.delete(agentId);
   }
 }
 

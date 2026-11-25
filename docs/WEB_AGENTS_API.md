@@ -923,8 +923,9 @@ window.agent.agents.onInvoke(async (request) => {
   console.log(`Task from ${request.from}:`, request.task);
   
   if (request.task === 'search') {
-    // Do the search...
-    return { results: ['result1', 'result2'] };
+    // request.signal aborts if the caller stops waiting
+    const res = await fetch('/search?q=' + encodeURIComponent(request.input.query), { signal: request.signal });
+    return { results: await res.json() };
   }
   
   throw new Error('Unknown task');
@@ -938,6 +939,10 @@ window.agent.agents.onMessage((message) => {
 // Unregister when done
 await window.agent.agents.unregister();
 ```
+
+`unregister()` rejects with `ERR_AGENT_NOT_FOUND` for an id that isn't registered, and for another site's agent, so it doesn't reveal whether that agent exists.
+
+An agent belongs to the page that registered it. When the page leaves its tab (the tab closes, the page reloads or navigates, or the page goes into the back/forward cache), Harbor forgets the agent and its subscriptions. If the person goes Back and the browser restores the page from the back/forward cache, the page registers its agents again without you doing anything: each gets its old id back, and its subscriptions, page tools and `agent.mcp.register()` servers return. Its sessions on the person's own agent (`window.ai` sessions, and `agent.sessions` sessions with a model) keep working too: Harbor keeps each cached page's sessions for up to 30 minutes after it left. They end sooner if the tab closes, or if your site needs the agent slot for a new session (the oldest cached page's go first). Only the same site in the same tab can get an id back, also within 30 minutes. If the browser reloads the page instead, your page's code runs again as on any load.
 
 #### Discovering Agents
 
@@ -977,7 +982,13 @@ if (response.success) {
 } else {
   console.error('Failed:', response.error);
 }
+```
 
+`timeout` defaults to 30 seconds and is capped at 5 minutes. If the agent's tab closes, its page reloads, the tab moves to another site, or the page goes into the back/forward cache before it answers, the invocation fails at once with `ERR_AGENT_NOT_FOUND`.
+
+When the caller stops waiting (the invocation times out, or the caller's page goes), the agent's `request.signal` aborts and any answer it sends later is dropped. The page script only passes an agent's own invocations, messages and broadcasts to its handlers.
+
+```javascript
 // Send a message (fire and forget)
 const { delivered } = await window.agent.agents.send('agent-id', {
   type: 'notification',
@@ -1022,7 +1033,7 @@ Harbor doesn't decide how sensitive an answer is. `provenance` tells you, and an
 
 #### Orchestration Patterns
 
-An orchestration call needs `agents:invoke`. Harbor then checks each step's agent just before that step runs, the same way it checks a direct `invoke`. An agent on another origin needs an `agents:crossOrigin` grant for that agent's site, so the user may be asked partway through a pipeline. A route checks only the agent it picks. If the user refuses a step, a pipeline stops there. In a parallel run, only that task fails.
+An orchestration call can run for up to 30 minutes; each step keeps its own 30-second invocation timeout. If the page stops waiting, no further steps start. An orchestration call needs `agents:invoke`. Harbor then checks each step's agent just before that step runs, the same way it checks a direct `invoke`. An agent on another origin needs an `agents:crossOrigin` grant for that agent's site, so the user may be asked partway through a pipeline. A route checks only the agent it picks. If the user refuses a step, a pipeline stops there. In a parallel run, only that task fails.
 
 ```javascript
 // Pipeline: Execute agents sequentially
@@ -1116,7 +1127,7 @@ try {
 | `ERR_SESSION_NOT_FOUND` | Session was destroyed |
 | `ERR_BUDGET_EXCEEDED` | A session's `maxToolCalls` budget is spent |
 | `ERR_HARBOR_NOT_FOUND` | Harbor extension not found |
-| `ERR_AGENT_NOT_FOUND` | Agent not registered |
+| `ERR_AGENT_NOT_FOUND` | Agent not registered (or another site's, for `unregister`), or its page went away before answering |
 | `ERR_AGENT_NOT_ACCEPTING` | Agent not accepting invocations |
 | `ERR_TIMEOUT` | Request timed out |
 | `ERR_ABORTED` | The page aborted an `agent.run` or a `window.ai` prompt, its tab closed, or its port disconnected |
@@ -1352,14 +1363,14 @@ declare global {
       
       agents: {
         register(options: AgentRegisterOptions): Promise<RegisteredAgent>;
-        unregister(): Promise<void>;
+        unregister(agentId?: string): Promise<void>;
         getInfo(agentId: string): Promise<RegisteredAgent | null>;
         discover(query?: AgentDiscoveryQuery): Promise<{ agents: AgentSummary[]; total: number }>;
         list(): Promise<Array<{ id: string; name: string; status: 'active' | 'suspended' | 'terminated' }>>;
         invoke(agentId: string, request: AgentInvocationRequest): Promise<AgentInvocationResponse>;
         send(agentId: string, payload: unknown): Promise<{ delivered: boolean }>;
         onMessage(handler: (message: AgentMessage) => void): () => void;
-        onInvoke(handler: (request: AgentInvocationRequest & { from: string }) => Promise<unknown>): () => void;
+        onInvoke(handler: (request: AgentInvocationRequest & { from: string; signal: AbortSignal }) => Promise<unknown>): () => void;
         subscribe(eventType: string, handler: (event: { type: string; data: unknown; source: string }) => void): Promise<void>;
         unsubscribe(eventType: string, handler?: Function): Promise<void>;
         broadcast(eventType: string, data: unknown): Promise<{ delivered: number }>;

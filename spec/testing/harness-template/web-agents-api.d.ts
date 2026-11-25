@@ -132,6 +132,7 @@ interface AgentDiscoveryQuery {
 interface AgentInvocationRequest {
   task: string;
   input?: unknown;
+  /** Milliseconds to wait for the answer. Default 30000; Harbor caps it at 300000. */
   timeout?: number;
 }
 
@@ -185,6 +186,7 @@ interface AgentEvent {
 /** `window.agent.agents`. Needs Harbor's multiAgent feature; otherwise every call fails with ERR_FEATURE_DISABLED. */
 interface AgentsApi {
   register(options: AgentRegisterOptions): Promise<RegisteredAgent>;
+  /** Rejects with ERR_AGENT_NOT_FOUND for an id that isn't registered or is another site's. */
   unregister(agentId?: string): Promise<void>;
   getInfo(agentId: string): Promise<RegisteredAgent | null>;
   discover(query?: AgentDiscoveryQuery): Promise<{ agents: AgentSummary[]; total: number }>;
@@ -192,10 +194,11 @@ interface AgentsApi {
   invoke(agentId: string, request: AgentInvocationRequest): Promise<AgentInvocationResponse>;
   send(agentId: string, payload: unknown): Promise<{ delivered: boolean }>;
   onMessage(handler: (message: AgentMessage) => void): () => void;
-  onInvoke(handler: (request: AgentInvocationRequest & { from: string }) => Promise<unknown>): () => void;
+  /** `request.signal` aborts when the caller stops waiting (timeout, or its page went); a later answer is dropped. */
+  onInvoke(handler: (request: AgentInvocationRequest & { from: string; signal: AbortSignal }) => Promise<unknown>): () => void;
   subscribe(eventType: string, handler: (event: AgentEvent) => void): Promise<void>;
   unsubscribe(eventType: string, handler?: (event: AgentEvent) => void): Promise<void>;
-  /** Always fails in Harbor today. */
+  /** Reaches subscribed agents on this site, and on sites with an agents:crossOrigin grant; `delivered` counts them. */
   broadcast(eventType: string, data: unknown): Promise<{ delivered: number }>;
   orchestrate: {
     pipeline(

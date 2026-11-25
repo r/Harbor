@@ -35,7 +35,7 @@ vi.mock('../harbor-core', async () => {
   pageToolsForAgent: vi.fn(async () => null),
   syncPageTools: vi.fn(), resolvePageToolResult: vi.fn(), forgetPageToolsForConnection: vi.fn(), forgetPageToolsInTab: vi.fn(),
   onHarborSessionEnded: vi.fn(() => () => {}),
-  forgetAgentsInTab: vi.fn(),
+  forgetAgentsInTab: vi.fn(), forgetAgentsOffOriginInTab: vi.fn(),
   // This file's tabs.onRemoved tests close a tab, which background.ts's
   // real listener also uses to forget that tab's site-registered MCP
   // servers (mcp/site-servers.ts) — a no-op here since none of these
@@ -90,7 +90,7 @@ vi.mock('../handlers', async (importOriginal) => {
     getPermissions: async () => ({ scopes: {}, allowedTools: [] }),
     restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(() => ({})),
     isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
-    cleanupAgentsForTab: vi.fn(), agentInvocationTabs: new Map(),
+    cleanupAgentsForTab: vi.fn(), failInvocationsForTab: vi.fn(), forgetPageAgentsInTab: vi.fn(), agentInvocationTabs: new Map(),
   };
 });
 
@@ -171,14 +171,13 @@ let nextTabId = 100;
  * directly" pitfall in docs/agent-workflow.md, one layer further down.
  * Each test instead gets its own tab id and its own port.
  */
-function connectPort(origin = ORIGIN): {
+function connectPort(origin = ORIGIN, tabId = nextTabId++): {
   receive: (m: unknown) => Promise<void>;
   postMessage: ReturnType<typeof vi.fn>;
   tabId: number;
   /** Simulates the page's port disconnecting — a navigation or reload, or the tab closing. */
   disconnect: () => void;
 } {
-  const tabId = nextTabId++;
   let receiveFn: (m: unknown) => Promise<void> = async () => {};
   let disconnectFn: () => void = () => {};
   const postMessage = vi.fn();
@@ -695,6 +694,187 @@ describe('a tab (or its port) going away while a session is still opening', () =
 
     expect(isAcpTextSession(sessionId)).toBe(false);
     expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the session while the page is in the back/forward cache, and the restored page can prompt it', async () => {
+    await setAcpBackend(AGENT_ID);
+    const b = registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const closeSpy = vi.spyOn(b, 'acpClose');
+    const port = connectPort();
+    const sessionId = (await createViaPort(port)).result as string;
+
+    // The content script says the page is going into the cache, then closes its port.
+    await port.receive({ type: 'page_hidden', token: 'page-a' });
+    port.disconnect();
+    await new Promise((r) => setTimeout(r, 10));
+    const { isAcpTextSession } = await import('../acp-text-session-registry');
+    expect(isAcpTextSession(sessionId)).toBe(true);
+    expect(closeSpy).not.toHaveBeenCalled();
+
+    // Back: the same page, on a new port in the same tab.
+    const restored = connectPort(ORIGIN, port.tabId);
+    await restored.receive({ type: 'page_shown', token: 'page-a' });
+    const reply = await promptViaPort(restored, sessionId, 'hello again');
+    expect(reply.ok).toBe(true);
+  });
+
+  it("ends a cached page's session after 30 minutes if the page doesn't come back", async () => {
+    await setAcpBackend(AGENT_ID);
+    const b = registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const closeSpy = vi.spyOn(b, 'acpClose');
+    const port = connectPort();
+    const sessionId = (await createViaPort(port)).result as string;
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await port.receive({ type: 'page_hidden', token: 'page-a' });
+      port.disconnect();
+      await vi.advanceTimersByTimeAsync(29 * 60_000);
+      const { isAcpTextSession } = await import('../acp-text-session-registry');
+      expect(isAcpTextSession(sessionId)).toBe(true);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(isAcpTextSession(sessionId)).toBe(false);
+      expect(closeSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a cached page's 30 minutes never end the next page's live session", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const a = connectPort();
+    const aSession = (await createViaPort(a)).result as string;
+    // B is the tab's next page; its port connected before A's closed.
+    const b = connectPort(ORIGIN, a.tabId);
+    const bSession = (await createViaPort(b)).result as string;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await a.receive({ type: 'page_hidden', token: 'page-a' });
+      a.disconnect();
+      await vi.advanceTimersByTimeAsync(31 * 60_000);
+      const { isAcpTextSession } = await import('../acp-text-session-registry');
+      expect(isAcpTextSession(aSession)).toBe(false);
+      expect(isAcpTextSession(bSession)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("one page coming back doesn't stop another cached page's 30 minutes", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const a = connectPort();
+    await createViaPort(a);
+    await a.receive({ type: 'page_hidden', token: 'page-a' });
+    a.disconnect();
+    const b = connectPort(ORIGIN, a.tabId);
+    const bSession = (await createViaPort(b)).result as string;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await b.receive({ type: 'page_hidden', token: 'page-b' });
+      b.disconnect();
+      // Back to A.
+      const restored = connectPort(ORIGIN, a.tabId);
+      await restored.receive({ type: 'page_shown', token: 'page-a' });
+      await vi.advanceTimersByTimeAsync(31 * 60_000);
+      const { isAcpTextSession } = await import('../acp-text-session-registry');
+      expect(isAcpTextSession(bSession)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a later page leaving without the cache doesn't end a cached page's session", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const a = connectPort();
+    const aSession = (await createViaPort(a)).result as string;
+    await a.receive({ type: 'page_hidden', token: 'page-a' });
+    a.disconnect();
+    const b = connectPort(ORIGIN, a.tabId);
+    b.disconnect();
+    await new Promise((r) => setTimeout(r, 10));
+    const { isAcpTextSession } = await import('../acp-text-session-registry');
+    expect(isAcpTextSession(aSession)).toBe(true);
+  });
+
+  it("a page showing with another page's token doesn't take its sessions", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const a = connectPort();
+    const aSession = (await createViaPort(a)).result as string;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await a.receive({ type: 'page_hidden', token: 'page-a' });
+      a.disconnect();
+      const other = connectPort(ORIGIN, a.tabId);
+      await other.receive({ type: 'page_shown', token: 'guess' });
+      await vi.advanceTimersByTimeAsync(31 * 60_000);
+      const { isAcpTextSession } = await import('../acp-text-session-registry');
+      expect(isAcpTextSession(aSession)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a cached page's session gives up its agent slot when the site needs one", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const a = connectPort();
+    const aSession = (await createViaPort(a)).result as string;
+    const second = (await createViaPort(a)).result as string;
+    await a.receive({ type: 'page_hidden', token: 'page-a' });
+    a.disconnect();
+    const b = connectPort(ORIGIN, a.tabId);
+    const created = await createViaPort(b);
+    expect(created.ok).toBe(true);
+    const { isAcpTextSession } = await import('../acp-text-session-registry');
+    expect(isAcpTextSession(aSession) && isAcpTextSession(second)).toBe(false);
+  });
+
+  it('an agent.sessions session on the own agent still ends when its page navigates away', async () => {
+    await setAcpBackend(AGENT_ID);
+    const b = registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const closeSpy = vi.spyOn(b, 'acpClose');
+    const { harborRequest } = await import('../harbor-core');
+    (harborRequest as ReturnType<typeof vi.fn>).mockImplementation(async (method: string) => {
+      if (method === 'session.create') return { sessionId: 'explicit-nav-1', capabilities: {} };
+      return { bridgeReady: true };
+    });
+    const page = connectPort();
+    const id = crypto.randomUUID();
+    await page.receive({ id, type: 'agent.sessions.create', payload: { capabilities: { llm: {} }, options: {} } });
+    const { isAcpTextSession } = await import('../acp-text-session-registry');
+    expect(isAcpTextSession('explicit-nav-1')).toBe(true);
+    page.disconnect();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(isAcpTextSession('explicit-nav-1')).toBe(false);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    (harborRequest as ReturnType<typeof vi.fn>).mockImplementation(async () => ({ bridgeReady: true }));
+  });
+
+  it("doesn't let a later cached page in the tab push back an earlier page's 30 minutes", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const port = connectPort();
+    const sessionId = (await createViaPort(port)).result as string;
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await port.receive({ type: 'page_hidden', token: 'page-a' });
+      port.disconnect();
+      await vi.advanceTimersByTimeAsync(20 * 60_000);
+      // The next page in the tab goes into the cache too.
+      const next = connectPort(ORIGIN, port.tabId);
+      await next.receive({ type: 'page_hidden', token: 'page-b' });
+      next.disconnect();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      const { isAcpTextSession } = await import('../acp-text-session-registry');
+      expect(isAcpTextSession(sessionId)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

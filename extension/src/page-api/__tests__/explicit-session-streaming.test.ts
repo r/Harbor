@@ -37,7 +37,7 @@ vi.mock('../handlers', async () => {
     recordExplicitPrompt: ai.recordExplicitPrompt,
     restoreSpawnedTabs: vi.fn(), handleTabRemoved: vi.fn(), getAllSpawnedTabs: vi.fn(),
     isSpawnedTab: vi.fn(), handleIncomingInvocation: vi.fn(), resolveInvocationResponse: vi.fn(),
-    cleanupAgentsForTab: vi.fn(), agentInvocationTabs: new Map(),
+    cleanupAgentsForTab: vi.fn(), failInvocationsForTab: vi.fn(), forgetPageAgentsInTab: vi.fn(), agentInvocationTabs: new Map(),
   };
 });
 

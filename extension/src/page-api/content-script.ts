@@ -95,30 +95,59 @@ function getBackgroundPort(): RuntimePort {
 
     backgroundPort.onDisconnect.addListener(() => {
       backgroundPort = null;
-      // Reject all pending requests
-      for (const [id, pending] of pendingRequests) {
-        pending.sendResponse({
-          id,
-          ok: false,
-          error: { code: 'ERR_INTERNAL', message: 'Background connection lost' },
-        });
-      }
-      pendingRequests.clear();
-      
-      // End all active streams
-      for (const [id, stream] of activeStreams) {
-        stream.sendEvent({
-          id,
-          event: { type: 'error', error: { code: 'ERR_INTERNAL', message: 'Background connection lost' } },
-          done: true,
-        });
-      }
-      activeStreams.clear();
+      failInFlight('Background connection lost');
     });
   }
 
   return backgroundPort;
 }
+
+/** Fail every request and stream still waiting on the port, which has closed. */
+function failInFlight(message: string): void {
+  for (const [id, pending] of pendingRequests) {
+    pending.sendResponse({ id, ok: false, error: { code: 'ERR_INTERNAL', message } });
+  }
+  pendingRequests.clear();
+  for (const [id, stream] of activeStreams) {
+    stream.sendEvent({ id, event: { type: 'error', error: { code: 'ERR_INTERNAL', message } }, done: true });
+  }
+  activeStreams.clear();
+}
+
+// A page going into the back/forward cache has left the tab, as far as
+// Harbor is concerned, even though Firefox may keep its port open. Closing
+// the port here tells Harbor now: it forgets the page's agents, fails
+// invocations waiting on it, and counts the next page as the tab's own.
+// It also lets Firefox keep the page in the cache at all: with the port
+// open, Back reloaded the page. (A port closed from this side gets no
+// onDisconnect, so in-flight calls are failed here.)
+// Harbor is told why first, so it keeps the page's sessions on the
+// person's own agent for when the page comes back.
+let portClosedForCache = false;
+// Names this document to Harbor across the cache, so the page that comes
+// back gets its own sessions and no other page's. Kept in this isolated
+// world, out of the page's reach.
+const documentToken = crypto.randomUUID();
+window.addEventListener('pagehide', (event: PageTransitionEvent) => {
+  if (!event.persisted || !backgroundPort) return;
+  try { backgroundPort.postMessage({ type: 'page_hidden', token: documentToken }); } catch { /* already closed */ }
+  backgroundPort.disconnect();
+  backgroundPort = null;
+  portClosedForCache = true;
+  failInFlight('The page was hidden');
+});
+
+// Back from the cache: a new port at once, so Harbor counts this page as
+// the tab's own again and keeps its sessions, and the page script registers
+// its agents, subscriptions, page tools and MCP servers again.
+window.addEventListener('pageshow', (event: PageTransitionEvent) => {
+  if (!event.persisted) return;
+  if (portClosedForCache) {
+    portClosedForCache = false;
+    getBackgroundPort().postMessage({ type: 'page_shown', token: documentToken });
+  }
+  window.postMessage({ channel: CHANNEL, pageRestored: true }, '*');
+});
 
 /**
  * Fetch feature flags from background script.
@@ -232,6 +261,15 @@ window.addEventListener('message', async (event: MessageEvent) => {
   if (!data.request) return;
 
   const request = data.request;
+  // Only this script says a page is going into or back from the cache.
+  const requestType: string = request.type;
+  if (requestType === 'page_hidden' || requestType === 'page_shown') {
+    window.postMessage({
+      channel: CHANNEL,
+      response: { id: request.id, ok: false, error: { code: 'ERR_INVALID_REQUEST', message: 'Unknown request type' } },
+    }, '*');
+    return;
+  }
   const isStreamingRequest = request.type === 'session.promptStreaming' || request.type === 'agent.run';
 
   const port = getBackgroundPort();
@@ -326,6 +364,15 @@ const processedInvocations = new Set<string>();
 
 // Listen for invocation requests from background and forward to page
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  // The caller stopped waiting: the page's handler is told through its
+  // request's signal.
+  if (message?.type === 'agentInvocationCancel' && typeof message.invocationId === 'string') {
+    window.postMessage({
+      channel: CHANNEL,
+      agentEvent: { type: 'invocationCancel', invocationId: message.invocationId },
+    }, '*');
+    return false;
+  }
   if (message?.type !== 'agentInvocation') {
     return false;
   }
@@ -344,6 +391,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // Clean up old invocations after 60 seconds
   setTimeout(() => processedInvocations.delete(invocationId), 60000);
   
+  // Post into the page only if it's on the agent's site. Harbor checks the
+  // tab before sending, but a navigation can commit between that check and
+  // this delivery; here, in the isolated world, the check reads the document
+  // the invocation actually reached, so another site never sees the task.
+  if (!message.agentOrigin || message.agentOrigin !== window.location.origin) {
+    console.log(`[TRACE ${trace}] Content: invocation for another site's agent, refusing: ${invocationId}`);
+    chrome.runtime.sendMessage({
+      type: 'agentInvocationResponse',
+      response: {
+        invocationId,
+        success: false,
+        error: { code: 'ERR_AGENT_NOT_FOUND', message: "The agent's page is gone" },
+      },
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+
   console.log(`[TRACE ${trace}] Content: Forwarding invocation to page - invocationId: ${invocationId}`);
   
   // Forward to page in the format injected.ts expects
@@ -353,6 +418,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       type: 'invocation',
       invocation: {
         invocationId: message.invocationId,
+        agentId: message.agentId,
         from: message.from,
         task: message.task,
         input: message.input,

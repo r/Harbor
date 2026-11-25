@@ -135,7 +135,7 @@ describe('broadcasts reach only sites the sender may reach', () => {
         data: { n: 1 },
         source: expect.any(String),
         provenance: { source: 'agent', origin: A, agentId: expect.any(String) },
-      } } } },
+      }, agentId: expect.any(String) } } },
     ]);
     expect(onB).toBeTruthy();
   });

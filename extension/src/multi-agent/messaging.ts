@@ -29,20 +29,39 @@ import {
 
 // Message handlers registered by agents
 type MessageHandler = (message: AgentMessage) => void;
-type InvocationHandler = (request: AgentInvocationRequest, fromAgentId: AgentId, traceId?: string) => Promise<AgentInvocationResponse>;
+/**
+ * `signal` aborts when the invocation is over for the caller: it timed out,
+ * or the caller stopped waiting. The handler should stop work then; any
+ * answer it gives later is dropped.
+ */
+type InvocationHandler = (
+  request: AgentInvocationRequest,
+  fromAgentId: AgentId,
+  traceId?: string,
+  signal?: AbortSignal,
+) => Promise<AgentInvocationResponse>;
 type EventHandler = (event: AgentEvent) => void;
 
 const messageHandlers = new Map<AgentId, MessageHandler>();
 const invocationHandlers = new Map<AgentId, InvocationHandler>();
 const eventSubscriptions = new Map<string, Set<AgentId>>(); // eventType -> agentIds
 
-// Pending invocations waiting for response
-interface PendingInvocation {
-  resolve: (response: AgentInvocationResponse) => void;
-  reject: (error: Error) => void;
-  timeout: ReturnType<typeof setTimeout>;
+/** An invocation's wait when the caller doesn't say. */
+export const DEFAULT_INVOCATION_TIMEOUT_MS = 30_000;
+/** The longest an invocation may wait, whatever the caller asks for. */
+export const MAX_INVOCATION_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * How long an invocation waits for its handler: the caller's timeout, capped
+ * at MAX_INVOCATION_TIMEOUT_MS, or the default when it gives none (or
+ * something that isn't a positive number).
+ */
+export function invocationTimeoutMs(requested?: unknown): number {
+  if (typeof requested !== 'number' || Number.isNaN(requested) || requested <= 0) {
+    return DEFAULT_INVOCATION_TIMEOUT_MS;
+  }
+  return Math.min(requested, MAX_INVOCATION_TIMEOUT_MS);
 }
-const pendingInvocations = new Map<string, PendingInvocation>();
 
 // Message ID counter
 let messageIdCounter = 0;
@@ -183,6 +202,7 @@ export async function invokeAgent(
   request: AgentInvocationRequest,
   fromAgentId: AgentId,
   traceId?: string,
+  callerSignal?: AbortSignal,
 ): Promise<AgentInvocationResponse> {
   const trace = traceId || 'no-trace';
   const startTime = Date.now();
@@ -230,24 +250,46 @@ export async function invokeAgent(
   recordInvocationMade(fromAgentId);
   recordInvocationReceived(request.agentId);
 
-  // Execute with timeout
-  const timeout = request.timeout || 30000;
-  
+  const timeout = invocationTimeoutMs(request.timeout);
+  // Aborts when the invocation is over for the caller: its timeout ran
+  // out, or the caller stopped waiting. The handler hears it through
+  // `signal`, so the target's page can stop work.
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onCallerAbort: (() => void) | undefined;
+  const over = new Promise<AgentInvocationResponse['error']>((resolve) => {
+    timer = setTimeout(() => {
+      resolve({ code: 'ERR_TIMEOUT', message: 'Invocation timed out' });
+    }, timeout);
+    onCallerAbort = () => resolve({ code: 'ERR_ABORTED', message: 'The caller stopped waiting' });
+    if (callerSignal?.aborted) onCallerAbort();
+    else callerSignal?.addEventListener('abort', onCallerAbort, { once: true });
+  });
+
   try {
-    const result = await Promise.race([
-      handler(request, fromAgentId, trace),
-      new Promise<AgentInvocationResponse>((_, reject) => {
-        setTimeout(() => reject(new Error('Invocation timeout')), timeout);
-      }),
+    const outcome = await Promise.race([
+      handler({ ...request, timeout }, fromAgentId, trace, controller.signal).then((result) => ({ result })),
+      over.then((error) => ({ error })),
     ]);
+    if ('error' in outcome) {
+      controller.abort();
+      return { success: false, error: outcome.error, executionTime: Date.now() - startTime };
+    }
+    const result = outcome.result;
     console.log(`[TRACE ${trace}] Handler returned, success: ${result.success}`);
 
+    // Whatever provenance the answer claims is replaced. Only an answer the
+    // agent gave says whose it is; when Harbor answered instead (the
+    // agent's page was gone, or the call couldn't be delivered), there's no
+    // agent to name.
+    const { provenance: _claimed, ...answer } = result;
     return {
-      ...result,
+      ...answer,
       executionTime: Date.now() - startTime,
-      provenance: provenanceOf(toAgent),
+      ...(agentAnswered(result) ? { provenance: provenanceOf(toAgent) } : {}),
     };
   } catch (error) {
+    controller.abort();
     return {
       success: false,
       error: {
@@ -256,7 +298,19 @@ export async function invokeAgent(
       },
       executionTime: Date.now() - startTime,
     };
+  } finally {
+    clearTimeout(timer);
+    if (onCallerAbort) callerSignal?.removeEventListener('abort', onCallerAbort);
   }
+}
+
+/**
+ * Whether the agent itself gave this answer: a result, or its own handler
+ * failing. Every other failure is Harbor answering for an agent that
+ * couldn't.
+ */
+function agentAnswered(response: AgentInvocationResponse): boolean {
+  return response.success || response.error?.code === 'ERR_HANDLER_FAILED';
 }
 
 // =============================================================================
@@ -314,6 +368,17 @@ export function broadcastEvent(
   }
 
   return { delivered, failed };
+}
+
+/**
+ * Whether Harbor still holds any handler or subscription for an agent.
+ */
+export function hasAgentHandlers(agentId: AgentId): boolean {
+  if (messageHandlers.has(agentId) || invocationHandlers.has(agentId)) return true;
+  for (const subscribers of eventSubscriptions.values()) {
+    if (subscribers.has(agentId)) return true;
+  }
+  return false;
 }
 
 /**

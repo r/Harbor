@@ -17,7 +17,8 @@
 import { gatePageAction, routeExtensionApiMessage, streamLlmChat } from '../extension-api';
 import type { TypedAction } from '../policy/actions';
 import { routeAgentMessage } from '../agents/background-router';
-import { forgetTabAgents } from '../agents/handlers/multi-agent';
+import { forgetTabAgents, forgetTabAgentsOffOrigin } from '../agents/handlers/multi-agent';
+export { invocationTimeoutMs } from '../multi-agent/messaging';
 import { callSiteTool, forgetTabServers, forgetTabServersIfOriginChanged, isSiteServerId, listSiteTools, type SiteMcpServerDescriptor } from '../mcp/site-servers';
 // The page's own tools (document.modelContext), relayed to its port: see
 // docs/PAGE_TOOLS_FOR_AGENTS.md.
@@ -407,6 +408,11 @@ export async function isModelPromptGrantedForAgent(
  */
 export function forgetAgentsInTab(tabId: number, registeredBefore?: number): void {
   forgetTabAgents(tabId, registeredBefore);
+}
+
+/** The tab now shows `origin`: forget its agents from other origins. */
+export function forgetAgentsOffOriginInTab(tabId: number, origin: string): void {
+  forgetTabAgentsOffOrigin(tabId, origin);
 }
 
 // =============================================================================

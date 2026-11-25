@@ -15,6 +15,7 @@ import {
   harborRequest,
   harborStreamRequest,
   forgetAgentsInTab,
+  forgetAgentsOffOriginInTab,
   onHarborSessionEnded,
   forgetSiteServersInTab,
   forgetSiteServersOnNavigation,
@@ -37,6 +38,7 @@ import {
   isAcpTextSession,
   promptStreamingAcpTextSession,
   cleanupAcpTextSessionsForTab,
+  destroyAcpTextSession,
   destroyAllAcpTextSessions,
 } from './acp-text-session';
 import type { TransportStreamEvent } from './types';
@@ -59,9 +61,13 @@ import {
   getAllSpawnedTabs,
   // Agent utilities
   cleanupAgentsForTab,
+  failInvocationsForTab,
+  forgetAgentsLeavingTab,
+  forgetPageAgentsInTab,
   resolveInvocationResponse,
 } from './handlers';
 import { browserAPI } from '../browser-compat';
+import { forgetLatestPage, latestPage, notePageConnected } from './tab-pages';
 
 const PORT_NAME = 'harbor-page-api';
 
@@ -339,6 +345,37 @@ export function initializePageApi(): void {
     void endExplicitTextSession(sessionId, origin);
   });
 
+  // A page that went into the back/forward cache keeps its sessions on the
+  // person's own agent, so they work again if it comes back. Each cached
+  // page is held on its own, under a token only its content script knows:
+  // its sessions end 30 minutes after it left (Firefox keeps a cached page
+  // that long at most), when its tab closes, or sooner if its site needs
+  // the agent slot for a new session. Back, the page takes them up again.
+  const CACHED_PAGE_SESSION_MS = 30 * 60_000;
+  // The page calls that can open a session on the person's own agent.
+  const OPENS_AGENT_SESSION = new Set(['ai.createTextSession', 'ai.languageModel.create', 'agent.sessions.create']);
+  const cachedPages = new Map<string, {
+    tabId: number;
+    origin: string;
+    sessions: Set<string>;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+  const endSessions = async (sessionIds: Iterable<string>) => {
+    await Promise.all([...sessionIds].map(async (sessionId) => {
+      forgetTextSession(sessionId);
+      await destroyAcpTextSession(sessionId).catch(() => { /* best-effort */ });
+    }));
+  };
+  const endCachedPage = async (token: string) => {
+    const page = cachedPages.get(token);
+    if (!page) return;
+    cachedPages.delete(token);
+    clearTimeout(page.timer);
+    await endSessions(page.sessions);
+  };
+  /** The site's oldest cached page, whose sessions go first when the site needs a slot. */
+  const oldestCachedPageOf = (origin: string) => [...cachedPages.entries()].find(([, page]) => page.origin === origin)?.[0];
+
   // Clean up spawned tabs when they are closed.
   browserAPI.tabs.onRemoved.addListener(async (tabId: number) => {
     // The page's own tools (document.modelContext) go with the tab.
@@ -357,6 +394,12 @@ export function initializePageApi(): void {
 
     handleTabRemoved(tabId);
     cleanupAgentsForTab(tabId);
+    // Its cached pages go with it (their sessions end with the tab's, below).
+    for (const [token, page] of [...cachedPages]) {
+      if (page.tabId !== tabId) continue;
+      clearTimeout(page.timer);
+      cachedPages.delete(token);
+    }
     // Cancels any turn in progress and kills the agent process for every
     // ACP-backed window.ai text session this tab opened — a no-op when it
     // opened none.
@@ -372,14 +415,23 @@ export function initializePageApi(): void {
   // dropped too — tabs.onRemoved above is the backstop for the tab closing
   // outright.
   browserAPI.tabs.onUpdated?.addListener((tabId: number, changeInfo: { url?: string }) => {
-    if (changeInfo.url) forgetSiteServersOnNavigation(tabId, changeInfo.url);
+    if (!changeInfo.url) return;
+    forgetSiteServersOnNavigation(tabId, changeInfo.url);
+    // The same for agents: once the tab is on another site, its old site's
+    // agents go, and invocations waiting on them fail now.
+    forgetAgentsLeavingTab(tabId, changeInfo.url);
+    try {
+      forgetAgentsOffOriginInTab(tabId, new URL(changeInfo.url).origin);
+    } catch {
+      // Not a URL with an origin: nothing to compare.
+    }
   });
 
   // Port connection handler: the page-facing transport.
-  // Each page connection, numbered, and the latest one in each tab with when
-  // it connected: a reloaded page's old connection can close after the new one opens.
+  // Each page connection is numbered; tab-pages.ts keeps the latest one in
+  // each tab, since a reloaded page's old connection can close after the new
+  // one opens.
   let pageConnections = 0;
-  const latestTabConnection = new Map<number, { connection: number; at: number }>();
 
   browserAPI.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     if (port.name !== PORT_NAME) return;
@@ -388,7 +440,7 @@ export function initializePageApi(): void {
     const tabId = port.sender?.tab?.id;
     // Which page connection this is, in its tab (see the disconnect below).
     const connection = ++pageConnections;
-    if (tabId !== undefined) latestTabConnection.set(tabId, { connection, at: Date.now() });
+    if (tabId !== undefined) notePageConnected(tabId, connection);
     const cookieStoreId = (port.sender?.tab as (chrome.tabs.Tab & { cookieStoreId?: string }) | undefined)?.cookieStoreId;
 
     // One AbortController per in-flight request on this port, keyed by
@@ -402,6 +454,12 @@ export function initializePageApi(): void {
     // port disconnecting (tab closed or navigated) aborts every request
     // still in flight on it.
     const runControllers = new Map<string, AbortController>();
+    // The content script says the page is going into the back/forward cache
+    // just before it closes this port, with the token that names the page.
+    let cacheToken: string | undefined;
+    // The sessions on the person's own agent this page has open: they end
+    // when it leaves, or wait for it while it's cached.
+    const ownSessions = new Set<string>();
 
     port.onMessage.addListener(async (message: { id: string; type: string; payload: unknown }) => {
       // The page's own tools (document.modelContext): its descriptor list,
@@ -422,6 +480,23 @@ export function initializePageApi(): void {
             ? { id: message.id, ok: true, result: { accepted } }
             : { id: message.id, ok: false, error: { code: 'ERR_INVALID_REQUEST', message: 'Invalid page tool list' } });
         } catch { /* Port disconnected */ }
+        return;
+      }
+
+      if (message?.type === 'page_hidden') {
+        const token = (message as { token?: unknown }).token;
+        if (typeof token === 'string' && token) cacheToken = token;
+        return;
+      }
+      if (message?.type === 'page_shown') {
+        // Back from the cache: this page takes up its own sessions again.
+        const token = (message as { token?: unknown }).token;
+        const page = typeof token === 'string' ? cachedPages.get(token) : undefined;
+        if (page && page.tabId === tabId && page.origin === origin) {
+          cachedPages.delete(token as string);
+          clearTimeout(page.timer);
+          for (const sessionId of page.sessions) ownSessions.add(sessionId);
+        }
         return;
       }
 
@@ -466,7 +541,19 @@ export function initializePageApi(): void {
           return;
         }
 
-        const response = await routeMessage(ctx);
+        let response = await routeMessage(ctx);
+        if (OPENS_AGENT_SESSION.has(ctx.type)) {
+          // A cached page of this site gives up its agent slot first.
+          const busy = (r: typeof response) => !r.ok && (r as { error?: { code?: string } }).error?.code === 'ERR_AGENT_BUSY';
+          for (let token = oldestCachedPageOf(origin); busy(response) && token; token = oldestCachedPageOf(origin)) {
+            await endCachedPage(token);
+            response = await routeMessage(ctx);
+          }
+          // window.ai answers with the session id, agent.sessions.create with { sessionId }.
+          const result = response.ok ? (response as { result?: unknown }).result : undefined;
+          const sessionId = typeof result === 'string' ? result : (result as { sessionId?: unknown } | undefined)?.sessionId;
+          if (typeof sessionId === 'string' && isAcpTextSession(sessionId)) ownSessions.add(sessionId);
+        }
         try {
           port.postMessage(response);
         } catch {
@@ -487,18 +574,37 @@ export function initializePageApi(): void {
       // page) or the tab closed outright — either way, every ACP-backed
       // text session this port's page opened must end, not just the ones
       // tabs.onRemoved also catches: a same-tab navigation disconnects this
-      // port without ever firing tabs.onRemoved.
-      if (tabId !== undefined) void cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
+      // port without ever firing tabs.onRemoved. A page that went into the
+      // back/forward cache keeps them for a while instead, in case it's
+      // restored.
+      // Only this page's own sessions: another page's in the tab, cached or
+      // newer, aren't this disconnect's to end. One still opening is
+      // cancelled by its request's own signal, aborted above.
+      const live = [...ownSessions].filter((sessionId) => isAcpTextSession(sessionId));
+      if (tabId !== undefined && cacheToken && live.length > 0) {
+        const token = cacheToken;
+        void endCachedPage(token);
+        cachedPages.set(token, {
+          tabId,
+          origin,
+          sessions: new Set(live),
+          timer: setTimeout(() => { void endCachedPage(token); }, CACHED_PAGE_SESSION_MS),
+        });
+      } else {
+        void endSessions(live);
+      }
       // The page's agents go with it, so nothing more is delivered to this
       // tab for them once it shows another page. Only the top frame runs the
       // page API.
       if (tabId !== undefined && (port.sender?.frameId ?? 0) === 0) {
         // If a newer page in this tab has connected already, spare the
         // agents it registered: only this page's agents go.
-        const latest = latestTabConnection.get(tabId);
+        const latest = latestPage(tabId);
         const newerPageSince = latest && latest.connection !== connection ? latest.at : undefined;
-        if (newerPageSince === undefined) latestTabConnection.delete(tabId);
+        if (newerPageSince === undefined) forgetLatestPage(tabId);
         forgetAgentsInTab(tabId, newerPageSince);
+        forgetPageAgentsInTab(tabId, newerPageSince);
+        failInvocationsForTab(tabId, newerPageSince);
       }
     });
   });

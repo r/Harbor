@@ -22,7 +22,7 @@ const source = readFileSync(new URL('../injected.ts', import.meta.url), 'utf8');
 const script = transformSync(source, { loader: 'ts', format: 'iife' }).code;
 const CHANNEL = 'harbor_page_api';
 
-function page() {
+function page(flags) {
   const listeners = [];
   const window = {
     addEventListener: vi.fn((type, l) => { if (type === 'message') listeners.push(l); }),
@@ -31,7 +31,9 @@ function page() {
   };
   runInNewContext(script, {
     window, navigator: {}, crypto: webcrypto, console: { debug: vi.fn(), warn: vi.fn(), log: vi.fn() },
-    document: { querySelector: () => null, getElementById: () => null },
+    // Feature flags reach the page as JSON in a script element (see
+    // injected-flags.test.js); none means the defaults.
+    document: { querySelector: () => null, getElementById: () => (flags ? { textContent: JSON.stringify(flags) } : null) },
     CustomEvent: class { constructor(type, options) { this.type = type; this.options = options; } },
     // The real global timer functions — captured here, not read lazily, so
     // that vi.useFakeTimers() (which replaces them on `globalThis`, see
@@ -165,6 +167,44 @@ describe('per-type request timeouts', () => {
 
       expect(state.settled).toBe(true);
       expect(abortedIds()).toContain(id);
+    });
+  });
+
+  describe('agent.agents.invoke', () => {
+    it("waits past 30 seconds, so an invocation's own timeout (up to 5 minutes) can run", async () => {
+      const { window } = page({ multiAgent: true });
+      const state = track(window.agent.agents.invoke('agent-1', { task: 'summarize', timeout: 60_000 }));
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      expect(state.error).toBeUndefined();
+      expect(state.settled).toBe(false);
+    });
+
+    it('still gives up, as a backstop behind the background, a margin after the 5-minute cap', async () => {
+      const { window, lastRequestId, abortedIds } = page({ multiAgent: true });
+      const state = track(window.agent.agents.invoke('agent-1', { task: 'summarize' }));
+      // The feature check runs first, so the request goes out a tick later.
+      await vi.advanceTimersByTimeAsync(0);
+      const id = lastRequestId('agent.agents.invoke');
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 29 * 1000);
+      expect(state.settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(state.settled).toBe(true);
+      expect(state.error).toMatchObject({ code: 'ERR_TIMEOUT' });
+      expect(abortedIds()).toContain(id);
+    });
+  });
+
+  describe('agent.agents.orchestrate.*', () => {
+    it('waits past 30 seconds, since each step runs its own invocation', async () => {
+      const { window } = page({ multiAgent: true });
+      const state = track(window.agent.agents.orchestrate.pipeline({ steps: [{ agentId: 'agent-1', task: 'a' }] }, 'x'));
+
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+      expect(state.error).toBeUndefined();
+      expect(state.settled).toBe(false);
     });
   });
 });
