@@ -28,7 +28,9 @@
  *
  * Only `agent_message_chunk` text reaches the page: neither `window.ai` nor
  * `session.prompt()` has vocabulary for the agent's thinking or tool calls, so `session/update`
- * notifications for those are dropped rather than relayed. `tool_call` and
+ * notifications for those are dropped rather than relayed. Harbor still
+ * records the tool calls in its own record of the turn (agent-turns.ts), so
+ * the person can see what the agent did. `tool_call` and
  * `tool_call_update`, though, still re-check the site's `model:prompt`
  * grant mid-turn and cancel on a revoked one, exactly as `agent.run` does —
  * a long turn can outlive the grant it started with. The agent's own
