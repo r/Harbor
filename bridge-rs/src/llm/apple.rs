@@ -435,6 +435,45 @@ printf '%s' '{"id":"apple-test","object":"chat.completion","created":0,"model":"
         assert_eq!(apple(readable.clone()), readable);
     }
 
+    #[test]
+    fn only_keywords_apple_reads_reach_the_helper() {
+        use serde_json::json;
+        assert_eq!(
+            apple(json!({
+                "type": "object",
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$defs": { "City": { "type": "string", "maxLength": 80, "x-ui": "select" } },
+                "properties": {
+                    // Properties named like keywords are data, not keywords.
+                    "pattern": { "type": "string", "x-vendor": true },
+                    "items": { "type": "array", "items": { "$ref": "#/$defs/City" }, "contains": { "const": "Rome" } },
+                    "map": { "type": "object", "patternProperties": { "^x": { "type": "string" } }, "additionalProperties": { "type": "integer", "deprecated": true } },
+                    "when": { "type": "string", "if": { "const": "a" }, "then": { "minLength": 2 }, "readOnly": true },
+                    "both": { "allOf": [{ "type": "string" }, { "maxLength": 4 }] },
+                    "city": { "$ref": "#/$defs/City", "description": "Where to go." }
+                },
+                "required": ["city"],
+                "dependentRequired": { "map": ["city"] }
+            })),
+            json!({
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string" },
+                    "items": { "type": "array", "items": { "type": "string", "maxLength": 80 } },
+                    "map": { "type": "object", "additionalProperties": { "type": "integer" } },
+                    "when": { "type": "string" },
+                    "both": {},
+                    "city": { "type": "string", "maxLength": 80, "description": "Where to go." }
+                },
+                "required": ["city"]
+            })
+        );
+        // A reference that loops or points nowhere isn't followed forever.
+        let looped = apple(json!({ "type": "object", "$defs": { "Node": { "type": "object", "properties": { "next": { "$ref": "#/$defs/Node" } } } }, "properties": { "head": { "$ref": "#/$defs/Node" }, "lost": { "$ref": "#/$defs/Missing" } } }));
+        assert_eq!(looped["properties"]["lost"], json!({}));
+        assert!(serde_json::to_string(&looped).unwrap().len() < 4096);
+    }
+
     #[tokio::test]
     async fn helper_notes_on_stderr_do_not_fail_a_successful_call() {
         let fixture = HelperFixture::new("printf 'Left out tool x: reason' >&2; printf available");
