@@ -80,20 +80,61 @@ async fn complete_with_helper(
 /// type becomes an `anyOf`, these stay on the outer schema.
 const ANNOTATIONS: [&str; 4] = ["description", "title", "default", "examples"];
 
+/// The JSON Schema keywords Apple's `GenerationSchema` reads and its model
+/// accepts, checked against the real model by `apple/test_adapter.py`. Every
+/// other keyword is dropped, wherever it sits.
+const APPLE_KEYWORDS: [&str; 23] = [
+    "type",
+    "properties",
+    "required",
+    "additionalProperties",
+    "items",
+    "anyOf",
+    "enum",
+    "const",
+    "format",
+    "minLength",
+    "maxLength",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "description",
+    "title",
+    "default",
+    "examples",
+];
+
+/// How many `$ref`s deep one branch is inlined before the rest is dropped.
+const MAX_REF_DEPTH: usize = 8;
+
+/// How many `$ref`s one tool's schema may inline in total. Without it, a
+/// definition whose many properties refer back to it grows exponentially
+/// within the depth limit.
+const MAX_REF_INLINES: usize = 32;
+
 /// Rewrite a tool's input schema into the JSON Schema that Apple's
 /// `GenerationSchema` reads, so one tool's schema can't fail the whole run.
 ///
-/// Apple's decoder rejects `type` arrays, `oneOf` and an object schema without
-/// `type`, and every `pattern` fails the model call, even when nested. Page
-/// tools still validate their own input, so dropping `pattern` only loosens
-/// what the model is told. A shape with no Apple equivalent, such as
-/// `type: ["string", "number"]`, is left alone: the helper then leaves that
-/// one tool out.
+/// Only the keywords in `APPLE_KEYWORDS` are kept. Anything else, such as
+/// `pattern`, which fails the model call at any depth, never reaches the
+/// helper. Page tools still check their own input, so this only loosens what
+/// the model is told. Apple reads neither `$ref` nor a `type` array, so local
+/// references are inlined, a nullable type becomes an `anyOf`, and `oneOf`
+/// becomes `anyOf`. A shape with no Apple equivalent, such as
+/// `type: ["string", "number"]`, is left for the helper, which then leaves
+/// that one tool out.
 fn apple_tool_parameters(parameters: &mut serde_json::Value) {
     if !parameters.is_object() {
         *parameters = serde_json::json!({});
     }
-    apple_schema(parameters);
+    let definitions = local_definitions(parameters);
+    let mut inlines_left = MAX_REF_INLINES;
+    apple_schema(parameters, &definitions, 0, &mut inlines_left);
     let map = parameters.as_object_mut().expect("parameters is an object");
     map.entry("type").or_insert_with(|| "object".into());
     if map.get("type").and_then(|t| t.as_str()) == Some("object") {
@@ -102,18 +143,63 @@ fn apple_tool_parameters(parameters: &mut serde_json::Value) {
     }
 }
 
-fn apple_schema(schema: &mut serde_json::Value) {
+/// The root schema's `$defs` and `definitions`, by the `$ref` that names each.
+fn local_definitions(root: &serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    let mut definitions = serde_json::Map::new();
+    for key in ["$defs", "definitions"] {
+        if let Some(serde_json::Value::Object(entries)) = root.get(key) {
+            for (name, schema) in entries {
+                definitions.insert(format!("#/{key}/{name}"), schema.clone());
+            }
+        }
+    }
+    definitions
+}
+
+fn apple_schema(
+    schema: &mut serde_json::Value,
+    definitions: &serde_json::Map<String, serde_json::Value>,
+    depth: usize,
+    inlines_left: &mut usize,
+) {
     let serde_json::Value::Object(map) = schema else {
         return;
     };
-    map.remove("pattern");
+    let mut depth = depth;
+    // Inline a local reference. Its siblings apply on top of it, and both
+    // lists of required properties hold.
+    while let Some(serde_json::Value::String(reference)) = map.remove("$ref") {
+        match definitions.get(&reference) {
+            Some(serde_json::Value::Object(target))
+                if depth < MAX_REF_DEPTH && *inlines_left > 0 =>
+            {
+                *inlines_left -= 1;
+                let mut siblings = std::mem::replace(map, target.clone());
+                if let (
+                    Some(serde_json::Value::Array(shared)),
+                    Some(serde_json::Value::Array(own)),
+                ) = (map.get("required"), siblings.get_mut("required"))
+                {
+                    for name in shared {
+                        if !own.contains(name) {
+                            own.push(name.clone());
+                        }
+                    }
+                }
+                map.extend(siblings);
+                depth += 1;
+            }
+            _ => break,
+        }
+    }
     // With anyOf already there, oneOf can't merge into it without changing
-    // its meaning; leaving it makes the helper drop this one tool instead.
+    // its meaning, so it is dropped with the other unknown keywords.
     if !map.contains_key("anyOf") {
         if let Some(one_of) = map.remove("oneOf") {
             map.insert("anyOf".into(), one_of);
         }
     }
+    map.retain(|key, _| APPLE_KEYWORDS.contains(&key.as_str()));
     if let Some(serde_json::Value::Array(types)) = map.get("type").cloned() {
         let non_null: Vec<_> = types
             .iter()
@@ -145,35 +231,23 @@ fn apple_schema(schema: &mut serde_json::Value) {
     if !map.contains_key("type") && map.contains_key("properties") {
         map.insert("type".into(), "object".into());
     }
-    for key in [
-        "properties",
-        "patternProperties",
-        "dependentSchemas",
-        "$defs",
-        "definitions",
-    ] {
-        if let Some(serde_json::Value::Object(children)) = map.get_mut(key) {
-            children.values_mut().for_each(apple_schema);
+    if let Some(serde_json::Value::Object(properties)) = map.get_mut("properties") {
+        for property in properties.values_mut() {
+            apple_schema(property, definitions, depth, inlines_left);
         }
     }
-    for key in [
-        "items",
-        "prefixItems",
-        "contains",
-        "additionalProperties",
-        "propertyNames",
-        "not",
-        "if",
-        "then",
-        "else",
-        "anyOf",
-        "oneOf",
-        "allOf",
-    ] {
-        match map.get_mut(key) {
-            Some(serde_json::Value::Array(children)) => children.iter_mut().for_each(apple_schema),
-            Some(child) => apple_schema(child),
-            None => {}
+    // An array of `items` is the older tuple form, which Apple doesn't read.
+    if matches!(map.get("items"), Some(serde_json::Value::Array(_))) {
+        map.remove("items");
+    }
+    for key in ["items", "additionalProperties"] {
+        if let Some(child @ serde_json::Value::Object(_)) = map.get_mut(key) {
+            apple_schema(child, definitions, depth, inlines_left);
+        }
+    }
+    if let Some(serde_json::Value::Array(choices)) = map.get_mut("anyOf") {
+        for choice in choices {
+            apple_schema(choice, definitions, depth, inlines_left);
         }
     }
 }
@@ -401,7 +475,7 @@ printf '%s' '{"id":"apple-test","object":"chat.completion","created":0,"model":"
                 "inner": { "type": "object", "properties": { "code": { "anyOf": [{ "type": "string" }, { "type": "null" }] } } }
             } })
         );
-        // Every place a subschema can sit loses its pattern too.
+        // Subschema positions Apple doesn't read go entirely, patterns and all.
         assert_eq!(
             apple(json!({ "type": "object", "properties": {
                 "pair": { "type": "array", "prefixItems": [{ "type": "string", "pattern": "a" }], "contains": { "type": "string", "pattern": "b" } },
@@ -409,17 +483,17 @@ printf '%s' '{"id":"apple-test","object":"chat.completion","created":0,"model":"
                 "cond": { "if": { "pattern": "d" }, "then": { "pattern": "e" }, "else": { "pattern": "f" } }
             } })),
             json!({ "type": "object", "properties": {
-                "pair": { "type": "array", "prefixItems": [{ "type": "string" }], "contains": { "type": "string" } },
-                "map": { "type": "object", "patternProperties": { "^x": { "type": "string" } }, "propertyNames": {} },
-                "cond": { "if": {}, "then": {}, "else": {} }
+                "pair": { "type": "array" },
+                "map": { "type": "object" },
+                "cond": {}
             } })
         );
-        // oneOf beside anyOf stays (rewritten) rather than being silently dropped.
+        // oneOf beside anyOf can't merge into it, so only anyOf is kept.
         assert_eq!(
             apple(
                 json!({ "type": "object", "properties": { "a": { "anyOf": [{ "type": "string" }], "oneOf": [{ "type": "string", "pattern": "x" }] } } })
             ),
-            json!({ "type": "object", "properties": { "a": { "anyOf": [{ "type": "string" }], "oneOf": [{ "type": "string" }] } } })
+            json!({ "type": "object", "properties": { "a": { "anyOf": [{ "type": "string" }] } } })
         );
         // A tool with no schema, or one without type, still describes an object.
         assert_eq!(
@@ -433,6 +507,74 @@ printf '%s' '{"id":"apple-test","object":"chat.completion","created":0,"model":"
         // An already-readable schema is unchanged.
         let readable = json!({ "type": "object", "properties": { "city": { "type": "string", "maxLength": 80, "enum": ["Paris", "Rome"] } }, "required": ["city"] });
         assert_eq!(apple(readable.clone()), readable);
+    }
+
+    #[test]
+    fn only_keywords_apple_reads_reach_the_helper() {
+        use serde_json::json;
+        assert_eq!(
+            apple(json!({
+                "type": "object",
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$defs": { "City": { "type": "string", "maxLength": 80, "x-ui": "select" } },
+                "properties": {
+                    // Properties named like keywords are data, not keywords.
+                    "pattern": { "type": "string", "x-vendor": true },
+                    "items": { "type": "array", "items": { "$ref": "#/$defs/City" }, "contains": { "const": "Rome" } },
+                    "map": { "type": "object", "patternProperties": { "^x": { "type": "string" } }, "additionalProperties": { "type": "integer", "deprecated": true } },
+                    "when": { "type": "string", "if": { "const": "a" }, "then": { "minLength": 2 }, "readOnly": true },
+                    "both": { "allOf": [{ "type": "string" }, { "maxLength": 4 }] },
+                    "city": { "$ref": "#/$defs/City", "description": "Where to go." }
+                },
+                "required": ["city"],
+                "dependentRequired": { "map": ["city"] }
+            })),
+            json!({
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string" },
+                    "items": { "type": "array", "items": { "type": "string", "maxLength": 80 } },
+                    "map": { "type": "object", "additionalProperties": { "type": "integer" } },
+                    "when": { "type": "string" },
+                    "both": {},
+                    "city": { "type": "string", "maxLength": 80, "description": "Where to go." }
+                },
+                "required": ["city"]
+            })
+        );
+        // The older tuple form of items isn't one Apple reads.
+        assert_eq!(
+            apple(
+                json!({ "type": "object", "properties": { "pair": { "type": "array", "items": [{ "type": "string" }, { "type": "integer" }] } } })
+            ),
+            json!({ "type": "object", "properties": { "pair": { "type": "array" } } })
+        );
+        // A shared definition's required properties still hold where it's used.
+        assert_eq!(
+            apple(
+                json!({ "type": "object", "$defs": { "Place": { "type": "object", "properties": { "city": { "type": "string" }, "note": { "type": "string" } }, "required": ["city"] } }, "properties": { "stop": { "$ref": "#/$defs/Place", "required": ["note"] } } })
+            )["properties"]["stop"]["required"],
+            json!(["note", "city"])
+        );
+        // A reference that loops or points nowhere isn't followed forever.
+        let looped = apple(
+            json!({ "type": "object", "$defs": { "Node": { "type": "object", "properties": { "next": { "$ref": "#/$defs/Node" } } } }, "properties": { "head": { "$ref": "#/$defs/Node" }, "lost": { "$ref": "#/$defs/Missing" } } }),
+        );
+        assert_eq!(looped["properties"]["lost"], json!({}));
+        assert!(serde_json::to_string(&looped).unwrap().len() < 4096);
+    }
+
+    #[test]
+    fn wide_self_references_stay_small() {
+        use serde_json::json;
+        let fields: serde_json::Map<String, serde_json::Value> = (0..12)
+            .map(|i| (format!("f{i}"), json!({ "$ref": "#/$defs/Node" })))
+            .collect();
+        let schema = json!({ "type": "object", "$defs": { "Node": { "type": "object", "properties": fields } }, "properties": { "root": { "$ref": "#/$defs/Node" } } });
+        let started = std::time::Instant::now();
+        let out = apple(schema);
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert!(serde_json::to_string(&out).unwrap().len() < 64 * 1024);
     }
 
     #[tokio::test]
