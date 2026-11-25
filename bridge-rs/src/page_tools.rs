@@ -410,6 +410,18 @@ fn normalize_tool(tool: &Value) -> Value {
         .cloned()
         .unwrap_or_else(|| json!({ "type": "object" }));
     out.insert("inputSchema".to_string(), schema);
+    // MCP's optional Tool fields, passed on only with the right type. The
+    // extension has already validated them; `annotations` are the page's own
+    // hints for the agent, and no Harbor gate reads them.
+    if let Some(title) = tool.get("title").filter(|t| t.is_string()) {
+        out.insert("title".to_string(), title.clone());
+    }
+    if let Some(output) = tool.get("outputSchema").filter(|s| s.is_object()) {
+        out.insert("outputSchema".to_string(), output.clone());
+    }
+    if let Some(annotations) = tool.get("annotations").filter(|a| a.is_object()) {
+        out.insert("annotations".to_string(), annotations.clone());
+    }
     // Harbor's own provenance for the tool (`harbor/provenance`, set by the
     // extension from the browser's record of the page's origin), so the
     // agent can see where the tool came from. Only an object is passed on.

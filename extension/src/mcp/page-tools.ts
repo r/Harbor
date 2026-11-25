@@ -23,6 +23,7 @@ import type { LabelFlow } from '../policy/label-flow';
 export const PAGE_TOOL_LIMITS = Object.freeze({
   maxTools: 64,
   maxDescriptionBytes: 4 * 1024,
+  maxTitleBytes: 1024,
   maxSchemaBytes: 64 * 1024,
   maxResultBytes: 1024 * 1024,
   maxErrorChars: 1024,
@@ -33,9 +34,26 @@ const TOOL_NAME_PATTERN = /^[A-Za-z0-9_.-]{1,128}$/;
 
 export interface PageToolDescriptor {
   name: string;
+  title?: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  /**
+   * The page's own MCP ToolAnnotations hints. They're the page's claims about
+   * its tool, passed to the agent to inform it. No Harbor gate reads them.
+   */
+  annotations?: PageToolAnnotations;
 }
+
+export type PageToolAnnotations = {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+};
+
+const ANNOTATION_HINTS = ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint'] as const;
 
 /** The part of a runtime.Port this module uses. */
 export interface PageToolPort {
@@ -79,6 +97,35 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** A fresh copy of a page-supplied schema within the size cap, or null. */
+function copySchema(schema: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(schema)) return null;
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(schema);
+  } catch {
+    return null;
+  }
+  if (byteLength(serialized) > PAGE_TOOL_LIMITS.maxSchemaBytes) return null;
+  // A fresh copy: nothing the page holds a reference to.
+  return JSON.parse(serialized) as Record<string, unknown>;
+}
+
+/**
+ * The MCP ToolAnnotations hints in `raw`, each only if it has the right
+ * type; anything else is left out. Undefined when none is left.
+ */
+function pickAnnotations(raw: Record<string, unknown>): PageToolAnnotations | undefined {
+  const out: PageToolAnnotations = {};
+  if (typeof raw.title === 'string' && raw.title !== '' && byteLength(raw.title) <= PAGE_TOOL_LIMITS.maxTitleBytes) {
+    out.title = raw.title;
+  }
+  for (const hint of ANNOTATION_HINTS) {
+    if (typeof raw[hint] === 'boolean') out[hint] = raw[hint] as boolean;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function validateTools(payload: unknown): PageToolDescriptor[] | null {
   if (!isPlainObject(payload) || !Array.isArray(payload.tools)) return null;
   const raw = payload.tools;
@@ -87,25 +134,33 @@ function validateTools(payload: unknown): PageToolDescriptor[] | null {
   const tools: PageToolDescriptor[] = [];
   for (const entry of raw) {
     if (!isPlainObject(entry)) return null;
-    const { name, description, inputSchema } = entry;
+    const { name, title, description, inputSchema, outputSchema, annotations } = entry;
     if (typeof name !== 'string' || !TOOL_NAME_PATTERN.test(name) || seen.has(name)) return null;
     if (typeof description !== 'string' || description === '') return null;
     if (byteLength(description) > PAGE_TOOL_LIMITS.maxDescriptionBytes) return null;
     let schema: Record<string, unknown> = { type: 'object' };
     if (inputSchema !== undefined) {
-      if (!isPlainObject(inputSchema)) return null;
-      let serialized: string;
-      try {
-        serialized = JSON.stringify(inputSchema);
-      } catch {
-        return null;
-      }
-      if (byteLength(serialized) > PAGE_TOOL_LIMITS.maxSchemaBytes) return null;
-      // A fresh copy: nothing the page holds a reference to.
-      schema = JSON.parse(serialized) as Record<string, unknown>;
+      const copy = copySchema(inputSchema);
+      if (!copy) return null;
+      schema = copy;
+    }
+    const tool: PageToolDescriptor = { name, description, inputSchema: schema };
+    if (title !== undefined) {
+      if (typeof title !== 'string' || byteLength(title) > PAGE_TOOL_LIMITS.maxTitleBytes) return null;
+      if (title !== '') tool.title = title;
+    }
+    if (outputSchema !== undefined) {
+      const copy = copySchema(outputSchema);
+      if (!copy) return null;
+      tool.outputSchema = copy;
+    }
+    if (annotations !== undefined) {
+      if (!isPlainObject(annotations)) return null;
+      const picked = pickAnnotations(annotations);
+      if (picked) tool.annotations = picked;
     }
     seen.add(name);
-    tools.push({ name, description, inputSchema: schema });
+    tools.push(tool);
   }
   return tools;
 }

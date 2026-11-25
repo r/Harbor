@@ -849,8 +849,12 @@ async function endpointToolListing(endpoint: PageToolEndpoint) {
   return [
     ...pageTools.map((t) => ({
       name: t.name,
+      ...(t.title !== undefined ? { title: t.title } : {}),
       description: describedBySite(endpoint.origin, t.description),
       inputSchema: t.inputSchema,
+      ...(t.outputSchema !== undefined ? { outputSchema: t.outputSchema } : {}),
+      // The page's own hints, for the agent. Calls are gated the same either way.
+      ...(t.annotations !== undefined ? { annotations: t.annotations } : {}),
       _meta: toolProvenance(endpoint.origin, 'page-tool'),
     })),
     ...siteEntries,

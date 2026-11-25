@@ -60,7 +60,9 @@ the background's tool loop directly. No bridge endpoint is involved.
 
 **Sync.** On each `registerTool`, `addTool`, `removeTool` or signal abort,
 `injected.ts` sends `page_tools.sync` with the full current list:
-`[{ name, description, inputSchema }]`. Sends are debounced to one per
+`[{ name, title?, description, inputSchema, outputSchema?, annotations? }]`.
+The optional fields are sent only when they have the right type (a string
+title, plain-object `outputSchema` and `annotations`). Sends are debounced to one per
 microtask, so a page that registers ten tools at load sends one message.
 Handlers never leave the page. A page with no tools sends nothing, so its
 behavior is unchanged.
@@ -73,7 +75,22 @@ behavior is unchanged.
 - at most 64 tools;
 - names match the registerTool pattern (`[A-Za-z0-9_.-]{1,128}`);
 - a description is at most 4 KB, and an `inputSchema` at most 64 KB
-  serialized and must be a plain object.
+  serialized and must be a plain object;
+- a `title`, if present, is a string of at most 1 KB, and an `outputSchema`
+  follows the `inputSchema` rules;
+- `annotations`, if present, must be a plain object. Harbor keeps only MCP's
+  `ToolAnnotations` hints of the right type (`title` as a string;
+  `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint` as
+  booleans) and drops anything else.
+
+**Annotations are the page's claims.** `title`, `outputSchema` and
+`annotations` reach the agent as MCP's `Tool` fields, in `list_page_tools`
+and the ACP endpoint's `tools/list`, so the agent can tell a read-only tool
+from one that publishes. No Harbor gate reads them: a tool marked
+`readOnlyHint: true` is policy-checked and audited like any other
+(`page-tools-gate.test.ts`). Harbor's built-in agent's `agent.run()` sends its
+model only a name, description and input schema, because the model's tool
+format has no place for the rest.
 
 A sync that fails validation is dropped as a whole, with a log line that
 names no page-supplied content (`no-payload-logs.test.ts`).
