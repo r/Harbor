@@ -833,6 +833,27 @@ describe('a tab (or its port) going away while a session is still opening', () =
     expect(isAcpTextSession(aSession) && isAcpTextSession(second)).toBe(false);
   });
 
+  it('an agent.sessions session on the own agent still ends when its page navigates away', async () => {
+    await setAcpBackend(AGENT_ID);
+    const b = registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const closeSpy = vi.spyOn(b, 'acpClose');
+    const { harborRequest } = await import('../harbor-core');
+    (harborRequest as ReturnType<typeof vi.fn>).mockImplementation(async (method: string) => {
+      if (method === 'session.create') return { sessionId: 'explicit-nav-1', capabilities: {} };
+      return { bridgeReady: true };
+    });
+    const page = connectPort();
+    const id = crypto.randomUUID();
+    await page.receive({ id, type: 'agent.sessions.create', payload: { capabilities: { llm: {} }, options: {} } });
+    const { isAcpTextSession } = await import('../acp-text-session-registry');
+    expect(isAcpTextSession('explicit-nav-1')).toBe(true);
+    page.disconnect();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(isAcpTextSession('explicit-nav-1')).toBe(false);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    (harborRequest as ReturnType<typeof vi.fn>).mockImplementation(async () => ({ bridgeReady: true }));
+  });
+
   it("doesn't let a later cached page in the tab push back an earlier page's 30 minutes", async () => {
     await setAcpBackend(AGENT_ID);
     registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });

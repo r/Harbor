@@ -352,6 +352,8 @@ export function initializePageApi(): void {
   // that long at most), when its tab closes, or sooner if its site needs
   // the agent slot for a new session. Back, the page takes them up again.
   const CACHED_PAGE_SESSION_MS = 30 * 60_000;
+  // The page calls that can open a session on the person's own agent.
+  const OPENS_AGENT_SESSION = new Set(['ai.createTextSession', 'ai.languageModel.create', 'agent.sessions.create']);
   const cachedPages = new Map<string, {
     tabId: number;
     origin: string;
@@ -376,12 +378,6 @@ export function initializePageApi(): void {
 
   // Clean up spawned tabs when they are closed.
   browserAPI.tabs.onRemoved.addListener(async (tabId: number) => {
-    // Its cached pages go with it (their sessions end with the tab's, below).
-    for (const [token, page] of [...cachedPages]) {
-      if (page.tabId !== tabId) continue;
-      clearTimeout(page.timer);
-      cachedPages.delete(token);
-    }
     // The page's own tools (document.modelContext) go with the tab.
     forgetPageToolsInTab(tabId);
     const wasTracked = Object.values(getAllSpawnedTabs()).some(tabs => tabs.includes(tabId));
@@ -398,6 +394,12 @@ export function initializePageApi(): void {
 
     handleTabRemoved(tabId);
     cleanupAgentsForTab(tabId);
+    // Its cached pages go with it (their sessions end with the tab's, below).
+    for (const [token, page] of [...cachedPages]) {
+      if (page.tabId !== tabId) continue;
+      clearTimeout(page.timer);
+      cachedPages.delete(token);
+    }
     // Cancels any turn in progress and kills the agent process for every
     // ACP-backed window.ai text session this tab opened — a no-op when it
     // opened none.
@@ -540,14 +542,16 @@ export function initializePageApi(): void {
         }
 
         let response = await routeMessage(ctx);
-        if (ctx.type === 'ai.createTextSession' || ctx.type === 'ai.languageModel.create') {
+        if (OPENS_AGENT_SESSION.has(ctx.type)) {
           // A cached page of this site gives up its agent slot first.
           const busy = (r: typeof response) => !r.ok && (r as { error?: { code?: string } }).error?.code === 'ERR_AGENT_BUSY';
           for (let token = oldestCachedPageOf(origin); busy(response) && token; token = oldestCachedPageOf(origin)) {
             await endCachedPage(token);
             response = await routeMessage(ctx);
           }
-          const sessionId = response.ok ? (response as { result?: unknown }).result : undefined;
+          // window.ai answers with the session id, agent.sessions.create with { sessionId }.
+          const result = response.ok ? (response as { result?: unknown }).result : undefined;
+          const sessionId = typeof result === 'string' ? result : (result as { sessionId?: unknown } | undefined)?.sessionId;
           if (typeof sessionId === 'string' && isAcpTextSession(sessionId)) ownSessions.add(sessionId);
         }
         try {
