@@ -739,6 +739,29 @@ describe('a tab (or its port) going away while a session is still opening', () =
       vi.useRealTimers();
     }
   });
+
+  it("doesn't let a later cached page in the tab push back an earlier page's 30 minutes", async () => {
+    await setAcpBackend(AGENT_ID);
+    registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const port = connectPort();
+    const sessionId = (await createViaPort(port)).result as string;
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await port.receive({ type: 'page_hidden' });
+      port.disconnect();
+      await vi.advanceTimersByTimeAsync(20 * 60_000);
+      // The next page in the tab goes into the cache too.
+      const next = connectPort(ORIGIN, port.tabId);
+      await next.receive({ type: 'page_hidden' });
+      next.disconnect();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      const { isAcpTextSession } = await import('../acp-text-session-registry');
+      expect(isAcpTextSession(sessionId)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('a page breaking out of promptStreaming (the abort message)', () => {

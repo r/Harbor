@@ -135,6 +135,23 @@ describe('a page restored from the back/forward cache', () => {
   });
 });
 
+describe('a page restored from the back/forward cache, mid-invocation', () => {
+  it("aborts the signal of an invocation it was handling when it left, since Harbor already failed it", async () => {
+    const p = page();
+    const registering = p.window.agent.agents.register({ name: 'Mine', acceptsInvocations: true });
+    await vi.waitFor(() => expect(p.requests('agent.agents.register')).toHaveLength(1));
+    answer(p, 'agent.agents.register', { id: 'agent-mine', name: 'Mine' });
+    await registering;
+    let seen;
+    p.window.agent.agents.onInvoke((request) => { seen = request; return new Promise(() => {}); });
+    p.deliver(invocation('agent-mine', 'inv-frozen'));
+    await vi.waitFor(() => expect(seen).toBeDefined());
+
+    p.deliver({ pageRestored: true });
+    expect(seen.signal.aborted).toBe(true);
+  });
+});
+
 describe('a page restored from the back/forward cache, with MCP servers', () => {
   it('registers its MCP servers again with the same options', async () => {
     const p = page();

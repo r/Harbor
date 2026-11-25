@@ -398,7 +398,9 @@ export function initializePageApi(): void {
   // A page that went into the back/forward cache keeps its sessions on the
   // person's own agent, so they work again if it comes back. They end when
   // the tab closes, when a page in the tab leaves without the cache, or
-  // after 30 minutes away (Firefox keeps a cached page that long at most).
+  // at most 30 minutes after the first page left (Firefox keeps a cached
+  // page that long at most). The tab's sessions aren't told apart by page,
+  // so one clock per tab, which a later page doesn't restart.
   const CACHED_PAGE_SESSION_MS = 30 * 60_000;
   const cachedPageSessionTimers = new Map<number, ReturnType<typeof setTimeout>>();
   /** Stops the clock on a cached page's sessions: it came back, or they're ending anyway. */
@@ -530,8 +532,9 @@ export function initializePageApi(): void {
       // back/forward cache keeps them for a while instead, in case it's
       // restored.
       if (tabId !== undefined && hiddenForCache) {
-        stopCachedPageClock(tabId);
-        cachedPageSessionTimers.set(tabId, setTimeout(() => {
+        // A clock already running for an earlier cached page in this tab
+        // keeps its deadline: a later page leaving must not push it back.
+        if (!cachedPageSessionTimers.has(tabId)) cachedPageSessionTimers.set(tabId, setTimeout(() => {
           cachedPageSessionTimers.delete(tabId);
           void cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
         }, CACHED_PAGE_SESSION_MS));

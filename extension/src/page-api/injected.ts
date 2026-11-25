@@ -1388,6 +1388,10 @@ window.addEventListener('message', (event: MessageEvent) => {
 });
 
 async function restoreAfterBackForwardCache(): Promise<void> {
+  // Harbor failed every invocation this page was handling when it left, so
+  // their handlers' work is over for the caller.
+  for (const controller of runningInvocations.values()) controller.abort();
+  runningInvocations.clear();
   for (const [oldId, options] of [...pageAgents]) {
     try {
       const result = await sendRequest<RegisteredAgent>('agent.agents.register', { ...options, restoreAgentId: oldId });
