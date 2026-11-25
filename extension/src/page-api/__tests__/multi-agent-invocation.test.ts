@@ -387,6 +387,10 @@ describe('multi-agent lifecycle cleanup', () => {
     // b.example may register agents of its own, but a.example's isn't one.
     tab2.send({ id: 'unreg-foreign', type: 'agent.agents.unregister', payload: { agentId: handlerAgentId } });
     await vi.waitFor(() => expect(tab2.posted.some((p) => p.id === 'unreg-foreign')).toBe(true));
+    // Refused as if there were no such agent, so it doesn't reveal one.
+    const refusal = tab2.posted.find((p) => p.id === 'unreg-foreign')!;
+    expect(refusal.ok).toBe(false);
+    expect(refusal.error?.code).toBe('ERR_AGENT_NOT_FOUND');
 
     const { agentInvocationTabs, registeredAgents } = await import('../handlers/agent-handlers');
     const { hasAgentHandlers } = await import('../../multi-agent/messaging');
@@ -599,6 +603,182 @@ describe('multi-agent lifecycle cleanup', () => {
       const reply = tab2.posted.find((p) => p.id === 'invoke-long')!;
       expect(reply.ok).toBe(true);
       expect((reply.result as { success: boolean; result?: unknown }).result).toBe('slow answer');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/** Register through a tab's port with extra register options. */
+async function registerVia(tab: TestPort, id: string, payload: Record<string, unknown>): Promise<string> {
+  tab.send({ id, type: 'agent.agents.register', payload: { acceptsInvocations: true, ...payload } });
+  await vi.waitFor(() => expect(tab.posted.some((p) => p.id === id)).toBe(true));
+  const reply = tab.posted.find((p) => p.id === id)!;
+  expect(reply.ok).toBe(true);
+  return (reply.result as { id: string }).id;
+}
+
+describe('a page restored from the back/forward cache', () => {
+  it('gets its agent back under the same id, and is invocable again', async () => {
+    const page = connectPort('https://a.example/page', 1);
+    const tab2 = connectPort('https://b.example/page', 2);
+    const agentId = await registerHandlerAgent(page, 'handler');
+    await registerHandlerAgent(tab2, 'invoker');
+
+    // The page goes into the cache (pagehide), and Harbor forgets its agent.
+    page.disconnect();
+    const { registeredAgents } = await import('../handlers/agent-handlers');
+    expect(registeredAgents.has(agentId)).toBe(false);
+
+    // Back: the same document reconnects and re-registers its agent.
+    const restored = connectPort('https://a.example/page', 1);
+    expect(await registerVia(restored, 'restore', { name: 'handler', restoreAgentId: agentId })).toBe(agentId);
+
+    tab2.send({ id: 'invoke-restored', type: 'agent.agents.invoke', payload: { agentId, request: { task: 'summarize' } } });
+    await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalled());
+    expect(tabsSendMessage.mock.calls[0][0]).toBe(1);
+  });
+
+  it('gets its agent back after the tab went to another site and came Back', async () => {
+    const page = connectPort('https://a.example/page', 1);
+    const agentId = await registerHandlerAgent(page, 'handler');
+
+    tabUrls.set(1, 'https://b.example/');
+    onTabUpdated(1, { url: 'https://b.example/' });
+    tabUrls.set(1, 'https://a.example/page');
+    onTabUpdated(1, { url: 'https://a.example/page' });
+
+    expect(await registerVia(page, 'restore', { name: 'handler', restoreAgentId: agentId })).toBe(agentId);
+  });
+
+  it("can't take a forgotten agent's id from another tab or another site", async () => {
+    const page = connectPort('https://a.example/page', 1);
+    const agentId = await registerHandlerAgent(page, 'handler');
+    page.disconnect();
+
+    const otherTab = connectPort('https://a.example/page', 3);
+    expect(await registerVia(otherTab, 'other-tab', { name: 'h', restoreAgentId: agentId })).not.toBe(agentId);
+
+    const otherSite = connectPort('https://b.example/page', 1);
+    expect(await registerVia(otherSite, 'other-site', { name: 'h', restoreAgentId: agentId })).not.toBe(agentId);
+  });
+
+  it("can't take a live agent's id", async () => {
+    const page = connectPort('https://a.example/page', 1);
+    const agentId = await registerHandlerAgent(page, 'handler');
+    const other = connectPort('https://b.example/page', 2);
+    expect(await registerVia(other, 'live', { name: 'h', restoreAgentId: agentId })).not.toBe(agentId);
+  });
+});
+
+describe('an invocation the caller stops waiting for', () => {
+  it("is cancelled in the agent's page when the caller's page goes", async () => {
+    const tab1 = connectPort('https://a.example/page', 1);
+    const tab2 = connectPort('https://b.example/page', 2);
+    const agentId = await registerHandlerAgent(tab1, 'handler');
+    await registerHandlerAgent(tab2, 'invoker');
+
+    tab2.send({ id: 'invoke-c', type: 'agent.agents.invoke', payload: { agentId, request: { task: 'summarize' } } });
+    await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalled());
+    const [, sent] = tabsSendMessage.mock.calls[0] as [number, { invocationId: string }];
+
+    tab2.disconnect();
+    await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalledWith(1, { type: 'agentInvocationCancel', invocationId: sent.invocationId }));
+  });
+
+  it("is cancelled in the agent's page when it times out", async () => {
+    vi.useFakeTimers();
+    try {
+      const tab1 = connectPort('https://a.example/page', 1);
+      const tab2 = connectPort('https://b.example/page', 2);
+      const agentId = await registerHandlerAgent(tab1, 'handler');
+      await registerHandlerAgent(tab2, 'invoker');
+
+      const { settled } = await invokeBelowPagePort(agentId);
+      const [, sent] = tabsSendMessage.mock.calls[0] as [number, { invocationId: string }];
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect((settled()!.result as { error?: { code: string } }).error?.code).toBe('ERR_TIMEOUT');
+      expect(tabsSendMessage).toHaveBeenCalledWith(1, { type: 'agentInvocationCancel', invocationId: sent.invocationId });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("Harbor's own answers", () => {
+  it("carry no provenance when Harbor refused because the agent's page is gone", async () => {
+    const tab1 = connectPort('https://a.example/page', 1);
+    const tab2 = connectPort('https://b.example/page', 2);
+    const agentId = await registerHandlerAgent(tab1, 'handler');
+    await registerHandlerAgent(tab2, 'invoker');
+
+    tabUrls.set(1, 'https://evil.example/');
+    const { settled } = await invokeBelowPagePort(agentId, undefined, false);
+    await vi.waitFor(() => expect(settled()).toBeDefined());
+    const result = settled()!.result as { error?: { code: string }; provenance?: unknown };
+    expect(result.error?.code).toBe('ERR_AGENT_NOT_FOUND');
+    expect(result.provenance).toBeUndefined();
+  });
+
+  it("carry provenance when the agent itself answered with an error", async () => {
+    const tab1 = connectPort('https://a.example/page', 1);
+    const tab2 = connectPort('https://b.example/page', 2);
+    const agentId = await registerHandlerAgent(tab1, 'handler');
+    await registerHandlerAgent(tab2, 'invoker');
+
+    const { settled } = await invokeBelowPagePort(agentId);
+    const [, sent] = tabsSendMessage.mock.calls[0] as [number, { invocationId: string }];
+    replyAsContentScript(1, { invocationId: sent.invocationId, success: false, error: { code: 'ERR_HANDLER_FAILED', message: 'no' } });
+    await vi.waitFor(() => expect(settled()).toBeDefined());
+    expect((settled()!.result as { provenance?: { origin: string } }).provenance?.origin).toBe('https://a.example');
+  });
+});
+
+describe('agent mail to a page', () => {
+  it('names the agent a broadcast is for, so the page can refuse one for an agent it never registered', async () => {
+    await grantPermissions('https://a.example', ['agents:message'], 'granted-always');
+    const tab1 = connectPort('https://a.example/page', 1);
+    const tab3 = connectPort('https://a.example/other', 3);
+    const listener = await registerVia(tab1, 'reg-l', { name: 'listener' });
+    await registerVia(tab3, 'reg-s', { name: 'sender' });
+
+    tab1.send({ id: 'sub', type: 'agent.agents.subscribe', payload: { eventType: 'news' } });
+    await vi.waitFor(() => expect(tab1.posted.some((p) => p.id === 'sub')).toBe(true));
+    tab3.send({ id: 'bc', type: 'agent.agents.broadcast', payload: { eventType: 'news', data: 1 } });
+
+    await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalledWith(1, expect.objectContaining({
+      type: 'agentEvent',
+      event: expect.objectContaining({ type: 'broadcast', agentId: listener }),
+    })));
+  });
+});
+
+describe('orchestration page calls', () => {
+  it('a pipeline waits past 30 seconds while its steps run', async () => {
+    vi.useFakeTimers();
+    try {
+      await grantPermissions('https://b.example', ['agents:invoke'], 'granted-always');
+      const tab1 = connectPort('https://a.example/page', 1);
+      const tab2 = connectPort('https://b.example/page', 2);
+      const agentId = await registerHandlerAgent(tab1, 'handler');
+      await registerHandlerAgent(tab2, 'invoker');
+
+      tab2.send({
+        id: 'pipe',
+        type: 'agent.agents.orchestrate.pipeline',
+        payload: { config: { steps: [{ agentId, task: 'one' }, { agentId, task: 'two' }] }, initialInput: 'x' },
+      });
+      for (let step = 0; step < 2; step++) {
+        await vi.waitFor(() => expect(tabsSendMessage).toHaveBeenCalledTimes(step + 1));
+        const [, sent] = tabsSendMessage.mock.calls[step] as [number, { invocationId: string }];
+        await vi.advanceTimersByTimeAsync(25_000);
+        replyAsContentScript(1, { invocationId: sent.invocationId, success: true, result: `step ${step}` });
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      await vi.waitFor(() => expect(tab2.posted.some((p) => p.id === 'pipe')).toBe(true));
+      const reply = tab2.posted.find((p) => p.id === 'pipe')!;
+      expect(reply.ok).toBe(true);
+      expect((reply.result as { success: boolean }).success).toBe(true);
     } finally {
       vi.useRealTimers();
     }

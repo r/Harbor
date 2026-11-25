@@ -76,3 +76,80 @@ describe('content script agent invocation relay', () => {
     expect(cs.postedInvocations()).toHaveLength(0);
   });
 });
+
+function loadWithPort(origin) {
+  const windowListeners = {};
+  const pagePosts = [];
+  const runtimeListeners = [];
+  const ports = [];
+  const window = {
+    location: { origin },
+    addEventListener: vi.fn((type, l) => { (windowListeners[type] ||= []).push(l); }),
+    removeEventListener: vi.fn(),
+    postMessage: vi.fn((data) => pagePosts.push(data)),
+  };
+  const chrome = {
+    runtime: {
+      connect: vi.fn(() => {
+        const port = { name: 'harbor-page-api', postMessage: vi.fn(), disconnect: vi.fn(), onMessage: { addListener: vi.fn() }, onDisconnect: { addListener: vi.fn() } };
+        ports.push(port);
+        return port;
+      }),
+      sendMessage: vi.fn((m, cb) => cb?.({})),
+      onMessage: { addListener: (l) => runtimeListeners.push(l) },
+      getURL: (p) => `moz-extension://x/${p}`,
+      lastError: undefined,
+    },
+    storage: { onChanged: { addListener: vi.fn() } },
+  };
+  const document = {
+    documentElement: { setAttribute: vi.fn() },
+    head: null,
+    createElement: () => ({}),
+    getElementById: () => null,
+    addEventListener: vi.fn(),
+  };
+  runInNewContext(bundled, { window, chrome, document, console: { log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }, setTimeout, clearTimeout, Promise });
+  const fire = (type, event) => (windowListeners[type] || []).forEach((l) => l(event));
+  const fromPage = (data) => fire('message', { source: window, data: { channel: 'harbor_page_api', ...data } });
+  return { window, fire, fromPage, pagePosts, ports, runtimeListeners };
+}
+
+describe('content script and the back/forward cache', () => {
+  it("closes the page's port when the page goes into the cache, failing its waiting requests", () => {
+    const cs = loadWithPort('https://a.example');
+    cs.fromPage({ request: { id: 'r1', type: 'agent.agents.list' } });
+    expect(cs.ports).toHaveLength(1);
+
+    cs.fire('pagehide', { persisted: true });
+    expect(cs.ports[0].disconnect).toHaveBeenCalled();
+    expect(cs.pagePosts).toContainEqual(expect.objectContaining({
+      response: expect.objectContaining({ id: 'r1', ok: false }),
+    }));
+  });
+
+  it('tells the page it was restored, and opens a new port for its next call', () => {
+    const cs = loadWithPort('https://a.example');
+    cs.fromPage({ request: { id: 'r1', type: 'agent.agents.list' } });
+    cs.fire('pagehide', { persisted: true });
+    cs.fire('pageshow', { persisted: true });
+    expect(cs.pagePosts).toContainEqual(expect.objectContaining({ pageRestored: true }));
+
+    cs.fromPage({ request: { id: 'r2', type: 'agent.agents.list' } });
+    expect(cs.ports).toHaveLength(2);
+  });
+
+  it("doesn't tell the page anything on an ordinary first load", () => {
+    const cs = loadWithPort('https://a.example');
+    cs.fire('pageshow', { persisted: false });
+    expect(cs.pagePosts.some((d) => d?.pageRestored)).toBe(false);
+  });
+
+  it('passes a cancelled invocation on to the page', () => {
+    const cs = loadWithPort('https://a.example');
+    cs.runtimeListeners.forEach((l) => l({ type: 'agentInvocationCancel', invocationId: 'inv-9' }, {}, vi.fn()));
+    expect(cs.pagePosts).toContainEqual(expect.objectContaining({
+      agentEvent: { type: 'invocationCancel', invocationId: 'inv-9' },
+    }));
+  });
+});

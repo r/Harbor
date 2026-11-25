@@ -34,7 +34,7 @@ function page() {
       getElementById: () => ({ textContent: JSON.stringify({ multiAgent: true }) }),
     },
     CustomEvent: class { constructor(type, options) { this.type = type; this.options = options; } },
-    setTimeout, clearTimeout, Map, Set, Date, Math,
+    setTimeout, clearTimeout, Map, Set, Date, Math, AbortController,
   });
   const deliver = (data) => listeners.forEach((l) => l({ source: window, data: { channel: CHANNEL, ...data } }));
   const requests = (type) => window.postMessage.mock.calls.map(([m]) => m.request).filter((r) => r?.type === type);
@@ -88,5 +88,96 @@ describe("a page's invocation handlers", () => {
     await vi.waitFor(() => expect(p.invocationResponses()).toHaveLength(1));
     expect(p.handler).not.toHaveBeenCalled();
     expect(p.invocationResponses()[0]).toMatchObject({ success: false, error: { code: 'ERR_AGENT_NOT_FOUND' } });
+  });
+});
+
+/** Answer the page's latest request of `type`. */
+function answer(p, type, result, index = -1) {
+  const all = p.requests(type);
+  const request = all.at(index);
+  p.deliver({ response: { id: request.id, ok: true, result } });
+}
+
+describe('a page restored from the back/forward cache', () => {
+  it('re-registers its agent with the same options, asking for its old id, and re-subscribes', async () => {
+    const p = await registeredPage('agent-mine');
+    const subscribing = p.window.agent.agents.subscribe('news', vi.fn());
+    await vi.waitFor(() => expect(p.requests('agent.agents.subscribe')).toHaveLength(1));
+    answer(p, 'agent.agents.subscribe', null);
+    await subscribing;
+
+    p.deliver({ pageRestored: true });
+
+    await vi.waitFor(() => expect(p.requests('agent.agents.register')).toHaveLength(2));
+    expect(p.requests('agent.agents.register')[1].payload).toEqual({
+      name: 'Mine', acceptsInvocations: true, restoreAgentId: 'agent-mine',
+    });
+    answer(p, 'agent.agents.register', { id: 'agent-mine', name: 'Mine' });
+    await vi.waitFor(() => expect(p.requests('agent.agents.subscribe')).toHaveLength(2));
+    expect(p.requests('agent.agents.subscribe')[1].payload).toEqual({ eventType: 'news' });
+  });
+
+  it('answers for its new id if Harbor gave it a different one', async () => {
+    const p = await registeredPage('agent-mine');
+    p.deliver({ pageRestored: true });
+    await vi.waitFor(() => expect(p.requests('agent.agents.register')).toHaveLength(2));
+    answer(p, 'agent.agents.register', { id: 'agent-new', name: 'Mine' });
+
+    p.deliver(invocation('agent-new', 'inv-new'));
+    await vi.waitFor(() => expect(p.invocationResponses()).toHaveLength(1));
+    expect(p.invocationResponses()[0]).toMatchObject({ invocationId: 'inv-new', success: true });
+
+    p.deliver(invocation('agent-mine', 'inv-old'));
+    await vi.waitFor(() => expect(p.invocationResponses()).toHaveLength(2));
+    expect(p.invocationResponses()[1]).toMatchObject({ invocationId: 'inv-old', success: false });
+  });
+});
+
+describe("a page's message and event handlers", () => {
+  it("never see a message for another page's agent", async () => {
+    const p = await registeredPage('agent-mine');
+    const onMessage = vi.fn();
+    p.window.agent.agents.onMessage(onMessage);
+    p.deliver({ agentEvent: { type: 'message', message: { id: 'm1', from: 'x', to: 'agent-old-page', payload: 1 } } });
+    p.deliver({ agentEvent: { type: 'message', message: { id: 'm2', from: 'x', to: 'agent-mine', payload: 2 } } });
+    await vi.waitFor(() => expect(onMessage).toHaveBeenCalledTimes(1));
+    expect(onMessage.mock.calls[0][0].id).toBe('m2');
+  });
+
+  it("never see a broadcast for another page's agent", async () => {
+    const p = await registeredPage('agent-mine');
+    const onNews = vi.fn();
+    const subscribing = p.window.agent.agents.subscribe('news', onNews);
+    await vi.waitFor(() => expect(p.requests('agent.agents.subscribe')).toHaveLength(1));
+    answer(p, 'agent.agents.subscribe', null);
+    await subscribing;
+
+    p.deliver({ agentEvent: { type: 'broadcast', agentId: 'agent-old-page', broadcast: { type: 'news', data: 1, source: 'x' } } });
+    p.deliver({ agentEvent: { type: 'broadcast', agentId: 'agent-mine', broadcast: { type: 'news', data: 2, source: 'x' } } });
+    await vi.waitFor(() => expect(onNews).toHaveBeenCalledTimes(1));
+    expect(onNews.mock.calls[0][0].data).toBe(2);
+  });
+});
+
+describe('an invocation the caller stops waiting for', () => {
+  it("aborts the handler's request.signal, and the page sends no answer", async () => {
+    const p = page();
+    const registering = p.window.agent.agents.register({ name: 'Mine', acceptsInvocations: true });
+    await vi.waitFor(() => expect(p.requests('agent.agents.register')).toHaveLength(1));
+    answer(p, 'agent.agents.register', { id: 'agent-mine', name: 'Mine' });
+    await registering;
+
+    let seen;
+    let finish;
+    p.window.agent.agents.onInvoke((request) => { seen = request; return new Promise((r) => { finish = r; }); });
+    p.deliver(invocation('agent-mine', 'inv-c'));
+    await vi.waitFor(() => expect(seen).toBeDefined());
+    expect(seen.signal.aborted).toBe(false);
+
+    p.deliver({ agentEvent: { type: 'invocationCancel', invocationId: 'inv-c' } });
+    expect(seen.signal.aborted).toBe(true);
+    finish('too late');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(p.invocationResponses()).toHaveLength(0);
   });
 });
