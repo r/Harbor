@@ -171,14 +171,13 @@ let nextTabId = 100;
  * directly" pitfall in docs/agent-workflow.md, one layer further down.
  * Each test instead gets its own tab id and its own port.
  */
-function connectPort(origin = ORIGIN): {
+function connectPort(origin = ORIGIN, tabId = nextTabId++): {
   receive: (m: unknown) => Promise<void>;
   postMessage: ReturnType<typeof vi.fn>;
   tabId: number;
   /** Simulates the page's port disconnecting — a navigation or reload, or the tab closing. */
   disconnect: () => void;
 } {
-  const tabId = nextTabId++;
   let receiveFn: (m: unknown) => Promise<void> = async () => {};
   let disconnectFn: () => void = () => {};
   const postMessage = vi.fn();
@@ -695,6 +694,50 @@ describe('a tab (or its port) going away while a session is still opening', () =
 
     expect(isAcpTextSession(sessionId)).toBe(false);
     expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the session while the page is in the back/forward cache, and the restored page can prompt it', async () => {
+    await setAcpBackend(AGENT_ID);
+    const b = registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const closeSpy = vi.spyOn(b, 'acpClose');
+    const port = connectPort();
+    const sessionId = (await createViaPort(port)).result as string;
+
+    // The content script says the page is going into the cache, then closes its port.
+    await port.receive({ type: 'page_hidden' });
+    port.disconnect();
+    await new Promise((r) => setTimeout(r, 10));
+    const { isAcpTextSession } = await import('../acp-text-session-registry');
+    expect(isAcpTextSession(sessionId)).toBe(true);
+    expect(closeSpy).not.toHaveBeenCalled();
+
+    // Back: the same page, on a new port in the same tab.
+    const restored = connectPort(ORIGIN, port.tabId);
+    await restored.receive({ type: 'page_shown' });
+    const reply = await promptViaPort(restored, sessionId, 'hello again');
+    expect(reply.ok).toBe(true);
+  });
+
+  it("ends a cached page's session after 30 minutes if the page doesn't come back", async () => {
+    await setAcpBackend(AGENT_ID);
+    const b = registerFakeAgent({ onPrompt: async () => ({ stopReason: 'end_turn' }) });
+    const closeSpy = vi.spyOn(b, 'acpClose');
+    const port = connectPort();
+    const sessionId = (await createViaPort(port)).result as string;
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await port.receive({ type: 'page_hidden' });
+      port.disconnect();
+      await vi.advanceTimersByTimeAsync(29 * 60_000);
+      const { isAcpTextSession } = await import('../acp-text-session-registry');
+      expect(isAcpTextSession(sessionId)).toBe(true);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(isAcpTextSession(sessionId)).toBe(false);
+      expect(closeSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

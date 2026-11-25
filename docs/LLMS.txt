@@ -362,7 +362,7 @@ await window.agent.agents.send(otherId, { hello: 'world' });
 await window.agent.agents.broadcast('event-name', { foo: 1 });
 ```
 
-`timeout` defaults to 30 s and is capped at 5 minutes. If the agent's tab closes, its page reloads, or the tab moves to another site before it answers, `invoke` resolves at once with `{ success: false, error: { code: 'ERR_AGENT_NOT_FOUND' } }`. A page's `onInvoke` handlers get only invocations for agents that page registered.
+`timeout` defaults to 30 s and is capped at 5 minutes. If the agent's tab closes, its page reloads, navigates or goes into the back/forward cache before it answers, `invoke` resolves at once with `{ success: false, error: { code: 'ERR_AGENT_NOT_FOUND' } }`. When the caller stops waiting, the handler's `request.signal` aborts. A page's `onInvoke`, `onMessage` and `subscribe()` handlers get only what's meant for agents that page registered. A page restored by Back gets its agents back under the same ids, with its subscriptions, page tools, MCP servers and own-agent `window.ai` sessions. Orchestration calls run for up to 30 minutes. `unregister()` rejects with `ERR_AGENT_NOT_FOUND` for an id that isn't registered or is another site's.
 
 ### Orchestration
 
@@ -461,7 +461,7 @@ await window.agent.chat.close(chat.chatId);
 | `ERR_BUDGET_EXCEEDED` | A session's `maxToolCalls` budget is spent |
 | `ERR_TIMEOUT` | Request timed out |
 | `ERR_ELEMENT_NOT_FOUND` | DOM ref not found |
-| `ERR_AGENT_NOT_FOUND` | Agent not registered, or its page went away before answering |
+| `ERR_AGENT_NOT_FOUND` | Agent not registered (or another site's, for `unregister`), or its page went away before answering |
 | `ERR_AGENT_NOT_ACCEPTING` | Agent doesn't accept invocations/messages |
 | `ERR_AGENT_FAILED` | Agent invocation threw |
 | `ERR_HANDLER_FAILED` | Page handler threw |

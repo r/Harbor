@@ -395,6 +395,18 @@ export function initializePageApi(): void {
   // one opens.
   let pageConnections = 0;
 
+  // A page that went into the back/forward cache keeps its sessions on the
+  // person's own agent, so they work again if it comes back. They end when
+  // the tab closes, when a page in the tab leaves without the cache, or
+  // after 30 minutes away (Firefox keeps a cached page that long at most).
+  const CACHED_PAGE_SESSION_MS = 30 * 60_000;
+  const cachedPageSessionTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  /** Stops the clock on a cached page's sessions: it came back, or they're ending anyway. */
+  const stopCachedPageClock = (tabId: number) => {
+    clearTimeout(cachedPageSessionTimers.get(tabId));
+    cachedPageSessionTimers.delete(tabId);
+  };
+
   browserAPI.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     if (port.name !== PORT_NAME) return;
 
@@ -416,6 +428,9 @@ export function initializePageApi(): void {
     // port disconnecting (tab closed or navigated) aborts every request
     // still in flight on it.
     const runControllers = new Map<string, AbortController>();
+    // The content script says the page is going into the back/forward cache
+    // just before it closes this port.
+    let hiddenForCache = false;
 
     port.onMessage.addListener(async (message: { id: string; type: string; payload: unknown }) => {
       // The page's own tools (document.modelContext): its descriptor list,
@@ -436,6 +451,16 @@ export function initializePageApi(): void {
             ? { id: message.id, ok: true, result: { accepted } }
             : { id: message.id, ok: false, error: { code: 'ERR_INVALID_REQUEST', message: 'Invalid page tool list' } });
         } catch { /* Port disconnected */ }
+        return;
+      }
+
+      if (message?.type === 'page_hidden') {
+        hiddenForCache = true;
+        return;
+      }
+      if (message?.type === 'page_shown') {
+        // Back from the cache: its sessions stay.
+        if (tabId !== undefined) stopCachedPageClock(tabId);
         return;
       }
 
@@ -501,8 +526,19 @@ export function initializePageApi(): void {
       // page) or the tab closed outright — either way, every ACP-backed
       // text session this port's page opened must end, not just the ones
       // tabs.onRemoved also catches: a same-tab navigation disconnects this
-      // port without ever firing tabs.onRemoved.
-      if (tabId !== undefined) void cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
+      // port without ever firing tabs.onRemoved. A page that went into the
+      // back/forward cache keeps them for a while instead, in case it's
+      // restored.
+      if (tabId !== undefined && hiddenForCache) {
+        stopCachedPageClock(tabId);
+        cachedPageSessionTimers.set(tabId, setTimeout(() => {
+          cachedPageSessionTimers.delete(tabId);
+          void cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
+        }, CACHED_PAGE_SESSION_MS));
+      } else if (tabId !== undefined) {
+        stopCachedPageClock(tabId);
+        void cleanupAcpTextSessionsForTab(tabId, forgetTextSession);
+      }
       // The page's agents go with it, so nothing more is delivered to this
       // tab for them once it shows another page. Only the top frame runs the
       // page API.

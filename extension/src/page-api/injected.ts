@@ -1366,13 +1366,19 @@ const processedPageInvocations = new Set<string>();
 // handlers must never see it.
 const pageAgents = new Map<string, AgentRegisterOptions>();
 
+// The MCP servers this page registered (agent.mcp.register), by server id,
+// to register again after a back/forward cache restore. Harbor drops them
+// when the tab moves to another site.
+const pageMcpServers = new Map<string, McpRegisterOptions>();
+
 // Invocations this page's handlers are working on, so the caller giving up
 // can abort the handler's request.signal.
 const runningInvocations = new Map<string, AbortController>();
 
 // Back from the back/forward cache (the content script says so): Harbor
 // forgot this page's agents, subscriptions and page tools when it left the
-// tab, so they're registered again. Harbor gives each agent back its old id
+// tab, and its MCP servers if the tab went to another site, so they're
+// registered again. Harbor gives each agent back its old id
 // when it can, so nothing changes for the page.
 window.addEventListener('message', (event: MessageEvent) => {
   if (event.source !== window) return;
@@ -1402,6 +1408,12 @@ async function restoreAfterBackForwardCache(): Promise<void> {
     });
   }
   schedulePageToolSync();
+  // A server's id comes from the site and its name, so it's the same again.
+  for (const [serverId, options] of [...pageMcpServers]) {
+    await sendRequest('agent.mcp.register', options).catch((e) => {
+      dwarn('could not register MCP server again after a back/forward cache restore', serverId, e);
+    });
+  }
 }
 
 // Track if event listener is already set up
@@ -1744,14 +1756,22 @@ const agentApi = Object.freeze({
      * });
      */
     register: FEATURE_FLAGS.toolAccess
-      ? (options: McpRegisterOptions): Promise<McpRegisterResult> => sendRequest('agent.mcp.register', options)
+      ? async (options: McpRegisterOptions): Promise<McpRegisterResult> => {
+        const result = await sendRequest<McpRegisterResult>('agent.mcp.register', options);
+        // Kept to register it again if the page comes back from the
+        // back/forward cache.
+        if (result?.success && typeof result.serverId === 'string') pageMcpServers.set(result.serverId, options);
+        return result;
+      }
       : featureDisabledAsync('toolAccess'),
 
     /**
      * Unregister a previously registered MCP server.
      */
     async unregister(serverId: string): Promise<{ success: boolean }> {
-      return sendRequest('agent.mcp.unregister', { serverId });
+      const result = await sendRequest<{ success: boolean }>('agent.mcp.unregister', { serverId });
+      pageMcpServers.delete(serverId);
+      return result;
     },
   }),
 

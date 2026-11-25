@@ -122,6 +122,8 @@ describe('content script and the back/forward cache', () => {
     expect(cs.ports).toHaveLength(1);
 
     cs.fire('pagehide', { persisted: true });
+    // Harbor hears why the port closes, so it can keep the page's own-agent sessions.
+    expect(cs.ports[0].postMessage).toHaveBeenCalledWith({ type: 'page_hidden' });
     expect(cs.ports[0].disconnect).toHaveBeenCalled();
     expect(cs.pagePosts).toContainEqual(expect.objectContaining({
       response: expect.objectContaining({ id: 'r1', ok: false }),
@@ -134,6 +136,9 @@ describe('content script and the back/forward cache', () => {
     cs.fire('pagehide', { persisted: true });
     cs.fire('pageshow', { persisted: true });
     expect(cs.pagePosts).toContainEqual(expect.objectContaining({ pageRestored: true }));
+    // A new port at once, so Harbor counts this page as the tab's own again.
+    expect(cs.ports).toHaveLength(2);
+    expect(cs.ports[1].postMessage).toHaveBeenCalledWith({ type: 'page_shown' });
 
     cs.fromPage({ request: { id: 'r2', type: 'agent.agents.list' } });
     expect(cs.ports).toHaveLength(2);

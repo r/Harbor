@@ -118,19 +118,30 @@ function failInFlight(message: string): void {
 // Harbor is concerned, even though Firefox may keep its port open. Closing
 // the port here tells Harbor now: it forgets the page's agents, fails
 // invocations waiting on it, and counts the next page as the tab's own.
-// (A port closed from this side gets no onDisconnect, so in-flight calls
-// are failed here.)
+// It also lets Firefox keep the page in the cache at all: with the port
+// open, Back reloaded the page. (A port closed from this side gets no
+// onDisconnect, so in-flight calls are failed here.)
+// Harbor is told why first, so it keeps the page's sessions on the
+// person's own agent for when the page comes back.
+let portClosedForCache = false;
 window.addEventListener('pagehide', (event: PageTransitionEvent) => {
   if (!event.persisted || !backgroundPort) return;
+  try { backgroundPort.postMessage({ type: 'page_hidden' }); } catch { /* already closed */ }
   backgroundPort.disconnect();
   backgroundPort = null;
+  portClosedForCache = true;
   failInFlight('The page was hidden');
 });
 
-// Back from the cache: the page script gets its agents, subscriptions and
-// page tools back from Harbor. Its next call opens a new port.
+// Back from the cache: a new port at once, so Harbor counts this page as
+// the tab's own again and keeps its sessions, and the page script registers
+// its agents, subscriptions, page tools and MCP servers again.
 window.addEventListener('pageshow', (event: PageTransitionEvent) => {
   if (!event.persisted) return;
+  if (portClosedForCache) {
+    portClosedForCache = false;
+    getBackgroundPort().postMessage({ type: 'page_shown' });
+  }
   window.postMessage({ channel: CHANNEL, pageRestored: true }, '*');
 });
 

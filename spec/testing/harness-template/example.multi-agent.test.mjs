@@ -7,7 +7,7 @@
  * in for an agent registered by another tab on the same site.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { installWebAgentsMock } from './mock.js';
 
 describe('multi-agent flow against the mock', () => {
@@ -133,5 +133,47 @@ describe('multi-agent flow against the mock', () => {
   it('fails like Harbor when the multiAgent feature is off', async () => {
     mock.agents.featureEnabled = false;
     await expect(globalThis.agent.agents.discover()).rejects.toMatchObject({ code: 'ERR_FEATURE_DISABLED' });
+  });
+});
+
+describe('invocation lifecycle against the mock', () => {
+  let mock;
+  beforeEach(async () => {
+    mock = installWebAgentsMock(globalThis);
+    mock.permissions.grantAll();
+    mock.agents.featureEnabled = true;
+    await globalThis.agent.requestPermissions({ scopes: ['agents:register', 'agents:invoke'] });
+    await globalThis.agent.agents.register({ name: 'Writer' });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    mock.uninstall();
+  });
+
+  it("times out after the invocation's own timeout, capped at 5 minutes, and aborts the handler's signal", async () => {
+    vi.useFakeTimers();
+    let signal;
+    const slow = mock.agents.addAgent({ name: 'Slow' }, {
+      onInvoke: (request) => { signal = request.signal; return new Promise(() => {}); },
+    });
+    const pending = globalThis.agent.agents.invoke(slow.id, { task: 'x', timeout: 60 * 60_000 });
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    const response = await pending;
+    expect(response).toMatchObject({ success: false, error: { code: 'ERR_TIMEOUT' } });
+    expect(response.provenance).toBeUndefined();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("fails at once with ERR_AGENT_NOT_FOUND when the agent's page goes", async () => {
+    const slow = mock.agents.addAgent({ name: 'Slow' }, { onInvoke: () => new Promise(() => {}) });
+    const pending = globalThis.agent.agents.invoke(slow.id, { task: 'x' });
+    mock.agents.removeAgent(slow.id);
+    const response = await pending;
+    expect(response).toMatchObject({ success: false, error: { code: 'ERR_AGENT_NOT_FOUND' } });
+    expect(response.provenance).toBeUndefined();
+  });
+
+  it('rejects an unregister for an agent that is not there', async () => {
+    await expect(globalThis.agent.agents.unregister('agent-nobody')).rejects.toMatchObject({ code: 'ERR_AGENT_NOT_FOUND' });
   });
 });

@@ -5,7 +5,9 @@
 // test-agent-answer-provenance.mjs does: two local servers on different
 // ports are two origins. "bank" registers an agent that never answers;
 // "caller" invokes it with a 2-minute timeout; then the bank's tab moves to
-// another site, and, in a second round, a bank tab closes.
+// another site, and, in a second round, a bank tab closes. Two last rounds
+// go Back to a bank page from the back/forward cache, from another site and
+// within the bank's site, and invoke its agent under the same id.
 // Needs no model and no bridge.
 //
 // Requires: the Firefox extension built (npm run build from extension/).
@@ -46,7 +48,7 @@ const CALLER = `http://127.0.0.1:${callerServer.address().port}`;
 let session;
 let remote;
 const controller = new AbortController();
-const deadline = setTimeout(() => controller.abort(new Error('Agent invoke lifecycle e2e test timed out')), 200_000);
+const deadline = setTimeout(() => controller.abort(new Error('Agent invoke lifecycle e2e test timed out')), 300_000);
 
 try {
   session = await launchFirefox({ startUrl: `${CALLER}/`, signal: controller.signal }, {
@@ -99,9 +101,13 @@ try {
     throw new Error(`Tab ${prefix} not found among: ${lastSeen.join(', ')}`);
   }
 
-  async function pageEval(prefix) {
+  // Evaluates in the tab's page once Harbor's page API is there: a fresh
+  // tab can be found before its content script has injected it.
+  async function pageEval(prefix, { waitForApi = true } = {}) {
     const frame = await target((await findTab(prefix)).actor);
-    return text => evaluate(frame.consoleActor, text);
+    const run = text => evaluate(frame.consoleActor, text);
+    for (let i = 0; waitForApi && i < 50 && (await run('typeof window.agent')) !== 'object'; i++) await sleep(200);
+    return run;
   }
 
   async function grantPrompt(timeoutMs = 15_000) {
@@ -148,7 +154,7 @@ try {
   const startFrame = await target((await findTab(CALLER)).actor);
   await remote.client.request({ to: startFrame.actor, type: 'navigateTo', url: sidebarUrl });
   await sleep(1500);
-  const sval = await pageEval(sidebarUrl);
+  const sval = await pageEval(sidebarUrl, { waitForApi: false });
   await sval(`
     (() => {
       const cb = document.getElementById('flag-multiAgent');
@@ -258,6 +264,70 @@ try {
   await sval(`browser.tabs.create({ url: ${JSON.stringify(BANK + '/?n=2')} }); true`);
   await sleep(1500);
   await scenario('closing the tab', BANK + '/?n=2', 'await browser.tabs.remove(tab.id);');
+
+  // Back from the back/forward cache: the bank registers an agent that
+  // answers, its tab goes to `awayUrl`, then Back. The restored page must
+  // be the same document (its marker survives), keep its agent id, and
+  // answer the caller's invoke.
+  async function backScenario(name, bankUrl, awayUrl) {
+    await sval(`browser.tabs.create({ url: ${JSON.stringify(bankUrl)} }); true`);
+    await sleep(1500);
+    const bank = await pageEval(bankUrl);
+    await bank(`
+      window.__e2e = null;
+      window.__marker = 'same document';
+      (async () => {
+        try {
+          const p = await window.agent.requestPermissions({
+            scopes: ['agents:register', 'agents:crossOrigin'],
+            agentOrigins: [${JSON.stringify(CALLER)}],
+            reason: 'e2e: register the bank agent',
+          });
+          if (!p.granted) throw new Error('bank permission denied');
+          const me = await window.agent.agents.register({ name: 'Bank', acceptsInvocations: true });
+          window.agent.agents.onInvoke(async () => 'balance from ' + window.__marker);
+          window.__e2e = { done: true, id: me.id };
+        } catch (e) { window.__e2e = { done: true, error: e.message }; }
+      })();
+      true
+    `);
+    const bankState = await settle(bank);
+    assert.equal(bankState.error, undefined, `${name}: bank setup failed: ` + bankState.error);
+
+    // Navigate from inside the page, as a person following a link and
+    // pressing Back would.
+    await bank(`setTimeout(() => { location.href = ${JSON.stringify(awayUrl)}; }, 0); true`);
+    await sleep(2000);
+    const away = await pageEval(awayUrl);
+    await away('setTimeout(() => history.back(), 0); true');
+    await sleep(2000);
+
+    const restored = await pageEval(bankUrl);
+    const marker = await restored('String(window.__marker)');
+    assert.equal(marker, 'same document', `${name}: Back reloaded the page instead of restoring it from the cache`);
+    // The page re-registers on its own; give it a moment.
+    await sleep(500);
+
+    await caller(`
+      window.__e2e = null;
+      (async () => {
+        try {
+          const answer = await window.agent.agents.invoke(${JSON.stringify(bankState.id)}, { task: 'balance' });
+          window.__e2e = { done: true, answer };
+        } catch (e) { window.__e2e = { done: true, error: e.message, code: e.code }; }
+      })();
+      true
+    `);
+    const callerState = await settle(caller, 20_000);
+    assert.equal(callerState.error, undefined, `${name}: invoke must resolve: ` + JSON.stringify(callerState));
+    assert.equal(callerState.answer.success, true, `${name}: the restored agent must answer: ` + JSON.stringify(callerState.answer));
+    assert.equal(callerState.answer.result, 'balance from same document');
+    assert.equal(callerState.answer.provenance?.agentId, bankState.id, `${name}: the agent must keep its id`);
+    console.log(`PASS: ${name}: the page restored by Back answered under its old agent id.`);
+  }
+
+  await backScenario('Back from another site', BANK + '/?n=3', CALLER + '/away');
+  await backScenario('Back within the same site', BANK + '/?n=4', BANK + '/?n=4-next');
 
   assert.deepEqual(pageErrors, [], 'no uncaught page errors: ' + JSON.stringify(pageErrors));
   console.log('PASS: a waiting invoke fails at once when its agent\'s page goes, in Firefox.');

@@ -165,7 +165,55 @@ export function installWebAgentsMock(global) {
     others: new Map(), // id -> { info, onInvoke, onMessage }
     messageHandlers: [],
     invokeHandlers: [],
+    waiting: new Map(), // agentId -> Set of settle functions for invocations still waiting on it
   };
+
+  // Harbor's invocation timeout (extension/src/multi-agent/messaging.ts):
+  // 30 seconds unless the caller asks, capped at 5 minutes.
+  function invocationTimeoutMs(requested) {
+    if (typeof requested !== 'number' || Number.isNaN(requested) || requested <= 0) return 30_000;
+    return Math.min(requested, 5 * 60_000);
+  }
+
+  /**
+   * Run one invocation the way Harbor does: the handler gets a signal that
+   * aborts when the invocation is over for the caller, Harbor answers
+   * ERR_TIMEOUT when the timeout runs out and ERR_AGENT_NOT_FOUND when the
+   * agent's page goes, and only an answer the agent gave carries provenance.
+   */
+  function runInvocation(agentId, info, handler, request) {
+    const controller = new AbortController();
+    const started = Date.now();
+    return new Promise((resolve) => {
+      let done = false;
+      const settle = (response) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        agentsState.waiting.get(agentId)?.delete(gone);
+        if (!response.success && !response.provenance) controller.abort();
+        resolve({ executionTime: Date.now() - started, ...response });
+      };
+      const gone = () => settle({ success: false, error: { code: 'ERR_AGENT_NOT_FOUND', message: "The agent's page is gone" } });
+      if (!agentsState.waiting.has(agentId)) agentsState.waiting.set(agentId, new Set());
+      agentsState.waiting.get(agentId).add(gone);
+      const timer = setTimeout(
+        () => settle({ success: false, error: { code: 'ERR_TIMEOUT', message: 'Invocation timed out' } }),
+        invocationTimeoutMs(request.timeout),
+      );
+      Promise.resolve()
+        .then(() => handler({ ...request, signal: controller.signal }))
+        .then(
+          (result) => settle({ success: true, result, provenance: provenanceOf(info) }),
+          // In Harbor a page agent's handler that throws still answers, as ERR_HANDLER_FAILED.
+          (e) => settle({
+            success: false,
+            error: { code: 'ERR_HANDLER_FAILED', message: e instanceof Error ? e.message : String(e) },
+            provenance: provenanceOf(info),
+          }),
+        );
+    });
+  }
 
   function checkFeature() {
     if (!agentsState.featureEnabled) {
@@ -219,6 +267,12 @@ export function installWebAgentsMock(global) {
     return agentsState.pageAgentId;
   }
 
+  function removeOther(agentId) {
+    agentsState.others.delete(agentId);
+    for (const gone of [...(agentsState.waiting.get(agentId) ?? [])]) gone();
+    agentsState.waiting.delete(agentId);
+  }
+
   // agent.agents: the methods and shapes from extension/src/page-api/injected.ts.
   // Not mocked: subscribe/unsubscribe, broadcast, orchestrate.*, remote and
   // cross-origin agents.
@@ -240,6 +294,12 @@ export function installWebAgentsMock(global) {
       if (id === agentsState.pageAgentId) {
         agentsState.pageAgentId = null;
         agentsState.pageAgent = null;
+      } else if (agentsState.others.has(id)) {
+        // Another tab's agent on this site, which Harbor lets the site unregister.
+        removeOther(id);
+      } else {
+        // Harbor answers this for another site's agent too, so it doesn't reveal one.
+        throw createApiError('ERR_AGENT_NOT_FOUND', 'Agent not found');
       }
     },
     async getInfo(agentId) {
@@ -278,18 +338,7 @@ export function installWebAgentsMock(global) {
       if (!target.onInvoke) {
         return { success: false, error: { code: 'ERR_NO_HANDLER', message: 'Target agent has no invocation handler' } };
       }
-      const started = Date.now();
-      try {
-        const result = await target.onInvoke({ ...request, from });
-        return { success: true, result, executionTime: Date.now() - started, provenance: provenanceOf(target.info) };
-      } catch (e) {
-        // In Harbor a page agent's handler that throws still answers, as ERR_HANDLER_FAILED.
-        return {
-          success: false,
-          error: { code: 'ERR_HANDLER_FAILED', message: e instanceof Error ? e.message : String(e) },
-          provenance: provenanceOf(target.info),
-        };
-      }
+      return runInvocation(agentId, target.info, target.onInvoke, { ...request, from });
     },
     async send(agentId, payload) {
       checkFeature();
@@ -424,24 +473,18 @@ export function installWebAgentsMock(global) {
         agentsState.others.set(info.id, { info, onInvoke, onMessage });
         return { ...info };
       },
-      removeAgent(agentId) { agentsState.others.delete(agentId); },
-      /** Have another agent invoke this page; runs the page's onInvoke handler. */
+      /** The agent's page goes: invocations waiting on it fail at once with ERR_AGENT_NOT_FOUND. */
+      removeAgent(agentId) { removeOther(agentId); },
+      /**
+       * Have another agent invoke this page; runs the page's onInvoke handler,
+       * whose request.signal aborts if the invocation times out.
+       */
       async invokePage(fromAgentId, request) {
         const handler = agentsState.invokeHandlers[0];
         if (!agentsState.pageAgentId || !handler) {
           return { success: false, error: { code: 'ERR_NO_HANDLER', message: 'Target agent has no invocation handler' } };
         }
-        const started = Date.now();
-        try {
-          const result = await handler({ ...request, from: fromAgentId });
-          return { success: true, result, executionTime: Date.now() - started, provenance: provenanceOf(agentsState.pageAgent) };
-        } catch (e) {
-          return {
-            success: false,
-            error: { code: 'ERR_HANDLER_FAILED', message: e instanceof Error ? e.message : String(e) },
-            provenance: provenanceOf(agentsState.pageAgent),
-          };
-        }
+        return runInvocation(agentsState.pageAgentId, agentsState.pageAgent, handler, { ...request, from: fromAgentId });
       },
       /** Deliver a message from another agent to the page's onMessage handlers. */
       sendToPage(fromAgentId, payload) {

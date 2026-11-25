@@ -135,6 +135,36 @@ describe('a page restored from the back/forward cache', () => {
   });
 });
 
+describe('a page restored from the back/forward cache, with MCP servers', () => {
+  it('registers its MCP servers again with the same options', async () => {
+    const p = page();
+    const registering = p.window.agent.mcp.register({ url: 'http://localhost:3001/mcp', name: 'Shop', transport: 'sse' });
+    await vi.waitFor(() => expect(p.requests('agent.mcp.register')).toHaveLength(1));
+    answer(p, 'agent.mcp.register', { success: true, serverId: 'site:localhost:Shop', tools: [] });
+    await registering;
+
+    p.deliver({ pageRestored: true });
+    await vi.waitFor(() => expect(p.requests('agent.mcp.register')).toHaveLength(2));
+    expect(p.requests('agent.mcp.register')[1].payload).toEqual({ url: 'http://localhost:3001/mcp', name: 'Shop', transport: 'sse' });
+  });
+
+  it("doesn't register a server again once the page unregistered it", async () => {
+    const p = page();
+    const registering = p.window.agent.mcp.register({ url: 'http://localhost:3001/mcp', name: 'Shop' });
+    await vi.waitFor(() => expect(p.requests('agent.mcp.register')).toHaveLength(1));
+    answer(p, 'agent.mcp.register', { success: true, serverId: 'site:localhost:Shop', tools: [] });
+    await registering;
+    const unregistering = p.window.agent.mcp.unregister('site:localhost:Shop');
+    await vi.waitFor(() => expect(p.requests('agent.mcp.unregister')).toHaveLength(1));
+    answer(p, 'agent.mcp.unregister', { success: true });
+    await unregistering;
+
+    p.deliver({ pageRestored: true });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(p.requests('agent.mcp.register')).toHaveLength(1);
+  });
+});
+
 describe("a page's message and event handlers", () => {
   it("never see a message for another page's agent", async () => {
     const p = await registeredPage('agent-mine');
