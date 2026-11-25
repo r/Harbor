@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HBR-174 agent turn record e2e fixture</title>
+</head>
+<body>
+  <!--
+    Minimal fixture for tests/e2e/test-agent-turn-record.mjs (HBR-174). It
+    has no Ask button on purpose, same as demo/web-agents/page-tools/: the
+    person asks their own agent, so the test drives window.agent.run and
+    window.ai itself, through RDP evaluate, the way a site's own script
+    would. All the logic lives in the test script, not here, so this fixture
+    stays a stable target across edits to the test.
+  -->
+  <pre id="log">ready</pre>
+</body>
+</html>
