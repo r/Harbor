@@ -108,4 +108,30 @@ describe('calling a page tool for agent work the page started', () => {
     expect(posted.filter((m) => m.type === 'page_tools.call')).toEqual([]);
     expect((await auditFor('tool.call'))[0].effect).toBe('deny');
   });
+
+  it("a tool's own readOnlyHint doesn't get it past a rule denying tool.call", async () => {
+    registry.syncPageTools(
+      { tabId: TAB, origin: ORIGIN, connection: 1, port: { postMessage: (m) => { posted.push(m); } } },
+      { tools: [{ name: 'go_to', description: 'Scroll to an anchor', annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }] },
+    );
+    const { generation } = (await core.pageToolsForAgent(ORIGIN, TAB))!;
+    await loadRules([{ id: 'no-calls', effect: 'deny', principal: { origin: '*' }, action: 'tool.call', resource: { server: 'page:tale.example' } }]);
+    await expect(core.callPageToolForAgent({ origin: ORIGIN, tabId: TAB, generation, name: 'go_to', input: {} }))
+      .rejects.toMatchObject({ code: 'ERR_BLOCKED_BY_POLICY' });
+    expect(posted.filter((m) => m.type === 'page_tools.call')).toEqual([]);
+  });
+
+  it("a tool's own readOnlyHint doesn't get it past a rule that asks about tool.call", async () => {
+    const { showPermissionPrompt } = await import('../../policy/permissions');
+    registry.syncPageTools(
+      { tabId: TAB, origin: ORIGIN, connection: 1, port: { postMessage: (m) => { posted.push(m); } } },
+      { tools: [{ name: 'go_to', description: 'Scroll to an anchor', annotations: { readOnlyHint: true } }] },
+    );
+    const { generation } = (await core.pageToolsForAgent(ORIGIN, TAB))!;
+    vi.mocked(showPermissionPrompt).mockClear();
+    vi.mocked(showPermissionPrompt).mockResolvedValueOnce({ granted: false } as never);
+    await loadRules([{ id: 'ask-calls', effect: 'ask', principal: { origin: '*' }, action: 'tool.call', resource: { server: 'page:tale.example' } }]);
+    await expect(core.callPageToolForAgent({ origin: ORIGIN, tabId: TAB, generation, name: 'go_to', input: {} })).rejects.toBeDefined();
+    expect(posted.filter((m) => m.type === 'page_tools.call')).toEqual([]);
+  });
 });

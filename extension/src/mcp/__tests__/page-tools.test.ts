@@ -67,9 +67,61 @@ describe('syncPageTools validation', () => {
     expect(listPageTools(TAB, ORIGIN)?.tools.map(t => t.name)).toEqual(['keep']);
   });
 
-  it('keeps only name, description and inputSchema', () => {
+  it('keeps only name, description and inputSchema when the page sends nothing else', () => {
     syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port: fakePort() }, { tools: [tool('a', { execute: 'x', extra: 1 })] });
     expect(Object.keys(listPageTools(TAB, ORIGIN)!.tools[0]).sort()).toEqual(['description', 'inputSchema', 'name']);
+  });
+
+  it('keeps a title, outputSchema and annotations', () => {
+    const outputSchema = { type: 'object', properties: { url: { type: 'string' } } };
+    syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port: fakePort() }, {
+      tools: [tool('mark', { title: 'Mark a plan', outputSchema, annotations: { readOnlyHint: false, openWorldHint: true } })],
+    });
+    expect(listPageTools(TAB, ORIGIN)!.tools[0]).toEqual({
+      name: 'mark',
+      description: 'mark tool',
+      inputSchema: { type: 'object' },
+      title: 'Mark a plan',
+      outputSchema,
+      annotations: { readOnlyHint: false, openWorldHint: true },
+    });
+  });
+
+  it('keeps only the MCP annotation hints, and only booleans', () => {
+    syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port: fakePort() }, {
+      tools: [tool('a', { annotations: {
+        title: 'A', readOnlyHint: true, destructiveHint: 'no', idempotentHint: true, openWorldHint: false, trustMe: true,
+      } })],
+    });
+    expect(listPageTools(TAB, ORIGIN)!.tools[0].annotations).toEqual({
+      title: 'A', readOnlyHint: true, idempotentHint: true, openWorldHint: false,
+    });
+  });
+
+  it('leaves out annotations with no hint it keeps', () => {
+    syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port: fakePort() }, { tools: [tool('a', { annotations: { trustMe: true } })] });
+    expect('annotations' in listPageTools(TAB, ORIGIN)!.tools[0]).toBe(false);
+  });
+
+  it.each([
+    ['a non-string title', { title: 5 }],
+    ['a title over the cap', { title: 'x'.repeat(PAGE_TOOL_LIMITS.maxTitleBytes + 1) }],
+    ['a non-object outputSchema', { outputSchema: 'x' }],
+    ['an array outputSchema', { outputSchema: [] }],
+    ['an outputSchema over the cap', { outputSchema: { type: 'object', d: 'x'.repeat(PAGE_TOOL_LIMITS.maxSchemaBytes) } }],
+    ['non-object annotations', { annotations: 'read-only' }],
+  ])('drops the whole sync for %s', (_label, extra) => {
+    const port = fakePort();
+    syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port }, { tools: [tool('keep')] });
+    expect(syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port }, { tools: [tool('a', extra)] })).toBe(false);
+    expect(listPageTools(TAB, ORIGIN)?.tools.map(t => t.name)).toEqual(['keep']);
+  });
+
+  it("copies outputSchema, so the page's object can't change what the agent sees", () => {
+    const outputSchema: Record<string, unknown> = { type: 'object' };
+    syncPageTools({ tabId: TAB, origin: ORIGIN, connection: 1, port: fakePort() }, { tools: [tool('a', { outputSchema })] });
+    outputSchema.type = 'string';
+    expect(listPageTools(TAB, ORIGIN)!.tools[0].outputSchema).toEqual({ type: 'object' });
   });
 
   it('an empty list clears the tab', () => {

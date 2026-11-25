@@ -962,6 +962,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tools_list_keeps_title_output_schema_and_annotations() {
+        let state = test_state();
+        let (endpoint_id, _port, _token) = open_for_test(&state).await;
+        let _handle = fake_extension_answering(
+            &state,
+            Ok(json!({
+                "tools": [
+                    {
+                        "name": "reading_position",
+                        "title": "Reading position",
+                        "outputSchema": { "type": "object" },
+                        "annotations": { "readOnlyHint": true },
+                    },
+                    // Wrong types are dropped, not passed on.
+                    { "name": "odd", "title": 5, "outputSchema": [], "annotations": "yes" },
+                ],
+            })),
+        );
+
+        let result = relay_list(&state, &endpoint_id).await.unwrap();
+        let tools = result["tools"].as_array().unwrap();
+        assert_eq!(tools[0]["title"], json!("Reading position"));
+        assert_eq!(tools[0]["outputSchema"], json!({ "type": "object" }));
+        assert_eq!(tools[0]["annotations"], json!({ "readOnlyHint": true }));
+        assert!(tools[1].get("title").is_none());
+        assert!(tools[1].get("outputSchema").is_none());
+        assert!(tools[1].get("annotations").is_none());
+    }
+
+    #[tokio::test]
     async fn tools_list_defaults_a_missing_input_schema() {
         let state = test_state();
         let (endpoint_id, _port, _token) = open_for_test(&state).await;
