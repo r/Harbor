@@ -39,7 +39,14 @@ export interface AgentTabsRequest {
 
 interface PageToolListing {
   generation: number;
-  tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
+  tools: Array<{
+    name: string;
+    title?: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+    outputSchema?: Record<string, unknown>;
+    annotations?: Record<string, unknown>;
+  }>;
 }
 
 export interface AgentTabsDeps {
@@ -224,10 +231,15 @@ export function createAgentTabs(deps: AgentTabsDeps) {
       return errorResult("Harbor's policy doesn't allow this page's tools.");
     }
     const listing = deps.listPageTools(entry.tabId, origin);
+    // title, outputSchema and annotations are the page's own, passed on as
+    // MCP's Tool fields so the agent can weigh them; Harbor's gates don't.
     const tools = (listing?.tools ?? []).map((t) => ({
       name: t.name,
+      ...(t.title !== undefined ? { title: t.title } : {}),
       description: describedBy(origin, t.description),
       inputSchema: t.inputSchema,
+      ...(t.outputSchema !== undefined ? { outputSchema: t.outputSchema } : {}),
+      ...(t.annotations !== undefined ? { annotations: t.annotations } : {}),
       _meta: provenance(origin),
     }));
     const text = tools.length === 0

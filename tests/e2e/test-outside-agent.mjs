@@ -247,6 +247,16 @@ try {
   const listToolsResult = await mcpSession.callTool('list_page_tools', { page });
   assert.ok(listToolsResult && listToolsResult.isError !== true, 'list_page_tools must succeed: ' + JSON.stringify(listToolsResult));
   assert.match(listToolsResult.content[0].text, /go_to/, 'the page must offer a go_to tool');
+  // A tool's WebMCP title, outputSchema and annotations reach the agent as
+  // MCP Tool fields; a tool registered without them gets none.
+  const listed = Object.fromEntries((listToolsResult.structuredContent?.tools ?? []).map(t => [t.name, t]));
+  assert.equal(listed.reading_position?.title, 'Reading position', 'reading_position must keep its title: ' + JSON.stringify(listed));
+  assert.deepEqual(listed.reading_position?.annotations, { readOnlyHint: true }, 'reading_position must keep its annotations');
+  assert.deepEqual(listed.go_to?.outputSchema, { type: 'object', properties: { at: { type: 'string' } }, required: ['at'] }, 'go_to must keep its outputSchema');
+  assert.deepEqual(listed.go_to?.annotations, { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, 'go_to must keep its annotations');
+  assert.ok(listed.count_words && !('title' in listed.count_words) && !('annotations' in listed.count_words) && !('outputSchema' in listed.count_words),
+    'count_words, registered without them, must get none: ' + JSON.stringify(listed.count_words));
+  console.log('PASS: list_page_tools carries title, outputSchema and annotations, and adds none to a tool without them.');
   console.log('PASS: harbor__open_page and harbor__list_page_tools reached the page through the real relay.');
 
   const goToResult = await mcpSession.callTool('call_page_tool', { page, tool: 'go_to', input: { anchor: 'p4' } });

@@ -174,8 +174,12 @@ interface ToolDescriptor {
 
 interface PageToolDescriptor {
   name: string;
+  title?: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  /** The page's own hints (readOnlyHint and the like). They inform the agent; Harbor's gates never read them. */
+  annotations?: Record<string, unknown>;
   handler: (args: Record<string, unknown>, options?: { signal: AbortSignal }) => unknown | Promise<unknown>;
 }
 
@@ -185,6 +189,8 @@ interface ModelContextTool {
   title?: string;
   description: string;
   inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
   execute?: (input: Record<string, unknown>, options: { signal: AbortSignal }) => unknown | Promise<unknown>;
   handler?: (input: Record<string, unknown>, options: { signal: AbortSignal }) => unknown | Promise<unknown>;
 }
@@ -225,13 +231,44 @@ function flushPageToolSync(): void {
     .map(t => ({
       name: t.name,
       description: typeof t.description === 'string' && t.description ? t.description : t.name,
-      ...(t.inputSchema && typeof t.inputSchema === 'object' && !Array.isArray(t.inputSchema)
-        ? { inputSchema: t.inputSchema }
-        : {}),
+      ...(isPlainToolObject(t.inputSchema) ? { inputSchema: t.inputSchema } : {}),
+      ...pageToolMetadata(t),
     }));
   sendRequest('page_tools.sync', { tools }).catch(() => {
     // The background refused or isn't there; the page's own tools still work.
   });
+}
+
+function isPlainToolObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The optional WebMCP fields a tool carries, those of the right type only.
+ * The background validates them again; a wrong type here is left out rather
+ * than failing the page's registerTool.
+ */
+function pageToolMetadata(tool: { title?: unknown; outputSchema?: unknown; annotations?: unknown }): {
+  title?: string;
+  outputSchema?: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
+} {
+  // Only the MCP hints, so nothing else in the page's object (a function, a
+  // Proxy) can make postMessage fail and drop every tool from the sync.
+  let annotations: Record<string, unknown> | undefined;
+  if (isPlainToolObject(tool.annotations)) {
+    const raw = tool.annotations;
+    annotations = {};
+    if (typeof raw.title === 'string') annotations.title = raw.title;
+    for (const hint of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']) {
+      if (typeof raw[hint] === 'boolean') annotations[hint] = raw[hint];
+    }
+  }
+  return {
+    ...(typeof tool.title === 'string' && tool.title ? { title: tool.title } : {}),
+    ...(isPlainToolObject(tool.outputSchema) ? { outputSchema: tool.outputSchema } : {}),
+    ...(annotations && Object.keys(annotations).length > 0 ? { annotations } : {}),
+  };
 }
 
 const pageToolCallControllers = new Map<string, AbortController>();
@@ -2199,6 +2236,7 @@ function registerPageTool(tool: ModelContextTool, options: ModelContextRegisterT
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
+    ...pageToolMetadata(tool),
     handler: (args, callOptions) => execute.call(tool, args, callOptions ?? { signal: new AbortController().signal }),
   };
   pageTools.set(tool.name, entry);
