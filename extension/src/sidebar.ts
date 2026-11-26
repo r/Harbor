@@ -13,6 +13,7 @@ import {
 } from './sidebar-agents';
 import { AgentPanelController, type AgentBackendIO } from './sidebar-agent-controller';
 import { initOutsideAgentsSection } from './sidebar-outside-agents';
+import { initAgentTurnsSection } from './sidebar-agent-turns';
 import { AgentFormState } from './agent-form-state';
 import { buildAgentPresetDocsHint } from './agent-preset-docs-hint';
 
@@ -1738,7 +1739,34 @@ const activityFilterEffect = document.getElementById('activity-filter-effect') a
 
 if (activityPanelHeader && activityPanelToggle && activityBody) {
   setupPanelToggle(activityPanelHeader, activityPanelToggle, activityBody);
+  // Opening the panel is what clears the toolbar badge for unseen turns, so
+  // reload it now rather than on the next 5-second tick.
+  activityPanelHeader.addEventListener('click', () => {
+    if (!activityBody.classList.contains('collapsed')) loadActivity();
+  });
 }
+
+const agentTurnsListEl = document.getElementById('agent-turns-list') as HTMLDivElement | null;
+const agentTurns = agentTurnsListEl && activityBody && activityPanelToggle
+  ? initAgentTurnsSection({
+      list: agentTurnsListEl,
+      panelBody: activityBody,
+      openPanel: () => {
+        activityBody.classList.remove('collapsed');
+        activityPanelToggle.classList.remove('collapsed');
+        document.getElementById('activity-panel')?.scrollIntoView({ block: 'start' });
+      },
+      io: {
+        list: async () => {
+          const res = await browserAPI.runtime.sendMessage({ type: 'agent_turns.list' }) as {
+            ok?: boolean; turns?: import('./page-api/agent-turns').AgentTurnRecord[]; unseen?: number;
+          };
+          return res?.ok && res.turns ? { turns: res.turns, unseen: res.unseen ?? 0 } : null;
+        },
+        markSeen: async () => { await browserAPI.runtime.sendMessage({ type: 'agent_turns.mark_seen' }); },
+      },
+    })
+  : null;
 
 type AuditTraceStep = {
   tier: number;
@@ -1859,6 +1887,7 @@ function toggleActivityDetail(row: HTMLElement): void {
 async function loadActivity(): Promise<void> {
   if (!activityList || !activitySummary) return;
   const filterEffect = activityFilterEffect?.value || undefined;
+  void agentTurns?.refresh();
   try {
     const [recordsResp, summaryResp] = await Promise.all([
       browserAPI.runtime.sendMessage({

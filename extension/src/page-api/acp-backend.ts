@@ -58,6 +58,7 @@ import {
   stopReasonOutcome,
   type CancelReason,
 } from './acp-connection';
+import { startAgentTurn, unansweredTurnOutcome, type AgentTurnRecorder } from './agent-turns';
 
 // Re-exported under this backend's existing names: acp-backend.test.ts and
 // acp-backend-races.test.ts import these from here, and the extraction into
@@ -194,6 +195,8 @@ export class AcpAgentBackend implements AgentBackend {
     };
 
     let connectionCtx: ClientContext | undefined;
+    /** Harbor's own record of this turn (agent-turns.ts), started once the prompt is sent. */
+    let recorder: AgentTurnRecorder | undefined;
 
     // `signal` may abort because the page/tab gave up (an ordinary
     // ERR_ABORTED), or because the person switched `harbor_agent_backend`
@@ -213,6 +216,7 @@ export class AcpAgentBackend implements AgentBackend {
 
     function emitStopReason(stopReason: StopReason): void {
       const outcome = stopReasonOutcome(stopReason, cancelReason);
+      recorder?.end(outcome.ok ? 'answered' : unansweredTurnOutcome(cancelReason));
       if (outcome.ok) {
         sendToken({ type: 'final', output: accumulatedText });
         send({ type: 'done' });
@@ -235,6 +239,9 @@ export class AcpAgentBackend implements AgentBackend {
           }
           return;
         case 'tool_call': {
+          // Recorded even once the run is cancelled: the agent may already
+          // have run it, and Harbor's record is where the person finds out.
+          recorder?.toolCall(update.toolCallId, update.title, update.kind);
           if (cancelReason) return;
 
           const name = update.title || update.kind || update.toolCallId;
@@ -251,6 +258,7 @@ export class AcpAgentBackend implements AgentBackend {
           return;
         }
         case 'tool_call_update': {
+          recorder?.toolCall(update.toolCallId, update.title, update.kind);
           if (cancelReason) return;
 
           const id = update.toolCallId;
@@ -349,6 +357,7 @@ export class AcpAgentBackend implements AgentBackend {
           return;
         }
 
+        recorder = startAgentTurn({ origin, api: 'agent.run', agentId: this.agentId, prompt: task });
         const result = await ctx.request(
           AGENT_METHODS.session_prompt,
           {
@@ -364,6 +373,7 @@ export class AcpAgentBackend implements AgentBackend {
         emitStopReason(result.stopReason);
       });
     } catch (e) {
+      recorder?.end(unansweredTurnOutcome(cancelReason));
       if (cancelReason) {
         send(cancelReasonEvent(cancelReason));
       } else {

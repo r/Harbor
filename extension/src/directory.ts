@@ -690,6 +690,7 @@ function init(): void {
   console.log('[Directory] BUNDLED_SERVERS:', BUNDLED_SERVERS.length);
 
   hydrateIcons();
+  void showAgentTurnsNotice();
 
   // Setup URL and file install handlers
   setupUrlInstall();
@@ -702,6 +703,33 @@ function init(): void {
   } else {
     console.error('[Directory] List element not found!');
   }
+}
+
+/**
+ * On Firefox, Harbor's toolbar button opens this popup, not the sidebar, so
+ * the badge for unseen turns on the person's own agent
+ * (page-api/agent-turns.ts) is explained here, with a way to the sidebar's
+ * activity feed. Opening the feed is what clears the badge.
+ */
+async function showAgentTurnsNotice(): Promise<void> {
+  const notice = document.getElementById('agent-turns-notice');
+  const text = document.getElementById('agent-turns-notice-text');
+  const open = document.getElementById('agent-turns-notice-open') as HTMLButtonElement | null;
+  if (!notice || !text || !open) return;
+  const res = await (browserAPI.runtime.sendMessage({ type: 'agent_turns.list' }) as Promise<{ ok?: boolean; unseen?: number }>)
+    .catch(() => null);
+  const unseen = res?.ok ? res.unseen ?? 0 : 0;
+  if (unseen === 0) return;
+  text.textContent = unseen === 1
+    ? 'Your agent used its tools on a turn whose result no site showed you.'
+    : `Your agent used its tools on ${unseen} turns whose results no site showed you.`;
+  const sidebarAction = (globalThis as { browser?: { sidebarAction?: { open(): Promise<void> } } }).browser?.sidebarAction;
+  if (!sidebarAction) return;
+  notice.style.display = 'flex';
+  open.addEventListener('click', () => {
+    // Called straight from the click: Firefox opens the sidebar only from a user action.
+    sidebarAction.open().then(() => window.close(), (error) => console.error('[Directory] Could not open the sidebar:', error));
+  });
 }
 
 // Run init when DOM is ready
