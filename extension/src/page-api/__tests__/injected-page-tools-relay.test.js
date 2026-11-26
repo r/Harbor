@@ -103,6 +103,63 @@ describe('page_tools.sync', () => {
   });
 });
 
+describe("a tool's title, outputSchema and annotations", () => {
+  const full = () => ({
+    ...tool('mark'),
+    title: 'Mark a plan',
+    outputSchema: { type: 'object', properties: { url: { type: 'string' } } },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  });
+
+  it('keeps them on document.modelContext.tools', async () => {
+    const p = page();
+    await p.mc.registerTool(full());
+    const [listed] = p.mc.tools;
+    expect(listed.title).toBe('Mark a plan');
+    expect(listed.outputSchema).toEqual({ type: 'object', properties: { url: { type: 'string' } } });
+    expect(listed.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, openWorldHint: true });
+  });
+
+  it('sends them in page_tools.sync', async () => {
+    const p = page();
+    await p.mc.registerTool(full());
+    await tick();
+    expect(p.requests('page_tools.sync').at(-1).payload.tools[0]).toEqual({
+      name: 'mark',
+      description: 'mark tool',
+      inputSchema: { type: 'object' },
+      title: 'Mark a plan',
+      outputSchema: { type: 'object', properties: { url: { type: 'string' } } },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    });
+  });
+
+  it('sends only the annotation hints it knows, so a function in annotations cannot fail the sync', async () => {
+    const p = page();
+    await p.mc.registerTool({ ...tool('a'), annotations: { readOnlyHint: true, onCall: () => 1, nested: { x: 1 } } });
+    await tick();
+    expect(p.requests('page_tools.sync').at(-1).payload.tools[0].annotations).toEqual({ readOnlyHint: true });
+  });
+
+  it('leaves out annotations with no hint it knows', async () => {
+    const p = page();
+    await p.mc.registerTool({ ...tool('a'), annotations: { trustMe: true } });
+    await tick();
+    expect('annotations' in p.mc.tools[0]).toBe(false);
+    expect('annotations' in p.requests('page_tools.sync').at(-1).payload.tools[0]).toBe(false);
+  });
+
+  it('leaves out ones of the wrong type, and still registers the tool', async () => {
+    const p = page();
+    await p.mc.registerTool({ ...tool('odd'), title: 5, outputSchema: [], annotations: 'read-only' });
+    await tick();
+    const [listed] = p.mc.tools;
+    expect(listed.name).toBe('odd');
+    expect(['title', 'outputSchema', 'annotations'].filter((k) => k in listed)).toEqual([]);
+    expect(Object.keys(p.requests('page_tools.sync').at(-1).payload.tools[0]).sort()).toEqual(['description', 'inputSchema', 'name']);
+  });
+});
+
 describe('page_tools.call from the background', () => {
   it('runs execute with the input and a signal, and answers with the result', async () => {
     const p = page();

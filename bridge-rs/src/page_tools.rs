@@ -393,10 +393,11 @@ fn initialize_result(params: &Value) -> Value {
     })
 }
 
-/// Only `name`, `description` and `inputSchema` survive from whatever the
-/// extension sends for one tool - this is page-supplied data crossing a
-/// trust boundary, so nothing else riding along with it is passed on
-/// unexamined.
+/// Only MCP's Tool fields Harbor knows (`name`, `title`, `description`,
+/// `inputSchema`, `outputSchema`, `annotations`) and Harbor's `_meta`
+/// survive from whatever the extension sends for one tool - this is
+/// page-supplied data crossing a trust boundary, so nothing else riding
+/// along with it is passed on unexamined.
 fn normalize_tool(tool: &Value) -> Value {
     let mut out = serde_json::Map::new();
     if let Some(name) = tool.get("name") {
@@ -410,6 +411,23 @@ fn normalize_tool(tool: &Value) -> Value {
         .cloned()
         .unwrap_or_else(|| json!({ "type": "object" }));
     out.insert("inputSchema".to_string(), schema);
+    // MCP's optional Tool fields, passed on only with the right type. The
+    // extension has already validated them; `annotations` are the page's own
+    // hints for the agent, and no Harbor gate reads them.
+    if let Some(title) = tool.get("title").filter(|t| t.is_string()) {
+        out.insert("title".to_string(), title.clone());
+    }
+    // MCP allows only an object-typed outputSchema; a client rejects a whole
+    // tools/list with any other.
+    if let Some(output) = tool
+        .get("outputSchema")
+        .filter(|s| s.get("type").and_then(Value::as_str) == Some("object"))
+    {
+        out.insert("outputSchema".to_string(), output.clone());
+    }
+    if let Some(annotations) = tool.get("annotations").filter(|a| a.is_object()) {
+        out.insert("annotations".to_string(), annotations.clone());
+    }
     // Harbor's own provenance for the tool (`harbor/provenance`, set by the
     // extension from the browser's record of the page's origin), so the
     // agent can see where the tool came from. Only an object is passed on.
@@ -959,6 +977,39 @@ mod tests {
         assert_eq!(tools[0]["description"], json!("does it"));
         assert_eq!(tools[0]["inputSchema"]["type"], json!("object"));
         assert!(tools[0].get("unexpectedExtraField").is_none());
+    }
+
+    #[tokio::test]
+    async fn tools_list_keeps_title_output_schema_and_annotations() {
+        let state = test_state();
+        let (endpoint_id, _port, _token) = open_for_test(&state).await;
+        let _handle = fake_extension_answering(
+            &state,
+            Ok(json!({
+                "tools": [
+                    {
+                        "name": "reading_position",
+                        "title": "Reading position",
+                        "outputSchema": { "type": "object" },
+                        "annotations": { "readOnlyHint": true },
+                    },
+                    // Wrong types are dropped, not passed on.
+                    { "name": "odd", "title": 5, "outputSchema": [], "annotations": "yes" },
+                    // MCP requires outputSchema.type "object".
+                    { "name": "list", "outputSchema": { "type": "array" } },
+                ],
+            })),
+        );
+
+        let result = relay_list(&state, &endpoint_id).await.unwrap();
+        let tools = result["tools"].as_array().unwrap();
+        assert_eq!(tools[0]["title"], json!("Reading position"));
+        assert_eq!(tools[0]["outputSchema"], json!({ "type": "object" }));
+        assert_eq!(tools[0]["annotations"], json!({ "readOnlyHint": true }));
+        assert!(tools[1].get("title").is_none());
+        assert!(tools[1].get("outputSchema").is_none());
+        assert!(tools[1].get("annotations").is_none());
+        assert!(tools[2].get("outputSchema").is_none());
     }
 
     #[tokio::test]

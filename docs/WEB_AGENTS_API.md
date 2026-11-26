@@ -592,8 +592,13 @@ registration.abort();
 |-------|----------|-------|
 | `name` | yes | 1–128 ASCII letters, digits, `_`, `-` or `.` |
 | `description` | yes | Must not be empty |
+| `title` | no | A human-readable name, passed to the agent as MCP's `title` |
 | `inputSchema` | no | JSON Schema for the input |
+| `outputSchema` | no | JSON Schema for the result. Passed to the agent only when its `type` is `"object"`, as MCP requires; return a matching object |
+| `annotations` | no | MCP's tool hints: `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`. Harbor passes on only these, with the right types. They inform the person's agent; Harbor's own permission and policy checks ignore them |
 | `execute(input, { signal })` | yes | `handler` is accepted as an older name |
+
+A `title`, `outputSchema` or `annotations` of the wrong type is left out; the tool still registers. `document.modelContext.tools` lists each tool with the fields Harbor kept.
 
 The promise rejects with:
 
@@ -649,7 +654,7 @@ Page tool errors produce `ERR_TOOL_FAILED` errors, matching the behavior of MCP 
 
 #### Page tools and the person's agent
 
-A page's tools also reach the agent work that page starts: `agent.run()`, and `agent.chat.open()` when the person has chosen their own agent. Page chat on Harbor's built-in model sends each message straight to the model, with no tools. The handlers still run in the page; only each tool's name, description and input schema leave it.
+A page's tools also reach the agent work that page starts: `agent.run()`, and `agent.chat.open()` when the person has chosen their own agent. Page chat on Harbor's built-in model sends each message straight to the model, with no tools. The handlers still run in the page; only each tool's name, description and input schema leave it, plus its `title`, `outputSchema` and `annotations` when the page sets them.
 
 - **Harbor's built-in agent** sees them in `agent.run()` as `page:<host>/<tool>`, beside Harbor's installed tools.
 - **The person's own ACP agent** (goose, Claude Code, Codex) gets them as an MCP server named after the site's host (for example `tale.example`), alongside the tools of the site's registered MCP servers (as `<server>__<tool>`), which Harbor serves on `127.0.0.1` for that session only. The agent needs to support HTTP MCP servers.
