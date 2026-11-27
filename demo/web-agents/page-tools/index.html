@@ -68,8 +68,11 @@
       // The draft's API: async, an execute callback, unregister by aborting the signal.
       mc.registerTool({
         name: 'reading_position',
+        title: 'Reading position',
         description: 'Which paragraph the reader is looking at, and the text of every paragraph with its anchor.',
         inputSchema: { type: 'object', properties: {} },
+        // Hints for the agent. Harbor passes them on; its own checks don't rely on them.
+        annotations: { readOnlyHint: true },
         execute: async () => {
           const visible = paragraphs().find((p) => p.getBoundingClientRect().bottom > 0) ?? paragraphs()[0];
           say(`page handler ran: reading_position -> ${visible.id}`);
@@ -78,8 +81,11 @@
       });
       mc.registerTool({
         name: 'go_to',
+        title: 'Go to a paragraph',
         description: 'Scroll to a paragraph by its anchor (p1 to p5) and highlight it.',
         inputSchema: { type: 'object', properties: { anchor: { type: 'string' } }, required: ['anchor'] },
+        outputSchema: { type: 'object', properties: { at: { type: 'string' } }, required: ['at'] },
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
         execute: async ({ anchor }) => {
           const el = document.getElementById(String(anchor));
           if (!el || !el.matches('.chapter p')) throw new Error(`No paragraph with anchor "${anchor}"`);

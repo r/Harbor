@@ -163,6 +163,21 @@ describe('page tools', () => {
     expect(h.deps.allowToolList).toHaveBeenCalledWith('https://tale.example', 10);
   });
 
+  it("passes on a tool's title, outputSchema and annotations, and adds none to a tool without them", async () => {
+    const h = harness();
+    const page = await openWithTools(h);
+    const outputSchema = { type: 'object', properties: { at: { type: 'number' } } };
+    h.pageTools.get(10)!.tools[0] = {
+      name: 'play', description: 'Play the passage', inputSchema: { type: 'object' },
+      title: 'Play', outputSchema, annotations: { readOnlyHint: false, idempotentHint: true },
+    } as never;
+    const r = (await h.request('list_page_tools', { page })) as unknown as { structuredContent: { tools: Array<Record<string, unknown>> } };
+    const [play, pause] = r.structuredContent.tools;
+    expect(play).toMatchObject({ name: 'play', title: 'Play', outputSchema, annotations: { readOnlyHint: false, idempotentHint: true } });
+    expect(Object.keys(pause).sort()).toEqual(['_meta', 'description', 'inputSchema', 'name']);
+    expect(JSON.parse(text(r))[0]).toMatchObject({ title: 'Play', annotations: { idempotentHint: true } });
+  });
+
   it('lists none when policy refuses them', async () => {
     const h = harness();
     const page = await openWithTools(h);

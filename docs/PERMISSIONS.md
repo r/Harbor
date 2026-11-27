@@ -407,6 +407,8 @@ The sidebar's **Activity** section lists these records, newest first, with a sum
 
 This is also what makes silent decisions visible. If the engine auto-allowed a tool call because of a policy rule, the person sees that in the feed.
 
+Above Harbor's decisions, the feed lists each turn a site ran on the person's own agent: the site, the API, the prompt, the agent's own tool calls and how the turn ended. Those tools are the agent's, not Harbor's, so no policy decision covers them; this list is how the person learns what the agent did when the page didn't show it. A turn that used tools and ended without the page getting its answer puts a count on Harbor's toolbar button. Opening the feed clears it, and the sidebar opens the feed by itself when there's such a turn. On Firefox, where the button opens the server directory, the directory says so and links to the sidebar. Harbor keeps the newest 200 turns. There's no way yet to clear them by hand. See `docs/ACP_BACKEND_DESIGN.md` section 3.
+
 **Not built yet:** filtering by time or site, and acting on a row (revoking that grant, or adding a rule from it). The **Site permissions** section's **Revoke** clears all of a site's grants.
 
 ### Decision simulator

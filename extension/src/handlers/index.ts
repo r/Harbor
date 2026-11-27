@@ -15,6 +15,7 @@ import { registerSessionHandlers } from './session-handlers';
 import { registerRemoteServerHandlers } from './remote-server-handlers';
 import { registerPageChatHandlers } from './page-chat-handlers';
 import { registerAuditHandlers } from './audit-handlers';
+import { registerAgentTurnHandlers } from './agent-turn-handlers';
 import { registerAcpAgentHandlers } from './acp-agent-handlers';
 import { registerOutsideAgentHandlers } from './agent-tabs-handlers';
 
@@ -32,6 +33,7 @@ export function initializeHandlers(): void {
   registerRemoteServerHandlers();
   registerPageChatHandlers();
   registerAuditHandlers();
+  registerAgentTurnHandlers();
   registerAcpAgentHandlers();
   registerOutsideAgentHandlers();
 
@@ -49,5 +51,6 @@ export {
   registerRemoteServerHandlers,
   registerPageChatHandlers,
   registerAuditHandlers,
+  registerAgentTurnHandlers,
   registerAcpAgentHandlers,
 };

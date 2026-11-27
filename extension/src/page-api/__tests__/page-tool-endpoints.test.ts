@@ -112,6 +112,21 @@ describe("answering the bridge's host requests", () => {
     expect(listed.tools.map((t) => t.name)).toEqual(['go_to', 'reading_position']);
   });
 
+  it("passes on a page tool's title, outputSchema and annotations", async () => {
+    const outputSchema = { type: 'object', properties: { anchor: { type: 'string' } } };
+    registry.syncPageTools(
+      { tabId: TAB, origin: ORIGIN, connection: 1, port: { postMessage: (m) => { posted.push(m); } } },
+      { tools: [
+        { name: 'reading_position', description: 'Where the reader is', title: 'Reading position', outputSchema, annotations: { readOnlyHint: true } },
+        { name: 'go_to', description: 'Scroll to an anchor' },
+      ] },
+    );
+    const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB))!;
+    const listed = await core.handlePageToolsHostRequest('page_tools.list', { endpointId }) as { tools: Array<Record<string, unknown>> };
+    expect(listed.tools[0]).toMatchObject({ name: 'reading_position', title: 'Reading position', outputSchema, annotations: { readOnlyHint: true } });
+    expect(Object.keys(listed.tools[1]).sort()).toEqual(['_meta', 'description', 'inputSchema', 'name']);
+  });
+
   it('lists nothing once the page has reloaded', async () => {
     syncPage(1);
     const { endpointId } = (await core.openPageToolEndpointForAcp(ORIGIN, TAB))!;
