@@ -1092,11 +1092,6 @@ try {
     case 'ERR_PERMISSION_DENIED':
       console.log('User denied permission');
       break;
-    case 'ERR_SCOPE_REQUIRED':
-      await window.agent.requestPermissions({
-        scopes: ['mcp:tools.list']
-      });
-      break;
     case 'ERR_TOOL_NOT_FOUND':
       console.log('Tool does not exist');
       break;
@@ -1117,30 +1112,59 @@ try {
 
 **Error Codes:**
 
+**General**
+
 | Code | Description |
 |------|-------------|
+| `ERR_PERMISSION_DENIED` | User denied permission, or declined Harbor's prompt for this call — including a missing scope Harbor asked about and the person declined (or couldn't be asked) |
 | `ERR_FEATURE_DISABLED` | Feature flag is off |
-| `ERR_PERMISSION_DENIED` | User denied permission, or declined Harbor's prompt for this call |
 | `ERR_BLOCKED_BY_POLICY` | A policy rule denied the call (see [PERMISSIONS.md](PERMISSIONS.md)) |
 | `ERR_QUARANTINED` | Harbor has quarantined this site; every call is refused until the user resets it |
-| `ERR_LABEL_FLOW_BLOCKED` | Reserved: the call's data labels may not flow to its destination. Not produced on page calls yet |
-| `ERR_SCOPE_REQUIRED` | Missing required scope |
+| `ERR_LABEL_FLOW_BLOCKED` | The policy engine's information-flow check: the call carries a data label (credentials, payments, ...) the destination doesn't accept |
+| `ERR_HARBOR_NOT_FOUND` | Harbor extension not found |
+| `ERR_TIMEOUT` | Request timed out |
+| `ERR_ABORTED` | The page aborted an `agent.run` or a `window.ai` prompt, its tab closed, or its port disconnected |
+| `ERR_INVALID_REQUEST` | The request was missing a required parameter or otherwise malformed |
+| `ERR_INTERNAL` | Internal error |
+| `ERR_NOT_IMPLEMENTED` | The requested method isn't implemented |
+| `ERR_ELEMENT_NOT_FOUND` | A browser automation call (`click`, `fill`, `select`) couldn't find the target element |
+
+**Tools, models and sessions**
+
+| Code | Description |
+|------|-------------|
 | `ERR_TOOL_NOT_FOUND` | Tool does not exist |
 | `ERR_TOOL_NOT_ALLOWED` | Tool not in allowlist |
-| `ERR_TOOL_FAILED` | Tool execution failed |
+| `ERR_TOOL_FAILED` | Tool execution failed, its handler threw, or it didn't answer within 60 seconds |
 | `ERR_MODEL_FAILED` | LLM request failed |
 | `ERR_SESSION_NOT_FOUND` | Session was destroyed |
 | `ERR_BUDGET_EXCEEDED` | A session's `maxToolCalls` budget is spent |
-| `ERR_HARBOR_NOT_FOUND` | Harbor extension not found |
+
+**Agents and multi-agent**
+
+| Code | Description |
+|------|-------------|
 | `ERR_AGENT_NOT_FOUND` | Agent not registered (or another site's, for `unregister`), or its page went away before answering |
 | `ERR_AGENT_NOT_ACCEPTING` | Agent not accepting invocations |
-| `ERR_TIMEOUT` | Request timed out |
-| `ERR_ABORTED` | The page aborted an `agent.run` or a `window.ai` prompt, its tab closed, or its port disconnected |
-| `ERR_INTERNAL` | Internal error |
 | `ERR_AGENT_FAILED` | The agent loop running `agent.run`, or a `window.ai` text session on the ACP backend, failed — a model call, or (on the ACP backend) a transport failure, an agent exit before it answered, or a JSON-RPC error |
 | `ERR_AGENT_REFUSED` | An ACP agent's turn ended with `stopReason: "refusal"` |
 | `ERR_AGENT_LIMIT` | An ACP agent's turn ended with `stopReason: "max_tokens"` or `"max_turn_requests"` |
 | `ERR_AGENT_BUSY` | Too many ACP agents are already running: this site's own cap (2 at once, counting `agent.run` and `window.ai` text sessions together), or the person's bridge-wide limit |
+| `ERR_HANDLER_FAILED` | The page's own invocation handler threw while answering an incoming call |
+| `ERR_NOT_REGISTERED` | The caller must register as an agent before sending, broadcasting or orchestrating |
+| `ERR_NO_ROUTE` | `orchestrate.route()` matched no route and no default agent |
+| `ERR_UNKNOWN_ACTION` | The policy engine has no rule for the requested action |
+
+**Chat and MCP**
+
+| Code | Description |
+|------|-------------|
+| `ERR_CHAT` | `agent.chat` call failed for a reason other than policy |
+| `ERR_CHAT_OPEN` | `agent.chat.open` failed for a reason other than policy |
+| `ERR_CHAT_CLOSE` | `agent.chat.close` failed for a reason other than policy |
+| `ERR_MCP_DISCOVER` | `agent.mcp.discover` failed for a reason other than policy |
+| `ERR_MCP_REGISTER` | `agent.mcp.register` failed for a reason other than policy |
+| `ERR_MCP_UNREGISTER` | `agent.mcp.unregister` failed for a reason other than policy |
 
 ---
 

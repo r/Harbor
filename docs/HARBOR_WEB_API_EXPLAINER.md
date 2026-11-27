@@ -1158,21 +1158,40 @@ window.harbor = {
 // =============================================================================
 
 enum ApiErrorCode {
-  "ERR_NOT_INSTALLED",
   "ERR_PERMISSION_DENIED",
+  "ERR_FEATURE_DISABLED",
+  "ERR_TOOL_NOT_ALLOWED",
+  "ERR_TOOL_NOT_FOUND",
+  "ERR_TOOL_FAILED",
+  "ERR_MODEL_FAILED",
+  "ERR_SESSION_NOT_FOUND",
+  "ERR_BUDGET_EXCEEDED",
+  "ERR_HARBOR_NOT_FOUND",
+  "ERR_TIMEOUT",
+  "ERR_INVALID_REQUEST",
+  "ERR_ELEMENT_NOT_FOUND",
+  "ERR_AGENT_FAILED",
+  "ERR_ABORTED",
+  "ERR_HANDLER_FAILED",
+  "ERR_INTERNAL",
+  "ERR_AGENT_NOT_FOUND",
+  "ERR_AGENT_NOT_ACCEPTING",
+  "ERR_AGENT_REFUSED",
+  "ERR_AGENT_LIMIT",
+  "ERR_AGENT_BUSY",
+  "ERR_NOT_IMPLEMENTED",
   "ERR_BLOCKED_BY_POLICY",
   "ERR_QUARANTINED",
   "ERR_LABEL_FLOW_BLOCKED",
-  "ERR_USER_GESTURE_REQUIRED",
-  "ERR_SCOPE_REQUIRED",
-  "ERR_TOOL_NOT_ALLOWED",
-  "ERR_TOOL_FAILED",
-  "ERR_MODEL_FAILED",
-  "ERR_NOT_IMPLEMENTED",
-  "ERR_SESSION_NOT_FOUND",
-  "ERR_BUDGET_EXCEEDED",
-  "ERR_TIMEOUT",
-  "ERR_INTERNAL"
+  "ERR_UNKNOWN_ACTION",
+  "ERR_NOT_REGISTERED",
+  "ERR_NO_ROUTE",
+  "ERR_CHAT",
+  "ERR_CHAT_OPEN",
+  "ERR_CHAT_CLOSE",
+  "ERR_MCP_DISCOVER",
+  "ERR_MCP_REGISTER",
+  "ERR_MCP_UNREGISTER"
 };
 
 dictionary ApiError {
@@ -1458,7 +1477,7 @@ partial interface Window {
 │     └─► Checks DENY grants → Reject immediately                       │
 │     └─► Checks ALWAYS grants → Proceed                                │
 │     └─► Checks ONCE grants → Check expiry & tab → Proceed/Reject     │
-│     └─► Missing? → Return ERR_SCOPE_REQUIRED                          │
+│     └─► Missing? → Return ERR_PERMISSION_DENIED                       │
 │                                                                        │
 │  4. Tool Calls (additional layer)                                      │
 │     └─► Check tool allowlist for origin                               │
@@ -2005,17 +2024,17 @@ const caps = await window.agent.capabilities();
 
 ## Appendix: Error Codes Reference
 
+See [docs/WEB_AGENTS_API.md#error-handling](WEB_AGENTS_API.md#error-handling) for the full list. The ones this explainer's examples hit:
+
 | Code | Description | When Thrown |
 |------|-------------|-------------|
-| `ERR_NOT_INSTALLED` | Extension not installed | Any API call without extension |
-| `ERR_PERMISSION_DENIED` | User denied permission | Permission prompt rejected |
+| `ERR_HARBOR_NOT_FOUND` | Harbor extension not found | `window.agent`/`window.ai` don't exist, or Harbor's own helpers detect that |
+| `ERR_PERMISSION_DENIED` | User denied permission, or a required scope was missing and the person declined (or couldn't be asked) | Permission prompt rejected |
 | `ERR_BLOCKED_BY_POLICY` | A policy rule denied the call | Tool call, prompt or `agent.run` refused by a user or organization rule |
 | `ERR_QUARANTINED` | The site is quarantined | Any gated call after Harbor's watchdog quarantined the site |
-| `ERR_LABEL_FLOW_BLOCKED` | Data labels can't flow to the destination | Reserved; not produced on page calls yet |
-| `ERR_USER_GESTURE_REQUIRED` | Needs user interaction | `activeTab.read` without gesture |
-| `ERR_SCOPE_REQUIRED` | Missing required permission | API call without required scope |
+| `ERR_LABEL_FLOW_BLOCKED` | Data labels can't flow to the destination | A call carries a data label the destination doesn't accept |
 | `ERR_TOOL_NOT_ALLOWED` | Tool not in allowlist | `tools.call` with blocked tool |
-| `ERR_TOOL_FAILED` | Tool execution failed | MCP tool error |
+| `ERR_TOOL_FAILED` | Tool execution failed | MCP tool error, or a page tool whose handler threw or didn't answer in time |
 | `ERR_MODEL_FAILED` | LLM request failed | Backend unavailable |
 | `ERR_NOT_IMPLEMENTED` | Feature not available | `web:fetch` in v1 |
 | `ERR_SESSION_NOT_FOUND` | Session was destroyed | Operation on destroyed session |

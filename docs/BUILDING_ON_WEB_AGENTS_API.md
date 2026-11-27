@@ -450,10 +450,7 @@ try {
       // User must enable the feature in the extension
       break;
     case 'ERR_PERMISSION_DENIED':
-      // User denied; show fallback or re-request
-      break;
-    case 'ERR_SCOPE_REQUIRED':
-      await window.agent.requestPermissions({ scopes: ['mcp:tools.list'], reason: '...' });
+      // User denied, or a required scope was missing and they declined; show fallback or re-request
       break;
     case 'ERR_TOOL_NOT_FOUND':
     case 'ERR_TOOL_NOT_ALLOWED':
@@ -471,7 +468,7 @@ try {
 }
 ```
 
-**Common codes:** `ERR_FEATURE_DISABLED`, `ERR_PERMISSION_DENIED`, `ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`, `ERR_SCOPE_REQUIRED`, `ERR_TOOL_NOT_FOUND`, `ERR_TOOL_NOT_ALLOWED`, `ERR_TOOL_FAILED`, `ERR_MODEL_FAILED`, `ERR_SESSION_NOT_FOUND`, `ERR_BUDGET_EXCEEDED`, `ERR_HARBOR_NOT_FOUND`, `ERR_AGENT_NOT_FOUND`, `ERR_TIMEOUT`, `ERR_INTERNAL`.
+**Common codes:** `ERR_FEATURE_DISABLED`, `ERR_PERMISSION_DENIED`, `ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`, `ERR_TOOL_NOT_FOUND`, `ERR_TOOL_NOT_ALLOWED`, `ERR_TOOL_FAILED`, `ERR_MODEL_FAILED`, `ERR_SESSION_NOT_FOUND`, `ERR_BUDGET_EXCEEDED`, `ERR_HARBOR_NOT_FOUND`, `ERR_AGENT_NOT_FOUND`, `ERR_TIMEOUT`, `ERR_INTERNAL`. See [WEB_AGENTS_API.md#error-handling](WEB_AGENTS_API.md#error-handling) for the full list.
 
 ---
 

@@ -142,7 +142,7 @@ mock.uninstall();
 | Another agent invokes or messages your page | `mock.agents.invokePage(fromId, request)`, `mock.agents.sendToPage(fromId, payload)` |
 | `multiAgent` feature on (off by default, as in Harbor) | `mock.agents.featureEnabled = true` |
 
-Error `code` values should match the real API (e.g. `ERR_PERMISSION_DENIED`, `ERR_SCOPE_REQUIRED`, `ERR_MODEL_FAILED`, `ERR_TOOL_NOT_FOUND`, `ERR_TOOL_FAILED`, `ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`).
+Error `code` values should match the real API (e.g. `ERR_PERMISSION_DENIED`, `ERR_MODEL_FAILED`, `ERR_TOOL_NOT_FOUND`, `ERR_TOOL_FAILED`, `ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED` — see [WEB_AGENTS_API.md#error-handling](WEB_AGENTS_API.md#error-handling)).
 
 ### Example (Vitest)
 
@@ -152,7 +152,7 @@ See `harbor-test/example.test.mjs`, and `harbor-test/example.capabilities.test.m
 npx vitest run harbor-test/example.test.mjs
 ```
 
-`harbor-test/example.multi-agent.test.mjs` shows a multi-agent flow: register, discover, invoke and message. In Harbor, calling `agent.agents.*` without the scope shows a permission prompt. The mock fails with `ERR_SCOPE_REQUIRED` instead, so the test shows whether your page requests the scope first. The generated `harbor-test/README.md` lists what the agents mock leaves out.
+`harbor-test/example.multi-agent.test.mjs` shows a multi-agent flow: register, discover, invoke and message. In Harbor, calling `agent.agents.*` without the scope shows a permission prompt. The mock fails with `ERR_PERMISSION_DENIED` instead, so the test shows whether your page requests the scope first. The generated `harbor-test/README.md` lists what the agents mock leaves out.
 
 ---
 

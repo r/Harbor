@@ -976,27 +976,22 @@ manager.setSecrets('server-id', {
 
 ## Error Handling
 
-All APIs use consistent error codes:
+All APIs use consistent error codes. See [docs/WEB_AGENTS_API.md#error-handling](WEB_AGENTS_API.md#error-handling) for the full list; the ones you'll hit most from this guide's APIs:
 
 | Code | Description |
 |------|-------------|
-| `ERR_NOT_INSTALLED` | Extension not installed |
+| `ERR_HARBOR_NOT_FOUND` | Harbor extension not found |
 | `ERR_PERMISSION_DENIED` | User denied permission, or declined Harbor's prompt for this call |
 | `ERR_BLOCKED_BY_POLICY` | A policy rule denied the call |
 | `ERR_QUARANTINED` | Harbor has quarantined the site |
-| `ERR_LABEL_FLOW_BLOCKED` | Reserved for data-label flow checks; not produced on page calls yet |
-| `ERR_USER_GESTURE_REQUIRED` | Needs user interaction (click) |
-| `ERR_SCOPE_REQUIRED` | Missing required permission scope |
+| `ERR_LABEL_FLOW_BLOCKED` | The call carries a data label the destination doesn't accept |
 | `ERR_TOOL_NOT_ALLOWED` | Tool not in allowlist |
 | `ERR_TOOL_NOT_FOUND` | Tool does not exist |
-| `ERR_TOOL_FAILED` | Tool execution failed |
-| `ERR_TOOL_TIMEOUT` | Tool call timed out |
+| `ERR_TOOL_FAILED` | Tool execution failed, or didn't answer in time |
 | `ERR_MODEL_FAILED` | LLM request failed |
 | `ERR_NOT_IMPLEMENTED` | Feature not available |
 | `ERR_SESSION_NOT_FOUND` | Session was destroyed |
 | `ERR_TIMEOUT` | Request timed out |
-| `ERR_SERVER_UNAVAILABLE` | MCP server not available |
-| `ERR_RATE_LIMITED` | Rate limit exceeded |
 | `ERR_BUDGET_EXCEEDED` | Budget exceeded for run |
 | `ERR_INTERNAL` | Internal error |
 
@@ -1006,9 +1001,6 @@ try {
   const tools = await window.agent.tools.list();
 } catch (err) {
   switch (err.code) {
-    case 'ERR_SCOPE_REQUIRED':
-      await window.agent.requestPermissions({ scopes: ['mcp:tools.list'] });
-      break;
     case 'ERR_PERMISSION_DENIED':
       console.log('User denied permission');
       break;

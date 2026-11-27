@@ -87,7 +87,7 @@ This document outlines a plan to make it easy for developers building on top of 
 - **`window.agent.tools.list()`** – Return configurable list of tools.
 - **`window.agent.tools.call({ tool, args })`** – Return configurable result or throw with `code` (e.g. `ERR_TOOL_NOT_FOUND`).
 - **`window.agent.run({ task, ... })`** – AsyncIterable of events: `status`, `tool_call`, `tool_result`, `token`, `final`, `error` (configurable).
-- **Error shape** – Objects with `code` and `message` matching real API (`ERR_PERMISSION_DENIED`, `ERR_SCOPE_REQUIRED`, etc.).
+- **Error shape** – Objects with `code` and `message` matching real API (`ERR_PERMISSION_DENIED`, `ERR_TOOL_FAILED`, etc. — see [WEB_AGENTS_API.md#error-handling](WEB_AGENTS_API.md#error-handling)).
 
 **Usage pattern (in 3rd party app):**
 
