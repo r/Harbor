@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **One list of error codes.** An invocation Harbor couldn't deliver used to fail with one of seven codes no doc described. It now fails with the documented code for what happened: `ERR_AGENT_NOT_ACCEPTING` when the agent doesn't take invocations or has no handler (was `ERR_NOT_ACCEPTED` or `ERR_NO_HANDLER`), `ERR_AGENT_NOT_FOUND` when its page can't be reached (was `ERR_NO_TAB` or `ERR_SEND_FAILED`), and `ERR_INTERNAL` when Harbor's own delivery fails (was `ERR_FORWARD_FAILED` or `ERR_INVOCATION_FAILED`). [docs/WEB_AGENTS_API.md](docs/WEB_AGENTS_API.md#error-handling) now lists every code Harbor sends, and a test keeps that table, the other docs and the code in step.
+- The generated test harness's mock failed a call without its scope with `ERR_SCOPE_REQUIRED`, which Harbor never sends. It now fails with `ERR_PERMISSION_DENIED`, as Harbor does when the person declines.
+
 - `agent.mcp.discover()` reads `<link rel="mcp">` as well as `<link rel="mcp-server">`, and matches either as one token of a rel list, so `rel="alternate mcp-server"` counts. A link without `data-transport` now reports `transport: "streamable-http"`, MCP's current transport, instead of `"sse"`. A page that passes that value to `agent.mcp.register()` for an SSE-only server should add `data-transport="sse"` to its link, as the Bring Your Own Chatbot demo does.
 - `agent.mcp.register()` called without a `transport` now connects over streamable HTTP instead of SSE, matching what `discover()` reports. A page whose server speaks only SSE should pass `transport: 'sse'`.
 - `docs/LLMS.txt` listed `'stdio'` as a transport for `agent.mcp.register()`, which refuses it, and left out `'websocket'`, which it accepts. It now lists `'streamable-http' | 'sse' | 'websocket'`.
@@ -139,6 +142,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Error codes Harbor documented but never sent: `ERR_USER_GESTURE_REQUIRED`, `ERR_SCOPE_REQUIRED`, `ERR_NOT_INSTALLED`, `ERR_TOOL_TIMEOUT`, `ERR_RATE_LIMITED` and a few MCP and bridge codes. They're gone from the docs and the spec. A missing scope is `ERR_PERMISSION_DENIED`, a page tool that times out is `ERR_TOOL_FAILED`, and a page without Harbor has no `window.agent` at all.
 - The sidebar's **Open Chat** button and the chat page bundled inside the extension. That page ran its own copy of `window.agent` with every permission treated as granted, so it skipped the permission checks and loop fixes that web pages get. To chat with tools, use the demo-site chat (`demo/web-agents/chat-poc/`), which goes through the same `agent.run` as any site. The extension also no longer exposes `demo/*` or `demo-bootstrap.js` to web pages.
 - The old Jekyll scaffolding under `whitepaper/` (`_config.yml`, `_layouts/`, `Gemfile`, `index.md`, `landscape.md`) — replaced by static HTML. `.nojekyll` added so GitHub Pages serves the files as authored.
 
