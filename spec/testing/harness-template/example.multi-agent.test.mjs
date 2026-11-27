@@ -72,7 +72,7 @@ describe('multi-agent flow against the mock', () => {
     expect(permission.scopes['model:prompt']).toBe('granted-always');
     expect(permission.scopes['agents:register']).toBe('not-granted');
 
-    await expect(agent.agents.register({ name: 'Writer' })).rejects.toMatchObject({ code: 'ERR_SCOPE_REQUIRED' });
+    await expect(agent.agents.register({ name: 'Writer' })).rejects.toMatchObject({ code: 'ERR_PERMISSION_DENIED' });
   });
 
   it('finds the page\'s own agent too, and forgets it after unregister', async () => {

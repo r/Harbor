@@ -170,18 +170,13 @@ tool.call("filesystem/read_file", {...})
         │
         ▼
 ┌─────────────────────────────┐
-│ 1. Check mcp:tools.call     │──▶ ERR_SCOPE_REQUIRED
+│ 1. Check mcp:tools.call     │──▶ ERR_PERMISSION_DENIED
 │    permission               │
 └─────────────────────────────┘
         │ ✓
         ▼
 ┌─────────────────────────────┐
 │ 2. Check tool in allowlist  │──▶ ERR_TOOL_NOT_ALLOWED
-└─────────────────────────────┘
-        │ ✓
-        ▼
-┌─────────────────────────────┐
-│ 3. Check rate limits        │──▶ ERR_RATE_LIMITED
 └─────────────────────────────┘
         │ ✓
         ▼

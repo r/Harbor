@@ -231,7 +231,7 @@ export async function invokeAgent(
   if (!toAgent.acceptsInvocations) {
     return {
       success: false,
-      error: { code: 'ERR_NOT_ACCEPTED', message: 'Target agent does not accept invocations' },
+      error: { code: 'ERR_AGENT_NOT_ACCEPTING', message: 'Target agent does not accept invocations' },
       executionTime: Date.now() - startTime,
     };
   }
@@ -241,7 +241,7 @@ export async function invokeAgent(
     console.log(`[TRACE ${trace}] ERROR - no handler for ${request.agentId}`);
     return {
       success: false,
-      error: { code: 'ERR_NO_HANDLER', message: 'Target agent has no invocation handler' },
+      error: { code: 'ERR_AGENT_NOT_ACCEPTING', message: 'Target agent has no invocation handler' },
       executionTime: Date.now() - startTime,
     };
   }
@@ -293,7 +293,7 @@ export async function invokeAgent(
     return {
       success: false,
       error: {
-        code: 'ERR_INVOCATION_FAILED',
+        code: 'ERR_INTERNAL',
         message: error instanceof Error ? error.message : 'Invocation failed',
       },
       executionTime: Date.now() - startTime,

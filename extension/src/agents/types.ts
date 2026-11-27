@@ -9,55 +9,15 @@
 // Error Types
 // =============================================================================
 
-export type ApiErrorCode =
-  | 'ERR_NOT_INSTALLED'
-  | 'ERR_PERMISSION_DENIED'
-  | 'ERR_USER_GESTURE_REQUIRED'
-  | 'ERR_SCOPE_REQUIRED'
-  | 'ERR_TOOL_NOT_ALLOWED'
-  | 'ERR_TOOL_FAILED'
-  | 'ERR_MODEL_FAILED'
-  | 'ERR_NOT_IMPLEMENTED'
-  | 'ERR_SESSION_NOT_FOUND'
-  | 'ERR_TIMEOUT'
-  // The caller stopped waiting while Harbor's policy check ran.
-  | 'ERR_ABORTED'
-  | 'ERR_INTERNAL'
-  | 'ERR_INVALID_REQUEST'
-  // Multi-agent: the caller hasn't registered as an agent.
-  | 'ERR_NOT_REGISTERED'
-  // Multi-agent: no such agent, or one the caller may not act on.
-  | 'ERR_AGENT_NOT_FOUND'
-  // Typed-permission decisions surface these.
-  | 'ERR_BLOCKED_BY_POLICY'
-  | 'ERR_LABEL_FLOW_BLOCKED'
-  | 'ERR_UNKNOWN_ACTION'
-  | 'ERR_QUARANTINED';
+import type { ErrorCode } from '../page-api/types';
+
+/** Harbor's error codes; the list itself is `ErrorCodes` in page-api/types.ts. */
+export type ApiErrorCode = ErrorCode;
 
 export interface ApiError {
   code: ApiErrorCode;
   message: string;
   details?: unknown;
-}
-
-export class WebAgentError extends Error {
-  code: ApiErrorCode;
-  details?: unknown;
-
-  constructor(code: ApiErrorCode, message: string, details?: unknown) {
-    super(message);
-    this.name = 'WebAgentError';
-    this.code = code;
-    this.details = details;
-  }
-
-  toJSON(): ApiError {
-    return {
-      code: this.code,
-      message: this.message,
-      details: this.details,
-    };
-  }
 }
 
 // =============================================================================

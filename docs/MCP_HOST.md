@@ -244,18 +244,15 @@ const stats = host.getStats();
 
 ## Error Codes
 
+See [WEB_AGENTS_API.md#error-handling](WEB_AGENTS_API.md#error-handling) for the full list.
+
 | Code | Description |
 |------|-------------|
-| `ERR_PERMISSION_DENIED` | Caller lacks required permission |
-| `ERR_SCOPE_REQUIRED` | Permission scope required but not granted |
-| `ERR_SERVER_UNAVAILABLE` | MCP server is not available/connected |
+| `ERR_PERMISSION_DENIED` | Caller lacks required permission, or a required scope was missing and they declined |
 | `ERR_TOOL_NOT_FOUND` | Requested tool does not exist |
 | `ERR_TOOL_NOT_ALLOWED` | Tool is not in the allowlist |
-| `ERR_TOOL_TIMEOUT` | Tool invocation timed out |
-| `ERR_TOOL_FAILED` | Tool invocation failed |
-| `ERR_PROTOCOL_ERROR` | MCP protocol error |
+| `ERR_TOOL_FAILED` | Tool invocation failed — including a down server, a protocol error, or a timeout |
 | `ERR_INTERNAL` | Internal host error |
-| `ERR_RATE_LIMITED` | Rate limit exceeded |
 | `ERR_BUDGET_EXCEEDED` | Budget exceeded for run |
 
 ## Server Lifecycle
@@ -422,6 +419,6 @@ The implementation supports the following acceptance tests:
 ### Tool Call Correctness
 - ✅ Call known tool succeeds
 - ✅ Unknown tool returns ERR_TOOL_NOT_FOUND
-- ✅ Tool timeout returns ERR_TOOL_TIMEOUT
-- ✅ Server down returns ERR_SERVER_UNAVAILABLE
+- ✅ Tool timeout returns ERR_TOOL_FAILED
+- ✅ Server down returns ERR_TOOL_FAILED
 

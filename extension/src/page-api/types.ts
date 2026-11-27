@@ -328,16 +328,17 @@ export interface ApiError {
   message: string;
 }
 
-// Error codes
+/**
+ * Harbor's one list of the error codes a page can see. Everything that sends
+ * a page an error uses one of these; `error-codes-list.test.ts` fails if the
+ * source emits an `ERR_*` code that isn't here.
+ */
 export const ErrorCodes = {
-  NOT_INSTALLED: 'ERR_NOT_INSTALLED',
   PERMISSION_DENIED: 'ERR_PERMISSION_DENIED',
-  SCOPE_REQUIRED: 'ERR_SCOPE_REQUIRED',
   FEATURE_DISABLED: 'ERR_FEATURE_DISABLED',
   TOOL_NOT_ALLOWED: 'ERR_TOOL_NOT_ALLOWED',
   TOOL_NOT_FOUND: 'ERR_TOOL_NOT_FOUND',
   TOOL_FAILED: 'ERR_TOOL_FAILED',
-  TOOL_TIMEOUT: 'ERR_TOOL_TIMEOUT',
   MODEL_FAILED: 'ERR_MODEL_FAILED',
   SESSION_NOT_FOUND: 'ERR_SESSION_NOT_FOUND',
   BUDGET_EXCEEDED: 'ERR_BUDGET_EXCEEDED',
@@ -360,7 +361,30 @@ export const ErrorCodes = {
    * See docs/ACP_BACKEND_DESIGN.md sections 2 and 3.
    */
   AGENT_BUSY: 'ERR_AGENT_BUSY',
+  NOT_IMPLEMENTED: 'ERR_NOT_IMPLEMENTED',
+
+  // The policy engine's refusals (see POLICY_REFUSAL_CODES and
+  // docs/PERMISSIONS.md).
+  BLOCKED_BY_POLICY: 'ERR_BLOCKED_BY_POLICY',
+  QUARANTINED: 'ERR_QUARANTINED',
+  LABEL_FLOW_BLOCKED: 'ERR_LABEL_FLOW_BLOCKED',
+  UNKNOWN_ACTION: 'ERR_UNKNOWN_ACTION',
+
+  // Multi-agent registration and orchestration.
+  NOT_REGISTERED: 'ERR_NOT_REGISTERED',
+  NO_ROUTE: 'ERR_NO_ROUTE',
+
+  // agent.chat and agent.mcp calls that failed for a reason other than policy.
+  CHAT: 'ERR_CHAT',
+  CHAT_OPEN: 'ERR_CHAT_OPEN',
+  CHAT_CLOSE: 'ERR_CHAT_CLOSE',
+  MCP_DISCOVER: 'ERR_MCP_DISCOVER',
+  MCP_REGISTER: 'ERR_MCP_REGISTER',
+  MCP_UNREGISTER: 'ERR_MCP_UNREGISTER',
 } as const;
+
+/** One of Harbor's error codes. */
+export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
 
 // =============================================================================
 // Multi-Agent Types

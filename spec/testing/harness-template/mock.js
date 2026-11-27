@@ -149,11 +149,12 @@ export function installWebAgentsMock(global) {
   }
 
   // Harbor asks the user when a page calls the agent API without the scope.
-  // The mock can't show that prompt, so it fails instead: a test then shows
-  // whether the page requested the scope before using it.
+  // The mock can't show that prompt, so it fails as Harbor does when the
+  // person declines: a test then shows whether the page requested the scope
+  // before using it.
   function requireScope(scope) {
     if (!state.granted.has(scope)) {
-      throw createApiError('ERR_SCOPE_REQUIRED', `Permission "${scope}" is required. Request it with agent.requestPermissions().`);
+      throw createApiError('ERR_PERMISSION_DENIED', `Permission "${scope}" is required. Request it with agent.requestPermissions().`);
     }
   }
 
@@ -333,10 +334,10 @@ export function installWebAgentsMock(global) {
       // Error codes and messages from extension/src/multi-agent/messaging.ts.
       if (!target) return { success: false, error: { code: 'ERR_AGENT_NOT_FOUND', message: 'Target agent not found' } };
       if (!target.info.acceptsInvocations) {
-        return { success: false, error: { code: 'ERR_NOT_ACCEPTED', message: 'Target agent does not accept invocations' } };
+        return { success: false, error: { code: 'ERR_AGENT_NOT_ACCEPTING', message: 'Target agent does not accept invocations' } };
       }
       if (!target.onInvoke) {
-        return { success: false, error: { code: 'ERR_NO_HANDLER', message: 'Target agent has no invocation handler' } };
+        return { success: false, error: { code: 'ERR_AGENT_NOT_ACCEPTING', message: 'Target agent has no invocation handler' } };
       }
       return runInvocation(agentId, target.info, target.onInvoke, { ...request, from });
     },
@@ -482,7 +483,7 @@ export function installWebAgentsMock(global) {
       async invokePage(fromAgentId, request) {
         const handler = agentsState.invokeHandlers[0];
         if (!agentsState.pageAgentId || !handler) {
-          return { success: false, error: { code: 'ERR_NO_HANDLER', message: 'Target agent has no invocation handler' } };
+          return { success: false, error: { code: 'ERR_AGENT_NOT_ACCEPTING', message: 'Target agent has no invocation handler' } };
         }
         return runInvocation(agentsState.pageAgentId, agentsState.pageAgent, handler, { ...request, from: fromAgentId });
       },

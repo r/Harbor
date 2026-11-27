@@ -47,7 +47,6 @@ const registeredAgents = new Map<string, {
 // on the real handler's behalf.
 const pendingInvocations = new Map<string, {
   resolve: (response: unknown) => void;
-  reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
   tabId: number;
   /** When the invocation was sent to the tab's page. */
@@ -118,7 +117,7 @@ export async function handleIncomingInvocation(
   console.log(`[TRACE ${trace}] handleIncomingInvocation - agentId: ${agentId}, tabId: ${tabId}`);
   
   if (!tabId) {
-    return { success: false, error: { code: 'ERR_NO_TAB', message: 'Agent tab not found' } };
+    return { success: false, error: { code: 'ERR_AGENT_NOT_FOUND', message: 'Agent tab not found' } };
   }
 
   // Send nothing to the tab unless the page that registered the agent is
@@ -164,7 +163,6 @@ export async function handleIncomingInvocation(
 
     pendingInvocations.set(invocationId, {
       resolve: (response) => settle(response as { success: boolean; result?: unknown; error?: { code: string; message: string } }),
-      reject: (error) => settle({ success: false, error: { code: 'ERR_FAILED', message: error.message } }),
       timeout: timeoutId,
       tabId: tabId!,
       sentAt: Date.now(),
@@ -182,7 +180,7 @@ export async function handleIncomingInvocation(
       input: request.input,
       traceId: trace,
     }).catch((error) => {
-      settle({ success: false, error: { code: 'ERR_SEND_FAILED', message: error.message } });
+      settle({ success: false, error: { code: 'ERR_AGENT_NOT_FOUND', message: `The agent's page can't be reached: ${error.message}` } });
     });
 
     if (signal?.aborted) onAbort();
