@@ -142,7 +142,7 @@ mock.uninstall();
 | Another agent invokes or messages your page | `mock.agents.invokePage(fromId, request)`, `mock.agents.sendToPage(fromId, payload)` |
 | `multiAgent` feature on (off by default, as in Harbor) | `mock.agents.featureEnabled = true` |
 
-Error `code` values should match the real API (e.g. `ERR_PERMISSION_DENIED`, `ERR_MODEL_FAILED`, `ERR_TOOL_NOT_FOUND`, `ERR_TOOL_FAILED`, `ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED`).
+Error `code` values should match the real API (e.g. `ERR_PERMISSION_DENIED`, `ERR_MODEL_FAILED`, `ERR_TOOL_NOT_FOUND`, `ERR_TOOL_FAILED`, `ERR_BLOCKED_BY_POLICY`, `ERR_QUARANTINED` — see [WEB_AGENTS_API.md#error-handling](WEB_AGENTS_API.md#error-handling)).
 
 ### Example (Vitest)
 

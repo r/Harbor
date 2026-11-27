@@ -826,7 +826,7 @@ Request arrives with origin "https://example.com"
 └───────────────────────────┘
         │
         ▼
-Return ERR_SCOPE_REQUIRED
+Return ERR_PERMISSION_DENIED
 ```
 
 ---
@@ -940,50 +940,24 @@ All persistent data is stored in `~/.harbor/`:
 
 ## Error Codes
 
-Error codes are standardized in `shared/protocol.ts` and used across all layers:
+A sample of the codes these layers return:
 
-### Connection & Discovery
 | Code | Description |
 |------|-------------|
 | `ERR_HARBOR_NOT_FOUND` | Harbor extension not found or not connected |
-| `ERR_BRIDGE_NOT_CONNECTED` | Native bridge not connected |
-| `ERR_NOT_INSTALLED` | Extension not installed |
-
-### Request Errors
-| Code | Description |
-|------|-------------|
 | `ERR_TIMEOUT` | Request timed out |
 | `ERR_INVALID_REQUEST` | Invalid request format |
-| `ERR_NOT_SUPPORTED` | Method not supported (e.g., Safari limitations) |
-
-### Permission Errors
-| Code | Description |
-|------|-------------|
 | `ERR_PERMISSION_DENIED` | Permission denied by user or policy |
-| `ERR_SCOPE_REQUIRED` | Required scope not granted |
 | `ERR_TOOL_NOT_ALLOWED` | Tool not in allowlist |
-| `ERR_ORIGIN_DENIED` | Origin not allowed |
-
-### Resource Errors
-| Code | Description |
-|------|-------------|
-| `ERR_NOT_FOUND` | Resource not found |
 | `ERR_SESSION_NOT_FOUND` | Session not found |
 | `ERR_AGENT_NOT_FOUND` | Agent not found |
-| `ERR_SERVER_NOT_FOUND` | Server not found |
-
-### Operation Errors
-| Code | Description |
-|------|-------------|
 | `ERR_TOOL_FAILED` | Tool execution failed |
 | `ERR_MODEL_FAILED` | Model/LLM execution failed |
 | `ERR_AGENT_NOT_ACCEPTING` | Agent not accepting requests |
 | `ERR_BUDGET_EXCEEDED` | Budget exceeded (tool calls, tokens, etc.) |
-
-### Internal Errors
-| Code | Description |
-|------|-------------|
 | `ERR_INTERNAL` | Internal error |
+
+See [docs/WEB_AGENTS_API.md#error-handling](docs/WEB_AGENTS_API.md#error-handling) for the full list.
 
 ---
 

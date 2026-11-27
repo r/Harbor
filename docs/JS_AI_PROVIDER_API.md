@@ -1133,15 +1133,13 @@ interface ApiError {
 }
 
 type ApiErrorCode =
-  | 'ERR_NOT_INSTALLED'        // Extension not installed
-  | 'ERR_PERMISSION_DENIED'    // User denied permission
+  | 'ERR_HARBOR_NOT_FOUND'     // Harbor extension not found
+  | 'ERR_PERMISSION_DENIED'    // User denied permission, or a required scope was missing and they declined
   | 'ERR_BLOCKED_BY_POLICY'    // A policy rule denied the call
   | 'ERR_QUARANTINED'          // Harbor has quarantined the site
-  | 'ERR_LABEL_FLOW_BLOCKED'   // Reserved; not produced on page calls yet
-  | 'ERR_USER_GESTURE_REQUIRED'// Needs user interaction (click)
-  | 'ERR_SCOPE_REQUIRED'       // Missing required permission scope
+  | 'ERR_LABEL_FLOW_BLOCKED'   // A call carries a data label the destination doesn't accept
   | 'ERR_TOOL_NOT_ALLOWED'     // Tool not in allowlist
-  | 'ERR_TOOL_FAILED'          // Tool execution failed
+  | 'ERR_TOOL_FAILED'          // Tool execution failed, or didn't answer in time
   | 'ERR_MODEL_FAILED'         // LLM request failed
   | 'ERR_NOT_IMPLEMENTED'      // Feature not available
   | 'ERR_SESSION_NOT_FOUND'    // Session was destroyed
@@ -1149,18 +1147,16 @@ type ApiErrorCode =
   | 'ERR_INTERNAL'             // Internal error
 ```
 
+See [WEB_AGENTS_API.md#error-handling](WEB_AGENTS_API.md#error-handling) for the full list.
+
 **Example error handling:**
 ```javascript
 try {
   const tools = await window.agent.tools.list();
 } catch (err) {
   switch (err.code) {
-    case 'ERR_SCOPE_REQUIRED':
-      console.log('Need to request mcp:tools.list permission first');
-      await window.agent.requestPermissions({ scopes: ['mcp:tools.list'] });
-      break;
     case 'ERR_PERMISSION_DENIED':
-      console.log('User denied permission');
+      console.log('User denied permission, or declined a required scope');
       break;
     default:
       console.error('Unexpected error:', err.message);
