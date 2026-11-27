@@ -720,6 +720,26 @@ describe("Harbor's own answers", () => {
     expect(result.provenance).toBeUndefined();
   });
 
+  it("are ERR_AGENT_NOT_FOUND, with no provenance, when the invocation can't be sent to the agent's tab", async () => {
+    const tab1 = connectPort('https://a.example/page', 1);
+    const tab2 = connectPort('https://b.example/page', 2);
+    const agentId = await registerHandlerAgent(tab1, 'handler');
+    await registerHandlerAgent(tab2, 'invoker');
+
+    tabsSendMessage.mockImplementationOnce(() => Promise.reject(new Error('Receiving end does not exist')));
+    const { settled } = await invokeBelowPagePort(agentId);
+    await vi.waitFor(() => expect(settled()).toBeDefined());
+    const result = settled()!.result as { error?: { code: string }; provenance?: unknown };
+    expect(result.error?.code).toBe('ERR_AGENT_NOT_FOUND');
+    expect(result.provenance).toBeUndefined();
+  });
+
+  it('are ERR_AGENT_NOT_FOUND when Harbor knows no tab for the agent', async () => {
+    const { handleIncomingInvocation } = await import('../handlers/agent-handlers');
+    const response = await handleIncomingInvocation('agent-with-no-tab', { from: 'x', task: 't' }, 'trace');
+    expect(response).toMatchObject({ success: false, error: { code: 'ERR_AGENT_NOT_FOUND' } });
+  });
+
   it("carry provenance when the agent itself answered with an error", async () => {
     const tab1 = connectPort('https://a.example/page', 1);
     const tab2 = connectPort('https://b.example/page', 2);

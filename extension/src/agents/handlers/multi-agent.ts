@@ -637,7 +637,7 @@ export function handleAgentsRegisterInvocationHandler(
       log(`[TRACE ${trace}] handleIncomingInvocation ERROR: ${e instanceof Error ? e.message : 'Unknown'}`);
       return {
         success: false,
-        error: { code: 'ERR_FORWARD_FAILED', message: e instanceof Error ? e.message : 'Delivery failed' },
+        error: { code: 'ERR_INTERNAL', message: e instanceof Error ? e.message : 'Delivery failed' },
         executionTime: Date.now() - startTime,
       };
     }
